@@ -396,6 +396,35 @@ Per **D3**, **ms is the single house time unit** and **no duration field carries
 one shared `parseDuration`. Every **emitted** duration is a raw-ms `number`; its unit is
 stated in its JSDoc, not its name.
 
+**The test is the value, not the slot.** Read the widening forwards, as the one question
+to ask of any position: **if it accepts a duration at all, it MUST also accept a
+`string`.** A bare `number` is a violation wherever a consumer can choose the value —
+there is no duration on the authoring surface that takes ms and _only_ ms.
+"Consumer-authored" names **who supplies the value**, not what kind of position holds it,
+so the rule reaches all four:
+
+- a **field** on an `*Options` envelope (`timeout.total`, `cache.ttl`);
+- a **positional/tuple element** of a P15 shorthand (`circuit: [5, '30s']`);
+- a **parameter** of an exported function or a conformance kit's knob;
+- a **value returned by a hook the consumer implements** on an extension seam
+  ([P21](#p21--every-contract-has-an-extension-seam)) — a `Surface`'s `resumeRetry`, or the
+  `after` on the `SurfaceOutcome` its `interpret` returns. The seam's _author_ is a consumer
+  of core even though the shape is core's.
+
+The complement pins the other half, and is just as normative: a duration **core
+produces** — an emitted `StitchEvent` field, a read-back `*Result`, a resolved internal,
+a value core passes _into_ a contract the consumer implements (`StitchStore.set`'s `ttl`)
+— is a raw-ms `number` and **MUST NOT** grow a string arm. Nobody authors it, so a token
+there would be a shape the reader must handle and the writer can never send.
+
+**A widened type is only half the rule; the parse is the other half.** The value **MUST**
+reach `parseDuration` before any arithmetic or sleep site. Widening a type without
+widening its read site is _worse_ than not widening it: the token then arrives where a
+number is assumed, and JS coerces rather than throws — `remaining <= '700ms'` is `false`
+and `setTimeout('700ms')` fires immediately, so the wait silently collapses to ~0 with no
+error anyone can see. That is the failure `SurfaceOutcome.after` shipped with until #609,
+and the reason this clause names the parser rather than only the type.
+
 _Why:_ every JS-native time API (`Date.now()`, `setTimeout`, `performance.now()`) is
 **already ms**, so ms is the unambiguous default and the suffix is redundant noise
 everywhere. On inputs, accepting `'5s'` on top is pure ergonomic gain (and a `Ms` name
@@ -403,12 +432,27 @@ on a field that takes `'5s'` would be a lie). On outputs, one uniform de-suffixe
 vocabulary beats a split convention; the JSDoc carries the unit.
 
 _Resolved (2026-07 sweep, inputs — widened + de-suffixed):_ `RetryOptions.baseDelay`/
-`maxDelay` (were `baseMs`/`maxMs`), `CircuitOptions.cooldown`/`halfOpenAfter`,
-`ReconnectOptions.backoff`, `OAuth2Options.refreshSkew`, `CookieSessionOptions.ttl`,
-store-contract `ttl` — all `number | string` via the one shared `parseDuration`.
+`maxDelay` (were `baseMs`/`maxMs`, since folded into `backoff.base`/`backoff.max` by the
+P24 envelope), `CircuitOptions.cooldown`/`halfOpenAfter`, `ReconnectOptions.delay` (was
+`backoffMs`, de-suffixed to `backoff` and later renamed under P2),
+`OAuth2Options.refreshSkew` (now `refresh.skew`), `CookieSessionOptions.ttl`, and
+`verifyStoreContract`'s `ttl` knob — all `number | string` via the one shared
+`parseDuration`.
+_Resolved (seam-authored, 2026-08):_ the two positions where a **`Surface`** supplies a
+duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return — take
+`number | string` and are parsed at the engine's sleep site. Both were missed by the
+2026-07 sweep because its checklist was end-user config, which is the scope error the
+"test is the value, not the slot" clause above exists to close.
+_Not widened, deliberately:_ `StitchStore.set`/`increment`'s `ttl` **parameter** stays a
+raw-ms `number` — **core** calls those verbs with an already-resolved value, so it is the
+complement case, not an oversight. The consumer-authored knob of the same name on
+`verifyStoreContract` is widened, which is the pair that shows the rule turns on who
+supplies the value.
 _Resolved (2026-07 sweep, emitted — de-suffixed):_ `StitchEvent` `waited`,
 `retryAfter`, the `done` event's `elapsed` (was `ms`), `MockResponse.delay`;
 `SseEvent.retry` stays (already bare; it mirrors the SSE `retry:` wire field).
+_Enforced by lint **R9** (§7)_ — see [P25](#p25--one-canonical-size-form), which the same
+rule and the same gate cover for the byte dimension.
 _Unit hazard (the exception to "all JS time is ms"):_ a few fields are **seconds**
 because they mirror a wire format — the HTTP `Retry-After` header (delta-seconds),
 Cloudflare KV `expirationTtl`. Every StitchAPI-_authored_ duration stays ms; a field
@@ -678,6 +722,23 @@ plugin-extension-hook bag, are all real shapes this rule does not reach.
 shared `parseBytes`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
 **emitted** size is a raw-byte `number`.
 
+**Same test as [P17](#p17--one-canonical-duration-form), same four positions: if a
+position accepts a size in bytes at all, it MUST also accept a `string`.** The two rules
+are one rule over two dimensions, so read this section and P17's widening clause together
+— the position may be a field, a tuple element, a parameter, or a seam hook's return; the
+question is only whether a consumer can choose the value. The complement holds too: a
+size **core produces** (`AdapterProgress.total`, a resolved internal like `execFile`'s
+`maxBuffer`) is a raw-byte `number` and takes no string arm. And the widening is only
+real once the value passes through `parseBytes` — an unparsed `'1mb'` compared against a
+byte count is the size analogue of P17's silently-collapsing sleep.
+
+**The one place the two dimensions diverge is the counterpoint that proves the rule:** a
+**`chars`** cap counts UTF-16 code units, not bytes, so it is **not** a size in this
+rule's sense and **MUST NOT** accept a string — see the `max`/`chars` split below. "Takes
+a duration or a byte size ⇒ takes a string" and "counts something ⇒ stays a bare
+`number`" are the same distinction P4 draws between a magnitude and a count; `chars`,
+`attempts`, `entries`, `pages`, and `tokens` all sit on the count side.
+
 **A size cap never rides a flat, suffixed top-level field — it lives inside the envelope
 that names its subject** (P12/P14/P24: `serve`'s `body`, trace's `body`, `stream`'s and
 shell's `buffer`). Inside the envelope the subject is named once, so the ceiling field
@@ -723,6 +784,12 @@ shorthand `body: 2048`) and `stream`'s `buffer` (`StreamBufferOptions.chars`, sh
 `buffer: 4_000_000`) — take a bare count, never a token. `parseBytes` is exported from
 `stitchapi` so a peer package parses the grammar instead of mirroring it.
 
+Enforced by lint **R9** (§7), together with P17 — one rule, one gate, both directions: a
+`max` that takes only `number` and a `chars` that took a `string` are the same finding
+seen from either end. R9 pins the **type**; the other half of the rule — that the value
+reaches `parseBytes`/`parseDuration` before it is compared or slept on — is dataflow, and
+is pinned by test instead.
+
 ---
 
 ## 6. Migration record (2026-07-08 hard-break sweep)
@@ -737,7 +804,11 @@ the published surface and found violations no rule in [§7](#7-enforcement) was 
 a green baseline meant "nothing the rules can see", not "nothing there" — so the rules
 were widened first, and each finding was fixed against a gate that holds it. A second
 exhaustive pass (2026-08-01) then verified every multi-word field name on the published
-surface — 249 of them — against P1/P4/P17/P18/P22/P24/P25 and closed what it found:
+surface — 249 of them — against P1/P4/P17/P18/P22/P24/P25 and closed what it found.
+A third pass (2026-08-04) added the widening clause to
+[P17](#p17--one-canonical-duration-form)/[P25](#p25--one-canonical-size-form) and the
+**R9** gate under it, and swept every duration- and size-valued position on the surface
+against both — the findings sit at the end of the list:
 
 - **P20** — four slots typed `Fn | Options` or `Options | false`, where `{}` still
   compiled. **Fixed** (`AtLeastOne`, and `errorHandler` gained the `true` spelling).
@@ -773,6 +844,22 @@ surface — 249 of them — against P1/P4/P17/P18/P22/P24/P25 and closed what it
   fold also closed a latent trap: full capture was the too-easy `maxBodyChars: false`;
   it is now the deliberate `body: { chars: false }`, while `body: false` means the
   intuitive "never persist a payload".)
+- **P17 (the widening clause + R9, 2026-08-04)** — the rule already said every
+  consumer-authored duration takes `number | string`, but said it as a property of
+  end-user **config**, and nothing enforced it. #609 had just shown what that scope
+  reading costs: `SurfaceOutcome.after` was authored by a `Surface` rather than an
+  end user, so the 2026-07 sweep skipped it and it shipped taking raw ms — silently
+  collapsing a `'700ms'` to a ~0 wait. The clause is now stated over the **value**, not
+  the slot, naming all four authoring positions; **R9** gates it. Sweeping the surface
+  under the new gate found exactly one live match, the sibling of #609's:
+  **`Surface.resumeRetry`** (the server-suggested reconnect backoff a surface reads off
+  a `delta`, feeding the identical `sleepWithin` call). **Fixed** — widened to
+  `number | string | undefined` and parsed at the engine, verified by reverting the parse
+  with the test in place (elapsed 6ms against a 110ms floor). A widening, so non-breaking
+  and alias-free in either channel ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel)).
+  Everything else the sweep touched was already conformant, and the R9 baseline is
+  **zero** — the one match was fixed at the source rather than baselined, the same call
+  the P24/R8 addition made.
 
 Everything else this section once listed has **shipped** and moved to the record below —
 the cross-package `StitchStore`/`StitchLike`/`RequestSeam` clashes (qualified per-framework
@@ -957,8 +1044,12 @@ shape, not as today's surface: nothing on the surface carries an alias.
   ([`scripts/contract-violations.baseline.json`](../scripts/contract-violations.baseline.json))
   was **zero from the 2026-07-08 sweep**; the same-day P24 addition
   ([§6](#6-migration-record-2026-07-08-hard-break-sweep)) briefly carried one
-  pre-existing real match it had not yet fixed, since converted — the baseline is
-  **zero again**, and the lint fails on **any** new violation. The ratchet mechanics
+  pre-existing real match it had not yet fixed, since converted; the 2026-08-04 **R9**
+  addition found one more (`Surface.resumeRetry`) and fixed it at the source rather than
+  baselining it — the baseline is **zero again**, and the lint fails on **any** new
+  violation. Two rule additions, two pre-existing matches: a new rule landing green is
+  the surprise, not the norm, which is the argument for writing the gate with the rule
+  rather than after it. The ratchet mechanics
   stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
   guarantee: the surface can only get more consistent, never less.
 - Rules implemented (high-precision, source-text level): **R1** banned type-name
@@ -981,13 +1072,31 @@ shape, not as today's surface: nothing on the surface carries an alias.
   discriminated-union, and P12 dominant-field pairs (P24) — high-precision by
   construction: the conventional `on*`/`is*`/percentile prefixes are structurally
   excluded before grouping, and every remaining match is either fixed at the source
-  or gets a one-line-rationale allow-list entry, never silently dropped.
+  or gets a one-line-rationale allow-list entry, never silently dropped;
+  **R9** a consumer-authored duration or byte size typed `number` with no `string` arm
+  (P17/P25), plus the reverse — a `chars` code-unit cap that grew one. Type info is not
+  needed because two source-text signals carry it: a **closed, curated member
+  vocabulary** (`ttl`, `timeout`, `total`, `perAttempt`, `delay`, `cooldown`,
+  `halfOpenAfter`, `skew`, `after`, `base`, `max`, `since`, `interval`, `resumeRetry`)
+  and P3's own `*Options` = consumer-input signal, which excludes every produced shape
+  **by name** so the emitted complement can never be flagged. A vocabulary rather than a
+  name pattern because the one thing that must not be caught is a **count**, and P4
+  already guarantees the two never collide: a count is a bare plural, and `max` is
+  reserved for a magnitude. The scan additionally covers the consumer-implemented seams
+  (`Surface`, `Adapter`, `TraceSink`, `AuthStrategy`), where the authored value is a
+  **return** rather than a field — the position the 2026-07 sweep's end-user-config
+  checklist missed. Adding a name to the vocabulary is a contract decision; the added
+  entry is reviewed like an allow-list entry, in the other direction.
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
-  same-name-different-**shape** detection, duration-type conformance, default-value
-  inversion (P8). Tracked as comments in the lint. R8 is also source-text-only in a
-  second sense — it scans exported `interface` bodies, not `type`-literal object
-  shapes or class fields; no group was found in either at the 2026-07-08 audit, but
-  a future one wouldn't be caught until it grows an `interface`.
+  same-name-different-**shape** detection, default-value inversion (P8), and the
+  **parse half** of P17/P25 — R9 pins the type, but whether the widened value actually
+  reaches `parseDuration`/`parseBytes` before a sleep or comparison is dataflow, and a
+  widened type over an unparsed read site is the silent-collapse bug (#609); the parse
+  is pinned behaviourally by test instead. Tracked as comments in the lint. R8 and R9
+  are also source-text-only in a second sense — they scan exported `interface` bodies,
+  not `type`-literal object shapes or class fields, which is why `SurfaceOutcome.after`
+  (a union member) sits outside R9's reach; no R8 group was found in either at the
+  2026-07-08 audit, but a future one wouldn't be caught until it grows an `interface`.
 
 ### The unknown-key ratchet
 

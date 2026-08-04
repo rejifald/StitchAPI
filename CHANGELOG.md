@@ -274,6 +274,20 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`Surface.resumeRetry` takes the canonical duration form too: its return widens to
+  `number | string`.** The sibling of the `SurfaceOutcome.after` fix below, found by sweeping the
+  surface under the new [P17](docs/CONTRACT.md#p17--one-canonical-duration-form)/[P25](docs/CONTRACT.md#p25--one-canonical-size-form)
+  widening clause and its **R9** gate (see _Notes_). `resumeRetry` reads the server-suggested
+  reconnect backoff off an emitted `delta`; it was raw ms only, and — like `after` before #609 — the
+  value was read straight into the reconnect wait, so a token returned through a cast reached
+  `setTimeout`, coerced to `NaN`, and fired immediately, collapsing the wait to ~0 with no error.
+  It is now parsed by the shared `parseDuration`, and an unparseable token falls through to the
+  configured `reconnect.delay` rather than to zero. Verified by reverting the parse with the tests
+  in place: 6ms elapsed against a 110ms floor.
+
+    Widening only, so per [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)
+    it is non-breaking and needs no alias — every existing surface returning raw ms is unaffected.
+
 - **An unknown config key is now a type error, so removing or renaming a slot has a compile-time
   safety net.** The authoring overloads infer `const C` from the config argument — that is what lets
   `InputOf` read RFC 6570 path vars off the literal — and that same inference SUPPRESSES TypeScript's
@@ -432,6 +446,24 @@ npm release are grouped under the in-development version that introduced them.
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
 ### Notes
+
+- **The duration/size rule is now stated over the value rather than the slot, and gated.**
+  [P17](docs/CONTRACT.md#p17--one-canonical-duration-form) and
+  [P25](docs/CONTRACT.md#p25--one-canonical-size-form) already required every consumer-authored
+  duration and byte cap to accept `number | string`, but framed it as a property of end-user
+  **config** — which is why the 2026-07 sweep skipped `SurfaceOutcome.after` (authored by a
+  `Surface`, not an end user) and it shipped taking raw ms. Both rules now read forwards as one
+  test — **if a position accepts a duration or a byte size at all, it must also accept a
+  `string`** — over all four authoring positions: an `*Options` field, a tuple element of a
+  positional shorthand, a function parameter, and the return value of a hook you implement on an
+  extension seam. The complement is stated just as firmly: a duration or size the library
+  **produces** stays a bare ms/byte `number`, and a `chars` code-unit cap must **not** grow a
+  string arm, since a size token on decoded text is a category error.
+
+    Lint **R9** in `check:contract` enforces both directions, and both halves of the rule are held:
+    R9 pins the type, while the requirement that the value actually reach `parseDuration`/`parseBytes`
+    is pinned by test — a widened type over an unparsed read site is the silent-collapse bug, which is
+    worse than never widening at all. Nothing else on the published surface needed changing.
 
 - **`sse`, `stream`, and `postmessage` were checked in the same pass and deliberately left
   alone.** `sse` and `stream` have no `buildRequest`, so their `method` is genuinely honoured;
