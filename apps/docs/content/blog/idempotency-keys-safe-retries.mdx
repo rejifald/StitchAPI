@@ -133,7 +133,7 @@ An idempotency key is a contract, not a guarantee. It works only when the **serv
 
 The `charge` stitch with `idempotency: true` is the smallest safe write you can declare: a method, a URL, a retry policy, a key. When the duplicate you care about stops being a retry and becomes a double-clicked button, you add one field — `keyOf` — and the same declaration now collapses submissions too. Same call site, same `await`, no rewrite of the surrounding handler.
 
-From there the same config object carries `timeout: { total: '30s', perAttempt: '10s' }`, an `output` schema to validate the response, and `auth: bearer(env('API_TOKEN'))` so the token resolves at call time and the caller never holds it. Each is one more field on the write you already have, bounding one more failure mode of the same call.
+From there the same config object carries `timeout: { total: '30s', each: '10s' }`, an `output` schema to validate the response, and `auth: bearer(env('API_TOKEN'))` so the token resolves at call time and the caller never holds it. Each is one more field on the write you already have, bounding one more failure mode of the same call.
 
 ## Try it
 

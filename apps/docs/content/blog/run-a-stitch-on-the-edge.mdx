@@ -25,7 +25,7 @@ const getUser = stitch({
     url: 'https://api.example.com/users/{id}',
     output: z.object({ id: z.string(), name: z.string(), email: z.string() }),
     retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
-    timeout: { total: '10s', perAttempt: '4s' },
+    timeout: { total: '10s', each: '4s' },
 });
 
 export default {
@@ -49,7 +49,7 @@ export default {
         let res: Response | undefined;
         for (let attempt = 0; attempt < 3; attempt++) {
             const ctrl = new AbortController();
-            const t = setTimeout(() => ctrl.abort(), 4000); // perAttempt
+            const t = setTimeout(() => ctrl.abort(), 4000); // timeout.each
             try {
                 res = await fetch(`https://api.example.com/users/${id}`, {
                     signal: ctrl.signal,

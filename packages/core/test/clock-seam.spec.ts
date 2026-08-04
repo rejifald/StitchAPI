@@ -137,7 +137,7 @@ describe('manualClock drives the per-attempt timeout (ADR 0010)', () => {
         const call = stitch({
             url: 'https://api.test/slow',
             adapter: hangs,
-            timeout: { perAttempt: 1000 },
+            timeout: { each: 1000 },
             clock,
         });
 

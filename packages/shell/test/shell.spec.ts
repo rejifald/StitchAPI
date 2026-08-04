@@ -93,7 +93,7 @@ test('arguments must be a string[] — a non-array body is rejected', async () =
 });
 
 test('the resilience chain wraps the subprocess — a per-attempt timeout aborts it', async () => {
-    const slow = shell(NODE, { timeout: { perAttempt: 50 } });
+    const slow = shell(NODE, { timeout: { each: 50 } });
     await expect(
         slow({ body: ['-e', 'setTimeout(() => {}, 5000)'] }),
     ).rejects.toBeTruthy();

@@ -21,7 +21,7 @@ Say you set a 30-second timeout and retry three times. What does the 30 seconds 
 
 You want both bounds, and you want them named separately:
 
-- **`perAttempt`** — how long any single try gets before it's aborted and (maybe) retried.
+- **`each`** — how long any single try gets before it's aborted and (maybe) retried.
 - **`total`** — how long the entire call gets, across every attempt and the backoff waits between them.
 
 StitchAPI declares them as one `timeout` object:
@@ -32,13 +32,13 @@ import { stitch } from 'stitchapi';
 const report = stitch({
     baseUrl: 'https://api.example.com',
     path: '/report',
-    timeout: { total: '10s', perAttempt: '3s' },
+    timeout: { total: '10s', each: '3s' },
 });
 ```
 
 Each attempt gets at most 3 seconds; the whole call gets at most 10. Whichever fires first wins. The deadline is backed by a real `AbortSignal` — when it elapses the underlying request is actually cancelled, not just ignored while the connection leaks in the background. That last detail is the one a hand-rolled `Promise.race` usually gets wrong: racing a timeout against a fetch resolves _your_ promise, but the socket stays open, still consuming a slot in your connection pool.
 
-With retry in the picture, the two timeouts compose cleanly: each try is gated by `perAttempt`, while `total` caps the sum of all tries plus their backoff waits. A long enough `total` is precisely what _allows_ a slow attempt to be retried at all — and a tight `perAttempt` is what stops one hung attempt from swallowing the whole budget.
+With retry in the picture, the two timeouts compose cleanly: every try is gated by `each`, while `total` caps the sum of all tries plus their backoff waits. A long enough `total` is precisely what _allows_ a slow attempt to be retried at all — and a tight `each` is what stops one hung attempt from swallowing the whole budget.
 
 ## Why the breaker exists: retries are the wrong reflex against a dead dependency
 
@@ -52,7 +52,7 @@ A **circuit breaker** encodes "stop calling for a bit" as state. The mechanics a
 - After a run of consecutive failures (the `failures`) it trips **open**. While open, calls **fast-fail** immediately without touching the dependency, for a cooldown window.
 - Once the cooldown elapses it goes **half-open** and lets a single trial call through. If that probe succeeds, the breaker **closes** and normal traffic resumes; if it fails, the breaker re-**opens** for a fresh cooldown.
 
-The fast-fail is the whole point. While the circuit is open, a call returns in microseconds instead of burning a `perAttempt` timeout discovering — again — that the dependency is unreachable. You stop adding load to a struggling upstream, and you stop tying up your own connections and promises waiting on doomed calls. The half-open probe is how you find out it's healthy again without flipping the floodgates open on the first hopeful guess.
+The fast-fail is the whole point. While the circuit is open, a call returns in microseconds instead of burning the per-attempt timeout discovering — again — that the dependency is unreachable. You stop adding load to a struggling upstream, and you stop tying up your own connections and promises waiting on doomed calls. The half-open probe is how you find out it's healthy again without flipping the floodgates open on the first hopeful guess.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -79,7 +79,7 @@ const getQuote = stitch({
     baseUrl: 'https://api.example.com',
     path: '/quote/{symbol}',
     retry: { attempts: 3, on: [429, 502, 503] },
-    timeout: { total: '10s', perAttempt: '3s' },
+    timeout: { total: '10s', each: '3s' },
     circuit: { failures: 5, cooldown: 30_000 },
 });
 ```
@@ -143,5 +143,5 @@ stitchapi
 Declare a stitch, give it a `timeout`, a `retry` policy, and a `circuit`, and you've described how it should behave when the upstream misbehaves — once, for every caller. The per-feature guides go deeper:
 
 - [Circuit breaker](/docs/guides/resilience/circuit-breaker) — the state machine, shared breakers, and `STITCH_CIRCUIT_OPEN`.
-- [Timeouts](/docs/guides/resilience/timeout) — `total` vs `perAttempt`, and how they compose with retry.
+- [Timeouts](/docs/guides/resilience/timeout) — `total` vs `each`, and how they compose with retry.
 - [Retry](/docs/guides/resilience/retry) — backoff, jitter, and honoring `Retry-After`.

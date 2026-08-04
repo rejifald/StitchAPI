@@ -69,7 +69,7 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
         stitch({
             baseUrl: 'https://x',
             path: '/y',
-            // @ts-expect-error — `timeout: {}` is rejected; use `'5s'` or set `total`/`perAttempt`.
+            // @ts-expect-error — `timeout: {}` is rejected; use `'5s'` or set `total`/`each`.
             timeout: {},
         }),
         stitch({

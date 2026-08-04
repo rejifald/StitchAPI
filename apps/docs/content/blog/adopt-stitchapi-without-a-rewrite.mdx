@@ -47,7 +47,7 @@ const getUser = stitch({
     auth: bearer(env('API_TOKEN')),
     output: z.object({ id: z.number(), name: z.string() }),
     retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
-    timeout: { total: '10s', perAttempt: '4s' },
+    timeout: { total: '10s', each: '4s' },
 });
 
 const user = await getUser({ params: { id: '42' } }); // typed · validated
@@ -56,7 +56,7 @@ const user = await getUser({ params: { id: '42' } }); // typed · validated
 Field by field, against the list above:
 
 - `retry` replaces the hand-rolled loop — status-aware, capped attempts, jittered backoff, and it honors `Retry-After` on its own.
-- `timeout` replaces the `AbortController` dance with a layered budget: `total` bounds the whole call, `perAttempt` bounds each try.
+- `timeout` replaces the `AbortController` dance with a layered budget: `total` bounds the whole call, `each` bounds a single try.
 - `output` replaces the cast with a real check. `await` returns the **validated** value; a renamed `name` throws a `StitchError` at the boundary instead of leaking `undefined` downstream.
 - `auth: bearer(env('API_TOKEN'))` keeps the secret out of the function — it resolves at call time, and the caller never holds it.
 
@@ -122,7 +122,7 @@ This is the same incremental move at the next size up: you hardened one call, th
 | Axis           | Before (per-call glue)             | A stitch                                          |
 | -------------- | ---------------------------------- | ------------------------------------------------- |
 | Retry          | A loop you copy into the next call | `retry` — status-aware, jittered, `Retry-After`   |
-| Timeout        | `AbortController` + `setTimeout`   | `timeout: { total, perAttempt }`                  |
+| Timeout        | `AbortController` + `setTimeout`   | `timeout: { total, each }`                        |
 | Response shape | A cast the compiler trusts blindly | `output` schema — validated, throws on a mismatch |
 | Secret         | Interpolated inline, held per copy | `auth` — resolved at call time, never held        |
 | Adoption unit  | Rewrite the data layer             | One endpoint, swap the call site                  |

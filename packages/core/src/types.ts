@@ -897,8 +897,37 @@ export interface AcquireOptions {
     rateOnly?: boolean;
 }
 export interface TimeoutOptions {
+    /** Bounds the whole call — every attempt plus the backoff waits between them. */
     total?: number | string;
-    perAttempt?: number | string;
+    /**
+     * Bounds ONE attempt on its own. `total` still caps the call, so a long enough `total` is what
+     * lets a slow attempt be retried at all; `each` is what stops one hung try from swallowing that
+     * budget.
+     *
+     * Spelled `each` and not `attempt` on purpose: singular `attempt` is already the 1-based INDEX
+     * carried by {@link HookContext} and the `progress` event (CONTRACT.md P4), and both spellings
+     * accept a `number` — so one token would name a duration here and a counter there,
+     * indistinguishable by shape (CONTRACT.md P1/P2, the same collision that renamed
+     * `reconnect.backoff` to `delay`). Against `total`, `each` also reads as the scope it is:
+     * total budget vs each try.
+     */
+    each?: number | string;
+    /**
+     * Tombstone for the previous spelling of {@link TimeoutOptions.each}, so the rename fails
+     * loudly instead of quietly changing how long a call blocks.
+     *
+     * {@link NoUnknownConfigKeys} guards TOP-LEVEL slots only: the authoring overloads infer
+     * `const C` from the config literal, which suppresses excess-property checking, and the
+     * `C extends Partial<StitchConfig>` constraint is then checked by ordinary assignability — which
+     * ignores extra keys nested INSIDE an envelope whenever a valid sibling is present. So
+     * `timeout: { total: '10s', perAttempt: '3s' }` would compile untouched and silently stop
+     * bounding the attempt — the exact trap `test-d/unknown-config-keys.test-d.ts` exists to
+     * prevent for a renamed slot. Declaring the old key with an unsatisfiable {@link ConfigError}
+     * rejects it by name instead.
+     *
+     * @deprecated Renamed to `each`.
+     */
+    perAttempt?: ConfigError<'`timeout.perAttempt` was renamed to `timeout.each`'>;
 }
 export interface CircuitOptions {
     /**

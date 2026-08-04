@@ -108,12 +108,15 @@ const boundStream = stream.bind(api);
 boundStream.stitch({ path: '/chunks' });
 expectError(boundStream.stitch({ path: '/chunks', totallyMadeUpProperty: 1 }));
 
-// ── Nested envelopes and inline fragments were already covered by EPC ───────
+// ── Nested envelopes and inline fragments: EPC covers them only PARTLY ──────
 // These are checked against their DECLARED types (`AtLeastOne<WireOptions>`,
 // `Partial<StitchConfig> | Stitch`) rather than against the inferred `C`, so freshness survives and
-// ordinary excess-property checking fires. Pinned so it stays true — it is the reason
-// `NoUnknownConfigKeys` deliberately does NOT walk `Layers<C>`, which keeps its `tsc` cost to one
-// `keyof` and one `Exclude` per call site.
+// excess-property checking fires — but only in the shape below. `AtLeastOne<T>` is a UNION over its
+// keys, and a literal that selects one arm carries its excess keys along unreported; what rejects
+// these two is that they match NO arm at all, which needs the unknown key to stand ALONE. Add one
+// valid sibling and the same typo sails through — pinned as a residual limit at the end of the file.
+// Partial cover is still cover, and it is the reason `NoUnknownConfigKeys` deliberately does NOT
+// walk `Layers<C>`, which keeps its `tsc` cost to one `keyof` and one `Exclude` per call site.
 expectError(stitch({ path: '/things', wire: { bogusNested: 1 } }));
 expectError(stitch({ path: '/things', extends: [{ bogusInFragment: 1 }] }));
 
@@ -223,3 +226,25 @@ expectError(ch.events('tick', { retry: 2, bogusPmKey: 1 }));
 // belongs to `RequestOptions` only, and authoring it on `emit`/`events` is dead config.
 expectError(ch.emit('fire', { retry: 2, reply: 'pong' }));
 expectError(ch.events('tick', { retry: 2, reply: 'pong' }));
+
+// ── RESIDUAL LIMIT: a nested key WITH a valid sibling is unguarded ──────────
+// The counterpart to the EPC block above. `NoUnknownConfigKeys` reads `keyof C`, so it sees
+// `wire`/`timeout`/`retry` but never their contents, and the `AtLeastOne` union stops reporting
+// excess the moment a real key selects an arm. So these typos are silently dead config — the shape
+// every real call site has, since nobody authors an envelope holding only a typo. Deliberate for the
+// same reason as the `Layers<C>` walk, hence NOT `expectError`.
+stitch({ path: '/things', wire: { array: 'repeat', bogusNested: 1 } });
+stitch({ path: '/things', retry: { attempts: 3, totallyBogusRetryKey: true } });
+
+// Which is why RENAMING an envelope key needs a tombstone to fail loudly. `timeout.perAttempt` is
+// declared as an unsatisfiable `ConfigError`, so the pre-rename spelling is rejected BY NAME in the
+// shape that actually leaks — next to the `total` that real call sites carry — instead of compiling
+// and quietly dropping the per-attempt bound.
+expectError(
+    stitch({ path: '/things', timeout: { total: '10s', perAttempt: '3s' } }),
+);
+expectError(stitch({ path: '/things', timeout: { perAttempt: '3s' } }));
+
+// Positive controls: the new spelling authors cleanly, alone and alongside `total`.
+stitch({ path: '/things', timeout: { each: '3s' } });
+stitch({ path: '/things', timeout: { total: '10s', each: '3s' } });

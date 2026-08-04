@@ -13,6 +13,41 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING — `timeout.perAttempt` becomes `timeout.each`.** Both slots answer the same question —
+  a timeout bounding _what?_ — and only one of them answered it. `total` names the span it covers;
+  `perAttempt` named a distribution, so the pair read lopsided, and the `per` prefix restated what
+  the envelope already says. Once `total` holds the across-all-attempts slot there is nothing else
+  its sibling could scope.
+
+    ```ts
+    // before
+    timeout: { total: '10s', perAttempt: '3s' },
+    // after
+    timeout: { total: '10s', each: '3s' },
+    ```
+
+    **Why `each` and not `attempt`**, which is the shorter, more obvious token: singular `attempt`
+    is already taken, as the 1-based INDEX on `HookContext` and the `progress` event — and
+    [P4](docs/CONTRACT.md#p4--one-cap-vocabulary) already spells that split out (plural `attempts` =
+    a running total, singular `attempt` = the current index). Both spellings accept a `number`, so
+    `attempt: 3` would mean "third try" in a hook and "3ms" in a config, indistinguishable by shape.
+    That is precisely the collision
+    [P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space) /
+    [P2](docs/CONTRACT.md#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)
+    forbid, and the one that renamed `reconnect.backoff` to `delay`. `each` is unused across every
+    package, holds one concept and one value-space, and against `total` reads as the scope it is:
+    total budget vs each try.
+
+    **`tsc` catches the migration, but not for the usual reason.** `NoUnknownConfigKeys` reads
+    `keyof C`, so it guards TOP-LEVEL slots only, and the nested `AtLeastOne` union stops reporting
+    excess properties the moment a real key selects an arm — so `timeout: { total: '10s',
+perAttempt: '3s' }`, the shape every real call site has, would have compiled untouched and
+    silently stopped bounding the attempt. `perAttempt` therefore stays declared as an unsatisfiable
+    `ConfigError` that names its replacement. The general limit — a misspelled envelope key with a
+    valid sibling is dead config — is now pinned as a residual limit in
+    `test-d/unknown-config-keys.test-d.ts`, which previously claimed nested envelopes were fully
+    covered by excess-property checking.
+
 - **`retry.respectRetryAfter` becomes `retry.respect`, and a `Retry-After` header is now honored by
   default.** The flag was opt-in, which meant the default retry behaviour ignored a number the
   server had explicitly provided in favour of a guessed backoff curve — on exactly the statuses the

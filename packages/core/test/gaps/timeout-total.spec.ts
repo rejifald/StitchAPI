@@ -68,12 +68,12 @@ test('timeout.total caps the whole retry/backoff loop, not just one attempt', as
     expect(err?.message ?? '').toMatch(/timed?\s?out|timeout/i);
 }, 10000);
 
-// ── B. total is enforced even when perAttempt is also set ───────────────────
-// The documented example shape sets BOTH. Today perAttempt wins outright
-// (perAttempt ?? total) and total is read nowhere: five 350ms per-attempt
+// ── B. total is enforced even when each is also set ─────────────────────────
+// The documented example shape sets BOTH. Today each wins outright
+// (each ?? total) and total is read nowhere: five 350ms per-attempt
 // aborts plus 4×50ms backoff ≈ 1950ms. With total honored, the call must die
 // at ~400ms.
-test('timeout.total is enforced alongside timeout.perAttempt across retries', async () => {
+test('timeout.total is enforced alongside timeout.each across retries', async () => {
     server.route('GET', '/glacial', {
         delay: 5000,
         body: { ok: true },
@@ -82,14 +82,14 @@ test('timeout.total is enforced alongside timeout.perAttempt across retries', as
         baseUrl: server.url,
         path: '/glacial',
         retry: { attempts: 5, backoff: { curve: 'fixed', base: 50 } },
-        timeout: { total: 400, perAttempt: 350 },
+        timeout: { total: 400, each: 350 },
     });
 
     const { err, elapsed } = await rejectionOf(call());
 
     expect(err).toBeDefined();
     expect(err?.message ?? '').toMatch(/timed?\s?out|timeout/i);
-    // total: 400 must bound the whole call — not 5 × perAttempt + backoffs.
+    // total: 400 must bound the whole call — not 5 × each + backoffs.
     expect(elapsed).toBeLessThan(1500);
 }, 10000);
 
