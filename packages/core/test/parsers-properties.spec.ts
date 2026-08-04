@@ -315,6 +315,38 @@ describe('parseRate (property)', () => {
         expect(parseRate('1/24d')).toEqual({ count: 1, per: 24 * MS_SCALE.d });
     });
 
+    // The sibling of the `stripTrailingSlashes` property below, with one honest difference: there
+    // the quadratic behaviour is real, here it was only ever a pattern. The one-regex form of this
+    // grammar (`^([1-9]\d*)\s*\/\s*(.+)$`) has a trailing `\s*` and a `.+` that both match a space
+    // — what `js/polynomial-redos` flags — but measured linear on every shape below, because
+    // `(.+)$` succeeds as soon as one character remains. The hand-rolled split has no overlap at
+    // all, and this pins the property either way: a long run of whitespace changes neither the
+    // answer nor the cost, so a future one-regex "simplification" has to fail something.
+    it('is unmoved by a long run of whitespace around the slash', () => {
+        fc.assert(
+            fc.property(
+                fc.nat({ max: 2048 }),
+                fc.nat({ max: 2048 }),
+                fc.constantFrom(...MS_UNITS),
+                (before, after, unit) => {
+                    const pad = (k: number) => ' '.repeat(k);
+                    expect(
+                        parseRate(`2${pad(before)}/${pad(after)}${unit}`),
+                    ).toEqual(parseRate(`2/${unit}`));
+                },
+            ),
+        );
+        // The failing shapes matter more than the passing ones: these have no valid denominator,
+        // so a backtracking matcher would have to exhaust every split before giving up.
+        for (const bad of [
+            `2/${' '.repeat(4096)}`,
+            `2${' '.repeat(4096)}/`,
+            `${' '.repeat(4096)}/s`,
+            `2/${' '.repeat(2048)}x${' '.repeat(2048)}`,
+        ])
+            expect(() => parseRate(bad)).toThrow(/bad rate/);
+    });
+
     // The only thing either limiter consumes is `per / count`, so any two rates with the same
     // ratio ARE the same limiter. With the denominator widened this is now sayable three ways,
     // and `'2/500ms'` ≡ `'4/s'` is the case the ADR argued is the design rather than a collapse.

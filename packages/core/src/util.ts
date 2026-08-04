@@ -173,10 +173,25 @@ const MAX_SPACING = 2_147_483_647;
  * CONTRACT.md P17/P25, which widen a magnitude that already carries a house unit — this has none.
  */
 export function parseRate(r: string): { count: number; per: number } {
-    const m = /^([1-9]\d*)\s*\/\s*(.+)$/.exec(r.trim());
-    if (!m) throw new Error(`bad rate: ${r}`);
-    const count = parseInt(m[1] ?? '', 10);
-    const denom = (m[2] ?? '').trim();
+    // Split on the first slash by hand rather than matching the whole token in one regex. A
+    // single pattern for both halves wants `\s*\/\s*(.+)$`, whose trailing `\s*` and `.+` both
+    // match a space — the overlap `js/polynomial-redos` flags on caller-supplied input.
+    //
+    // That alert is a pattern match, not a measured blowup: `(.+)$` succeeds as soon as one
+    // character remains, so the engine never enumerates the splits, and the one-regex form
+    // measured LINEAR on every shape tried (including the `'1/' + ' '.repeat(n)` the alert
+    // names). It is replaced rather than dismissed because the hand-rolled form is structurally
+    // free of the pattern and no harder to read — the same trade {@link stripTrailingSlashes}
+    // takes one function below, where the quadratic behaviour IS real. Each half is now checked
+    // by an anchored pattern over a bounded slice with nothing to backtrack across; `indexOf` +
+    // `slice` are linear, and `parseDuration` owns the denominator.
+    const t = r.trim();
+    const slash = t.indexOf('/');
+    if (slash === -1) throw new Error(`bad rate: ${r}`);
+    const head = t.slice(0, slash).trim();
+    if (!/^[1-9]\d*$/.test(head)) throw new Error(`bad rate: ${r}`);
+    const count = parseInt(head, 10);
+    const denom = t.slice(slash + 1).trim();
     // A bare unit is the one-unit token: `'s'` ≡ `'1s'`. Anything else goes to `parseDuration`
     // as written, so `'500ms'`, `'15m'` and the raw-ms `'500'` all mean what they mean everywhere.
     const per = parseDuration(
