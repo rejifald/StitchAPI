@@ -698,7 +698,7 @@ export const pages: Page[] = [
         path: 'reference/config-types',
         title: 'Config types',
         description:
-            'StitchConfig and the retry, throttle, timeout, auth, validation, and drift option shapes.',
+            'StitchConfig and every nested option shape — wire, retry, backoff, throttle, timeout, circuit, verdict, idempotency, cache, paginate, and drift.',
         kind: 'reference',
     },
     {
