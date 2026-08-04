@@ -114,36 +114,57 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
 }
 
 /**
- * The STATUS VERDICT alone (ADR 0022 Decision 2): the failure a response's status implies, or
- * `undefined` when the status is acceptable — a 2xx/3xx, or a status the caller declared NORMAL via
- * `verdict.accept` (issue #155, CONTRACT.md P7).
+ * Classify a STATUS (ADR 0022 Decision 2): the failure it implies, or `undefined` when it is
+ * acceptable — a 2xx/3xx, or one the caller declared NORMAL via `verdict.accept` (issue #155,
+ * CONTRACT.md P7).
  *
- * It deliberately says nothing about the SUCCESS value, because that is not knowable from a status:
- * `http` yields the raw body, `download` a `{ blob, filename }`, `llm` the provider's parsed
- * completion. Only the failure arm is universal — every surface agrees a `500` is a `500` — so only
- * the failure arm lives here. A surface composes it in front of its own body rules and never has to
- * build, then discard, a success value it does not mean:
+ * It takes a bare `number`, not a response, and that narrowness is the point: it answers the one
+ * question about **transport health**, which is a different question from "is this call a success".
+ * Two callers need exactly that and nothing more:
+ *
+ * - the engine's ladder, deciding whether a failed verdict should count against `circuit`. A `200`
+ *   the SURFACE rejected (graphql's `errors`, a falsy `verdict.flag`) is an application-level
+ *   rejection of a healthy transport — it must not open the breaker, or one bad payload takes down
+ *   every call to that host.
+ * - the streaming gate, where at open time there IS no buffered body to rule on. Only the status is
+ *   known, so only the status can be asked.
+ *
+ * It deliberately says nothing about the SUCCESS value either, because that is not knowable from a
+ * status: `http` yields the raw body, `download` a `{ blob, filename }`, `llm` the provider's parsed
+ * completion. Only the failure arm is universal — every surface agrees a `500` is a `500`.
+ */
+export const classifyStatus = (
+    status: number,
+    cfg: ResolvedStitchConfig,
+): Extract<SurfaceOutcome, { ok: false }> | undefined =>
+    status < 400 || acceptsStatus(cfg.verdict?.accept)(status)
+        ? undefined
+        : { ok: false, message: `HTTP ${status}`, status };
+
+/**
+ * The whole declarative verdict — {@link classifyStatus}, then `verdict.flag` — as a surface author
+ * composes it. This is the one to put in front of your own body rules, so that a stitch's `verdict`
+ * config is honoured on YOUR surface exactly as it is on `http`:
  *
  * ```ts
  * interpret: (res, cfg) => httpFailure(res, cfg) ?? { ok: true, data: myOwnValue(res) };
  * ```
  *
+ * `flag` is a body flag that is EXPLICITLY falsy on failure. Three-state, and only one state is a
+ * verdict: `undefined` (absent) and `null` are SILENCE, so the status verdict stands and an `info`
+ * drift finding records that the flag was not there. Only a present, falsy value fails the call.
+ * `accept` can only turn a failure into a success; `flag` only a success into a failure — neither
+ * invents a verdict from absence.
+ *
  * Exported because a surface author needs it: an `interpret` hook REPLACES the default rather than
- * layering on it, so a surface with its own body rules must compose this to keep the status verdict.
- * The built-in `graphql` and `download` hooks adopt it in ADR 0022 step 2; today they are still
- * shielded by the engine's guarantee that a non-2xx never reaches them, which step 3 removes.
+ * layering on it, so a surface with its own body rules must compose this to keep the verdict.
  */
 export const httpFailure = (
     res: AdapterResponse,
     cfg: ResolvedStitchConfig,
 ): Extract<SurfaceOutcome, { ok: false }> | undefined => {
-    if (res.status >= 400 && !acceptsStatus(cfg.verdict?.accept)(res.status))
-        return { ok: false, message: `HTTP ${res.status}`, status: res.status };
-    // `verdict.flag` — a body flag that is EXPLICITLY falsy on failure. Three-state and only one
-    // state is a verdict: `undefined` (absent) and `null` are SILENCE, so the status verdict above
-    // stands and an `info` drift finding records that the flag was not there. Only a present, falsy
-    // value fails the call. `accept` can only turn a failure into a success; `flag` only a success
-    // into a failure — neither invents a verdict from absence.
+    const byStatus = classifyStatus(res.status, cfg);
+    if (byStatus) return byStatus;
     const path = cfg.verdict?.flag;
     if (path !== undefined) {
         const value = getPath(res.body, path);

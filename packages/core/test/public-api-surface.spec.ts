@@ -28,9 +28,11 @@ const FUNCTIONS = [
     'compile',
     'isStitch',
     'isSeam',
-    // The status verdict (ADR 0022 Decision 2) — public because a surface author must compose it:
-    // an `interpret` hook replaces the default rather than layering on it. `httpFailure` is the
-    // reusable half (the verdict, no success value); `httpInterpret` is the http surface's own hook.
+    // The verdict (ADR 0022 Decision 2), public because a surface author must compose it: an
+    // `interpret` hook replaces the default rather than layering on it. Three names, three scopes —
+    // `classifyStatus` asks only about the STATUS (transport health), `httpFailure` is the whole
+    // declarative verdict a surface composes, `httpInterpret` adds the http surface's own value.
+    'classifyStatus',
     'httpFailure',
     'httpInterpret',
 ] as const;

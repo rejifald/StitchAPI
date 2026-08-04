@@ -122,15 +122,22 @@ composable function. It is split in two, because **a status implies a failure bu
 never a success value**:
 
 ```ts
-// The verdict. Says nothing about what a success CONTAINS — that is not knowable
-// from a status.
+// The STATUS alone — transport health. Takes a number, not a response.
+export const classifyStatus = (
+    status: number,
+    cfg: ResolvedStitchConfig,
+): Extract<SurfaceOutcome, { ok: false }> | undefined =>
+    status < 400 || acceptsStatus(cfg.verdict?.accept)(status)
+        ? undefined
+        : { ok: false, message: `HTTP ${status}`, status };
+
+// The whole declarative verdict — the status, then `verdict.flag`. What a surface composes.
+// Says nothing about what a success CONTAINS; that is not knowable from a verdict.
 export const httpFailure = (
     res: AdapterResponse,
     cfg: ResolvedStitchConfig,
 ): Extract<SurfaceOutcome, { ok: false }> | undefined =>
-    res.status < 400 || acceptsStatus(cfg.verdict?.accept)(res.status)
-        ? undefined
-        : { ok: false, message: `HTTP ${res.status}`, status: res.status };
+    classifyStatus(res.status, cfg) ?? flagFailure(res, cfg);
 
 // The http surface's own interpretation: the verdict, then ITS choice of result.
 export const httpInterpret = (
@@ -140,6 +147,23 @@ export const httpInterpret = (
 
 export const httpSurface: Surface = { id: 'http', interpret: httpInterpret };
 ```
+
+#### Why the status is its own function
+
+`classifyStatus` takes a bare `number` because two callers need **only transport
+health**, and asking them the fuller question is a bug rather than a nicety:
+
+- **the ladder's circuit routing.** A `200` the surface rejected — graphql's
+  `errors`, a falsy `verdict.flag` — is an application-level rejection of a healthy
+  transport. Routing it through the body-aware verdict opens the breaker on it, so
+  one bad payload takes down every call to that host.
+- **the streaming gate.** At open time there is no buffered body to rule on. Only the
+  status is known, so only the status can be asked, and the signature says so instead
+  of a comment promising it.
+
+This was found the hard way: the first cut asked `httpFailure` at the routing site,
+and a `verdict.flag` failure on a `200` tripped the circuit. The narrow signature is
+what makes that class of mistake unrepresentable.
 
 The split is what makes the function genuinely composable. Every surface agrees a
 `500` is a `500`; **none of them agree on what a `200` yields** — `http` means the
@@ -545,10 +569,11 @@ discoverability fix #529 asked for, delivered as a rendered stage rather than a
 config reshuffle.
 
 **The streaming path is unified too.** The hard-coded gate at
-[`engine.ts:1279`](../../packages/core/src/engine.ts) calls `httpFailure` instead
+[`engine.ts:1279`](../../packages/core/src/engine.ts) calls `classifyStatus` instead
 of reading the status rule directly, so streaming keeps today's behaviour (including
 case E of the spec file) through the same function as the buffered path — and it is
-the verdict-only half it wants, since a live body has no interpreted value yet. The retry
+the status-only half it wants, since a live body has neither an interpreted value nor
+a `verdict.flag` to read at open time. The retry
 arm does not apply there — there is no buffered body to rule on at open time — and
 that stays a documented limit rather than an open question.
 
@@ -576,15 +601,23 @@ redaction — `verdict.accept`'s predicate form is `redact-if-fn`, exactly as
 _All five are resolved as implemented. The reasoning is kept so the choices are not
 relitigated; only Q1's naming half stays genuinely open._
 
-1. **`httpFailure`/`httpInterpret`'s names and home.** _Bundle half settled; naming
-   half still open._ [ADR 0012](./0012-integration-symbol-naming.md) governs
-   cross-package symbol naming, and these are new public exports a surface author
-   must import. `httpInterpret` pairs with `httpSurface`; `httpFailure` is the half
-   that composes, and its name says what it returns (a failure, or nothing) rather
-   than what it is asked (`isAcceptable`, `rejectByStatus`). Both live in
-   `surface.ts`, already on the root barrel that `@stitchapi/shell` imports from, so
-   nothing drags the engine in. A rename is cheap until a third-party surface
-   composes it.
+1. **The three exports' names.** _Bundle half settled; naming half still open._
+   [ADR 0012](./0012-integration-symbol-naming.md) governs cross-package symbol
+   naming, and these are new public exports a surface author must import. They are
+   three scopes of one decision: `classifyStatus` (the status alone),
+   `httpFailure` (the whole declarative verdict), `httpInterpret` (that plus the http
+   surface's own value). `httpInterpret` pairs with `httpSurface`; `httpFailure` says
+   what it returns rather than what it is asked (`isAcceptable`, `rejectByStatus`).
+   All live in `surface.ts`, already on the root barrel that `@stitchapi/shell`
+   imports from, so nothing drags the engine in. A rename is cheap until a
+   third-party surface composes them.
+
+    `classifyStatus` rather than a bare `classify` is deliberate: _Alternative C_
+    rejected `classify` for the config callback because it "implies sorting a response
+    into one of many tiers", and a bare `classify` would still promise that while
+    returning two states. Qualifying it with what it classifies — a **status** — makes
+    the two-tier reading the honest one, and keeps the rejected callback's name free.
+
 2. **Does the body-driven retry share `retry.attempts`?** _Resolved: yes._ One budget
    is easier to reason about than two, and the counter — that a polling `PENDING`
    loop and a flaky-`503` loop are different failure modes — is better answered by

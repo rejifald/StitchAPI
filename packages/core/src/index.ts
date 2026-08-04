@@ -2,6 +2,7 @@ export { stitch, drift } from './stitch';
 export { graphql } from './graphql';
 export { seam } from './seam';
 export {
+    classifyStatus,
     httpSurface,
     graphqlSurface,
     httpInterpret,

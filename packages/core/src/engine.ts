@@ -20,7 +20,7 @@ import {
     withTimeout,
 } from './resilience';
 import { vaultView } from './store';
-import { flagFinding, httpFailure, interpretOf } from './surface';
+import { classifyStatus, flagFinding, interpretOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import type {
     AcquireOptions,
@@ -806,10 +806,13 @@ async function* attemptLoop(
             //     bad query must not open the circuit for every other call to that host. This is the
             //     behaviour today's ordering produced by accident; routing here makes it deliberate.
             //
-            // `httpFailure` is re-asked rather than remembered because it is the honest question —
-            // "did the transport report a failure?" — and it honours `verdict.accept`, so a declared
-            // 404 the surface later rejects on body grounds stays off the circuit too.
-            if (!outcome.ok && httpFailure(res, cfg)) {
+            // `classifyStatus` — the STATUS, not the full verdict — because the question here is
+            // "did the transport report a failure?", and only the status answers that. Asking the
+            // body-aware `httpFailure` would route a falsy `verdict.flag` on a healthy `200` as a
+            // transport failure and open the circuit on it, which is the same mistake as tripping
+            // the breaker on graphql's `errors`. It honours `verdict.accept`, so a declared 404 the
+            // surface later rejects on body grounds stays off the circuit too.
+            if (!outcome.ok && classifyStatus(res.status, cfg)) {
                 const e = new Error(outcome.message) as Error & {
                     status: number;
                     response: AdapterResponse;
@@ -1352,10 +1355,11 @@ async function* runStreaming(
         // same function since ADR 0022 Decision 2. A rejected status is TERMINAL (not reconnected):
         // the server actively refused, replaying it would loop.
         //
-        // `httpFailure`, not the surface's `interpret`: at open time there is no buffered body to
-        // rule on — only the status is known — so the retry arm and any body rule cannot apply here.
-        // That is a documented limit of the streaming path, not an oversight.
-        if (httpFailure(res, cfg)) {
+        // `classifyStatus`, not the surface's `interpret` and not the body-aware `httpFailure`: at
+        // open time there is no buffered body to rule on — only the status is known — so the retry
+        // arm and `verdict.flag` cannot apply here. The signature says so, rather than leaving it to
+        // a comment. That is a documented limit of the streaming path, not an oversight.
+        if (classifyStatus(res.status, cfg)) {
             // The error response carries the parsed payload, not a live stream — drain the unread
             // body (a small `{ error: "…" }`, not a real stream the caller wants) so
             // StitchError.body is the PARSED payload, matching the buffered path. Pin it (with

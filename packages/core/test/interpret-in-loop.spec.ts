@@ -444,3 +444,49 @@ describe('an inert verdict.flag is reported as an info finding', () => {
         expect(driftOf(events)).toEqual([]);
     });
 });
+
+// A `200` whose BODY flag says failure is an application-level rejection of a healthy transport —
+// the same category as graphql's 200-with-`errors`, and it must be routed the same way. It is a
+// separate test because the two reach the verdict by different members (`verdict.flag` vs the
+// surface's own rules), and the engine asks `classifyStatus` — not the body-aware `httpFailure` —
+// precisely so they cannot diverge.
+describe('a flag-failed 200 is an application rejection, not a transport failure', () => {
+    test('it does NOT open the circuit', async () => {
+        server.route('GET', '/flag-circuit', {
+            statuses: [200, 200, 200],
+            body: { meta: { ok: false } },
+        });
+        const call = stitch({
+            baseUrl: server.url,
+            path: '/flag-circuit',
+            verdict: { flag: 'meta.ok' },
+            circuit: { failures: 2, cooldown: '1m' },
+        });
+
+        for (let i = 0; i < 3; i++) {
+            const err = await rejectionOf(call());
+            expect(err.message).toContain('meta.ok');
+        }
+        // All three reached the network: the breaker never fast-failed one.
+        expect(server.callCount('/flag-circuit')).toBe(3);
+    });
+
+    test('a failing STATUS with the same flag config still opens it', async () => {
+        server.route('GET', '/flag-circuit-500', {
+            statuses: [500, 500, 500],
+            body: { meta: { ok: false } },
+        });
+        const call = stitch({
+            baseUrl: server.url,
+            path: '/flag-circuit-500',
+            verdict: { flag: 'meta.ok' },
+            circuit: { failures: 2, cooldown: '1m' },
+        });
+
+        await rejectionOf(call());
+        await rejectionOf(call());
+        await rejectionOf(call());
+
+        expect(server.callCount('/flag-circuit-500')).toBe(2);
+    });
+});
