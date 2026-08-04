@@ -74,6 +74,11 @@ pre-push:
         # the expensive test/build jobs. Mirrors CI's check:contract step.
         - name: contract
           run: '{setup} pnpm check:contract'
+        # Unknown-key guard ratchet: a generic-inferred option bag with no `NoUnknownKeys`
+        # intersection lets a misspelled or removed slot typecheck and be silently dropped.
+        # Cheap source scan, same tier as the contract ratchet. Mirrors CI's step.
+        - name: unknown-keys
+          run: '{setup} pnpm check:unknown-keys'
         # Demo-media drift gate (docs/media/README.md): a branch that edits the
         # demo scene or its generator must also regenerate the committed README
         # webp pair. Cheap path diff; STITCH_MEDIA_STALE_OK=1 defers.

@@ -4,7 +4,11 @@
  *
  * Exits 0 when all suites pass; exits 1 if any fail.
  *
- * Run with:  node docs/sandbox/tests/run-all.mjs
+ * Run with:  pnpm --filter @stitchapi/sandbox test:smoke
+ *
+ * Prefer that script over calling this file directly — the playground-preset
+ * suite drives the BUILT node Worker (dist/node-worker.mjs) and `test:smoke`
+ * runs `build:mcp` first. (It exits 2 with a build hint if the bundle is absent.)
  */
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -42,6 +46,9 @@ const SUITES = [
     'docs/sandbox/component/output-format.test.ts',
     // T-α — integration over REAL sim + dispatch
     'docs/sandbox/tests/integration.test.ts',
+    // Playground presets + surface allow-list, over the BUILT node Worker
+    // (dist/node-worker.mjs — `test:smoke` builds it first).
+    'docs/sandbox/tests/playground-examples.test.ts',
 ];
 
 // ---------------------------------------------------------------------------

@@ -989,6 +989,38 @@ shape, not as today's surface: nothing on the surface carries an alias.
   shapes or class fields; no group was found in either at the 2026-07-08 audit, but
   a future one wouldn't be caught until it grows an `interface`.
 
+### The unknown-key ratchet
+
+[`scripts/check-unknown-keys.mjs`](../scripts/check-unknown-keys.mjs) is a **second
+ratchet** with the same wiring — `pnpm check:unknown-keys`, in `lefthook` (pre-push) and
+`verify.yml` — guarding a different failure mode: not what the surface is _named_, but
+whether the compiler can see a **misspelling** of it.
+
+An authoring surface that infers `const C` from its option-bag argument gets no
+excess-property checking, because the literal is compared against a `C` just inferred from
+it — nothing is ever "excess" — and the `C extends …Options` constraint is then verified by
+ordinary assignability, which ignores freshness. So `stitch({ path: '/x', timeut: 500 })`
+type-checks and the value is silently dropped. That is what makes any slot **rename or
+removal** unsafe: every call site still authoring the old spelling keeps compiling. The fix
+is to intersect the parameter with `NoUnknownKeys<C, Allowed, What>`, which maps
+`Exclude<keyof C, keyof Allowed>` onto a `ConfigError` brand naming the key.
+
+- Every generic-inferred option bag must **either** carry the guard **or** be listed in
+  [`scripts/unknown-keys.baseline.json`](../scripts/unknown-keys.baseline.json) with a
+  **reason** — a bare `TODO` fails the gate. A new unguarded surface therefore forces a
+  deliberate decision rather than passing by omission.
+- High-precision, like the rules above: it matches a type-parameter constraint naming a
+  `…Config`/`…Options` type or a `Partial<…>` of one, which is what every authored option
+  bag here looks like. A generic bound to a _stitch argument_ (`S extends StitchLike<…>`,
+  the framework hooks) or to an index-signature bag (`all()`'s named form) is a different
+  shape and is not flagged — those hooks' options are separate non-generic parameters and
+  keep ordinary excess-property checking.
+- One baselined entry is a real instance that **cannot** take the guard: `Stitch.with` is
+  the only signature whose return type reads `keyof P`, and intersecting its parameter
+  degrades the published `Stitch` type. The reasoning is recorded on the signature and in
+  the baseline.
+- `test/` and `test-d/` are skipped — they author bad configs on purpose.
+
 ---
 
 ## 8. References

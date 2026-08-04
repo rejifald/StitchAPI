@@ -1,0 +1,27 @@
+{
+    "generatedBy": "scripts/check-unknown-keys.mjs --update",
+    "note": "Generic-inferred option bags that are deliberately UNGUARDED. Every entry needs a `reason` — a bare TODO is not one. Guarded surfaces are not listed; they need no exception.",
+    "count": 4,
+    "allowed": [
+        {
+            "key": "packages/core/src/postmessage.ts:C:EmitOptions:opts#2",
+            "file": "packages/core/src/postmessage.ts",
+            "reason": "The `channel()`-local IMPLEMENTATION of `emit`, not the authoring surface. `PostMessageChannel.emit` is the consumer-facing declaration and IS guarded (occurrence #1); this local function is `as`-cast to that member at the return, because a generic impl whose parameter carries `NoUnknownKeys<C, …>` cannot be checked against a member of the same shape — TypeScript instantiates the impl's `C` with the target's whole intersection, so the two `InputOf<C>` return types stop matching."
+        },
+        {
+            "key": "packages/core/src/postmessage.ts:C:EventsOptions:opts#2",
+            "file": "packages/core/src/postmessage.ts",
+            "reason": "Same as the `emit` entry: the `channel()`-local implementation of `events`. The guarded authoring surface is `PostMessageChannel.events` (occurrence #1)."
+        },
+        {
+            "key": "packages/core/src/postmessage.ts:C:RequestOptions:opts#2",
+            "file": "packages/core/src/postmessage.ts",
+            "reason": "Same as the `emit` entry: the `channel()`-local implementation of `request`. The guarded authoring surface is `PostMessageChannel.request` (occurrence #1)."
+        },
+        {
+            "key": "packages/core/src/types.ts:P:Partial<TIn>:partial#1",
+            "file": "packages/core/src/types.ts",
+            "reason": "`Stitch.with(partial)` — a real instance of the bug class that CANNOT take the guard, for a structural reason recorded on the signature itself. It is the only signature whose RETURN type reads `keyof P`, and `keyof (P & NoUnknownKeys<P, …>)` does not reduce to `keyof P` while `P` is unresolved, so intersecting the parameter rewrites `RelaxKeys<TIn, keyof P>` into a deferred union that tsup's declaration rollup emits differently than source — the published `Stitch` then stops matching the source one and every `S extends Stitch<unknown>` constraint in the package breaks (streaming-inference.test-d.ts catches it immediately). The F-bounded spelling that would keep the parameter bare is a circular constraint (TS2313). Weak-type detection still covers the no-valid-sibling case. Pinned in unknown-config-keys.test-d.ts."
+        }
+    ]
+}

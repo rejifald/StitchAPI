@@ -84,7 +84,35 @@ function configToFunctionName(interfaceName) {
     return prefix.charAt(0).toLowerCase() + prefix.slice(1);
 }
 
-function jsDocSummary(node) {
+// Render a `{@link …}` target: an Identifier (`Foo`), a QualifiedName (`Foo.bar`), or a
+// JSDocMemberName (`Foo#bar`). The latter two nest as left/right, so this recurses.
+function entityNameText(ts, name) {
+    if (!name) return '';
+    if (ts.isIdentifier(name)) return name.text;
+    if (!name.left || !name.right) return name.text ?? '';
+    const sep = ts.isQualifiedName(name) ? '.' : '#';
+    return `${entityNameText(ts, name.left)}${sep}${entityNameText(ts, name.right)}`;
+}
+
+// One part of a JSDoc comment array. Parts are JSDocText OR one of the three JSDocLink kinds,
+// and the link kinds keep only the trailing LABEL on `.text` — the target itself lives on
+// `.name`. Reading `.text` alone therefore drops the reference entirely and leaves the prose
+// dangling around the gap ("Spell the slots as  declares them"), which is what this exists to
+// prevent. Mirrors how JSDoc renders a link: the label when one is given, else the target.
+function jsDocPartText(ts, part) {
+    const text = part.text ?? '';
+    const isLink =
+        ts.isJSDocLink(part) ||
+        ts.isJSDocLinkCode(part) ||
+        ts.isJSDocLinkPlain(part);
+    if (!isLink) return text;
+    // `{@link Foo}` → `Foo`; `{@link Foo the thing}` → `the thing`; a bare URL has no `.name`,
+    // so its `.text` is all there is.
+    const label = text.trim();
+    return label || entityNameText(ts, part.name);
+}
+
+function jsDocSummary(ts, node) {
     const docs = node.jsDoc;
     if (!docs?.length) return '';
     const last = docs[docs.length - 1];
@@ -92,8 +120,11 @@ function jsDocSummary(node) {
     const text =
         typeof last.comment === 'string'
             ? last.comment
-            : last.comment.map((c) => c.text ?? '').join('');
-    return text.trim().replace(/\s*\n\s*/g, ' ');
+            : last.comment.map((c) => jsDocPartText(ts, c)).join('');
+    // `collapseWhitespace` rather than a bare newline fold: it also squeezes the runs an inline
+    // tag this function does not render (`{@label …}`, `{@inheritDoc}`) would leave behind, so a
+    // future tag degrades to a clean sentence instead of a visible gap.
+    return collapseWhitespace(text);
 }
 
 function collapseWhitespace(s) {
@@ -114,7 +145,7 @@ function extractConfigEntries(ts, iface, sf) {
             detail: member.type
                 ? collapseWhitespace(member.type.getText(sf))
                 : 'unknown',
-            info: jsDocSummary(member),
+            info: jsDocSummary(ts, member),
         });
     }
     return entries;
@@ -133,7 +164,7 @@ function extractInstanceEntries(ts, iface, sf) {
                 detail: member.type
                     ? collapseWhitespace(member.type.getText(sf))
                     : 'unknown',
-                info: jsDocSummary(member),
+                info: jsDocSummary(ts, member),
             });
         } else if (ts.isMethodSignature(member)) {
             const params = member.parameters
@@ -146,7 +177,7 @@ function extractInstanceEntries(ts, iface, sf) {
                 type: 'method',
                 label: member.name.getText(sf),
                 detail: `(${params}) => ${ret}`,
-                info: jsDocSummary(member),
+                info: jsDocSummary(ts, member),
             });
         }
     }

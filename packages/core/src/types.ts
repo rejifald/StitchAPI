@@ -200,6 +200,79 @@ export interface ConfigError<Message extends string> {
     readonly __stitchConfigError: Message;
 }
 /**
+ * Compile-time guard: reject a key on an authored option bag that is not a slot of `Allowed`.
+ * `What` names the bag in the error message, so each surface reports against its own vocabulary.
+ *
+ * Every authoring surface here infers `const C` from its argument so {@link InputOf} can read
+ * path-template vars off the literal (Phase 2c). That inference is also what SUPPRESSES
+ * TypeScript's excess-property check: the literal is compared against `C`, which was just inferred
+ * from it, so it matches exactly and no property is ever "excess". The `C extends …` constraint is
+ * then verified by ordinary assignability, which ignores freshness. Net effect without this guard:
+ * `stitch({ path: '/x', timeut: 500 })` typechecks, and a REMOVED or RENAMED slot keeps typechecking
+ * at every call site that still authors it.
+ *
+ * TypeScript's WEAK-TYPE detection gives partial cover for free, since these bags are all-optional:
+ * a literal sharing NO property with the target is rejected regardless of freshness. It is only
+ * partial — add one valid sibling key and the unknown one rides along, which is the case this guard
+ * exists for and the reason every `expectError` in the type tests carries a valid sibling.
+ *
+ * That gap is why {@link LlmOptions}'s parameter USED to be non-generic: excess-property checking
+ * was the only thing rejecting the removed `maxTokens` spelling (P4), and keeping it meant giving up
+ * `const C` inference entirely. This guard supplies the rejection instead, so `llm` is now generic
+ * and gets call-argument inference too — the trade is gone.
+ *
+ * Mechanism: intersecting the bag with a mapped type over `Exclude<keyof C, keyof Allowed>` makes
+ * exactly the unknown keys unsatisfiable, so the error lands on the offending property with a
+ * {@link ConfigError} brand that NAMES it. Known keys are untouched, and when there are none the
+ * guard is `unknown` and intersects away.
+ *
+ * Cheaper than the sibling guards on purpose: one `keyof` and one `Exclude` per call site, with no
+ * {@link Layers} walk. Unknown keys are a per-layer spelling concern, not a cross-layer pairing, and
+ * an INLINE `extends` fragment is a fresh literal checked against the declared
+ * `Partial<StitchConfig> | Stitch` — so it still gets ordinary excess-property checking and needs no
+ * help from here.
+ *
+ * STRONGER than excess-property checking in one respect, and the reason a rename is now caught
+ * repo-wide: EPC only fires on a fresh literal, so a config hoisted into a `const` binding escapes
+ * it. `keyof C` reads the binding's INFERRED type, so the hoisted spelling is rejected too.
+ *
+ * NOT applied to `Stitch.with` — the one surface whose RETURN type reads `keyof P`, which makes an
+ * intersected parameter degrade the public `Stitch` type. The reasoning is recorded on `with` itself.
+ *
+ * RESIDUAL LIMITS:
+ * - Fail-open: an unknown key inside an `extends` fragment that is a `const` BINDING and also carries
+ *   at least one real slot is not reported — the binding is not fresh so EPC does not fire, the real
+ *   slot satisfies weak-type detection so that does not either, and this guard reads only the
+ *   literal's own keys. A bound fragment of ONLY unknown keys IS still rejected, by weak-type
+ *   detection. Both pinned in `unknown-config-keys.test-d.ts`.
+ * - Fail-open by design: a config whose static type is already `Partial<StitchConfig>` (or the loose
+ *   `string | Partial<StitchConfig>` escape hatch) has no unknown keys to find. Its declaration site
+ *   is where the spelling was checked, and that site had EPC.
+ * - An index-signature config (`Record<string, unknown>`) is rejected, since every key is unknown.
+ *   It never satisfied `Partial<StitchConfig>` usefully; pinned so the behaviour is deliberate.
+ */
+export type NoUnknownKeys<C, Allowed, What extends string> = C extends string
+    ? unknown
+    : [Exclude<keyof C, keyof Allowed>] extends [never]
+      ? unknown
+      : {
+            [
+                K in Exclude<keyof C, keyof Allowed>
+            ]: ConfigError<`\`${Extract<K, string>}\` is not a ${What} slot — check the spelling`>;
+        };
+/**
+ * {@link NoUnknownKeys} bound to {@link StitchConfig} — the `stitch` / `Seam.stitch` /
+ * `Seam.graphql` / `graphql` / `download` / `sse` / `stream` authoring surfaces. The other option
+ * bags reached through an inferred generic bind their own allowed set the same way:
+ * `LlmOptions` (`stitchapi/llm`) and `RequestOptions` / `EmitOptions` / `EventsOptions`
+ * (`stitchapi/postmessage`).
+ */
+export type NoUnknownConfigKeys<C> = NoUnknownKeys<
+    C,
+    StitchConfig,
+    'StitchConfig'
+>;
+/**
  * Compile-time guard: {@link WireOptions.multipart} is read ONLY when `wire.body` is
  * `'multipart'`, so pairing it with a `json`/`form` body (or omitting `body`, which defaults to
  * `json`) is silently dead config. Intersecting a config with this makes the nested `multipart`
@@ -1473,6 +1546,33 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
     report(
         ...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]
     ): Promise<RunReport<TOut>>;
+    // WHY THIS SLOT IS UNGUARDED — implementer detail, deliberately a line comment rather than
+    // JSDoc: the docs playground surfaces a member's JSDoc verbatim as autocomplete help
+    // (apps/docs/app/(home)/playground/playground-completions.generated.ts), where a wall of
+    // declaration-emit reasoning is noise for the reader hovering `.with`. The user-facing caveat
+    // stays in the JSDoc below; the mechanism lives here.
+    //
+    // `const P` is inferred from the argument exactly as on the config surfaces, so
+    // excess-property checking is suppressed the same way and `NoUnknownKeys` would be the fix —
+    // but this is the only signature whose RETURN type reads `keyof P`, and
+    // `keyof (P & NoUnknownKeys<P, …>)` does not reduce to `keyof P` while `P` is unresolved.
+    // Intersecting the parameter therefore rewrites `RelaxKeys<TIn, keyof P>` into a deferred union
+    // that `tsup`'s declaration rollup emits in a different form than source — so `lib`'s `Stitch`
+    // stops being structurally identical to `src`'s, and every `S extends Stitch<unknown>`
+    // constraint in the package breaks (`streaming-inference.test-d.ts` catches it immediately).
+    //
+    // The F-bounded spelling that would keep the parameter bare —
+    // `P extends Partial<TIn> & NoUnknownKeys<P, TIn, …>` — is a circular constraint (TS2313).
+    // Guarding this slot means degrading the public `Stitch` type for every consumer, which costs
+    // more than the hole it closes; the config surfaces have no such coupling and are all guarded.
+    /**
+     * Bind part of the call input, returning a stitch whose remaining input is relaxed by the keys
+     * just supplied.
+     *
+     * Unlike the config surfaces, a MISSPELLED input key here is not a compile error — it binds
+     * nothing, silently (`.with({ params, parms })` keeps the `params` and drops the typo). Spell
+     * the slots as {@link StitchInput} declares them.
+     */
     with<const P extends Partial<TIn>>(
         partial: P,
     ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;
@@ -1628,6 +1728,7 @@ export interface Seam {
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C &
+            NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
@@ -1636,9 +1737,9 @@ export interface Seam {
     /**
      * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
      * {@link StitchFn}). `C` is captured only to re-apply the dead-config guards
-     * ({@link MultipartOnlyOnMultipartBody}, {@link GraphqlOnlyOnGraphqlSurface},
-     * {@link WireBodyFixedByGraphql}, {@link RequestShapeFixedByDownload}) — see
-     * {@link StitchFn}'s fallback for why.
+     * ({@link NoUnknownConfigKeys}, {@link MultipartOnlyOnMultipartBody},
+     * {@link GraphqlOnlyOnGraphqlSurface}, {@link WireBodyFixedByGraphql},
+     * {@link RequestShapeFixedByDownload}) — see {@link StitchFn}'s fallback for why.
      */
     stitch<
         T = unknown,
@@ -1646,6 +1747,7 @@ export interface Seam {
             string | Partial<StitchConfig>,
     >(
         config: C &
+            NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
@@ -1660,7 +1762,10 @@ export interface Seam {
             document: string;
         },
     >(
-        config: C & MultipartOnlyOnMultipartBody<C> & NoWireBodyOnGraphql<C>,
+        config: C &
+            NoUnknownConfigKeys<C> &
+            MultipartOnlyOnMultipartBody<C> &
+            NoWireBodyOnGraphql<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Derive a principal-bound {@link PrincipalSeam} reusing the same shared runtime, but whose

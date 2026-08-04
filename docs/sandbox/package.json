@@ -7,14 +7,15 @@
         "./component/StitchPlayground": "./component/StitchPlayground.tsx",
         "./contracts/dispatch": "./contracts/dispatch.ts",
         "./contracts/sim": "./contracts/sim.ts",
-        "./runtime/browser-runner": "./runtime/browser-runner.ts"
+        "./runtime/browser-runner": "./runtime/browser-runner.ts",
+        "./runtime/playground-surface": "./runtime/playground-surface.ts"
     },
     "bin": {
         "stitch-sandbox": "./dist/mcp.mjs"
     },
     "scripts": {
         "build:mcp": "node runtime/gen-sandbox-modules.mjs && node runtime/build-sandbox-mcp.mjs",
-        "test:smoke": "node tests/run-all.mjs",
+        "test:smoke": "pnpm run build:mcp && node tests/run-all.mjs",
         "test:mcp": "pnpm run build:mcp && node mcp/smoke.mjs"
     },
     "dependencies": {

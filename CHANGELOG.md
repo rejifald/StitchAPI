@@ -75,11 +75,12 @@ npm release are grouped under the in-development version that introduced them.
     says to follow the standard that governs each layer and convert at the edge. Custom
     adapters need no changes.
 
-    **Migration gotcha:** a stale `bodyType:` at a call site does **not** produce a compile
-    error — `stitch`'s `const C extends Partial<StitchConfig>` generic captures the argument
-    type, which suppresses excess-property checking, so the field is silently ignored and the
-    body falls back to JSON. Grep for `bodyType:`, `responseType:`, and `arrayFormat:` rather
-    than relying on the typechecker.
+    **Migration:** a stale `bodyType:` / `responseType:` / `arrayFormat:` at a call site is a
+    compile error naming the key, so `tsc` finds every one. That was not true when this entry
+    was first written — `stitch`'s `const C extends Partial<StitchConfig>` generic captures the
+    argument type, which suppressed excess-property checking, so the field was silently ignored
+    and the body fell back to JSON. The `NoUnknownConfigKeys` guard (see **Fixed**) closed that
+    gap; grepping for the old spellings is no longer necessary.
 
 - **`wire.multipart` now requires `wire.body: 'multipart'` at compile time.** The slot is read
   only on a multipart body, so pairing it with `'json'`/`'form'` — or with no body encoding at
@@ -166,6 +167,108 @@ npm release are grouped under the in-development version that introduced them.
     `Content-Disposition` filename parsing.
 
 ### Fixed
+
+- **An unknown config key is now a type error, so removing or renaming a slot has a compile-time
+  safety net.** The authoring overloads infer `const C` from the config argument — that is what lets
+  `InputOf` read RFC 6570 path vars off the literal — and that same inference SUPPRESSES TypeScript's
+  excess-property check: the literal is compared against a `C` just inferred from it, so no property
+  is ever "excess", and the `C extends Partial<StitchConfig>` constraint is then verified by ordinary
+  assignability, which ignores freshness. A misspelled or dead slot therefore typechecked and was
+  silently dropped at runtime:
+
+    ```ts
+    // before: typechecked, and the timeout was never applied
+    stitch({ path: '/things', timeut: 500 });
+    ```
+
+    It is now a type error naming the key, via the same `ConfigError` brand as the sibling guards, so
+    the message lands on the offending property instead of collapsing the config to `never`:
+
+    ```
+    `timeut` is not a StitchConfig slot — check the spelling
+    ```
+
+    The decisive consequence is for **migrations**: folding a flat slot into an envelope (ADR 0022's
+    `acceptStatus` → `verdict.accept`) previously left every call site that still authored the old
+    spelling typechecking. `#591` hit exactly this — 2 files found by typechecking, 30 by running the
+    suite. Such a rename is now mechanical, and `tsc` finds the stragglers.
+
+    Applied to **every** authoring surface that reaches an option bag through an inferred generic
+    (P16), swept for rather than patched case by case: `stitch`, `Seam.stitch`, `Seam.graphql`,
+    `graphql`, `download`, `sse`, `stream` and the `.bind(...)` binders (against `StitchConfig`);
+    `llm` (against `LlmOptions`); and `postmessage`'s `request` / `emit` / `events` (against
+    `RequestOptions` / `EmitOptions` / `EventsOptions`). Each names its own bag in the message, so
+    `reply` — a `RequestOptions` member — is correctly rejected on `emit` and `events`.
+
+    Deliberately **cheaper** than the sibling guards — one `keyof` and one `Exclude` per call site,
+    with no `Layers` walk — because unknown keys are a per-layer spelling concern, and an inline
+    `extends` fragment or a nested envelope is checked against its declared type, so it keeps
+    ordinary excess-property checking.
+
+    Ruled out by the same sweep, verified rather than assumed: the framework hooks
+    (`react`/`vue`/`solid`/`svelte`/`angular`/`swr`/`query-core`/`rtk-query`/`vercel-ai`) bind their
+    generic to the **stitch argument**, not to an option literal, and their options bags are
+    non-generic — so those keep ordinary excess-property checking already. `all()`'s named-bag form
+    takes caller-chosen keys, so it has no fixed vocabulary to misspell.
+
+    **Partial cover that already existed, and why the tests look the way they do:** these bags are
+    all-optional, so TypeScript's weak-type detection rejects a literal sharing _no_ property with
+    the target. That is only partial — add one valid sibling key and the unknown one rides along. So
+    every `expectError` in the type tests carries a valid sibling; without one the rejection would be
+    attributable to weak-type detection rather than to the guard.
+
+    **Stronger than excess-property checking** in one respect, and the reason the net holds
+    repo-wide: EPC only fires on a fresh literal, so a config hoisted into a `const` escapes it
+    entirely. Reading `keyof C` sees the binding's inferred type, so the hoisted spelling is rejected
+    too.
+
+    **Known limits,** both pinned as tsd expectations alongside the loose
+    `string | Partial<StitchConfig>` escape hatch, which is unchanged:
+
+    - An unknown key inside an `extends` fragment that is a `const` binding _and_ carries at least
+      one real slot is not reported — the binding is not fresh, so EPC does not fire, and the real
+      slot satisfies weak-type detection. A bound fragment of only unknown keys is still rejected.
+    - `Stitch.with(partial)` is the one surface left **unguarded**, and the exception is structural
+      rather than a matter of taste. It is the only signature whose return type reads `keyof P`, and
+      `keyof (P & NoUnknownKeys<P, …>)` does not reduce to `keyof P` while `P` is unresolved.
+      Intersecting the parameter rewrites `RelaxKeys<TIn, keyof P>` into a deferred union that the
+      declaration rollup emits differently than source, so the published `Stitch` stops being
+      structurally identical to the source one and every `S extends Stitch<unknown>` constraint in
+      the package breaks. The F-bounded spelling that would keep the parameter bare is a circular
+      constraint (TS2313). Guarding it would degrade the public `Stitch` type for every consumer,
+      which costs more than the hole it closes.
+
+    The class is now held closed by a **ratchet** rather than by having been swept once —
+    `pnpm check:unknown-keys` ([`scripts/check-unknown-keys.mjs`](scripts/check-unknown-keys.mjs)),
+    wired into `verify.yml` and `lefthook` pre-push beside `check:contract`. Every
+    generic-inferred option bag must either carry the guard or be listed in
+    `scripts/unknown-keys.baseline.json` **with a reason** — a bare `TODO` fails the gate — so a new
+    unguarded surface forces a deliberate decision instead of passing by omission. It currently sees
+    17 guarded surfaces and 4 baselined exceptions (`postmessage`'s three `channel()`-local impls,
+    whose consumer-facing declarations are guarded, and `Stitch.with`). Documented in
+    [docs/CONTRACT.md §7](docs/CONTRACT.md).
+
+- **BREAKING (types only) — `llm()` is now generic, so it infers its call argument.** Its parameter
+  was non-generic on purpose: excess-property checking was the only thing rejecting the removed
+  `maxTokens` spelling (P4), and keeping it meant giving up `const C` inference entirely. Now that
+  `NoUnknownKeys` supplies the rejection, the trade is gone and `llm` gets what every other surface
+  has — `InputOf<C>` call-argument inference:
+
+    ```ts
+    const chat = llm({
+        provider: anthropic,
+        url: 'https://llm.example.com/{version}/messages',
+    });
+    chat(); // now a type error: the path template requires `params`
+    chat({ params: { version: 'v1' } });
+    ```
+
+    Runtime behaviour is unchanged — the stitch is byte-identical. Breaking only in that a call
+    argument that was previously the loose `StitchInput` is now checked against the config's `input`
+    schemas and path template, so a call site that was silently under-specified now fails to compile.
+    `llm.stitch` and `llm.bind(...).stitch` inherit it; the binder moves to the loose-impl-plus-cast
+    idiom `download` already uses, because a generic impl cannot be checked against a member of its
+    own guarded shape.
 
 - **The config guards now read the composed config, so `extends` counts.** `wire.multipart` and
   `document`/`operationName` are gated on an enabler — a multipart body, the graphql surface — and

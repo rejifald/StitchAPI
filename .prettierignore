@@ -29,6 +29,15 @@ docs/sandbox/dist/
 # scope. See lefthook.yml's pre-push `format` job.
 .claude/worktrees/
 
+# Playwright run artifacts (apps/docs, written by test:e2e). Already gitignored,
+# so CI checks out clean and never sees them — but `prettier --check .` (the
+# pre-push format gate) walks the working tree, not the index, and Playwright
+# writes `.last-run.json` raw. Running the e2e suite locally would otherwise
+# block the next push on a file that is not even committed. Same reasoning as
+# `.claude/worktrees/` above.
+apps/docs/test-results/
+apps/docs/playwright-report/
+
 # yakir's baseline lockfile is generated (2-space, written by `yakir fix`); leave
 # its formatting to the tool, like any other lockfile.
 yakir.lock

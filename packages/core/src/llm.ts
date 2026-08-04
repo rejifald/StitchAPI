@@ -11,11 +11,13 @@
 // onto it yet.) Bundle-frugal: reached only through the `llm` subpath; `import { stitch }` pulls in
 // none of it.
 import { compact } from './compact';
+import type { InputOf } from './infer';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type NoRequestShapeOnLlm,
+    type NoUnknownKeys,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -192,32 +194,44 @@ function llmConfig(config: LlmOptions): Partial<StitchConfig> {
  * const { text } = await chat({ body: { messages: [{ role: 'user', content: 'hi' }] } });
  * ```
  */
-const llmStitch = (
+const llmStitch = <const C extends LlmOptions = LlmOptions>(
     // The live (overriding) surface is built by construction here, so the guard applies
     // unconditionally — no `kind`-keyed sibling, because the exported `llmSurface` is only the
     // identity and carries no `buildRequest`, so `method` IS live on `stitch({ kind: llmSurface })`.
-    // The parameter stays non-generic on purpose: that is what keeps excess-property checking, which
-    // is what rejects the removed `maxTokens` spelling (P4).
-    config: LlmOptions & NoRequestShapeOnLlm,
-): Stitch<LlmResult> => makeStitch<LlmResult>(llmConfig(config));
+    config: C &
+        NoUnknownKeys<C, LlmOptions, 'LlmOptions'> &
+        NoRequestShapeOnLlm,
+): Stitch<LlmResult, InputOf<C>> =>
+    // The `as` retypes the loose `makeStitch` result to the declared `InputOf<C>` call-arg type —
+    // the same retype `download`/`sse`/`stream` need for the same reason (`InputOf` reads
+    // `extends`-fragment schemas since #76, so it is not a clean supertype of `StitchInput` under an
+    // unresolved `C`). Sound: the runtime stitch is byte-identical.
+    makeStitch<LlmResult>(llmConfig(config)) as unknown as Stitch<
+        LlmResult,
+        InputOf<C>
+    >;
 
 /** llm members bound to a seam. `stitch(config)` creates an llm member of `seam`; `seam` is the
  *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface LlmSeamApi {
-    readonly stitch: (
-        config: LlmOptions & NoRequestShapeOnLlm,
-    ) => Stitch<LlmResult>;
+    readonly stitch: <const C extends LlmOptions = LlmOptions>(
+        config: C &
+            NoUnknownKeys<C, LlmOptions, 'LlmOptions'> &
+            NoRequestShapeOnLlm,
+    ) => Stitch<LlmResult, InputOf<C>>;
     readonly seam: Seam;
 }
 
 // Bind llm members to a seam through the seam's surface-agnostic `stitch({ kind })` (ADR 0005
 // Decision 3) — no per-surface seam method; one shared runtime / principal boundary.
 function bindSeam(s: Seam): LlmSeamApi {
-    return {
-        stitch: (config: LlmOptions & NoRequestShapeOnLlm) =>
-            s.stitch<LlmResult>(llmConfig(config)),
-        seam: s,
-    };
+    // Implemented loose and `as`-cast to the declared member type — the `download.ts` idiom. A
+    // generic impl whose parameter carries `NoUnknownKeys<C, …>` cannot be checked against a member
+    // of that same shape: TypeScript instantiates the impl's `C` with the target's whole
+    // intersection, so the two `InputOf<C>` return types stop matching.
+    const stitch = ((config: LlmOptions) =>
+        s.stitch<LlmResult>(llmConfig(config))) as LlmSeamApi['stitch'];
+    return { stitch, seam: s };
 }
 
 /**

@@ -21,8 +21,9 @@ import type { TraceSink } from 'stitchapi';
  *   Browser-safe (re-exported verbatim from core):
  *     stitch, seam, drift, graphql,
  *     validate, compile,
- *     bearer, apiKey, basic, oauth2,
  *     fetchAdapter, memoryStore, multiplex, toOtlpJson, + all types
+ *   Browser-safe, from the `stitchapi/auth` entry (ADR 0021):
+ *     bearer, apiKey, basic, oauth2
  *   Node-only, runs SHIMMED here (with a RunNotice):
  *     env                      → ./shims/node-surfaces  (demo values)
  *     cookieSession            → ./shims/node-surfaces  (in-memory jar)
@@ -43,10 +44,6 @@ export {
     // runtime-schema snippets (`compile(JsonSchema.adapt(...))`) run in the playground.
     validate,
     compile,
-    bearer,
-    apiKey,
-    basic,
-    oauth2,
     fetchAdapter,
     memoryStore,
     // `multiplex` is pure JS (B1-SPIKE §5) — safe to re-export verbatim.
@@ -54,6 +51,14 @@ export {
     // `toOtlpJson` is a pure span→JSON mapper (no Node) — safe verbatim.
     toOtlpJson,
 } from 'stitchapi';
+
+/* ---- Browser-safe auth surface (its own entry since ADR 0021) ------------ */
+// The four credential strategies are pure header/query builders — no Node
+// touch-points, safe to re-export verbatim. They live in `stitchapi/auth`, NOT
+// the main barrel (#545); re-exporting them from 'stitchapi' made them resolve
+// to nothing, so `bearer('…')` in a snippet threw `bearer is not defined`.
+// (`env`/`cookieSession` come from the same entry but are shimmed — below.)
+export { bearer, apiKey, basic, oauth2 } from 'stitchapi/auth';
 
 // All public types — none carry runtime Node weight. Core's barrel re-exports
 // `./types` via `export *`, so every public type is reachable from the main entry.
