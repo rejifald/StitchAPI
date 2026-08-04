@@ -32,6 +32,7 @@ import {
 
 import { parentPort } from 'node:worker_threads';
 import * as stitchBuild from 'stitchapi';
+import { apiKey, basic, bearer, oauth2 } from 'stitchapi/auth';
 
 // Baseline knobs for the current run, mutated by `env.applyKnobs`; the shim
 // reads it on every request. URL-explicit knobs still win (see dispatch).
@@ -55,9 +56,23 @@ const simFetch = createFetchShim(allHandlers, () => currentKnobs);
 // server sandbox makes no real network egress.
 (globalThis as { fetch?: unknown }).fetch = simFetch;
 
+// The four credential strategies live in `stitchapi/auth`, not the main barrel
+// (ADR 0021 / #545), so the namespace above does not carry them. They are pure
+// header/query builders — no ambient authority — and the browser tier exposes
+// them by the same names, so merging them here is what makes a snippet run
+// identically on either tier (a snippet's `bearer('…')` is the case that broke).
+//
+// The rest of that entry stays OUT on purpose: `env` reads the host environment
+// and `secretsFile` reads the host disk, which would defeat the clean `process`
+// shadow below. The browser tier only has them because they are shimmed there.
+const authBuild = { bearer, apiKey, basic, oauth2 };
+
 const env: WorkerEnv = {
     // The whole real `stitchapi` surface, exposed name-by-name into the snippet.
-    stitchBuild: stitchBuild as unknown as Record<string, unknown>,
+    stitchBuild: { ...stitchBuild, ...authBuild } as unknown as Record<
+        string,
+        unknown
+    >,
     // Modules a snippet may `import` beyond 'stitchapi' (rebound via __stitchImport).
     modules: sandboxModules,
     fetch: simFetch as unknown as WorkerEnv['fetch'],
