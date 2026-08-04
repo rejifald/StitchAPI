@@ -1571,7 +1571,7 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
      *
      * Unlike the config surfaces, a MISSPELLED input key here is not a compile error — it binds
      * nothing, silently (`.with({ params, parms })` keeps the `params` and drops the typo). Spell
-     * the slots as `StitchInput` declares them.
+     * the slots as {@link StitchInput} declares them.
      */
     with<const P extends Partial<TIn>>(
         partial: P,

@@ -64,6 +64,65 @@ test('emits config + instance completions for a matched primitive', async () => 
     }
 });
 
+test('a `{@link …}` in a doc comment renders its target, not a gap', async () => {
+    // TypeScript models `{@link X}` as a JSDocLink node whose `.text` holds only the trailing
+    // LABEL — the target lives on `.name`. Joining `.text` alone dropped the reference and left
+    // the prose dangling around the hole ("Spell the slots as  declares them"), which shipped
+    // into four real playground tooltips before this was fixed.
+    const pkg = fixturePackage(
+        [
+            'export function stitch() {}',
+            'export interface StitchInput { params?: unknown }',
+            'export interface Other { nested?: unknown }',
+            'export interface StitchConfig {',
+            '    /** Spell it as {@link StitchInput} declares it. */',
+            '    baseUrl: string;',
+            '    /** See {@link Other.nested} for the shape. */',
+            '    path: string;',
+            '    /** Use {@link StitchInput the input bag} instead. */',
+            '    url: string;',
+            '}',
+            '',
+        ].join('\n'),
+    );
+    const out = join(pkg, 'out.generated.ts');
+    try {
+        await generatePlaygroundCompletions({
+            packages: [pkg],
+            outputFile: out,
+        });
+        const content = readFileSync(out, 'utf8');
+
+        // A bare link renders its target.
+        assert.match(
+            content,
+            /Spell it as StitchInput declares it\./,
+            'bare {@link Target} should render the target name',
+        );
+        // A qualified target keeps its dotted path.
+        assert.match(
+            content,
+            /See Other\.nested for the shape\./,
+            'qualified {@link A.b} should render as A.b',
+        );
+        // An explicit label wins over the target, as JSDoc renders it.
+        assert.match(
+            content,
+            /Use the input bag instead\./,
+            '{@link Target label} should render the label',
+        );
+        // The regression itself: no doubled space anywhere in an emitted `info`.
+        for (const [, info] of content.matchAll(/info: "(.*?)",\n/g))
+            assert.doesNotMatch(
+                info,
+                / {2}/,
+                `emitted info should not contain a doubled space: ${info}`,
+            );
+    } finally {
+        rmSync(pkg, { recursive: true, force: true });
+    }
+});
+
 test('emits empty maps for a package with no *Config interface', async () => {
     const pkg = fixturePackage('export const x = 1;\n');
     const out = join(pkg, 'out.generated.ts');
