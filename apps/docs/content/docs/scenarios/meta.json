@@ -1,0 +1,5 @@
+{
+    "title": "Scenarios",
+    "icon": "Map",
+    "pages": ["oauth2-refresh-token-rotation"]
+}

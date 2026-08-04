@@ -1,0 +1,24 @@
+# Scenario ledger
+
+Real-world API integration scenarios researched by the `/loop` scenario pass. One row
+per scenario, so later iterations don't re-cover ground.
+
+**Flow per scenario:** web research → capture in `docs/scenarios/<slug>.md` → a subagent
+proves (or fails to prove) it with **runnable offline code** under
+`docs/scenarios/proofs/<slug>/` → then either a published page at
+`apps/docs/content/docs/scenarios/<slug>.mdx` **or** an issue draft in
+`docs/scenarios/issue-drafts/<slug>.md`.
+
+Issue drafts are **not filed** — they accumulate here for review when the loop stops.
+
+| #   | Scenario                                              | Slug                            | Verdict                   | Outcome                                                                                                                     |
+| --- | ----------------------------------------------------- | ------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 1   | OAuth2 rotating refresh tokens under concurrent calls | `oauth2-refresh-token-rotation` | achievable with user code | [page shipped](../../apps/docs/content/docs/scenarios/oauth2-refresh-token-rotation.mdx) + 1 issue draft (`params` footgun) |
+
+## Open issue drafts
+
+Not filed — review these when the loop stops.
+
+| Draft                                                                              | Severity | Ask                                                                                |
+| ---------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| [`oauth2-params-rotation-footgun`](issue-drafts/oauth2-params-rotation-footgun.md) | high     | `params` can express a rotating grant that succeeds once, then revokes the account |

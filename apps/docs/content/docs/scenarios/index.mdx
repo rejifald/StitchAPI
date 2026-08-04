@@ -1,0 +1,24 @@
+---
+title: 'Scenarios'
+description: 'Real integration problems that have no one-line answer anywhere — what the usual fixes cost, what StitchAPI changes, and what it leaves to you.'
+---
+
+A scenario is a problem people actually hit against a real API, picked because the
+honest answer is _not_ a one-liner in any library. Each page states the problem,
+lays out the solutions the ecosystem has converged on and what each one costs,
+shows the StitchAPI shape next to them — and then says plainly what StitchAPI
+does **not** solve, so you can see the remaining work before you commit to it.
+
+Where a [recipe](/docs/recipes) shows a task with a known good answer, a scenario
+shows a problem where the answer is a trade-off.
+
+Every claim on these pages is backed by a script that was run offline against the
+real runtime, not by reading the source.
+
+<Cards>
+    <Card
+        title="OAuth2 refresh tokens that rotate"
+        href="/docs/scenarios/oauth2-refresh-token-rotation"
+        description="A single-use refresh token plus two workers revokes the whole account. Why the obvious fixes are narrower races, not fixes."
+    />
+</Cards>

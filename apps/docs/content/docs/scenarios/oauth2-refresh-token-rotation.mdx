@@ -1,0 +1,196 @@
+---
+title: 'OAuth2 refresh tokens that rotate'
+description: 'A single-use refresh token plus two concurrent workers revokes the whole account. What the usual fixes cost, and what a custom auth strategy buys you.'
+prerequisites:
+    ['/docs/guides/auth/oauth2', '/docs/guides/state/pluggable-store']
+---
+
+## The problem
+
+Your backend holds a per-account **refresh token** for a third-party API —
+Atlassian, Asana, Xero, Slack — and exchanges it for short-lived access tokens.
+The provider implements
+[RFC 6819 §5.2.2.3](https://datatracker.ietf.org/doc/html/rfc6819#section-5.2.2.3)
+replay detection: redeeming a refresh token returns **a new one** and invalidates
+the old, and presenting an already-redeemed token is read as evidence of theft.
+
+So the provider does not reject one call — it **revokes the entire token family**.
+The user is silently disconnected and has to re-authorize in a browser.
+
+Now add ordinary concurrency. A sync job, a webhook handler, and a user request
+all hit `401` at the same instant. Each independently decides to refresh. The
+first redemption rotates the token; every other one presents a consumed token and
+trips replay detection.
+
+The failure mode is not "a request failed." It is "the integration lost the
+account," and it only appears under load.
+
+<Callout type="warn">
+    This is not a beginner's mistake. It has been filed against [OpenAI
+    Codex](https://github.com/openai/codex/issues/10332), the [MCP TypeScript
+    SDK](https://github.com/modelcontextprotocol/typescript-sdk/issues/1760),
+    and [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy/issues/1992)
+    — and it was a CVE in an auth library whose whole job is this
+    ([GHSA-392p-2q2v-4372](https://github.com/better-auth/better-auth/security/advisories/GHSA-392p-2q2v-4372)).
+</Callout>
+
+## The common solutions
+
+| Approach                         | Where it breaks                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Refresh-on-401 interceptor       | The baseline bug. N concurrent 401s ⇒ N redemptions ⇒ family revoked.                                              |
+| In-process promise memo          | Correct for **one** process. Silently insufficient at two workers — and it looks fixed in dev, where there is one. |
+| Distributed lock (Redis `SETNX`) | Works, and makes refresh a distributed-systems problem: lock TTL vs latency, crash-while-holding, fencing.         |
+| Proactive refresh before expiry  | Shrinks the window; does not close it. The skew boundary is a moment every worker crosses together.                |
+| Provider grace period            | Not yours to choose. Auth0 and Okta offer one; Atlassian and Asana do not.                                         |
+| Dedicated refresh worker         | Genuinely correct. Costs a deployable, and a cold access token now waits on a queue round-trip.                    |
+
+There is no one-liner. The honest minimum is **coordination scoped to the account
+and spanning processes**, plus **durable persistence of the rotated token before
+the old one is treated as spent**.
+
+## What StitchAPI does
+
+Not `oauth2()`. That strategy implements the `client_credentials` grant, which has
+no refresh token by design — it reads only `access_token` and `expires_in` from
+the token response, so a rotated `refresh_token` is discarded.
+
+<Callout type="error">
+    **`params` will let you look like you configured rotation.** It merges into the
+    token-request body and can override `grant_type`, so
+    `params: { grant_type: 'refresh_token', refresh_token: rt }` compiles, and
+    the **first redemption returns 200**. The second sends the same consumed token
+    and the provider revokes the family. There is no error and no type friction at
+    the moment you write it. Don't.
+</Callout>
+
+What StitchAPI gives you is the **seam**: `AuthStrategy` is a public exported type,
+and a strategy receives an `AuthContext` with an async `vault` it owns, plus a
+`shouldRefresh`/`refresh` pair wired into the call. You write the rotation policy;
+the runtime owns where it runs.
+
+```ts
+import type { AuthContext, AuthStrategy } from 'stitchapi';
+
+export function rotatingRefresh(opts: RotatingRefreshOptions): AuthStrategy {
+    const accessKey = `rr:${opts.key}:access`;
+    const refreshKey = `rr:${opts.key}:refresh`;
+    let inFlight: Promise<string> | undefined;
+
+    const redeem = async (ctx: AuthContext): Promise<string> => {
+        const stored = (await ctx.vault.get(refreshKey)) as string | undefined;
+        const res = await opts.adapter({
+            url: opts.tokenUrl,
+            method: 'POST',
+            body: {
+                grant_type: 'refresh_token',
+                refresh_token: stored ?? opts.seedRefreshToken,
+                client_id: opts.clientId,
+                client_secret: opts.clientSecret,
+            },
+            bodyType: 'form',
+        });
+        const body = (res.body ?? {}) as TokenResponse;
+        if (res.status >= 400 || !body.access_token)
+            throw new Error(`refresh_token grant failed: HTTP ${res.status}`);
+
+        // Persist the ROTATED token first — the old one is spent server-side the
+        // moment the provider answered, so this write must land before use.
+        if (body.refresh_token)
+            await ctx.vault.set(refreshKey, body.refresh_token);
+        const ttl = body.expires_in ? body.expires_in * 1000 : undefined;
+        await ctx.vault.set(accessKey, { token: body.access_token }, ttl);
+        return body.access_token;
+    };
+
+    // Coalesce concurrent redemptions; clear on settle so a failure never sticks.
+    const redeemOnce = (ctx: AuthContext): Promise<string> =>
+        (inFlight ??= redeem(ctx).finally(() => {
+            inFlight = undefined;
+        }));
+
+    return {
+        name: 'rotatingRefresh',
+        async apply(req, ctx) {
+            const cached = await ctx.vault.get(accessKey);
+            req.headers['authorization'] =
+                `Bearer ${cached?.token ?? (await redeemOnce(ctx))}`;
+        },
+        shouldRefresh: (res) => res.status === 401,
+        async refresh(ctx) {
+            await redeemOnce(ctx);
+        },
+    };
+}
+```
+
+Attach it like any other strategy, to any stitch:
+
+```ts
+const issues = stitch({
+    baseUrl: 'https://api.atlassian.com',
+    path: '/ex/jira/:cloudId/rest/api/3/search',
+    auth: rotatingRefresh({ key: `jira:${accountId}` /* … */ }),
+    store: redisStore,
+});
+```
+
+**Measured:** 20 concurrent cold callers produce **1** redemption and **0**
+replays. Cross-worker exclusion — built on `vault.increment(key, ttl) === 1` to
+acquire and `vault.set(key, undefined)` to release — collapses **3 workers × 10
+callers to 1** redemption, and costs **42 more lines**.
+
+## StitchAPI vs the common solution
+
+The line count is not the win. A correct axios interceptor with a Redis lock is
+about as long. Three things change:
+
+- **The policy is one object, not a call-site convention.** Every stitch that
+  names this strategy gets it — the CLI, an HTTP route, and an agent tool
+  included. Nothing can call the API and miss the interceptor.
+- **The token never reaches the caller.** It lives in the vault and the outgoing
+  header. A caller, an agent included, receives data — never the credential. See
+  [Capability, not credential](/docs/concepts/capability-not-credential).
+- **The store is already there.** `vault` is scoped, async, and shared by `key` +
+  `store`, so "where does the rotated token live" is answered before you start.
+
+## What StitchAPI does not solve here
+
+Blunt, because getting this wrong costs an account:
+
+1. **`oauth2()` does not implement the refresh-token grant.** Rotation is entirely
+   yours to write.
+2. **`params` is a footgun for this.** It works once, then revokes the family.
+3. **A shared `store` is a cache, not a lock.** Two cold workers fire one token
+   request _each_ — measured: 2 workers ⇒ 2 requests, 2 workers × 10 callers ⇒
+   still 2. The store only helps once a write has landed.
+4. **The built-in single-flight is per strategy instance, in-process, and
+   time-windowed.** 20 _simultaneous_ 401s coalesce to 1 refresh; 20 staggered
+   8&nbsp;ms apart produced **10**. Coalescing is not identity-scoped.
+5. **There is no distributed-lock primitive.** `StitchStore` is
+   `get`/`set`/`increment`/`close` — no compare-and-set, no fencing token, no
+   blocking wait. A lock built on `increment` leans on cross-process atomicity
+   that the store contract only guarantees _within_ a process; confirm your
+   backend before relying on it.
+6. **Nothing enforces write-before-use ordering.** The vault is a plain KV. The
+   "persist before the old token is spent" discipline is yours.
+7. **`cookieSession` is not an alternative path.** Its refresh hook receives
+   `{ ok, status }` — the login response body never reaches you, so it cannot
+   carry a rotated token.
+8. **One refresh per call.** If the retry after a refresh also 401s, the call
+   fails. A lock timeout surfaces to the caller as a 401.
+
+## See also
+
+<Cards>
+    <Card title="oauth2" href="/docs/guides/auth/oauth2" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+    <Card
+        title="Authenticate without the token touching your code"
+        href="/docs/recipes/auth-as-a-capability"
+    />
+</Cards>
