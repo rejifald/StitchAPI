@@ -1,9 +1,10 @@
 // Smoke test for the sandbox MCP server (stdio). Spawns the BUILT server
 // (dist/mcp.mjs — run `build:mcp` first), drives it over JSON-RPC, and asserts
-// the three tools work end-to-end against the simulator. Exits non-zero on
-// failure so it is CI-usable: `pnpm --filter @stitchapi/sandbox run test:mcp`.
+// the three tools work end-to-end against the simulator plus the version it
+// reports. Exits non-zero on failure so it is CI-usable:
+// `pnpm --filter @stitchapi/sandbox run test:mcp`.
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +14,18 @@ if (!existsSync(server)) {
     console.error(`missing ${server} — run \`build:mcp\` first.`);
     process.exit(2);
 }
+
+// The canonical version, read straight from packages/core/package.json on disk — the
+// same trick as packages/core/test/mcp.spec.ts, and for the same reason: reading the
+// manifest rather than the build-time `__PKG_VERSION__` define asserts the reported
+// version actually TRACKS the release, instead of testing the define against itself.
+// It is core's version because `createSandboxMcp` overrides only `name`, so the
+// version reaching the wire is core's `SERVER_VERSION` — the define that
+// build-sandbox-mcp.mjs substitutes. Un-substituted, this whole bundle fails to
+// import; substituted with the WRONG value, only this check catches it.
+const CORE_VERSION = JSON.parse(
+    readFileSync(resolve(here, '../../../packages/core/package.json'), 'utf8'),
+).version;
 
 const child = spawn('node', [server], { stdio: ['pipe', 'pipe', 'pipe'] });
 let out = '';
@@ -95,6 +108,13 @@ function finish(got) {
         byId[1]?.result?.serverInfo?.name === 'stitchapi-sandbox',
         'initialize serverInfo.name',
     );
+    const reportedVersion = byId[1]?.result?.serverInfo?.version;
+    check(
+        reportedVersion === CORE_VERSION,
+        `initialize serverInfo.version: reported ${JSON.stringify(reportedVersion)}, ` +
+            `packages/core/package.json says ${JSON.stringify(CORE_VERSION)} — the ` +
+            `build's __PKG_VERSION__ define has drifted from the manifest`,
+    );
     const tools = (byId[2]?.result?.tools ?? []).map((t) => t.name);
     for (const t of ['run_in_sandbox', 'run_stitch', 'list_stitches'])
         check(tools.includes(t), `tools/list missing ${t}`);
@@ -122,7 +142,8 @@ function finish(got) {
     }
     console.log(
         'PASS — sandbox MCP: run_in_sandbox + run_stitch (sim) + list_stitches, ' +
-            'error containment, and timeout kill all verified against the simulator.',
+            'error containment, and timeout kill all verified against the simulator; ' +
+            `reported version ${CORE_VERSION} matches packages/core/package.json.`,
     );
     process.exit(0);
 }
