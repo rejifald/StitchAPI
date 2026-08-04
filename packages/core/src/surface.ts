@@ -27,12 +27,13 @@ import { getPath } from './util';
  * the body can ask for another attempt — a `200` carrying `{ status: 'PENDING' }`, an in-payload
  * rate limit, a `{ ok: false, code: 'TRY_AGAIN' }` envelope. It is expressible only because
  * `interpret` now runs INSIDE the attempt loop (Decision 1); before that there was no loop left to
- * re-enter. It shares the `retry.attempts` budget, and `after` (ms) is honoured the way
- * `Retry-After` is. Exhausting the budget surfaces the outcome as an ordinary failure.
+ * re-enter. It shares the `retry.attempts` budget, and `after` is honoured the way `Retry-After`
+ * is — it takes the one canonical duration form (`500`, `'5s'`; CONTRACT.md P17), since a surface
+ * author writes it. Exhausting the budget surfaces the outcome as an ordinary failure.
  */
 export type SurfaceOutcome<T = unknown> =
     | { ok: true; data: T }
-    | { ok: false; retry: true; message: string; after?: number }
+    | { ok: false; retry: true; message: string; after?: number | string }
     | { ok: false; message: string; status?: number };
 
 /**

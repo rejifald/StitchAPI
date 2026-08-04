@@ -792,7 +792,11 @@ async function* attemptLoop(
                 };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
                 await sleepWithin(
-                    outcome.after ?? backoffDelay(attempt + 1, cfg.retry),
+                    // `parseDuration`, not the raw value: `after` is authored by a surface, so it
+                    // takes the house duration form (`500`, `'5s'`) like every other authored
+                    // duration. An unparseable value falls through to the computed backoff.
+                    parseDuration(outcome.after) ??
+                        backoffDelay(attempt + 1, cfg.retry),
                     budget,
                     baseReq.signal,
                     rt.clock,
