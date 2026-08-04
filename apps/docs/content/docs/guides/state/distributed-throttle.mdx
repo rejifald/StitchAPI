@@ -38,7 +38,29 @@ runs at `10/s × workers`. A shared store holds the rate counter every worker
 increments, so the whole fleet shares one `10/s` budget — and grants are
 **even-spaced** (about one every 100ms, i.e. `window / limit`), the same pacing
 the in-process limiter uses, so attaching a store doesn't turn a smooth limit into
-boundary bursts. (Concurrency stays in-process; only the rate limit is distributed.)
+boundary bursts.
+
+`concurrency` goes fleet-wide with it: `concurrency: 5` over a shared store means
+five calls in flight across every worker, not five each. Nothing extra to
+configure — a store that supports it just does it.
+
+<Callout type="info">
+    **A fleet-wide slot is a lease, so it has an expiry.** A worker that crashes
+    mid-call never gives its slot back, and `throttle.lease` (default 30s) is how
+    long the fleet waits before reclaiming it. Size it above your slowest call:
+    too long strands a dead worker's slots, too short and a call still running
+    loses its slot to the next caller, briefly putting the fleet over the cap.
+    Streaming never holds a slot at all, so this only bounds buffered calls — a
+    `lease` comfortably above `timeout.total` can't be outlived.
+
+    Two behaviours differ from the in-process limiter, inherently: a blocked call
+    **polls** rather than being handed the slot (no worker can wake another), so
+    strict FIFO fairness is gone; and a release is fire-and-forget, because the
+    expiry already covers a lost one. Backed by `memoryStore`,
+    `@stitchapi/redis` and `@stitchapi/deno-kv`; a store without leases keeps
+    per-process concurrency.
+
+</Callout>
 
 <Callout type="info">
     **How exact the fleet-wide pacing is depends on your store.** A store with a

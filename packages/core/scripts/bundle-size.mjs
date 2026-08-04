@@ -247,19 +247,45 @@ const KB = 1024;
 // pages, the home-page metrics component, and the docs' own source blurb. Recorded here because
 // this is the number the project advertises, and a budget raise that quietly left the docs
 // claiming the old one would be the exact drift that tether exists to catch.
+// Budgets raised for ADR 0025 — fleet-wide `concurrency` by lease (23.70→24.10 / 21.10→21.50 KB;
+// measured 23.91 / 21.32, so the capability is +0.38 / +0.37 against a `main` at 23.53 / 20.95).
+// ADR 0024 made the RATE fleet-wide and left the concurrency cap per-process, so `concurrency: 10`
+// across eight workers was a fleet cap of eighty. Closing it needs leases rather than a counter: a
+// slot is held for an unknown interval by a specific holder, and a holder that crashes never
+// decrements, so a shared counter decays toward zero instead of failing safe.
+//
+// What the bytes buy, all on the core path because `memoryStore` is the DEFAULT store:
+//   • `memoryStore.lease` / `release` — the reference semaphore, and what every in-process test
+//     runs against;
+//   • the lease-acquire loop in `createStoreThrottle` (poll with full jitter — there is no
+//     cross-process handoff to park on) plus per-key token tracking so `release` frees a slot the
+//     caller actually holds;
+//   • `vaultView` forwarding the pair only when the backend has both.
+//
+// Trimming came first and got some of it back: holding the semaphore in its own `Map<string,
+// Map<string, number>>` rather than serialising a token→expiry record through the shared `data`
+// keyspace removed a helper and two `Object.fromEntries` round-trips, worth 0.07 KB measured
+// (0.29 → 0.22 over). It cannot move behind a subpath — this is the throttle, reached from
+// `stitch()` whenever a `store` is configured, and the per-process fallback has to stay reachable
+// from the same call site for a backend that cannot lease atomically.
+//
+// The conventional ~0.2 KB step, sized so headroom lands at 0.19 / 0.18. The advertised rounded kB
+// are UNCHANGED at 24 / 21 this time — 23.91 still rounds to 24 — so no README or docs figure
+// moves; verified against the `bundle-advertised-size` tether rather than assumed, which is the
+// mistake the ADR 0024 raise made.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.7 * KB,
+        budget: 24.1 * KB,
         advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 21.1 * KB,
+        budget: 21.5 * KB,
         advertised: true,
     },
     {

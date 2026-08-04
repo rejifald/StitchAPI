@@ -1072,8 +1072,31 @@ export interface ThrottleOptions {
      * zero count, and a spacing past the ~24.8-day timer ceiling.
      */
     rate?: string;
-    /** Cap on simultaneous in-flight calls. Independent of `rate` — either may be set on its own. */
+    /**
+     * Cap on simultaneous in-flight calls. Independent of `rate` — either may be set on its own.
+     *
+     * Per-process by default. It becomes **fleet-wide** when the `store` implements the lease
+     * verbs (ADR 0025) — `memoryStore`, `@stitchapi/redis`, `@stitchapi/deno-kv` — with no config
+     * change: `concurrency: 10` then means ten in flight across every worker on that store, not
+     * ten each. See {@link ThrottleOptions.lease} for the one knob that comes with it.
+     */
     concurrency?: number;
+    /**
+     * How long a fleet-wide concurrency slot is held before it lapses — `30_000`, `'30s'`.
+     * Default 30s. Only read when `concurrency` is set AND the store leases (ADR 0025); ignored
+     * by the per-process limiter, which needs no expiry because a process that dies takes its
+     * own bookkeeping with it.
+     *
+     * **Size it above your slowest call, and think of it as a crash timer, not a call timer.** A
+     * holder that crashes or partitions never gives its slot back, so the lease lapsing is what
+     * returns it — set it too long and a dead worker's slots stay stranded that long. Set it too
+     * SHORT and the opposite failure appears, which is the one that actually hurts: a call still
+     * running at `lease` has already lost its slot to the next caller, so the fleet briefly runs
+     * over `concurrency`. Streaming never holds a slot at all (ADR 0005 Decision 12), so the
+     * calls this bounds are the buffered ones, which `timeout` already bounds — a `lease`
+     * comfortably above `timeout.total` cannot be outlived.
+     */
+    lease?: number | string;
     /**
      * Where the limiter's counter is pooled: `'stitch'` (default) keeps a per-stitch
      * budget; `'host'` shares one budget across every stitch hitting the same host.
@@ -2048,6 +2071,51 @@ export interface StitchStore {
         now: number,
         ttl?: number,
     ): Promise<number>;
+    /**
+     * Atomically take (or renew) one slot of a **counting semaphore** with `limit` slots, expiring
+     * `ttl` ms from `now`. Resolves `true` when this caller holds a slot, `false` when all `limit`
+     * are taken by live holders. The fleet-wide half of `throttle.concurrency` (ADR 0025).
+     *
+     * Semantics, atomically as one step — drop every lease whose expiry is at or before `now`,
+     * then:
+     *
+     * - `token` already held ⇒ **renew** it to `now + ttl` and resolve `true`. Idempotent by
+     *   design: a caller that re-leases is extending, never taking a second slot.
+     * - otherwise, fewer than `limit` live ⇒ **take** a slot for `token` until `now + ttl`, `true`.
+     * - otherwise ⇒ take nothing, `false`. The pruning still persists; a failed attempt must not
+     *   leave expired holders in place for the next caller to trip over.
+     *
+     * **The representation is yours.** This specifies behaviour, not storage: `memoryStore` and
+     * `@stitchapi/deno-kv` keep a token→expiry map, `@stitchapi/redis` uses a sorted set, and both
+     * satisfy the same rules. `token` is minted by the caller, so it is also the identity
+     * {@link StitchStore.release} frees.
+     *
+     * **Expiry is the whole point, not a fallback.** A holder that crashes, is paused, or loses
+     * its network never calls `release`; the lease lapsing is what returns its slot. That is also
+     * why the limiter can treat `release` as fire-and-forget: a dropped release costs the fleet one
+     * slot for at most `ttl`, rather than forever. The cost of that design is the converse — a
+     * caller still working past `ttl` has already lost its slot, so the fleet can briefly exceed
+     * `limit`. Size `throttle.lease` above your slowest call.
+     *
+     * **Optional, and paired** with {@link StitchStore.release} — a store MUST implement both or
+     * neither. Without them `concurrency` stays per-process, exactly as it was before ADR 0025.
+     * Same two reasons as {@link StitchStore.reserve}: an eventually-consistent backend cannot make
+     * this atomic, and a required member on a consumer-implemented contract is a hard break in any
+     * channel ([CONTRACT.md P19](../../../docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)).
+     */
+    lease?(
+        key: string,
+        token: string,
+        limit: number,
+        ttl: number,
+        now: number,
+    ): Promise<boolean>;
+    /**
+     * Give back the slot {@link StitchStore.lease} took for `token` — atomically, and idempotent:
+     * releasing a token that is not held (already expired, already released) is a no-op, never an
+     * error. Paired with `lease`; implement both or neither.
+     */
+    release?(key: string, token: string): Promise<void>;
     /**
      * Release any resources (connections, timers) the store holds. Optional — the in-memory
      * default clears its map. A seam's `close()` calls this as the last lifecycle step.
