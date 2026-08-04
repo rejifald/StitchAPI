@@ -236,6 +236,7 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             label: "with",
             type: "method",
             detail: "(partial: P) => Stitch<TOut, RelaxKeys<TIn, keyof P>>",
+            info: "Bind part of the call input, returning a stitch whose remaining input is relaxed by the keys just supplied. Unlike the config surfaces, a MISSPELLED input key here is not a compile error — it binds nothing, silently (`.with({ params, parms })` keeps the `params` and drops the typo). Spell the slots as `StitchInput` declares them.",
         },
         {
             label: "invalidate",

@@ -14,6 +14,7 @@ import { makeStitch } from './stitch';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type NoRequestShapeOnDownload,
+    type NoUnknownConfigKeys,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -117,7 +118,7 @@ export interface DownloadSeamApi {
     readonly stitch: <
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & NoRequestShapeOnDownload<C>,
+        config: C & NoUnknownConfigKeys<C> & NoRequestShapeOnDownload<C>,
     ) => Stitch<DownloadResult, InputOf<C>>;
     readonly seam: Seam;
 }
@@ -134,7 +135,7 @@ const downloadStitch = <
 >(
     // The surface is download by construction here, so the guard applies unconditionally rather
     // than keying off `kind` the way `stitch`'s `RequestShapeFixedByDownload` must.
-    config: C & NoRequestShapeOnDownload<C>,
+    config: C & NoUnknownConfigKeys<C> & NoRequestShapeOnDownload<C>,
 ): Stitch<DownloadResult, InputOf<C>> =>
     makeStitch<DownloadResult>({
         ...config,

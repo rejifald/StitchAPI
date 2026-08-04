@@ -44,6 +44,7 @@ import {
     type InspectOptions,
     type Inspection,
     type MultipartOnlyOnMultipartBody,
+    type NoUnknownConfigKeys,
     type NoWireBodyOnGraphql,
     type RedactedStitchConfig,
     type RequestShapeFixedByDownload,
@@ -1128,6 +1129,7 @@ export interface StitchFn {
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C &
+            NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
@@ -1139,12 +1141,13 @@ export interface StitchFn {
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
      *
      * `C` is captured here ONLY to re-apply the dead-config guards
-     * ({@link MultipartOnlyOnMultipartBody}, {@link GraphqlOnlyOnGraphqlSurface},
-     * {@link WireBodyFixedByGraphql}, {@link RequestShapeFixedByDownload}); the result stays
-     * `Stitch<T>`. Without it a config rejected by the inferring overload would silently fall
-     * through to this one and typecheck after all. On a genuinely loose
-     * `string | Partial<StitchConfig>` argument the guards distribute over the union and every arm
-     * resolves to `unknown`, so this stays the same escape hatch it has always been.
+     * ({@link NoUnknownConfigKeys}, {@link MultipartOnlyOnMultipartBody},
+     * {@link GraphqlOnlyOnGraphqlSurface}, {@link WireBodyFixedByGraphql},
+     * {@link RequestShapeFixedByDownload}); the result stays `Stitch<T>`. Without it a config
+     * rejected by the inferring overload would silently fall through to this one and typecheck
+     * after all. On a genuinely loose `string | Partial<StitchConfig>` argument the guards
+     * distribute over the union and every arm resolves to `unknown`, so this stays the same escape
+     * hatch it has always been.
      */
     <
         T = unknown,
@@ -1152,6 +1155,7 @@ export interface StitchFn {
             string | Partial<StitchConfig>,
     >(
         config: C &
+            NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
@@ -1193,7 +1197,10 @@ export function graphql<
 >(
     // The surface is graphql by construction here, so the graphql guard applies unconditionally
     // rather than keying off `kind` the way `stitch`'s `WireBodyFixedByGraphql` must.
-    config: C & MultipartOnlyOnMultipartBody<C> & NoWireBodyOnGraphql<C>,
+    config: C &
+        NoUnknownConfigKeys<C> &
+        MultipartOnlyOnMultipartBody<C> &
+        NoWireBodyOnGraphql<C>,
 ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
     // convenience without clobbering an explicit endpoint). Method/body shaping is the surface's.
