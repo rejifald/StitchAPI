@@ -1053,6 +1053,16 @@ shape, not as today's surface: nothing on the surface carries an alias.
   `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
   `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
   flat→envelope, no alias.
+- **P24 (cache transform, 2026-08-04)** `CacheOptions.transformVersion`+`trustTransform` — the two
+  ways an opaque `transform` clears [ADR 0004](adr/0004-standard-schema-fingerprint-for-cache-invalidation.md)'s
+  rung 2 — fold into `transform?: string | number | AtLeastOne<CacheTransformOptions>`
+  (`{ version?, trust? }`). A bare tag is the P12 dominant-field shorthand
+  (`transform: 3` ≡ `{ version: 3 }`), folded by `expandShorthand` like the other nested scalars, so
+  `__config` only ever carries the object form (P0). The precedence that lived only in the resolver
+  — `version` wins, and `trust` is then inert — is now a within-envelope rule. The version tag stays
+  under `cache` rather than moving beside the closure it versions because it must round-trip as JSON
+  (§1) while `transform` itself is function sugar on `__rawConfig`. Genuine breaking flat→envelope,
+  no alias. **R8 never flagged this pair** — see its leading-word gap in §7.
 - **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
   now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
   `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`
@@ -1126,6 +1136,13 @@ shape, not as today's surface: nothing on the surface carries an alias.
   not `type`-literal object shapes or class fields, which is why `SurfaceOutcome.after`
   (a union member) sits outside R9's reach; no R8 group was found in either at the
   2026-07-08 audit, but a future one wouldn't be caught until it grows an `interface`.
+- **R8's known gap: the shared subject must lead.** R8 buckets by **leading** word, so a pair that
+  names its subject in the **trailing** position never groups. `CacheOptions.transformVersion` +
+  `trustTransform` — one capability by any reading, folded 2026-08-04 (§6) — bucketed under
+  "transform" and "trust" and survived every audit clean. Grouping by trailing word instead would
+  collapse unrelated members (`clientId`/`stitchId`, every `*Options` field) and is exactly the
+  guess this ratchet refuses, so the rule stays leading-word and this class is found by **reading**,
+  not by lint. When you find one, the fix is the same fold and a §6 entry saying R8 could not see it.
 
 ### The unknown-key ratchet
 

@@ -387,8 +387,8 @@ export function createCache(opts: CacheControllerOptions): CacheController {
         transform: opts.transform,
         pick: opts.pick,
         version: config.version,
-        transformVersion: config.transformVersion,
-        trustTransform: config.trustTransform,
+        transformVersion: config.transform?.version,
+        transformTrust: config.transform?.trust,
         onUnfingerprintable: config.onUnfingerprintable,
     });
     const fpTag = `f${fp.generation}:`;

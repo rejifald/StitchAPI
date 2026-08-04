@@ -139,10 +139,10 @@ export interface FingerprintInput {
     readonly pick?: string | undefined;
     /** Explicit `cache.version` — authoritative override; always wins. */
     readonly version?: string | number | undefined;
-    /** A user tag making an opaque `transform` sound. */
+    /** `cache.transform.version` — a user tag making an opaque `transform` sound. */
     readonly transformVersion?: string | number | undefined;
-    /** Opt-in: cache despite an un-versioned `transform`, bounded only by TTL. */
-    readonly trustTransform?: boolean | undefined;
+    /** `cache.transform.trust` — cache despite an un-versioned `transform`, bounded only by TTL. */
+    readonly transformTrust?: boolean | undefined;
     /**
      * Policy when an OUTPUT SCHEMA is present but can't be soundly fingerprinted
      * (unknown/unregistered vendor, non-Standard-Schema validator, or the strategy
@@ -202,7 +202,7 @@ export function resolveFingerprint(
     } else if (input.transformVersion != null) {
         xTag = `x:v:${input.transformVersion}`;
         xSound = true;
-    } else if (input.trustTransform) {
+    } else if (input.transformTrust) {
         xTag = 'x:trusted';
         xSound = true;
     } else {
@@ -224,7 +224,7 @@ export function resolveFingerprint(
         return {
             generation: '',
             policy: 'refuse',
-            reason: 'opaque transform without cache.transformVersion or trustTransform. Fix: set cache.transformVersion when you change the transform, or cache.trustTransform: true to opt out.',
+            reason: 'opaque transform without a cache.transform declaration. Fix: set cache.transform to a version tag you bump when the transform changes, or cache.transform: { trust: true } to opt out.',
         };
     }
 

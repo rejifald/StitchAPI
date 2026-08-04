@@ -378,7 +378,11 @@ interface NestedEnvelopes {
     timeout: [TimeoutOptions, 'TimeoutOptions', object];
     circuit: [CircuitOptions, 'CircuitOptions', object];
     idempotency: [IdempotencyOptions, 'IdempotencyOptions', object];
-    cache: [CacheOptions, 'CacheOptions', object];
+    cache: [
+        CacheOptions,
+        'CacheOptions',
+        { transform: [CacheTransformOptions, 'CacheTransformOptions', object] },
+    ];
     hooks: [Hooks, 'Hooks', object];
     paginate: [PaginateOptions, 'PaginateOptions', object];
 }
@@ -1123,6 +1127,33 @@ export interface IdempotencyOptions {
 
 // ---- Cache (ADR 0003) -----------------------------------------------------
 /**
+ * The cache's stance on a `transform` (ADR 0004 rung 2) — one envelope for the two ways to clear
+ * the transform gate, because a `transform` is a closure core cannot soundly hash: by default a
+ * stitch that has one refuses to cache, since re-validation cannot detect a transform change (a
+ * stale value still satisfies an unchanged schema).
+ *
+ * The version tag lives here rather than beside the closure it versions because it must round-trip
+ * as JSON (CONTRACT.md P0) while `transform` itself is function sugar on `__rawConfig`.
+ *
+ * `version` is the strong form and **wins when both are set** — once the tag is sound, `trust`
+ * has nothing left to relax.
+ */
+export interface CacheTransformOptions {
+    /**
+     * Version tag for the transform — the sound form. It folds into the fingerprint, so bumping it
+     * whenever the transform's behaviour changes moves the cache generation and makes every entry
+     * written by the old transform unreachable.
+     */
+    version?: string | number;
+    /**
+     * Cache despite an un-versioned transform, trusting its output is stable for the `ttl`. Weaker
+     * than {@link CacheTransformOptions.version} — a transform change is invisible, bounded only by
+     * TTL — so prefer naming a version whenever you can.
+     */
+    trust?: boolean;
+}
+
+/**
  * Transport-level response cache + in-process request coalescing (ADR 0003). The key is
  * **derived** from the resolved request — no caller-authored keys — so it cannot drift from
  * what it names. Off by default: no `cache` block ⇒ no caching and no hot-path cost. The engine
@@ -1177,18 +1208,13 @@ export interface CacheOptions {
      */
     version?: string | number;
     /**
-     * Version tag for an opaque `transform` (ADR 0004). A `transform` is a closure that cannot be
-     * soundly hashed, so by default a stitch that has one **refuses to cache** (re-validation can't
-     * detect a transform change). Set this to make the transform sound and re-enable caching; bump
-     * it whenever the transform's behaviour changes. See also {@link CacheOptions.trustTransform}.
+     * What the cache knows about an opaque `transform` (ADR 0004 rung 2). A `transform` is a
+     * closure that cannot be soundly hashed, so a stitch carrying one **refuses to cache** until
+     * one of {@link CacheTransformOptions}' two declarations clears the gate. A bare
+     * `string | number` is the P12 shorthand for the dominant field — `transform: 3` ≡
+     * `transform: { version: 3 }`.
      */
-    transformVersion?: string | number;
-    /**
-     * Opt in to caching despite an un-versioned `transform`, trusting that its output is stable for
-     * the `ttl`. Weaker than {@link CacheOptions.transformVersion} (a transform change is invisible,
-     * bounded only by TTL); prefer `transformVersion` when you can name a version.
-     */
-    trustTransform?: boolean;
+    transform?: string | number | AtLeastOne<CacheTransformOptions>;
     /**
      * Policy when an `output` schema is present but cannot be soundly fingerprinted (no
      * `@stitchapi/fingerprint-*` registered for its vendor, a non-Standard-Schema validator, or the
@@ -1594,10 +1620,17 @@ export interface StitchConfig {
     trace?: TraceSink | 'console' | false;
 }
 
-/** {@link CacheOptions} after {@link compose}: the `T | T[]` list fields are always arrays. */
-export type ResolvedCacheOptions = Omit<CacheOptions, 'vary' | 'methods'> & {
+/**
+ * {@link CacheOptions} after {@link compose}: the `T | T[]` list fields are always arrays and the
+ * `transform` scalar is folded to `{ version }`.
+ */
+export type ResolvedCacheOptions = Omit<
+    CacheOptions,
+    'vary' | 'methods' | 'transform'
+> & {
     vary?: string[];
     methods?: string[];
+    transform?: CacheTransformOptions;
 };
 
 /** {@link StreamOptions} after {@link compose}: the `buffer` scalar is folded to `{ chars }`. */
