@@ -321,7 +321,7 @@ npm release are grouped under the in-development version that introduced them.
 ### Added
 
 - **`throttle.rate`'s denominator is now a full duration token — `'1000/h'`, `'100/15m'`,
-  `'2/500ms'`.** ([ADR 0023](docs/adr/0023-rate-is-a-spacing-its-denominator-is-a-duration.md)
+  `'2/500ms'`.** ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md)
   Decision 3) The grammar is `<count>/<duration>`, where the denominator is parsed by the one
   shared `parseDuration` and a bare unit means one of that unit (`'2/s'` ≡ `'2/1s'`). Every
   existing rate keeps parsing to exactly what it did — the new grammar is a strict superset.
@@ -396,8 +396,8 @@ npm release are grouped under the in-development version that introduced them.
     when it lands.
 
 - **`throttle.rate: '0/s'` is rejected instead of parsing to "no limit at all".**
-  ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md) Decision 1)
-  `parseRate`'s count was `\d+`, so a zero count parsed and produced a spacing of `per / 0` =
+  ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md), _Found while
+  implementing_) `parseRate`'s count was `\d+`, so a zero count parsed and produced a spacing of `per / 0` =
   `Infinity`. Under an injected `Clock` that reads as "block everything" — which is what the test
   suite saw — but `setTimeout` clamps any delay past 2^31−1 to **1ms**, so on the system clock the
   second acquire was granted after ~1ms and the throttle was unlimited, announced only by a Node

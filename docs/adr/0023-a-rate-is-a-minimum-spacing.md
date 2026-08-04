@@ -1,6 +1,6 @@
 # ADR 0023 — A rate is a minimum spacing, not a window budget; the two limiters must agree before the grammar grows
 
-- **Status:** Proposed (2026-08-04). Nothing here is implemented. Opened by the question "does the P17/P25 `number | string` widening extend to a rate?" ([#618](https://github.com/rejifald/StitchAPI/pull/618)); the answer is no, but establishing why surfaced a live defect in the store-backed limiter that this ADR treats as the blocking issue. Touches the pluggable store ([DESIGN.md §13](../DESIGN.md), which has no ADR of its own) and builds on [ADR 0010](./0010-injectable-clock.md) (the injectable `Clock`, whose tags already include `throttle` — the fix's tests need it).
+- **Status:** Accepted and implemented (2026-08-04) — Decision 2 landed as shape **(a)**, and Decision 3's extension landed behind it in the same PR, in that order. Decision 1 ratifies existing behaviour, Decision 4 is a decision not to change anything, and Decision 5 shipped with [#618](https://github.com/rejifald/StitchAPI/pull/618). All four open questions resolved; implementing surfaced two defects this ADR had not predicted, recorded under _Found while implementing_. Opened by the question "does the P17/P25 `number | string` widening extend to a rate?" (#618); the answer is no, but establishing why surfaced a live defect in the store-backed limiter that this ADR treated as the blocking issue. Touches the pluggable store ([DESIGN.md §13](../DESIGN.md), which has no ADR of its own) and builds on [ADR 0010](./0010-injectable-clock.md) (the injectable `Clock`, whose tags already include `throttle` — the fix's tests need it).
 - **Date:** 2026-08-04
 - **Tags:** resilience, throttle, store, api-surface, correctness, P1, P12, P16, P17, P25
 
@@ -10,10 +10,12 @@
 > number** — the minimum spacing `per / count` — and the `count`/`per` pair is
 > notation for it, not two independent knobs. The in-process limiter already
 > behaves that way. The **store-backed limiter does not**: it uses `per` a second
-> time as a window quantum, which makes the _spelling_ of a rate load-bearing and,
-> today, admits up to a full window's budget instantaneously on a cold key. Until
-> the two agree, no grammar question about `rate` can be answered — so the grammar
-> stays frozen and the defect is the first thing to fix.
+> time as a window quantum, which makes the _spelling_ of a rate load-bearing and
+> admitted up to a full window's budget instantaneously on a cold key. Until the two
+> agreed, no grammar question about `rate` could be answered — so the grammar stayed
+> frozen and the defect was fixed first. **Both have now shipped, in that order**
+> (Decision 2 as shape (a), then Decision 3's extension); implementing them turned up
+> two more values the grammar accepted that also meant no limit at all.
 
 ## Context
 
@@ -135,8 +137,30 @@ so that `'1/s'` and `'60/m'` are once again the same request. The window is an
 implementation device for sharing a counter across processes; it must not leak into
 observable behaviour.
 
-Two shapes are plausible and this ADR does **not** pick between them — that belongs
-in the fix, with tests:
+_Landed as **(a)** ([store.ts](../../packages/core/src/store.ts))._ The slot schedule
+became a **floor** over the same per-key pacing cursor the in-process limiter keeps, so
+each grant is `max(now, cursor, slot)`. One correction to (a) as sketched below: flooring
+against `firstSeenInWindow` alone is **not** sufficient, because when the first grant is
+itself taken from a stale slot the floor is also in the past and the burst survives one
+slot shorter. Clamping against `now` is what makes the cursor a cursor.
+
+`'2/s'`, `'120/m'` and `'1/500ms'` — windows from half a second to a minute — now produce
+byte-identical grant sequences store-backed, matching the in-process limiter, which is the
+substitutability Decision 1 demands. The regression test was confirmed to **fail** against
+the pre-fix source (a gap of 0 where 500ms is required), so it pins the defect rather than
+the implementation.
+
+**What (a) does not buy, measured and pinned.** The bound is per-process. A stale slot
+paces nobody, so while the stale prefix lasts only each worker's own cursor holds the line
+and **N workers emit at N× the declared rate** — measured 2× for two workers and 3× for
+three on `'120/m'`. What the cursor converts is the _shape_: one worker draining every
+unclaimed slot into a single instant becomes N calls per instant, spread at `spacing`. At
+a window boundary the slots are ahead of the clock, the shared counter binds, and the fleet
+does draw from one budget. Both halves are asserted in `store.spec.ts`, and the residue
+assertion is written to **fail** when (b) lands — so the remaining gap is a decision on the
+record rather than a surprise.
+
+The two shapes this ADR declined to pick between, kept for the (b) migration:
 
 - **(a) Clamp the credit.** Keep the per-window counter, but schedule the Nth grant
   from `max(windowStart, firstSeenInWindow)` rather than `windowStart`, so a cold
@@ -155,7 +179,15 @@ the spacing of the tail.
 
 ### 3. The grammar stays frozen until Decision 2 ships
 
-`<count>/<unit>` with `unit ∈ {ms, s, m}` is unchanged for now. The gap is real —
+_Decision 2 shipped, so the freeze lifted and the extension landed with it
+([util.ts](../../packages/core/src/util.ts)) — "ordering, not rejection", as below. The
+denominator is now a full `parseDuration` token: `'1000/h'`, `'100/15m'` and
+`'2/500ms'` parse, a bare unit means one of that unit (`'2/s'` ≡ `'2/1s'`), and every
+existing rate parses to exactly what it did. The `parseRate` scale table is deleted rather
+than extended — a rate's denominator IS a duration, so it reuses the one house grammar
+(P17), which is what the three-entry copy failed to be._
+
+`<count>/<unit>` with `unit ∈ {ms, s, m}` was unchanged pending that. The gap is real —
 `'1000/h'` is an ordinary API quota and cannot be written today, and the reachable
 spacings are only `{1/n, 1000/n, 60000/n}`, so 3.6s is not expressible at all — but
 every extension makes the current defect worse rather than better:
@@ -191,13 +223,57 @@ precisely because the question recurs — it prompted this ADR — and because R
 vocabulary silently depends on it: `rate` is absent from that list, and a reader
 should be able to find out why without reconstructing the argument.
 
+## Found while implementing
+
+Two defects this ADR did not predict, both the **same shape** as the one it was written
+about and neither reachable through the path it examined. Each is a value the grammar
+**accepted** that meant _no limit at all_.
+
+That matters for how #618's fail-loud contract is read. `parseRate` throws so that a typo
+cannot silently remove a limit — correct, and necessary. It is not sufficient: the
+unbounded quiet path was reachable through the **accepting** branch the whole time, which
+no amount of care in the rejecting branch would have caught.
+
+### `'0/s'` parsed, and shipped as unlimited
+
+The count was `\d+`, so a zero parsed and produced `spacing = per / 0 = Infinity`.
+`setTimeout` clamps any delay past `2^31−1` to **1 ms**. So `'0/s'` read as "block
+everything" under an injected `Clock` — which is what the test suite sees — and was **no
+limit at all** on the system clock, announced only by a Node `TimeoutOverflowWarning` on
+every wait. A config that validated clean, tested as a hard stop, and shipped as unlimited.
+
+The count is now `[1-9]\d*` and a zero throws at construction, where every other malformed
+rate already threw. There is no safe reading being taken away: a limiter is not how you
+stop calling a stitch.
+
+The property suite had been generating the count with `min: 0` — it was **asserting the
+defect**, generating `'0/s'` as a valid rate and checking it parsed, which is why a
+property test never caught it.
+
+### The widening reintroduced the same bug at the top of the range
+
+Decision 3 admits `h` and `d`, so a spacing can exceed `2^31−1` ms — the identical
+`setTimeout` clamp, reached from the other end (`setTimeout(fn, 2_592_000_000)` fires
+after 1 ms, measured). Rejected at the grammar rather than clamped: clamping would
+silently pace **faster** than asked, and "quietly more permissive than requested" is the
+failure this whole ADR is about. Boundary measured on both sides — `'1/24d'` parses,
+`'1/25d'` does not.
+
+A third case sits with them: a **non-positive window** (`'2/0s'`, `'2/-500'`).
+`parseDuration` returns those as a real `0` / `-500` rather than `undefined`, so they never
+arrive as a parse failure, and both limiters read `spacing <= 0` as "no pacing configured".
+Checked explicitly rather than trusted to the parser.
+
 ## What this preserves
 
-- Every existing `'2/s'` config keeps working; Decision 3 changes no grammar.
+- Every existing `'2/s'` config keeps working. Decision 3's extension is a strict
+  superset — the ~30 in-repo call sites are all `<int>/<ms|s|m>` and parse to exactly what
+  they did, exercised by the full workspace suite rather than argued.
 - The in-process limiter is unchanged — it is already the reference behaviour.
 - `parseRate`'s fail-loud contract ([#618](https://github.com/rejifald/StitchAPI/pull/618))
   stands: for a rate, `undefined` would mean _unlimited_, so a typo must throw rather
-  than fall back. Decision 2 does not touch it.
+  than fall back. Neither decision touches it — but see _Found while implementing_, which
+  records that failing loud on rejection was never the whole guard.
 - `throttle.concurrency`, `pool`, and `delegate` are untouched; this is only about
   what the rate value means.
 
@@ -257,18 +333,29 @@ the opposite of a fix, reached by treating "consistent" as the goal instead of
 
 ## Open questions
 
-1. **Decision 2(a) or 2(b)?** Deliberately left to the fix. (b) is correct and costs a
-   `StitchStore` contract extension every implementor must satisfy; (a) is
-   proportionate and stays approximate at boundaries. The measurement above is the
-   acceptance criterion either way.
-2. **Should the defect ship as a fix or a breaking change?** It tightens a limiter, so
-   callers relying on today's over-admission would see fewer calls get through. That is
-   a bug fix by any reading, but on the `rc` channel it is worth a CHANGELOG note under
-   BREAKING CHANGE rather than a quiet correction, since the observable effect is
-   throughput.
-3. **Non-integer counts** (`'0.5/s'`) are unaddressed. Under Decision 1 they are pure
-   notation — `'0.5/s'` ≡ `'1/2s'` ≡ a 2000ms spacing — so they are safe but redundant;
-   they belong with Decision 3's extension question, not before it.
+1. **Decision 2(a) or 2(b)?** _Resolved: (a)._ It is proportionate, needs no `StitchStore`
+   extension, and restores the substitutability Decision 1 requires **exactly** for a
+   single process. (b) stays the correct end state and is now precisely scoped by what (a)
+   leaves behind: the fleet residue in Decision 2, where N cold workers emit at N× through
+   the stale prefix. That residue is asserted, so (b) has a test to break when it lands.
+
+    The acceptance criterion moved with the answer. This ADR proposed "total admitted over
+    a multi-window interval, against budget, for two spellings" — the regression test
+    asserts the stronger form (a) makes available: **identical grant sequences**, not just
+    comparable totals, across three spellings and both limiters.
+
+2. **Should the defect ship as a fix or a breaking change?** _Resolved: `fix(core)!` with
+   the CHANGELOG entry under `Fixed`._ The commit carries the `!` because a `'0/s'` config
+   that used to parse now throws, which is upgrade action; the entries sit under `Fixed`
+   rather than `Changed` because the prior behaviour was a defect, not a contract. Both
+   halves flagged in the PR for the maintainer to overrule.
+3. **Non-integer counts** (`'0.5/s'`) — _Resolved: they stay rejected._ Decision 3 removes
+   the motivation rather than the capability: `'1/2s'` is now expressible, denotes the same
+   2000ms spacing, and reads as what it is. Every fractional `x/unit` has an exact integer
+   equivalent in the widened grammar, so nothing is unreachable — only differently spelled,
+   and three spellings of one limiter is a cost with no matching gain. Keeping the count an
+   integer also keeps `parseInt` exact where `parseFloat` would let `'0.1/s'` carry
+   binary-fraction drift into a scheduler.
 4. **`concurrency` is still in-process only** under a store, as `createStoreThrottle`'s
    JSDoc notes (a distributed semaphore needs leases). Out of scope here and unaffected,
    but it is the second place where "attach a store to share the policy" is only
