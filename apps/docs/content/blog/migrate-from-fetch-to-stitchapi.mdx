@@ -56,7 +56,7 @@ const getUser = stitch({
     auth: bearer(env('API_TOKEN')),
     output: User,
     retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
-    timeout: { total: '10s', perAttempt: '4s' },
+    timeout: { total: '10s', each: '4s' },
 });
 
 const user = await getUser({ params: { id: '42' } }); // validated User, or throws StitchError
@@ -74,7 +74,7 @@ Each sharp edge in the `fetch` version corresponds to exactly one field on the s
 | Auth        | `process.env` read and interpolated inline | `auth: bearer(env('API_TOKEN'))`, resolved later   |
 | Failure     | `if (!res.ok) throw new Error(...)`        | throws `StitchError` with `.status`/`.body`/`.url` |
 | Retry       | hand-written loop, or absent               | `retry: { attempts, on, backoff }`                 |
-| Timeout     | `AbortController` plumbing, or absent      | `timeout: { total, perAttempt }`                   |
+| Timeout     | `AbortController` plumbing, or absent      | `timeout: { total, each }`                         |
 | Validation  | `as User` cast, never checked at runtime   | `output: User`, parsed on every response           |
 
 Two of those rows are worth reading closely, because they change behavior rather than just relocating it.

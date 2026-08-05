@@ -2,6 +2,21 @@
 # Activated by `lefthook install`, run automatically via the root package.json
 # "prepare" script on `pnpm install`.
 
+# Every `glob:` below is matched with doublestar, NOT lefthook's default gobwas
+# engine. Under gobwas, `**/` requires at least one directory, so `**/*.ts` matches
+# `packages/core/src/a/b.ts` but silently skips BOTH root-level files and the first
+# level under a named prefix — `README.md`, `package.json`, and `lefthook.yml` itself
+# were never formatted at commit time, and `packages/core/src/*.ts` (index.ts,
+# stitch.ts, types.ts — the most-edited files in the package) never triggered the
+# completions regen. doublestar gives `**` its standard meaning of zero-or-more
+# directories, so each glob covers what it plainly reads as. Verified by probe on
+# 2.1.10: under gobwas the `format` glob missed all three root files and
+# `completions` saw only the nested `a/b.ts`. The `yakir` glob is unaffected: its
+# only wildcard, `packages/*/package.json`, resolves to the same set under both
+# engines. Applies to `glob:` matching only, so it is safe to read every pattern
+# here as ordinary shell-style globbing.
+glob_matcher: doublestar
+
 # Every `run:` below starts with `{setup}`, which sources tools/hook-env.sh.
 #
 # Git hooks run in a non-interactive shell that reads no shell rc, so a PATH

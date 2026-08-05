@@ -86,7 +86,7 @@ describe('mockAdapter — testing a stitch definition', () => {
             baseUrl: 'https://api.test',
             path: '/slow',
             adapter: api,
-            timeout: { perAttempt: 20 },
+            timeout: { each: 20 },
         });
 
         const t0 = Date.now();

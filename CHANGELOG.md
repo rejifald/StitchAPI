@@ -143,6 +143,33 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `timeout.perAttempt` is renamed to `timeout.each`.**
+  ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space) +
+  [P4](docs/CONTRACT.md#p4--one-cap-vocabulary)) `timeout` already names the subject, so by
+  [P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)/[P25](docs/CONTRACT.md#p25--one-canonical-size-form)
+  the member owes only its **scope** — and the opposite number of `total` is a scope, not an
+  attempt counter. `each` is the one-word token P1 prefers and the natural pair for `total`.
+
+    Migration — rename the key, nothing else:
+
+    ```ts
+    // before
+    timeout: { total: '10s', perAttempt: '3s' },
+    // after
+    timeout: { total: '10s', each: '3s' },
+    ```
+
+    **Behaviour is unchanged**, including how the two compose: each attempt is clamped to
+    `min(each, remaining total)`, so `total` still bounds the whole call across every retry and its
+    backoff waits. `tsc` catches the migration — `NoUnknownNestedKeys` rejects a leftover
+    `perAttempt` at the `timeout:` slot by name. Hard break, no alias
+    ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel).
+
+    _Why not `timeout.attempt`:_ P4 reserves singular `attempt` for the current attempt index —
+    the engine emits it on every `progress` event — and plural `attempts` for the running count.
+    Taking it here would have made one word mean both an index and a duration, which is the P1/P2
+    collision the rename exists to avoid.
+
 - **BREAKING CHANGE: `cache.transformVersion` + `cache.trustTransform` fold into one
   `cache.transform` envelope.**
   ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
@@ -493,6 +520,30 @@ npm release are grouped under the in-development version that introduced them.
     download. To actually get another surface, use a plain `stitch({ kind })`.
 
 ### Fixed
+
+- **An uncontended fleet-wide acquire no longer reports a phantom wait.** Under
+  [ADR 0025](docs/adr/0025-fleet-wide-concurrency-by-lease.md) leases, `acquire` set
+  `waited = clock.now() - blockStart` whenever that difference was non-zero — but `blockStart` is
+  read before the `lease` call, which is a store round-trip. A grant on the **first** attempt
+  blocked nobody, yet any round-trip that happened to straddle a millisecond reported `waited: 1`
+  and fired a spurious `progress.throttled` event, telling an operator their limiter was pacing
+  calls it never paced. The gate is now "did it have to poll" — `takeLease` reports whether it went
+  round the loop — so store latency alone can never register, which is what the code's own comment
+  ("not incidental store or scheduling time") always claimed. A genuine block still measures its
+  real elapsed wait, unchanged.
+
+    This also fixes a flaky test: `store.spec.ts`'s `expect(first.waited).toBe(0)` failed whenever
+    the machine was slow enough, reliably under `--coverage` (it blocked CI on #632 twice). The new
+    pin injects 5ms of store latency into an uncontended grant, so it fails deterministically
+    against the old behaviour instead of once every few runs.
+
+    It fixes a **second** flake in that file too, which #635 recorded as having a different root
+    cause: the shared-rate-budget test failed ~1 run in 12 with `expected 2 to be 1` because the
+    phantom wait also reaches the path where no `concurrency` is configured at all — `takeLease`
+    no-ops there, but is still `async`, so the microtask hop alone could straddle a millisecond.
+    The **unpaced** caller reported `waited: 1` and fired a `throttled` event beside the paced
+    caller's 1000. Shared rate budgeting was never implicated: `reserve` grants the first caller
+    `at`, so its `wait` is never positive. That path is now pinned deterministically too.
 
 - **`Surface.resumeRetry` takes the canonical duration form too: its return widens to
   `number | string`.** The sibling of the `SurfaceOutcome.after` fix below, found by sweeping the

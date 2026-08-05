@@ -204,7 +204,7 @@ This is a concrete cookie wall (`GET /api/websites` needs a `session_token` cook
 ```ts
 retry:    { attempts: 3, backoff: 'expo-jitter', on: [429, 503] },
 throttle: { rate: '1/s', concurrency: 2, pool: 'host' },   // proactive limiter
-timeout:  { total: '30s', perAttempt: '10s' },
+timeout:  { total: '30s', each: '10s' },
 ```
 
 - **`throttle`** is _proactive_ — a token-bucket/concurrency cap to stay _under_ a vendor's limit (replaces the hand-rolled 1/s buckets and per-request delays integrations write by hand). `pool: 'host'` shares one limiter across all stitches hitting the same host.

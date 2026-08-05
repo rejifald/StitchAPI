@@ -78,13 +78,13 @@ import { stitch } from 'stitchapi';
 const report = stitch({
     baseUrl: 'https://api.example.com',
     path: '/report',
-    timeout: { total: '10s', perAttempt: '3s' },
+    timeout: { total: '10s', each: '3s' },
 });
 ```
 
-`perAttempt` bounds each individual try; `total` bounds the entire call across every retry and the backoff waits between them. Whichever fires first aborts the request. Both accept a duration string (`'3s'`) or a number of milliseconds (`3000`), so `total: '10s'` and `total: 10000` are the same thing. A breached deadline surfaces as [STITCH_TIMEOUT](/docs/errors/stitch-timeout) — a distinct, catchable error rather than a generic abort you have to sniff with `err.name`.
+`each` bounds each individual try; `total` bounds the entire call across every retry and the backoff waits between them. Whichever fires first aborts the request. Both accept a duration string (`'3s'`) or a number of milliseconds (`3000`), so `total: '10s'` and `total: 10000` are the same thing. A breached deadline surfaces as [STITCH_TIMEOUT](/docs/errors/stitch-timeout) — a distinct, catchable error rather than a generic abort you have to sniff with `err.name`.
 
-The two scopes exist because they compose with [retry](/docs/guides/resilience/retry). Each try is gated by `perAttempt`, while `total` caps the sum of all tries plus their waits — so a long enough `total` is what _lets_ a slow attempt be retried at all, and a tight `perAttempt` stops one hung attempt from swallowing the budget:
+The two scopes exist because they compose with [retry](/docs/guides/resilience/retry). `each` gates one try, while `total` caps the sum of all tries plus their waits — so a long enough `total` is what _lets_ a slow attempt be retried at all, and a tight `each` stops one hung attempt from swallowing the budget:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -93,7 +93,7 @@ const getQuote = stitch({
     baseUrl: 'https://api.example.com',
     path: '/quote/{symbol}',
     retry: { attempts: 3, on: [429, 502, 503] },
-    timeout: { total: '10s', perAttempt: '3s' },
+    timeout: { total: '10s', each: '3s' },
 });
 ```
 
@@ -124,7 +124,7 @@ import { stitch } from 'stitchapi';
 const report = stitch({
     baseUrl: 'https://api.example.com',
     path: '/report',
-    timeout: { total: '10s', perAttempt: '3s' },
+    timeout: { total: '10s', each: '3s' },
     retry: { attempts: 3, on: [429, 502, 503] },
 });
 ```
@@ -137,4 +137,4 @@ Same call site, same callers, more guarantees. That's the trade: a bare `AbortSi
 stitchapi
 ```
 
-Give a stitch a `timeout: { total, perAttempt }` and a slow upstream is bounded at two scopes with a real abort and a typed error — once, for every caller. The mechanics are in [Timeouts](/docs/guides/resilience/timeout), the error in [STITCH_TIMEOUT](/docs/errors/stitch-timeout), and how it composes with backoff in [Retry](/docs/guides/resilience/retry).
+Give a stitch a `timeout: { total, each }` and a slow upstream is bounded at two scopes with a real abort and a typed error — once, for every caller. The mechanics are in [Timeouts](/docs/guides/resilience/timeout), the error in [STITCH_TIMEOUT](/docs/errors/stitch-timeout), and how it composes with backoff in [Retry](/docs/guides/resilience/retry).

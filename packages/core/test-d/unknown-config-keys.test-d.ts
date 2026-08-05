@@ -132,9 +132,7 @@ expectError(
     }),
 );
 expectError(stitch({ path: '/things', retry: { attempts: 2, nonsense: 1 } }));
-expectError(
-    stitch({ path: '/things', timeout: { total: '5s', perAttemptMs: 1 } }),
-);
+expectError(stitch({ path: '/things', timeout: { total: '5s', eachMs: 1 } }));
 expectError(stitch({ path: '/things', cache: { ttl: '1m', bogusCache: 1 } }));
 expectError(
     stitch({ path: '/things', verdict: { accept: [404], bogusVerdict: 1 } }),

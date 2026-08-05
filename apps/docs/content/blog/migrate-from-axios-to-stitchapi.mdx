@@ -87,7 +87,7 @@ const getUser = stitch({
         on: [429, 502, 503, 504],
         backoff: 'expo-jitter',
     },
-    timeout: { total: '30s', perAttempt: '10s' },
+    timeout: { total: '30s', each: '10s' },
     pick: 'data', // the API wraps payloads in { data }
     output: drift(User),
 });

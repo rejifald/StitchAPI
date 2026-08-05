@@ -86,7 +86,7 @@ describe('respond() replacement', () => {
         off1();
         const ask = parent.request('q', {
             reply: 'q-reply',
-            timeout: { perAttempt: 300 },
+            timeout: { each: 300 },
         });
         await expect(ask()).resolves.toBe('second');
         await closeBoth();
@@ -100,7 +100,7 @@ describe('responder error handling', () => {
             throw new Error('handler blew up');
         });
         const ask = parent.request('boom', {
-            timeout: { perAttempt: 40 },
+            timeout: { each: 40 },
         });
         await expect(ask({ body: { x: 1 } })).rejects.toMatchObject({
             name: 'StitchError',

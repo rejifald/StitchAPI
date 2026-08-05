@@ -31,7 +31,7 @@ existing or proposed — passes through all three before it ships.
 - Retry with backoff — `attempts`, retry-on status codes (default `429/502/503/504`),
   `expo` / `expo-jitter` / `fixed` strategies, `baseMs` / `maxMs` clamp — [`src/resilience.ts`](../src/resilience.ts)
 - `Retry-After` respected (delta-seconds **or** HTTP-date) by default; `retry.respect: false` opts out
-- Timeouts — `total` and `perAttempt`, enforced with a real `AbortSignal`
+- Timeouts — `total` and `each`, enforced with a real `AbortSignal`
 - Lifecycle hooks — `onRequest` / `onResponse` / `onError` / `onRetry`, chained across layers
 - Auth auto-refresh on the wall — a `401` (or soft wall) re-runs the attempt with fresh
   credentials, uncounted — [`src/engine.ts`](../src/engine.ts)
