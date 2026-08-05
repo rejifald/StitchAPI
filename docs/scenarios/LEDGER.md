@@ -31,6 +31,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 16  | One list, a hundred follow-up calls                   | `n-plus-one-fanout`             | achievable with user code — ~8 lines, the partial-failure branch                                                     | [page shipped](../../apps/docs/content/docs/scenarios/n-plus-one-fanout.mdx) + 1 issue draft (a coalesced failure is not shared; a `store` un-pools `pool: 'host'`)                            |
 | 17  | The deprecation you never saw                         | `deprecation-headers`           | achievable with user code — 3 seams, ~112 lines, **0 config keys**                                                   | [page shipped](../../apps/docs/content/docs/scenarios/deprecation-headers.mdx) + 1 issue draft (hooks can rewrite the call; seam-level `kind` is a compile error that works)                   |
 | 18  | The agent picks the arguments                         | `agent-holds-the-tool`          | **credential boundary held** (30 scans, 0 hits); argument boundary is the user's — safe exposure = 3 seams, 47 lines | [page shipped](../../apps/docs/content/docs/scenarios/agent-holds-the-tool.mdx) + 2 issue drafts (unfiltered MCP error channel leaks a query credential; input schemas check but never filter) |
+| 19  | The mock that passed for six months                   | `stale-fixture`                 | **split** — resilience/streams test perfectly offline; the scenario's own direction is **invisible** offline         | [page shipped](../../apps/docs/content/docs/scenarios/stale-fixture.mdx) + 1 issue draft (**`manualClock` covers 6 of 12 time-driven features; 2 bugs in the testing kit**)                    |
 
 ## Open issue drafts
 
@@ -57,6 +58,7 @@ Seven are filed (#640–#645, #648). The rest are unfiled — review when the lo
 | [`hooks-can-rewrite-the-call`](issue-drafts/hooks-can-rewrite-the-call.md)                                                                                          | medium-high (a docs/behaviour mismatch)         | the hooks guide says hooks never change what a stitch returns; mutating `ctx.res.status` turned a vendor 200 into a thrown 503. Plus the definitive accessor→headers table                                                                               |
 | [`mcp-error-channel-leaks-a-query-credential`](issue-drafts/mcp-error-channel-leaks-a-query-credential.md)                                                          | medium-high (**scoped** leak + a real positive) | the MCP error channel renders `Error.message` unfiltered, so a DNS failure under `apiKey({ in: 'query' })` put the key in the model's context. **The credential boundary itself held: 30 scans, 0 hits.** Plus a rename bypasses the registry allow-list |
 | [`input-schemas-check-but-never-filter`](issue-drafts/input-schemas-check-but-never-filter.md) **→ [#648](https://github.com/rejifald/StitchAPI/issues/648)**       | **high** (not MCP-specific)                     | `validateInput` discards the parsed value while `validateOutput` returns it, so a stripping schema — the Zod/Valibot/ArkType default — does not strip. Declaring a strict schema to constrain an untrusted caller silently does nothing                  |
+| [`testing-kit-clock-gaps-and-two-bugs`](issue-drafts/testing-kit-clock-gaps-and-two-bugs.md)                                                                        | **high — 2 bugs + a soundness table**           | `manualClock` drives 6 of 12 time-driven features (OAuth2 expiry is NEW and undocumented); `stubStitch().safe()` throws on a sync throw; `mockAdapter` violates the library's own `abort` rule                                                           |
 
 > **Triage note — two, in this order.**
 >
@@ -97,7 +99,15 @@ this pass had to remember to compose it first, and the one proof that omitted it
 every response including non-2xx on a buffered stitch (measured on `[200, 304, 404]`), and
 **zero times** on a streaming one. Anyone reasoning from one path to the other will be wrong.
 
-**2b. THREE time-driven features ignore the injected clock** — `timeout.total` (4), `cache.ttl`
+**2b. SIX time-driven features ignore the injected clock — settled deliberately in scenario 19.**
+`manualClock` drives `retry` backoff, `throttle` (rate and concurrency), `circuit.cooldown`, the
+per-attempt `timeout` and `Retry-After`. It does **not** drive `timeout.total`, `cache.ttl`, the
+`memoryStore` TTL beneath it, event `at`/`done.elapsed`, **OAuth2 token expiry** or SigV4. ADR
+0010 §4 documents three of those as deliberate; **OAuth2 expiry is not mentioned there**, and
+`auth.ts` has no clock plumbing at all. Measured cost: a `timeout: { total: 1000 }` call survived
+**2700 virtual ms** and returned `ok: true`. Superseded note below —
+
+**2b (superseded). THREE time-driven features ignore the injected clock** — `timeout.total` (4), `cache.ttl`
 (6) and **SigV4 signing** (14) all read wall-clock while their neighbours use `clock`. Three
 point fixes are worth less than one audit plus a line in the testing guide.
 

@@ -1,6 +1,6 @@
 # Scenario: the mock that passed for six months
 
-**Researched:** 2026-08-05 · **Status:** research captured, verification pending
+**Researched:** 2026-08-05 · **Status:** ✅ verified (8 claims, 168 checks, offline) · page shipped
 **Slug:** `stale-fixture`
 
 ---
@@ -115,3 +115,44 @@ sighting.
 
 C1 and C2 decide this. C1 is the scenario's actual question. C2 is the pre-registered
 suspicion, and if `manualClock` is unsound anywhere the testing guide needs to say so.
+
+---
+
+## Verification result
+
+**All 8 claims verified**, 168 checks across 8 scripts, re-run by me before writing up.
+
+| Claim                               | Verdict                                                                                                                                                                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C1 — can a stale fixture be caught? | **PARTIAL — and the missing half is the scenario.** Fixture-drifts-from-schema: 4/4 caught. Vendor-drifts-while-fixture-holds: test `ok: true`, prod `ok: false`, 5 keys different, **nothing offline detects it** |
+| C2 — is `manualClock` sound?        | **CONFIRMED, and wider than recorded — 6 wall-clock, not 3**                                                                                                                                                       |
+| C3 — what does `mockAdapter` check? | Almost nothing; and it **fails the library's own adapter contract**                                                                                                                                                |
+| C4 — resilience without a vendor?   | **Fully testable.** The strongest result in the scenario                                                                                                                                                           |
+| C5 — `stubStitch` input contract    | Runs **none** of the input schemas; plus a `.safe()` bug                                                                                                                                                           |
+| C6 — sandbox parity                 | Targeting yes (3 targets, one `extends`), scheduling no                                                                                                                                                            |
+| C7 — streams                        | **Fully deterministic** — 5 runs, 1 outcome, byte-identical                                                                                                                                                        |
+| C8 — assembled                      | 98 lines, 5 seams, closes 4 of 5                                                                                                                                                                                   |
+
+### Hypotheses that were wrong
+
+**My own framing of the vacuity mechanism.** I predicted `timeout.total` "ignores the clock". It
+does not: the per-attempt clamp fires on virtual time, and the wall-anchored part is the
+_deadline_, so the budget **resets** each attempt rather than being ignored. The measured
+outcome (a 1000ms budget surviving 2700 virtual ms) matches the prediction; the mechanism does
+not. Predicting an outcome correctly for the wrong reason is the subtler failure and worth
+recording as such.
+
+**"The shared `output` schema is the honest middle ground."** True for fixture-vs-schema drift,
+and structurally blind to vendor-vs-schema drift — which is the scenario. The thing I proposed
+as the answer solves the adjacent problem.
+
+**"`drift()` might help find a stale fixture."** It helps you _read_ a failure, never _find_ one.
+ADR 0015 removed snapshot drift deliberately — "a single snapshot is one observation" — so
+there is no cross-call baseline by design.
+
+**"`paginate` is a time-driven feature to check."** It has no time in it.
+
+### Outputs
+
+- Page: [stale-fixture.mdx](../../apps/docs/content/docs/scenarios/stale-fixture.mdx)
+- Draft: [testing-kit-clock-gaps-and-two-bugs](issue-drafts/testing-kit-clock-gaps-and-two-bugs.md)
