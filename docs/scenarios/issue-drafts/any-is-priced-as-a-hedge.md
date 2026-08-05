@@ -1,6 +1,6 @@
 # Issue draft — `any()` is named for failover and priced as a hedge, and a per-call header reaches every member
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#643](https://github.com/rejifald/StitchAPI/issues/643). Raised by the scenario pass on 2026-08-05.
 **Scenario:** [`provider-failover`](../provider-failover.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `pipe`, `docs`, `footgun`
 

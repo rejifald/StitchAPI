@@ -1,6 +1,6 @@
 # Issue draft — four different endings share one `break`, and the natural dedupe causes data loss
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#645](https://github.com/rejifald/StitchAPI/issues/645). Raised by the scenario pass on 2026-08-05.
 **Scenario:** [`unstable-pagination`](../unstable-pagination.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `bug`, `paginate`, `data-loss`
 **Companion to:** [`paginate-silent-data-loss`](paginate-silent-data-loss.md) — same root cause,

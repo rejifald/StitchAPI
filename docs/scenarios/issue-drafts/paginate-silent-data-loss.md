@@ -1,6 +1,6 @@
 # Issue draft — `paginate` ends successfully and drops data when a page returns zero items
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#644](https://github.com/rejifald/StitchAPI/issues/644). Raised by the scenario pass on 2026-08-05.
 **Scenario:** [`batch-partial-failure`](../batch-partial-failure.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `bug`, `data-loss`, `paginate`
 
