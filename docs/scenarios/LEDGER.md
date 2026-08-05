@@ -20,6 +20,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 5   | A stream that fails after 800 tokens                  | `mid-stream-failure`            | achievable with user code (resumable feeds: **achievable outright**) | [page shipped](../../apps/docs/content/docs/scenarios/mid-stream-failure.mdx) + 1 issue draft (**SSE reconnect replays completed streams — a bug in #622**)       |
 | 6   | ETag revalidation and the bodyless 304                | `conditional-requests-304`      | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/conditional-requests-304.mdx) + 1 issue draft (`cache` cannot revalidate; surfaces can't see the principal) |
 | 7   | Multipart upload and the mandatory abort              | `multipart-upload`              | achievable — but the library is a **bystander for the cleanup**      | [page shipped](../../apps/docs/content/docs/scenarios/multipart-upload.mdx) + 1 issue draft (no compensation seam)                                                |
+| 8   | Receiving a signed webhook                            | `webhook-receipt`               | **split — receipt OUT OF SCOPE by design, reaction in scope**        | [page shipped](../../apps/docs/content/docs/scenarios/webhook-receipt.mdx) + 1 issue draft (`void call()` drops work)                                             |
 
 ## Open issue drafts
 
@@ -34,6 +35,7 @@ Not filed — review these when the loop stops.
 | [`sse-reconnect-replays-completed-streams`](issue-drafts/sse-reconnect-replays-completed-streams.md) | **highest — a bug in freshly shipped #622** | `sse: { reconnect: true }` reopens a **completed** id-less stream 4× and delivers `ABCDEABCDEABCDEABCDE` to the consumer, ending `ok: true`                                                       |
 | [`cache-cannot-revalidate`](issue-drafts/cache-cannot-revalidate.md)                                 | medium (capability gap)                     | `cache` is a value store so an ETag can never reach it; a surface can't see the bound principal, which is what makes a hand-written ETag store leak across credentials                            |
 | [`no-compensation-seam`](issue-drafts/no-compensation-seam.md)                                       | medium (capability gap, sharp edges)        | nothing runs on failure, so a mandatory cleanup call can't be expressed — and the two natural ways to hand-write it (`.safe()` on the abort; cleanup inside `Surface.execute`) are silently wrong |
+| [`void-call-drops-work`](issue-drafts/void-call-drops-work.md)                                       | **high**                                    | `void call(input)` makes **0 HTTP calls and 0 errors** — the idiomatic fire-and-forget spelling silently drops the work; plus `backoff.base` clamped by `max` without warning                     |
 
 > **Triage note.** [`sse-reconnect-replays-completed-streams`](issue-drafts/sse-reconnect-replays-completed-streams.md)
 > is the one to look at first. It is a bug in code that shipped in **#622**, it delivers
@@ -47,7 +49,9 @@ Not filed — review these when the loop stops.
 `all, any, linked, race` — the construct described is `linked()`. A two-line docs edit, left
 out of the scenario commits to keep them scoped.
 
-**1. Achievable, but only off the documented path — 7 for 7.** Every scenario was solvable,
+**1. Achievable, but only off the documented path — 7 for 7** (scenario 8 is the exception that
+proves the rule: it is out of scope by design, and the docs already say so). Every in-scope
+scenario was solvable,
 and in none of them did the built-in the docs point at carry it. `throttle` sends you to
 `delegate` (status-keyed, wrong); `paginate` looks like the loop and is a trap twice over;
 `retry.respect` is inert on the body path; `cache` cannot revalidate. **A custom `Surface` has

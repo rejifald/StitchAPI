@@ -8,6 +8,7 @@
         "async-job-polling",
         "mid-stream-failure",
         "conditional-requests-304",
-        "multipart-upload"
+        "multipart-upload",
+        "webhook-receipt"
     ]
 }
