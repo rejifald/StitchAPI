@@ -20,6 +20,7 @@
         "n-plus-one-fanout",
         "deprecation-headers",
         "agent-holds-the-tool",
-        "stale-fixture"
+        "stale-fixture",
+        "precision-loss"
     ]
 }

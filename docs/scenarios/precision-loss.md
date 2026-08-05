@@ -1,6 +1,6 @@
 # Scenario: the ID that changed on the way in
 
-**Researched:** 2026-08-05 · **Status:** research captured, verification pending
+**Researched:** 2026-08-05 · **Status:** ✅ verified (8 claims, 191 checks, offline) · page shipped
 **Slug:** `precision-loss`
 
 ---
@@ -114,3 +114,45 @@ scenarios have mostly treated as fixed infrastructure.
 C1 and C2 decide this. C1 establishes the damage; C2 asks whether a library whose flagship
 feature is **contract drift detection** can notice its most basic form — a value that is not the
 value the vendor sent.
+
+---
+
+## Verification result
+
+**All 8 claims verified**, 191 checks across 8 scripts, re-run by me before writing up.
+
+| Claim                                   | Verdict                                                                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| C1 — does the default path corrupt?     | **CONFIRMED and silent** — 4 events, 0 findings; sent digits appear nowhere in the spine  |
+| C2 — can anything downstream detect it? | **PARTIALLY REFUTED** — 9 seams blind, but 2 see raw text and a `refine` detector works   |
+| C3 — custom adapter cost                | 84 lines; trace sinks survive (against prediction)                                        |
+| C4 — cache + BigInt                     | `memoryStore` survives; a JSON store throws **fatally**                                   |
+| C5 — request side                       | Four positions, three behaviours — `params` **silently vanishes**                         |
+| C6 — streams                            | Split by **decoder**, not surface: bytes/lines/download lossless; ndjson/json/sse corrupt |
+| C7 — a loud detector                    | 15 lines, **0 false negatives** over 20,000 snowflakes, 0.535% FP                         |
+| C8 — assembled                          | Two setups: REPAIR 16 lines, DETECT 18 lines                                              |
+
+### Hypotheses that were wrong
+
+**The big one, and it changes the answer.** I wrote _"that makes the `Adapter` the only candidate
+seam."_ It is not. `wire: { response: 'text' }` is **published config** honoured at
+`http-adapter.ts:123` — an `else if` that returns _before_ the JSON branch at `:135`. The repair
+is 16 lines on the **stock transport**, not a custom adapter. I reasoned from
+`AdapterResponse.body` being pre-parsed and never checked whether config could stop the parse
+happening.
+
+**"Validation cannot help."** `z.number().refine(Number.isSafeInteger)` separates corrupted from
+intact, and the boundary walk shows `lossless=false` never co-occurs with `flagged=false` — false
+negatives are **impossible**, not merely unobserved.
+
+**"Trace sinks break under BigInt."** `trace.ts` ships a `bigintSafe` replacer deliberately, so a
+`fileSink` is the one diagnostic surface that ends up holding the vendor's real digits.
+
+**"Money has the same shape."** It does not, on the wire — `19.99` round-trips because the nearest
+double's shortest form _is_ `"19.99"`. Decimals fail in **arithmetic**; integers above 2⁵³ fail in
+**transport**. Two different bugs that I had merged into one.
+
+### Outputs
+
+- Page: [precision-loss.mdx](../../apps/docs/content/docs/scenarios/precision-loss.mdx)
+- Draft: [bigint-in-params-vanishes](issue-drafts/bigint-in-params-vanishes.md)
