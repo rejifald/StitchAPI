@@ -396,6 +396,41 @@ export const pages: Page[] = [
             'Deprecation and Sunset arrive on responses that succeeded, so nothing fails and nothing retries. Response headers are reachable in exactly three places — here is the table.',
         kind: 'guide',
     },
+    {
+        path: 'scenarios/agent-holds-the-tool',
+        title: 'The agent picks the arguments',
+        description:
+            'Exposing a vendor API to an LLM over MCP. The credential boundary held under 30 payload scans — the argument boundary is yours, and a query parameter pinned in the path is only a default.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/stale-fixture',
+        title: 'The mock that passed for six months',
+        description:
+            'Your fake goes stale and the suite keeps saying green. Resilience and streams test perfectly offline — here is the definitive table of which time-driven features manualClock actually drives.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/precision-loss',
+        title: 'The ID that changed on the way in',
+        description:
+            'JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines — and a bigint in params vanishes.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/pii-in-the-logs',
+        title: "The customer data you didn't mean to log",
+        description:
+            'Response bodies reach 13 destinations and metadata reaches 11 — with nothing in between. An output allowlist takes it to zero; sensitive: true does not, and only gates the cache.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/dual-run-migration',
+        title: 'The migration you have to run twice',
+        description:
+            'Dual-running a vendor v1 and v2 when you own neither endpoint. One of five isolation channels is safe by default, and the combinator that looks built for this broadcasts one input to both.',
+        kind: 'guide',
+    },
 
     // ── Concepts ────────────────────────────────────────────────────────────
     {
