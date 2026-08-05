@@ -36,6 +36,20 @@ keeps the resolved value typed as `{ id: number; name: string }`.
 the request — the fail-fast guarantee — so the request never goes out with input
 the API would reject.
 
+A declared slot also **shapes** the request: the request is built from the value
+the schema returned, so whatever it coerces, defaults or strips is what goes on
+the wire. A `z.object(...)` strips unknown keys by default, so an extra key a
+caller tacked onto a declared slot never reaches the API — which matters most
+when the caller is untrusted, such as a model calling through
+[the MCP surface](/docs/surfaces/mcp).
+
+<Callout type="warn">
+    A schema constrains **one slot**. An undeclared slot stays a full
+    passthrough, so declaring `params` does nothing about `query`. And a query
+    pair written into the endpoint (`?tenant=acme`) is a _default_ that
+    `input.query` overrides — declare the slot if callers must not move it.
+</Callout>
+
 `output` is a single `Validator` that checks the response body after it returns.
 (Pass a `drift()` spec here instead to report changes without throwing — see
 [Schema drift detection](/docs/guides/validation/drift).)
