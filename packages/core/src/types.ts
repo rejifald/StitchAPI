@@ -876,7 +876,8 @@ export interface StreamBufferOptions {
 export interface ReconnectOptions {
     /**
      * Total reconnect attempts after the first connection drops, before the stream gives up and
-     * ends/errors exactly as today. Default 3.
+     * ends/errors exactly as today. Default 3. A ceiling, not a quota: a stream that finishes
+     * cleanly, or that has no `id:` to resume from, spends none of it.
      */
     attempts?: number;
     /**
@@ -899,12 +900,21 @@ export interface ReconnectOptions {
  * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff (the opaque
  * `{}` is rejected — CONTRACT.md P20). Plain JSON (the contract gate). Only the `sse` surface acts
  * on this; other surfaces ignore it.
+ *
+ * It reopens a **dropped** body only, and only one it can resume: a stream that ran out cleanly has
+ * finished, and a stream whose frames carry no `id:` has no resume point, so neither is reopened
+ * (issue #640). That matters for OpenAI-shaped completions — `data: {…}` frames with no `id:`,
+ * terminated by `[DONE]` — where a reopened request could only ask for the whole completion again.
+ * Turning this on for such a feed is a no-op, not a replay.
  */
 export interface SseOptions {
     /**
      * Reopen a dropped `text/event-stream` body and resume from the last seen `id:`. `true` enables
      * it with defaults; the object form tunes the attempt cap and fallback delay (the opaque `{}` is
      * rejected — P20). Omitted means off: the engine opens the body exactly once.
+     *
+     * Needs a server that emits `id:` and honours `Last-Event-ID`; without one there is nothing to
+     * resume from and the body is never reopened. A body that ends cleanly is never reopened either.
      */
     reconnect?: boolean | AtLeastOne<ReconnectOptions>;
 }

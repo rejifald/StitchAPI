@@ -6,7 +6,7 @@
 // (no fake timers anywhere in this package).
 import { stitch } from '../src';
 import type { Surface } from '../src';
-import { sse, sseSurface } from '../src/sse';
+import { type SseEvent, sse, sseSurface } from '../src/sse';
 import type { Adapter, AdapterRequest, StitchEvent } from '../src/types';
 import { asValidator } from './support/schema';
 import { streamOf, streamThenError } from './support/streams';
@@ -118,11 +118,11 @@ describe('sse reconnect is OFF by default (issue #71)', () => {
 
 describe('sse reconnect replays Last-Event-ID (issue #71)', () => {
     test('the SECOND open carries Last-Event-ID: 2 and its events continue to flow', async () => {
-        // First body: id 1, id 2 then closes. Second body: id 3, id 4 then closes. The third open
-        // (an empty tail) closes immediately; cap at attempts so it terminates deterministically.
+        // First body: id 1, id 2 then DROPS. Second body: id 3, id 4 then drops too. The third open
+        // (an empty tail) closes cleanly, which ends the stream (#640).
         const { adapter, requests } = scriptedAdapter([
-            () => streamOf(['id: 1\ndata: a\n\n', 'id: 2\ndata: b\n\n']),
-            () => streamOf(['id: 3\ndata: c\n\n', 'id: 4\ndata: d\n\n']),
+            () => streamThenError(['id: 1\ndata: a\n\n', 'id: 2\ndata: b\n\n']),
+            () => streamThenError(['id: 3\ndata: c\n\n', 'id: 4\ndata: d\n\n']),
         ]);
         const s = sse({
             url: 'https://x.test/e',
@@ -154,7 +154,7 @@ describe('sse reconnect delay: server retry: vs fallback (issue #71)', () => {
         // The event carries retry: 120 (ms). With a 1ms fallback, only the server value can produce
         // a ≥100ms wait — proving the server `retry:` won. One reconnect, then stop.
         const { adapter } = scriptedAdapter([
-            () => streamOf(['retry: 120\nid: 1\ndata: a\n\n']),
+            () => streamThenError(['retry: 120\nid: 1\ndata: a\n\n']),
         ]);
         const s = sse({
             url: 'https://x.test/e',
@@ -172,7 +172,7 @@ describe('sse reconnect delay: server retry: vs fallback (issue #71)', () => {
 
     test('with no server retry:, the configured reconnect.delay is used', async () => {
         const { adapter } = scriptedAdapter([
-            () => streamOf(['id: 1\ndata: a\n\n']),
+            () => streamThenError(['id: 1\ndata: a\n\n']),
         ]);
         const s = sse({
             url: 'https://x.test/e',
@@ -191,7 +191,7 @@ describe('sse reconnect delay: server retry: vs fallback (issue #71)', () => {
     test('with neither, the stitch retry backoff (fixed backoff.base) supplies the delay', async () => {
         // No server retry:, no reconnect.delay → fall back to the `retry` policy: fixed 70ms.
         const { adapter } = scriptedAdapter([
-            () => streamOf(['id: 1\ndata: a\n\n']),
+            () => streamThenError(['id: 1\ndata: a\n\n']),
         ]);
         const s = sse({
             url: 'https://x.test/e',
@@ -221,7 +221,7 @@ describe('a surface may return the canonical duration form from resumeRetry (P17
 
     test('a duration token paces the reconnect exactly as the raw ms does', async () => {
         const { adapter } = scriptedAdapter([
-            () => streamOf(['id: 1\ndata: a\n\n']),
+            () => streamThenError(['id: 1\ndata: a\n\n']),
         ]);
         const s = stitch({
             kind: returning('120ms'),
@@ -241,7 +241,7 @@ describe('a surface may return the canonical duration form from resumeRetry (P17
 
     test('an unparseable token falls through to the fallback instead of collapsing the wait', async () => {
         const { adapter } = scriptedAdapter([
-            () => streamOf(['id: 1\ndata: a\n\n']),
+            () => streamThenError(['id: 1\ndata: a\n\n']),
         ]);
         const s = stitch({
             kind: returning('soon'),
@@ -260,11 +260,12 @@ describe('a surface may return the canonical duration form from resumeRetry (P17
 });
 
 describe('sse reconnect respects the attempts cap (issue #71)', () => {
-    test('reconnects stop after N attempts; the stream ends with what it collected', async () => {
-        // Every body is a single event then closes — a resumable surface treats each close as a
-        // reconnect signal, so this would loop forever without the cap. attempts: 2 ⇒ 3 opens.
+    test('reconnects stop after N attempts, then the last drop surfaces', async () => {
+        // Every body emits one id-carrying event then DROPS, so the stream stays resumable and
+        // would reconnect forever without the cap. attempts: 2 ⇒ 3 opens, then the third drop is
+        // terminal and its real error surfaces with the deltas collected so far preserved.
         const { adapter, requests } = scriptedAdapter([], {
-            tail: () => streamOf(['data: tick\n\n']),
+            tail: () => streamThenError(['id: t\ndata: tick\n\n']),
         });
         const s = sse({
             url: 'https://x.test/e',
@@ -276,16 +277,17 @@ describe('sse reconnect respects the attempts cap (issue #71)', () => {
         expect(requests).toHaveLength(3); // first open + 2 reconnects
         expect(out.reconnects.map((r) => r.attempt)).toEqual([1, 2]);
         expect(out.deltas).toEqual([
-            { data: 'tick' },
-            { data: 'tick' },
-            { data: 'tick' },
+            { id: 't', data: 'tick' },
+            { id: 't', data: 'tick' },
+            { id: 't', data: 'tick' },
         ]);
-        expect(out.doneOk).toBe(true); // a clean close after the cap finalizes successfully
+        expect(out.error?.message).toBe('stream broke mid-flight');
+        expect(out.doneOk).toBe(false);
     });
 
     test('true means enabled with sane defaults (3 reconnects) and no fallback backoff override', async () => {
         const { adapter, requests } = scriptedAdapter([], {
-            tail: () => streamOf(['data: x\n\n']),
+            tail: () => streamThenError(['id: x\ndata: x\n\n']),
         });
         const s = sse({
             url: 'https://x.test/e',
@@ -351,7 +353,7 @@ describe('sse reconnect resumes from the last id after a mid-stream ERROR (issue
 describe('sse per-delta output validation keeps firing across a reconnect (issue #71)', () => {
     test('a bad payload on the SECOND connection still fails the stream', async () => {
         const { adapter } = scriptedAdapter([
-            () => streamOf(['id: 1\ndata: {"tok":"hi"}\n\n']),
+            () => streamThenError(['id: 1\ndata: {"tok":"hi"}\n\n']),
             () => streamOf(['id: 2\ndata: {"nope":1}\n\n']),
         ]);
         const s = sse({
@@ -390,6 +392,132 @@ describe('sse reconnect config round-trips as JSON (contract-not-dependency gate
             sse?: { reconnect?: { attempts?: number; delay?: number } };
         };
         expect(json.sse?.reconnect).toEqual({ attempts: 5, delay: 250 });
+    });
+});
+
+describe('sse reconnect never replays a stream that FINISHED (issue #640)', () => {
+    // The OpenAI shape: `data: {…}` frames with NO `id:` on any of them, terminated by a `[DONE]`
+    // sentinel. Nothing in it is resumable — a reopened request carries no `Last-Event-ID`, so it
+    // can only ask for the WHOLE completion again. Before #640 this opened 4×, delivered
+    // `ABCDEABCDEABCDEABCDE`, and still ended `done(ok: true)`.
+    const completion = (): ReadableStream<Uint8Array> =>
+        streamOf([
+            ...['A', 'B', 'C', 'D', 'E'].map(
+                (tok) => `data: {"delta":"${tok}"}\n\n`,
+            ),
+            'data: [DONE]\n\n',
+        ]);
+
+    // The text a consumer assembles off the `delta` spine; the `[DONE]` sentinel parses to a bare
+    // string and contributes nothing.
+    const textOf = (deltas: unknown[]): string =>
+        deltas
+            .map((ev) => (ev as SseEvent<{ delta?: string }>).data)
+            .map((d) => (typeof d === 'string' ? '' : (d.delta ?? '')))
+            .join('');
+
+    test('an id-less completion is opened ONCE and delivered ONCE', async () => {
+        // Every open serves the whole completion, exactly as a model API would.
+        const { adapter, requests } = scriptedAdapter([], { tail: completion });
+        const s = sse({
+            url: 'https://api.vendor.test/v1/chat',
+            sse: { reconnect: true },
+            retry: { backoff: { curve: 'fixed', base: 1 } }, // a fast curve, if it were ever used
+            adapter,
+        });
+
+        const out = await drainAll(s.stream());
+        expect(requests).toHaveLength(1); // was 4
+        expect(textOf(out.deltas)).toBe('ABCDE'); // was ABCDEABCDEABCDEABCDE
+        expect(out.deltas).toHaveLength(6); // 5 tokens + [DONE]; was 24
+        expect(out.reconnects).toEqual([]);
+        expect(out.doneOk).toBe(true); // a finished stream is still a SUCCESS
+    });
+
+    test('the `sse: true` shorthand carries the same fix', async () => {
+        // `sse: true` normalizes to `{ reconnect: true }`, so it reaches the identical policy.
+        const { adapter, requests } = scriptedAdapter([], { tail: completion });
+        const s = sse({
+            url: 'https://api.vendor.test/v1/chat',
+            sse: true,
+            retry: { backoff: { curve: 'fixed', base: 1 } },
+            adapter,
+        });
+
+        const out = await drainAll(s.stream());
+        expect(requests).toHaveLength(1);
+        expect(textOf(out.deltas)).toBe('ABCDE');
+        expect(out.doneOk).toBe(true);
+    });
+
+    test('an id-CARRYING feed that ends cleanly is not reopened either', async () => {
+        // Defect 2 on its own: the body ran out with nothing to resume from. Reopening would only
+        // replay `Last-Event-ID: 2` for a stream that already said everything it had.
+        const { adapter, requests } = scriptedAdapter([
+            () => streamOf(['id: 1\ndata: a\n\n', 'id: 2\ndata: b\n\n']),
+        ]);
+        const s = sse({
+            url: 'https://x.test/e',
+            sse: { reconnect: { attempts: 3, delay: 1 } },
+            adapter,
+        });
+
+        const out = await drainAll(s.stream());
+        expect(requests).toHaveLength(1);
+        expect(out.deltas).toEqual([
+            { id: '1', data: 'a' },
+            { id: '2', data: 'b' },
+        ]);
+        expect(out.reconnects).toEqual([]);
+        expect(out.doneOk).toBe(true);
+    });
+
+    test('an id-less stream that genuinely DROPS surfaces error+done, never a replay', async () => {
+        // Defect 1 on its own: a real drop, but no resume token was ever seen, so a reopen would
+        // re-deliver the two events already in the consumer's hands. Refuse, and report the drop —
+        // exactly what the same stitch does with `reconnect` off.
+        const { adapter, requests } = scriptedAdapter([
+            () => streamThenError(['data: a\n\n', 'data: b\n\n']),
+        ]);
+        const s = sse({
+            url: 'https://x.test/e',
+            sse: { reconnect: { attempts: 3, delay: 1 } },
+            adapter,
+        });
+
+        const out = await drainAll(s.stream());
+        expect(requests).toHaveLength(1);
+        expect(out.deltas).toEqual([{ data: 'a' }, { data: 'b' }]);
+        expect(out.error?.message).toBe('stream broke mid-flight');
+        expect(out.doneOk).toBe(false);
+    });
+
+    test('a drop before ANY delta still reconnects — there is nothing to duplicate', async () => {
+        // The token gate is about not re-delivering what the consumer already has. A connection
+        // that never handed over a chunk has nothing to duplicate, so the id-less connect-phase
+        // failure keeps reconnecting exactly as before — this fix is not "reconnect off".
+        const requests: AdapterRequest[] = [];
+        let n = 0;
+        const adapter: Adapter = (req) => {
+            requests.push(req);
+            if (n++ === 0) return Promise.reject(new Error('ECONNRESET'));
+            return Promise.resolve({
+                status: 200,
+                headers: {},
+                body: streamOf(['data: a\n\n']),
+            });
+        };
+        const s = sse({
+            url: 'https://x.test/e',
+            sse: { reconnect: { attempts: 2, delay: 1 } },
+            adapter,
+        });
+
+        const out = await drainAll(s.stream());
+        expect(requests).toHaveLength(2); // the failed connect, then a successful one
+        expect(out.reconnects.map((r) => r.attempt)).toEqual([1]);
+        expect(out.deltas).toEqual([{ data: 'a' }]); // delivered once, not twice
+        expect(out.doneOk).toBe(true);
     });
 });
 
