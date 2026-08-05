@@ -500,12 +500,16 @@ describe('Pluggable store — throttle', () => {
         // `waited` drives the `progress.throttled` event. Under leases the store owns the count,
         // so a blocked caller's wait is measured rather than predicted — this pins that it is
         // still reported, and that an uncontended acquire reports nothing.
+        //
+        // Measured means an uncontended acquire is near-zero, not exactly zero: one that straddles
+        // a millisecond boundary reports 1. The tolerance is what separates "walked straight in"
+        // from a real block, which below is ~60ms — the two cases are nowhere near each other.
         const store = memoryStore();
         const a = createStoreThrottle({ concurrency: 1 }, store);
         const b = createStoreThrottle({ concurrency: 1 }, store);
 
         const first = await a.acquire('svc');
-        expect(first.waited).toBe(0); // uncontended
+        expect(first.waited).toBeLessThan(5); // uncontended
 
         const blocked = b.acquire('svc');
         await new Promise((r) => setTimeout(r, 60));
@@ -548,8 +552,11 @@ describe('Pluggable store — throttle', () => {
         const t = createStoreThrottle({ concurrency: 1 }, store);
         await t.acquire('svc', { rateOnly: true });
         await t.acquire('svc', { rateOnly: true });
-        // Neither took the single slot, so a normal acquire still walks straight in.
+        // Neither took the single slot, so a normal acquire still walks straight in. Tolerance,
+        // not exact zero, for the same reason as the sibling test above: `waited` is measured, so
+        // an uncontended acquire across a millisecond boundary reports 1. Had a stream pinned the
+        // slot, this acquire would have blocked for the whole lease — orders of magnitude away.
         const normal = await t.acquire('svc');
-        expect(normal.waited).toBe(0);
+        expect(normal.waited).toBeLessThan(5);
     });
 });
