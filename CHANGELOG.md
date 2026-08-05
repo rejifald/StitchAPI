@@ -831,6 +831,31 @@ npm release are grouped under the in-development version that introduced them.
     objects have no migration concern — `[object Object]` was never usable. A space in a form
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
+### Security
+
+- **Five Dependabot alerts closed by `pnpm.overrides` — `fast-uri` and `ip-address`.** Both are
+  transitive-only: no manifest in the workspace names either one, so Dependabot could not open a
+  PR for them — a transitive fix needs a parent release that pulls the patched version, and none
+  had shipped. The override block is the mechanism here, and it already carried a `fast-uri` floor
+  from the previous round of this same advisory.
+
+    **`fast-uri`** ([GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7) —
+    host confusion via a backslash authority introducer, CVSS 7.5). Both majors were in the tree
+    and both were vulnerable. The existing `<3.1.4` floor becomes `<3.1.5`, and a second entry
+    covers the 4.x line (`>=4.0.0 <4.1.2` → `^4.1.2`), mirroring the two-entry `brace-expansion`
+    shape already in the block. The 3.x copy is reachable at runtime through `ajv` →
+    `@modelcontextprotocol/sdk` and `@stitchapi/sandbox`; the 4.x copy only through fastify, which
+    is a dev dependency.
+
+    **`ip-address`** (three alerts, one High and two Medium: leading-zero octets decoded as decimal
+    where resolvers decode them as octal; a CIDR suffix suppressing special-use classification; and
+    IPv4-mapped/NAT64 IPv6 misclassification). All three are one failure wearing three hats — an
+    address parser disagreeing with the resolver about what an address _means_, which is precisely
+    what makes an SSRF allowlist lie. A single floor at `<10.3.1` clears the set. Runtime, via
+    `express-rate-limit` → `@modelcontextprotocol/sdk`.
+
+    `pnpm audit` reports no known vulnerabilities after the bump.
+
 ### Notes
 
 - **The duration/size rule is now stated over the value rather than the slot, and gated.**
