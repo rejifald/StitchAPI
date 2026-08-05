@@ -7,6 +7,7 @@
         "batch-partial-failure",
         "async-job-polling",
         "mid-stream-failure",
-        "conditional-requests-304"
+        "conditional-requests-304",
+        "multipart-upload"
     ]
 }

@@ -46,4 +46,9 @@ real runtime, not by reading the source.
         href="/docs/scenarios/conditional-requests-304"
         description='A 304 means "use what you have", carries no body, and is not a 2xx. Turning it back into the resource takes one seam — and the cache primitive cannot help.'
     />
+    <Card
+        title="The upload you must clean up after"
+        href="/docs/scenarios/multipart-upload"
+        description="Multipart upload is four steps, and the fourth — abort on failure — is the one no HTTP client models. Skip it and the parts bill forever, invisibly."
+    />
 </Cards>

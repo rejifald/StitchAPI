@@ -1,0 +1,146 @@
+---
+title: 'The upload you must clean up after'
+description: 'Multipart upload is four steps, and the fourth — abort on failure — is the one no HTTP client models. Skip it and the parts bill forever, invisibly.'
+prerequisites: ['/docs/reference/surfaces', '/docs/reference/helpers']
+---
+
+## The problem
+
+A 5 GB upload can't go in one request, so you use S3-style multipart:
+
+1. `POST ?uploads` → an `UploadId`
+2. `PUT ?partNumber=N&uploadId=…` × N → each returns an **`ETag` response header**
+3. `POST ?uploadId=…` with the **ordered** `{ PartNumber, ETag }` list → the object
+4. …and on **any** failure, `DELETE ?uploadId=…`
+
+**Step 4 is the one nobody models.** Abandon an upload and every part already sent stays in
+the bucket and bills as storage indefinitely — while being invisible to `aws s3 ls` and to the
+console's objects tab. AWS's own FinOps guidance puts incomplete multipart uploads at [up to
+20% of an S3 bill](https://aws.amazon.com/blogs/aws-cloud-financial-management/discovering-and-deleting-incomplete-multipart-uploads-to-lower-amazon-s3-costs/),
+and there is a [lifecycle rule](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpu-abort-incomplete-mpu-lifecycle-config.html)
+that exists purely to clean up after clients that didn't.
+
+That's a **compensating action**: a failure in step 2 or 3 obliges you to make a _different_
+API call. No HTTP client models it. The rest is ordinary orchestration made fiddly — the part
+result is a header, the list must be in part order not completion order, concurrency needs a
+bound, and progress needs XHR because `fetch` cannot report bytes sent.
+
+## The common solutions
+
+| Approach                            | Where it breaks                                                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Single `PUT` of the whole file      | One blink and 5 GB is gone; above 5 GB S3 refuses outright.                                                   |
+| Vendor SDK (`@aws-sdk/lib-storage`) | Correct, and right if you're on AWS. Large dependency, and the shape recurs on every non-AWS API.             |
+| Hand-rolled loop + `try/finally`    | What most teams write. The abort is one early `return` from being skipped, and nothing tells you when it was. |
+| tus / resumable protocol            | Better where you control the server. Not an option against S3's own API.                                      |
+| Lifecycle rule as the safety net    | Necessary, not a fix — you still pay for N days of orphans on every failed upload.                            |
+
+## What StitchAPI does
+
+Three things become configuration, and they're worth having:
+
+```ts
+const putPart = stitch({
+    method: 'PUT',
+    url: 'https://s3.example.com/{key}?partNumber={part}&uploadId={uploadId}',
+    // S3's own transient error is 500 InternalError — NOT in the default set.
+    retry: { attempts: 3, on: [429, 500, 502, 503, 504] },
+    // One stitch, called N times. `pool: 'host'` because the default is per-stitch.
+    throttle: { concurrency: 4, pool: 'host' },
+    adapter: xhrAdapter(), // fetch cannot report bytes sent
+    kind: {
+        id: 'http',
+        // The part's result is a HEADER. Without a surface it is unrecoverable —
+        // `.inspect()` carries no headers at all.
+        interpret: (res, cfg) =>
+            verdictOf(res, cfg) ?? { ok: true, data: res.headers['etag'] },
+    },
+});
+```
+
+**Measured:** per-part retry re-sent only the failing part (arrival order `[1,2,3,4,3]`, one
+initiate, zero orphans). `throttle: { concurrency: 3, pool: 'host' }` held peak in-flight at
+**3** across 8 parts. `xhrAdapter` reported 4 upload ticks per part _before the response
+existed_; the same call through `fetchAdapter` reported **zero**.
+
+## What it does not do — and this is the point of the page
+
+**There is no compensation seam.** `Hooks` is exactly `{ onRequest, onResponse, onError,
+onRetry }`, and `onError` is not a failure hook — it's the `catch` around the transport. On an
+HTTP 500 the measured hook sequence was `[onRequest, onResponse]` with **zero** `onError`
+calls. `HookContext` has no run-scoped slot to hold an `UploadId`, and `linked()` has no
+`finally`.
+
+So the cleanup is a plain `try/finally` in your own orchestration function — and it has to be,
+because the `UploadId` only exists there. Measured, with a part failing and no user cleanup:
+
+|                             | orphaned parts                      | DELETEs |
+| --------------------------- | ----------------------------------- | ------- |
+| no cleanup                  | **3 (15 MiB), 1 dangling UploadId** | 0       |
+| cancelled via `AbortSignal` | **2**                               | 0       |
+| `timeout.total` expiry      | **3**                               | 0       |
+| user-written `try/finally`  | 0                                   | 1       |
+
+Cancellation is not cleanup: the engine cancels in-flight work and forgets the work that
+landed.
+
+## StitchAPI vs the common solution
+
+**141 lines against 163** hand-rolled — 22 shorter, and the difference attributes exactly to
+the retry loop with backoff, the concurrency pool, the retryable-status set and URL assembly,
+all of which became config.
+
+What did _not_ shrink is the half the scenario exists for: the `try/finally`, the
+loud-cleanup rule, the per-part high-water progress map and the input-order assembly are
+byte-for-byte identical on both sides. The library is a bystander for the compensation.
+
+## What StitchAPI does not solve here
+
+1. **The compensating call.** No hook, no config key, no surface position runs on failure.
+2. **`hooks.onError` is not a failure hook** — zero calls on an HTTP 500.
+3. **Cancellation ≠ cleanup.** `AbortSignal` and `timeout` both leave orphans.
+4. **`all()` bounds nothing** — measured peak **8** over 8 members — and it hands every member
+   the _same_ input, so one stitch × 8 members produced 8 PUTs all carrying `partNumber=1`.
+5. **`throttle.concurrency` defaults to `pool: 'stitch'`.** Eight stitches at `concurrency: 3`
+   each measured a peak of **8**. Use `pool: 'host'` or a seam bucket.
+6. **`all()` discards partial results on fail-fast** — 2 parts stored, **0 nameable** for the
+   abort. There is no `allSettled`; only an `onResponse` side channel recovers them.
+7. **The default `retry.on` excludes 500**, which is S3's own transient error. Measured: 4 PUTs,
+   1 failed part, 3 orphans with the default set.
+8. **Whole-upload retry is neither flagged nor prevented** — `retry` on the outer orchestration
+   measured **3 initiates, 9 orphaned parts, 45 MiB**.
+9. **A progress tick has no identity** — `{ direction, loaded, total }` only, so a shared
+   `onProgress` across a fan is unattributable. And ticks are cumulative _within_ a part, so
+   summing them overshoots: naive `Σ loaded` measured **400** against a real 160.
+10. **Response headers are absent from `.inspect()`**, so without a surface the `ETag` is
+    unrecoverable on the awaited path.
+
+<Callout type="error">
+    **Two ways cleanup lies to you, both measured.**
+
+    **`.safe()` on the abort cannot throw.** Inside a correct-looking `try/finally`, pointed at
+    a wrong `UploadId`: **0 accepted DELETEs, 3 orphaned parts, and nothing thrown anywhere**.
+    The `finally` ran. That is a permanent invisible bill with a clean code review — make the
+    cleanup failure loud.
+
+    **Cleanup inside `Surface.execute` runs after the caller returns.** Measured at the instant
+    the caller's promise settled: **3 orphans, 0 DELETEs**; the DELETE landed several turns
+    later. In a lambda, or any process that exits on the error, the later half never happens —
+    and the code reads as though the engine owns the lifecycle.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Helpers — xhrAdapter" href="/docs/reference/helpers" />
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+    <Card
+        title="Batch writes that fail one item at a time"
+        href="/docs/scenarios/batch-partial-failure"
+    />
+    <Card
+        title="Submit, poll, download"
+        href="/docs/scenarios/async-job-polling"
+    />
+</Cards>
