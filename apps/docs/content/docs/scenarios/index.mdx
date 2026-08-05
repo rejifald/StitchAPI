@@ -76,4 +76,9 @@ real runtime, not by reading the source.
         href="/docs/scenarios/intermittent-drift"
         description="Leveled drift catches a canary rollout precisely and refuses to invent a value — but cannot tell a harmless coercion from a destructive one."
     />
+    <Card
+        title="The export that eats the heap"
+        href="/docs/scenarios/large-response-memory"
+        description="The NDJSON decoder is genuinely O(1) — and the engine retains every chunk one line later, so neither await nor .stream() is bounded."
+    />
 </Cards>

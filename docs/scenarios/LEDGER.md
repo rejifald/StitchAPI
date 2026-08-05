@@ -25,6 +25,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 10  | Failing over to the backup provider                   | `provider-failover`             | achievable with user code (~30 lines of routing)                     | [page shipped](../../apps/docs/content/docs/scenarios/provider-failover.mdx) + 1 issue draft (`any()` priced as a hedge; per-call header broadcast)                 |
 | 11  | Pagination over a live collection                     | `unstable-pagination`           | achievable with user code — keyset in 4 lines; detection is yours    | [page shipped](../../apps/docs/content/docs/scenarios/unstable-pagination.mdx) + 1 issue draft (dedupe in `items` **causes** data loss; 4 endings share one break)  |
 | 12  | A canary rollout of a response-shape change           | `intermittent-drift`            | achievable with user code — 9 declarative lines + ~84 for the rate   | [page shipped](../../apps/docs/content/docs/scenarios/intermittent-drift.mdx) + 1 issue draft (a `coerced` finding can't grade the coercion; nullable has no level) |
+| 13  | The export that eats the heap                         | `large-response-memory`         | achievable with user code — one seam, ~75 lines, **NDJSON only**     | [page shipped](../../apps/docs/content/docs/scenarios/large-response-memory.mdx) + 1 issue draft (**`.stream()` is not memory-bounded; `decode: 'json'` buffers**)  |
 
 ## Open issue drafts
 
@@ -44,6 +45,7 @@ Not filed — review these when the loop stops.
 | [`any-is-priced-as-a-hedge`](issue-drafts/any-is-priced-as-a-hedge.md)                               | **high** (a credential leak + silent spend) | a per-call `authorization` for the primary **arrived at the backup verbatim**; and `any()` is documented as failover while calling every member on every call — 20 requests for 10 answers        |
 | [`paginate-cannot-report-a-partial-run`](issue-drafts/paginate-cannot-report-a-partial-run.md)       | **high** (companion to the draft above)     | deduping in `items` — the standard mitigation — emptied a page and **lost 6 rows**; four different endings share one `break` and one successful result                                            |
 | [`drift-cannot-grade-a-coercion`](issue-drafts/drift-cannot-grade-a-coercion.md)                     | medium-high (flagship, mostly working)      | a `coerced` finding is byte-identical for `"12345"→12345` and `"abc"→0`; and "nullable = warn, value intact" has no spelling — `.nullable()` makes a rollout invisible                            |
+| [`streaming-is-not-memory-bounded`](issue-drafts/streaming-is-not-memory-bounded.md)                 | **high — two located bugs**                 | `engine.ts:1443` retains every chunk so `.stream()` measures the same as `await`; and `decode: 'json'` buffers the array it streams, tripping its own cap at 37k rows                             |
 
 > **Triage note — two, in this order.**
 >
@@ -87,6 +89,13 @@ every response including non-2xx on a buffered stitch (measured on `[200, 304, 4
 **2b. Two time-driven features ignore the injected clock** — `timeout.total` and `cache.ttl`
 both read wall-clock while their neighbours use `clock`. Two point fixes are less valuable
 than one audit plus a line in the testing guide.
+
+**2b-bis. The buffered and streaming paths disagree about six things, all silently.** Across
+scenarios 5 and 13: `retry` inert, `interpret` never called, `pick` never called, `transform`
+never called, `output` validates but doesn't transform, and `stream({ kind })` drops the
+surface. The engine already warns about one ignored slot (an undrawable upload-progress bar
+emits an `info` event) — these six get nothing. A single "this config slot does nothing on a
+stream" diagnostic would cover the class.
 
 **2c. `paginate`'s `items.length === 0` break has now cost data in three separate scenarios**
 (3, 4 and 11) — a zero-progress batch round, a drifted page mid-collection, and a deduper doing

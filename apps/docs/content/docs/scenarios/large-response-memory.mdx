@@ -1,0 +1,136 @@
+---
+title: 'The export that eats the heap'
+description: 'The NDJSON decoder is genuinely O(1) — and the engine retains every chunk one line later, so neither await nor .stream() is memory-bounded.'
+prerequisites: ['/docs/reference/surfaces', '/docs/concepts/event-stream']
+---
+
+## The problem
+
+You call an export endpoint. The vendor hands back one JSON array with tens of thousands of
+rows. You `await` it, parse it, iterate. Then the catalog grows and the process dies.
+
+**Parsing costs several times the wire size**, because `JSON.parse` holds the whole string _and_
+builds the object tree. A documented sync of 22,000 products in an **84 MB response exhausted
+~2.1 GB** on a 4 GB VPS; the streaming rewrite ran at **180 MB peak**.
+
+This failure mode is unlike every other scenario here. Nothing returns wrong data — the process
+just dies, usually after a dataset crossed a threshold nobody was watching.
+
+## The common solutions
+
+| Approach                      | Where it breaks                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `await` the JSON              | Dies above a size you can't predict, and a chunked response has no `Content-Length`.                          |
+| Ask the vendor for NDJSON     | The correct fix where offered. Most REST endpoints don't.                                                     |
+| Structural streaming parser   | The real answer for one giant array. A dependency, and fiddly to assemble.                                    |
+| Paginate instead of exporting | Bounded — and inherits [every pagination problem](/docs/scenarios/unstable-pagination), plus N× the requests. |
+| Raise `--max-old-space-size`  | Moves the cliff toward you as data grows.                                                                     |
+| Batch and release references  | Necessary alongside streaming; useless if the parse already buffered.                                         |
+
+## What StitchAPI does
+
+**It ships a genuinely O(1) NDJSON decoder.** Driven directly, `decode: 'ndjson'` held **0.8 MB
+of retained heap for 1,000,000 rows and 214 MB of wire**, moving less than 15% across a 1000×
+change in workload. That is the real thing.
+
+**And the engine retains every chunk one line later.** Through `runStreaming` the same decoder
+is linear — 3.5 MB → 30.2 MB from 10k to 100k rows — because every delta is pushed onto an
+accumulator so the terminal `result` can mirror the whole spine.
+
+<Callout type="error">
+    **`.stream()` is not a memory fix.** Measured: **30.2 MB iterating vs 33.5
+    MB awaiting** — the same number twice. The accumulator is *inside* the
+    generator both accessors drain, and no option disables it. The engine's own
+    code comment recommends reading incrementally via `.stream()` for exactly
+    this reason; the measurement says that mitigation doesn't work.
+</Callout>
+
+So the seam that does work is `Surface.stream` — not to replace the decoding, which is already
+O(1), but because the engine retains whatever that hook _yields_. Yield one small receipt per
+batch instead of one row per row:
+
+```ts
+const rows = stitch({
+    url: 'https://api.vendor.com/export.ndjson',
+    kind: batchedExport({ size: 1_000, onBatch: writeToDb }), // yields a receipt, not rows
+    stream: 'ndjson',
+});
+```
+
+**Measured:** **1.3 MB retained for 100,000 rows against the buffered baseline's 53.8 MB — a 40×
+cut — and flat**: 1.3 MB at 1,000 rows, 1.4 MB at 100,000. Under a 96 MB heap ceiling, 400,000
+rows that killed the buffered path outright processed completely at 1.3 MB.
+
+Fairness on the baseline: the buffered multiplier measured **2.5×**, and it is `JSON.parse`'s,
+not the library's — StitchAPI's overhead over a bare `JSON.parse` of the same bytes was **0.2
+MB**. It adds no copy. It also removes none.
+
+## `decode: 'json'` on one array: right answer, wrong memory
+
+The structural decoder's **emission is correct**, and impressively so — one delta per element,
+holding up under `,` `]` `}` inside string values, escaped quotes, embedded newlines,
+pretty-printed multi-line records, deep nesting, and 1-character chunk boundaries.
+
+Its **memory is not bounded**: retained heap tracks the whole array text at **0.88× the wire**,
+with 34× growth over a 100× workload, and the time is quadratic (28× for 10× the rows).
+
+<Callout type="warn">
+    **So it trips its own default cap, and blames the vendor.** 37,000 rows decode; 38,000 fail
+    with *"a malformed or never-closing value was streamed"* — which the vendor did not do. On a
+    60,000-row array the consumer receives **37,312 rows and then `error`/`done(ok: false)`**: a
+    silent truncation for any loop that only matches `delta`, at a threshold that moves with your
+    customer's data.
+
+    The control settles where the defect is: the same 100,000 records as **concatenated top-level
+    values** run flat at **0.9 MB**. One branch, not a design limit.
+
+</Callout>
+
+## What StitchAPI does not solve here
+
+1. **No memory-bounded path is reachable from config alone.** Every decoder × every accessor is
+   O(N) through the engine.
+2. **`decode: 'json'` does not bound a single top-level array** — the one case NDJSON can't cover.
+3. **No size guard, threshold, warning or event on the buffered path.** A 21 MB response emits
+   the same four events a 40-byte one does. When the wall arrives it is V8's: 400,000 rows under
+   a 96 MB ceiling gave `FATAL ERROR: … JavaScript heap out of memory`, **exit 134** — no
+   catchable error, no `error` event, no `finally`.
+4. **`stream.buffer.chars` is a malformed-input guard, not a budget.** It bounds one line or one
+   un-closed value — 20,000 well-formed rows streamed cleanly through a **1,000-character** cap
+   while the engine accumulated all 20,000. On a buffered stitch it typechecks and is **inert**.
+5. **`pick` and `transform` are silently inert on a stream** — `transform` called **zero** times
+   over 200 deltas. No `info`, no drift finding, no throw. A stitch that carries them and is
+   later switched to `kind: stream` keeps compiling and quietly stops reshaping.
+6. **`output` on a stream validates without transforming.** The buffered path serves the
+   validated value; the streaming path keeps only the errors. The same coercing schema reshapes
+   your data on `await` and silently does not on `.stream()`.
+7. **A failing row is a circuit breaker, not a filter** — `contract violation (drift)`, the
+   stream ends, and the rest is never read.
+8. **No batching primitive.** There's no `paginate`-style chunking for streams; the 75 lines
+   above are yours.
+
+<Callout type="warn">
+    **`stream({ kind: mySurface })` silently drops your surface** — `stream()` overwrites `kind`
+    after spreading your config. Measured: 1,000 raw rows, **zero** through the surface, no error.
+    Spell it `stitch({ kind })`.
+
+    And a backlogged socket is **invisible to `heapUsed`** — a producer that ignores
+    `desiredSize` puts the body in the stream's internal queue, which is external memory. Watch
+    `arrayBuffers`.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card
+        title="A stream that fails after 800 tokens"
+        href="/docs/scenarios/mid-stream-failure"
+    />
+    <Card
+        title="The page that moved while you were reading it"
+        href="/docs/scenarios/unstable-pagination"
+    />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

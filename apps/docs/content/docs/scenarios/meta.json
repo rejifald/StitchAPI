@@ -13,6 +13,7 @@
         "multi-tenant-blast-radius",
         "provider-failover",
         "unstable-pagination",
-        "intermittent-drift"
+        "intermittent-drift",
+        "large-response-memory"
     ]
 }
