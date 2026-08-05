@@ -21,8 +21,10 @@
  * Default cap on the chars the `'json'` decoder will buffer for a single in-progress value before
  * it throws — characters of the DECODED text (UTF-16 code units), not bytes off the socket. ~8M:
  * generous for real records, but bounded so a malformed / never-closing value (e.g. an unterminated
- * `[`) can't grow the buffer without limit. Overridable per-stream via `stream.buffer.chars`. The
- * engine (`runStreaming`) turns the throw into an `error` event.
+ * string, or an object whose `}` never arrives) can't grow the buffer without limit. It bounds ONE
+ * value: a top-level array's elements are released as they close, so an array is capped by its
+ * largest ELEMENT, not by its length. Overridable per-stream via `stream.buffer.chars`. The engine
+ * (`runStreaming`) turns the throw into an `error` event.
  */
 export const JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS = 8 * 1024 * 1024;
 
@@ -162,7 +164,14 @@ export async function* jsonStream(
                             pending.push(slice(valueStart, scan));
                         }
                         topIsArray = c === 0x5b;
-                        valueStart = scan;
+                        // A top-level ARRAY is never sliced as a value — only its ELEMENTS are
+                        // (see the emission rules above), so it records no start. Recording one
+                        // would floor `compact()` at the opening `[` for the array's whole
+                        // lifetime: nothing released, heap tracking the wire, quadratic scanning,
+                        // and a long array tripping its own buffer cap (#659). A top-level
+                        // OBJECT/scalar IS sliced whole, so it still keeps its start. `elementStart`
+                        // takes over as the floor while an element is mid-flight.
+                        valueStart = topIsArray ? -1 : scan;
                     } else if (depth === 1 && topIsArray && elementStart < 0) {
                         elementStart = scan;
                     }
@@ -179,8 +188,8 @@ export async function* jsonStream(
                                 pending.push(slice(elementStart, scan));
                                 elementStart = -1;
                             }
-                            // Drop the whole (now-consumed) array including this ']'.
-                            valueStart = -1;
+                            // Nothing to reset: an array records no `valueStart` (see `[` above),
+                            // and its elements have all been emitted and released as they closed.
                         } else {
                             // Top-level object closes → emit the whole object.
                             pending.push(slice(valueStart, scan + 1));
@@ -226,7 +235,9 @@ export async function* jsonStream(
 
             // Compact: drop everything before the earliest live position. When nothing is in
             // progress, that's the scan cursor (we've consumed up to it); otherwise it's the start
-            // of the in-progress value/element.
+            // of the in-progress value/element. Sitting BETWEEN two elements of a top-level array
+            // counts as nothing in progress, so the window falls back to the cursor and the
+            // already-emitted elements are released — the array itself pins nothing.
             const live =
                 valueStart >= 0
                     ? valueStart
