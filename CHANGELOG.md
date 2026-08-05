@@ -566,6 +566,30 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **A `bigint` path parameter no longer vanishes from the URL.** `stitch({ path: '/v1/things/{id}' })`
+  called with `{ params: { id: 1234567890123456789n } }` built `https://api.test/v1/things/` — the id
+  simply gone, no error, no event, no drift finding. A request meant for one item silently addressed
+  the **collection**; against a `DELETE` that is a different operation than the one the caller wrote.
+
+    `expandTemplateVar` branched on `string | number | boolean`, so a bigint matched none of the
+    scalar arms and fell through to the object arm, where `Object.entries(1n)` is `[]` and nothing was
+    emitted. It hit **every scalar position**, not just the plain `{id}` case measured above: `{/id}`
+    dropped the whole path segment (`/v1{/id}` → `/v1`), and `{+id}`, `{#id}`, `{.id}`, `{;id}`,
+    `{?id}` and the `{id:4}` prefix modifier all rendered empty. Composite values were never affected
+    — `[1n, 2n]` and `{ a: 1n }` route through `String()`/`stringifyLeaf` — so a bigint inside a list
+    expanded correctly while the same bigint on its own disappeared, and the query builder rendered
+    `?since=1234567890123456789` for a value the path builder erased.
+
+    **The type said the same thing twice.** Path-only vars inferred as `string | number`, so the value
+    was rejected at the call site as well as dropped at runtime; fixing either half alone still left
+    the caller stuck. The folded `params` slot is now `string | number | bigint`, which is what
+    `expandPath` has always stringified. A key named by an `input.params` schema still answers to its
+    schema — widening the path-only fold does not punch through a declared shape.
+
+    This lands on the people who had already done the right thing: parsing a 64-bit id into a `BigInt`
+    is the standard repair for JSON's double-precision rounding, and handing that repaired value back
+    to a path parameter was the moment it disappeared.
+
 - **`sse.reconnect` no longer replays a stream that already finished.** ([#640](https://github.com/rejifald/StitchAPI/issues/640))
   Measured against an OpenAI-shaped completion — `data: {…}` frames with no `id:`, terminated by
   `[DONE]` — `sse: { reconnect: true }` opened the body **4×**, delivered 24 deltas where 6 were

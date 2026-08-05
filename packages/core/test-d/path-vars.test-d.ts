@@ -15,9 +15,9 @@ import { type CallArg } from './_util';
 import { expectAssignable, expectError, expectType } from 'tsd';
 import { z } from 'zod';
 
-// 1) bare `{id}`: params is present, required, and typed `string | number`; the arg is required.
+// 1) bare `{id}`: params is present, required, and typed `string | number | bigint`; the arg is required.
 const u = stitch({ path: '/users/{id}' });
-expectType<{ id: string | number }>(
+expectType<{ id: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof u>>['params'],
 );
 expectError(u()); // params required → no-arg call is an error
@@ -25,16 +25,16 @@ expectError(u({})); // params still required
 expectError(u({ query: { page: 1 } })); // params still required
 
 // 2) path var + `input.params` schema for a SHARED key: the schema type wins for `id`, the path adds
-//    the rest (`postId`) as required `string | number`.
+//    the rest (`postId`) as required `string | number | bigint`.
 const post = stitch({
     path: '/u/{id}/p/{postId}',
     input: { params: z.object({ id: z.string() }) },
 });
 expectType<string>(
-    null as unknown as NonNullable<CallArg<typeof post>>['params']['id'], // schema wins (not string|number)
+    null as unknown as NonNullable<CallArg<typeof post>>['params']['id'], // schema wins (not string|number|bigint)
 );
-expectType<string | number>(
-    null as unknown as NonNullable<CallArg<typeof post>>['params']['postId'], // path-only → string|number
+expectType<string | number | bigint>(
+    null as unknown as NonNullable<CallArg<typeof post>>['params']['postId'], // path-only → string|number|bigint
 );
 expectError(post()); // params required
 expectError(post({ params: { id: 'a' } })); // missing the path-only `postId`
@@ -42,15 +42,15 @@ expectError(post({ params: { id: 'a' } })); // missing the path-only `postId`
 // 3) operators and modifiers are stripped to bare names (mirrors `expandPath`'s varspec parse):
 //    `{?q,sort}` → `q | sort`; `{id*}` (explode) → `id`; `{id:2}` (prefix) → `id`.
 const query = stitch({ path: '/search{?q,sort}' });
-expectType<{ q: string | number; sort: string | number }>(
+expectType<{ q: string | number | bigint; sort: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof query>>['params'],
 );
 const explode = stitch({ url: 'https://api.example.com/files/{id*}' });
-expectType<{ id: string | number }>(
+expectType<{ id: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof explode>>['params'],
 );
 const prefix = stitch({ url: 'https://api.example.com/u/{id:2}' });
-expectType<{ id: string | number }>(
+expectType<{ id: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof prefix>>['params'],
 );
 
@@ -74,7 +74,7 @@ expectAssignable<CallArg<typeof bound>>(undefined);
 
 // 7) `url` (host included) is templated too: a `{tenant}` in the host is a required param.
 const host = stitch({ url: 'https://{tenant}.example.com/v1/ping' });
-expectType<{ tenant: string | number }>(
+expectType<{ tenant: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof host>>['params'],
 );
 expectError(host());
@@ -82,7 +82,7 @@ expectError(host());
 // 8) `path` wins the var source when both `path` and `url` are literals (the engine never expands both;
 //    reading `path` first is the stable choice).
 const both = stitch({ path: '/p/{p}', url: 'https://x/u/{u}' });
-expectType<{ p: string | number }>(
+expectType<{ p: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof both>>['params'],
 );
 
@@ -95,7 +95,7 @@ expectAssignable<CallArg<typeof plain>>(undefined);
 //     schema stays required; `params` is added required from the path var. Since a declared sibling slot
 //     (`body`) now leaves `params` with its loose `Record<string, unknown>` passthrough (issue #134), the
 //     folded slot is that passthrough INTERSECTED with the path-only `{ id }` — the required modifier from
-//     the fold wins (still required), and the path-only key keeps `string | number`; extra loose keys are
+//     the fold wins (still required), and the path-only key keeps `string | number | bigint`; extra loose keys are
 //     tolerated. A no-input templated stitch (case 1) stays byte-clean `{ id }` — only a declared sibling
 //     brings the index-signature tail.
 const withBody = stitch({
@@ -105,7 +105,7 @@ const withBody = stitch({
 expectType<{ name: string }>(
     null as unknown as NonNullable<CallArg<typeof withBody>>['body'],
 );
-expectType<Record<string, unknown> & { id: string | number }>(
+expectType<Record<string, unknown> & { id: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof withBody>>['params'],
 );
 expectError(withBody({ body: { name: 'Ada' } })); // params still required
@@ -118,12 +118,12 @@ expectAssignable<CallArg<typeof withBody>>({
 // 11) seam members (root, principal-bound, and graphql) fold path vars identically.
 const api = seam({ baseUrl: 'https://x' });
 const member = api.stitch({ path: '/users/{id}' });
-expectType<{ id: string | number }>(
+expectType<{ id: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof member>>['params'],
 );
 expectError(member());
 const asMember = api.as('u1').stitch({ path: '/orgs/{org}' });
-expectType<{ org: string | number }>(
+expectType<{ org: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof asMember>>['params'],
 );
 expectError(asMember());
@@ -131,7 +131,26 @@ const gqlMember = api.graphql({
     document: 'query { ok }',
     path: '/gql/{region}',
 });
-expectType<{ region: string | number }>(
+expectType<{ region: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof gqlMember>>['params'],
 );
 expectError(gqlMember());
+
+// 12) a `bigint` is accepted where a path var is expected. It is what a caller holds after parsing a
+//     64-bit id out of the range a JSON double would have silently rounded — the standard repair for
+//     that precision loss — and `expandPath` stringifies it exactly like a number. The type used to
+//     say `string | number`, which rejected the repaired value at the call site while the runtime
+//     ALSO dropped it; both halves are fixed, so pin the type half here and the expansion half in
+//     `test/url-query.spec.ts`.
+expectAssignable<CallArg<typeof u>>({ params: { id: 9007199254740993n } });
+expectAssignable<CallArg<typeof member>>({ params: { id: 9007199254740993n } });
+expectAssignable<NonNullable<CallArg<typeof query>>['params']>({
+    q: 1n, // every path-only var takes it, under an operator too
+    sort: 'asc',
+});
+// A schema-named key still answers to its SCHEMA, not the widened path-only type: `id` is `z.string()`
+// in case 2, so a bigint there stays an error. Widening the fold must not punch through a declared shape.
+expectError<NonNullable<CallArg<typeof post>>['params']>({
+    id: 1n,
+    postId: 1n,
+});

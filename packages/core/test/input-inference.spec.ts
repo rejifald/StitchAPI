@@ -90,8 +90,9 @@ test('params + query schemas validate and the typed call expands them', async ()
 test('an RFC 6570 path var with NO input schema requires params (Phase 2c)', async () => {
     server.route('GET', '/users/7', { body: { id: 7, name: 'Bo' } });
     // No `input.params` schema: the `{id}` template alone makes `params` a required call argument,
-    // typed `string | number`. This call is itself a compile-time assertion (tsconfig.test.json
-    // typechecks this file) — it only compiles because the path var is folded into the argument.
+    // typed `string | number | bigint`. This call is itself a compile-time assertion
+    // (tsconfig.test.json typechecks this file) — it only compiles because the path var is folded
+    // into the argument.
     const getUser = stitch({
         baseUrl: server.url,
         path: '/users/{id}',
@@ -105,6 +106,32 @@ test('an RFC 6570 path var with NO input schema requires params (Phase 2c)', asy
     const bound = getUser.with({ params: { id: 7 } });
     const same = await bound();
     expect(same.name).toBe('Bo');
+});
+
+test('a bigint path var reaches the server intact, digits and all', async () => {
+    // End-to-end guard for the two-sided bug: the folded `params` slot USED TO be typed
+    // `string | number` (so this call did not compile) and `expandPath` USED TO drop a bigint
+    // entirely (so the URL became `/things/`, hitting the COLLECTION instead of the item). Both
+    // sides are fixed; this pins them together, since either one alone still leaves the caller stuck.
+    //
+    // 9007199254740993n is `Number.MAX_SAFE_INTEGER + 2` — a value no JSON double can hold, which is
+    // exactly why a caller parses ids like it into a bigint in the first place.
+    const id = 9007199254740993n;
+    server.route('GET', `/things/${id}`, { body: { id: 7, name: 'Bo' } });
+    const getThing = stitch({
+        baseUrl: server.url,
+        path: '/things/{id}',
+        output: userSchema,
+    });
+
+    // Compiles only because `params` admits a bigint; resolves only because the URL kept every digit.
+    const thing = await getThing({ params: { id } });
+    expect(thing.name).toBe('Bo');
+    expect(server.callCount(`/things/${id}`)).toBe(1);
+    // The lossy `number` form is a DIFFERENT, wrong path — it must never have been requested.
+    expect(server.callCount(`/things/${Number(id)}`)).toBe(0);
+    // And the id must not have vanished into a bare collection request.
+    expect(server.callCount('/things/')).toBe(0);
 });
 
 test('seam members infer and validate input identically', async () => {

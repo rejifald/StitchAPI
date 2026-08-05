@@ -392,8 +392,13 @@ function expandTemplateVar(
         if (
             typeof value === 'string' ||
             typeof value === 'number' ||
-            typeof value === 'boolean'
+            typeof value === 'boolean' ||
+            typeof value === 'bigint'
         ) {
+            // `bigint` belongs with the other scalars, not in the object arm below: it has no
+            // enumerable entries, so `Object.entries(1n)` is `[]` and the var would expand to
+            // NOTHING — `/things/{id}` silently becoming `/things/`, a collection request where
+            // an item was meant. Matches `stringifyLeaf`, which the list/object arms already use.
             let s = String(value);
             if (modifier && modifier !== '*')
                 s = s.substring(0, parseInt(modifier, 10));

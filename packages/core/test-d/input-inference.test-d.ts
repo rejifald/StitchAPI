@@ -145,7 +145,7 @@ const templated = stitch({
     path: '/users/{id}',
     input: { body: z.object({ name: z.string() }) },
 });
-expectType<Record<string, unknown> & { id: string | number }>(
+expectType<Record<string, unknown> & { id: string | number | bigint }>(
     null as unknown as NonNullable<CallArg<typeof templated>>['params'],
 );
 expectError(templated({ body: { name: 'Ada' } })); // params still required by the path var
