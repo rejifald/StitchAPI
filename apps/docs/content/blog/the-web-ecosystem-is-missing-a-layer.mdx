@@ -82,7 +82,7 @@ const listUsers = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users',
     auth: bearer(env('API_TOKEN')),
-    output: drift(z.array(User)),
+    output: drift(z.array(User)), // validate every live response; report what drifted
     retry: 3,
     throttle: '10/s',
     timeout: '10s',
