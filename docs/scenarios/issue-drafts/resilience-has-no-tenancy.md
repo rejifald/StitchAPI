@@ -1,6 +1,6 @@
 # Issue draft — `throttle` and `circuit` have no tenancy axis, so one tenant can fail all of them
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#641](https://github.com/rejifald/StitchAPI/issues/641). Raised by the scenario pass on 2026-08-05.
 **Scenario:** [`multi-tenant-blast-radius`](../multi-tenant-blast-radius.md)
 **Suggested template:** feature_request.yml · **Suggested labels:** `enhancement`, `resilience`, `multi-tenant`
 

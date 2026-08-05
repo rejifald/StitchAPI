@@ -1,6 +1,6 @@
 # Issue draft — `idempotency: true` double-charges a re-driven job, and adding `retry` silences the warning
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#642](https://github.com/rejifald/StitchAPI/issues/642). Raised by the scenario pass on 2026-08-05.
 **Scenario:** [`unconfirmed-write`](../unconfirmed-write.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `idempotency`, `dx`, `money`
 

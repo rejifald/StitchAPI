@@ -1,6 +1,6 @@
 # Issue draft — `sse: { reconnect: true }` replays a **completed** stream and delivers duplicated content
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#640](https://github.com/rejifald/StitchAPI/issues/640). Raised by the scenario pass on 2026-08-05.
 **Scenario:** [`mid-stream-failure`](../mid-stream-failure.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `bug`, `sse`, `data-integrity`
 **Affects:** resumable SSE as shipped in **#622** (two commits before this branch)
