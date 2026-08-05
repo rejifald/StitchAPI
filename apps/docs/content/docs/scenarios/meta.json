@@ -22,6 +22,7 @@
         "agent-holds-the-tool",
         "stale-fixture",
         "precision-loss",
-        "pii-in-the-logs"
+        "pii-in-the-logs",
+        "dual-run-migration"
     ]
 }
