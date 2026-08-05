@@ -81,4 +81,9 @@ real runtime, not by reading the source.
         href="/docs/scenarios/large-response-memory"
         description="The NDJSON decoder is genuinely O(1) — and the engine retains every chunk one line later, so neither await nor .stream() is bounded."
     />
+    <Card
+        title="The signature that expired in your own queue"
+        href="/docs/scenarios/expiring-signatures"
+        description="A rate-limited queue cannot age a SigV4 signature here — the wait happens before signing, by construction. Clock drift still needs 26 lines."
+    />
 </Cards>

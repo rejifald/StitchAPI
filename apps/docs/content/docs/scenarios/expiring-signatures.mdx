@@ -1,0 +1,122 @@
+---
+title: 'The signature that expired in your own queue'
+description: 'A rate-limited queue cannot age a SigV4 signature here — the wait happens before signing, by construction. Clock drift still needs 26 lines.'
+prerequisites:
+    ['/docs/guides/resilience/throttle', '/docs/integrations/aws-sigv4']
+---
+
+## The problem
+
+You call a service that requires **signed requests** — S3 or any AWS API over SigV4. The
+signature covers a timestamp, and the server rejects anything more than **five minutes** off
+its own clock. That window exists to stop replay attacks and is not negotiable.
+
+There are three ways to fall outside it, and only one is your clock:
+
+1. **The clock drifts.** Containers inherit the host's time at start and never re-sync. Retry
+   makes it _worse_ — the same stale clock produces the same invalid timestamp every attempt.
+2. **The signature ages in a queue — yours.** Sign, then hold: behind a rate limiter, a
+   concurrency cap, a backoff. AWS's own answer: _"The SDK signs the request, then puts it in a
+   queue. If the request is pending for more than 5 minutes, the signature expires."_ The fix
+   filed against botocore ([#149](https://github.com/boto/botocore/issues/149)) is to generate
+   the timestamp per signing operation.
+3. **The retry replays a stale signature**, if signing happens once per call rather than per
+   attempt.
+
+And the compounding detail: `RequestTimeTooSkewed` is a **403**, so it reads as "auth problem,
+retry it" — the failure most likely to be retried is the one retry cannot fix.
+
+## What StitchAPI does
+
+**Cases 2 and 3 need no user code, because the ordering is right by construction.** Inside the
+attempt loop, the throttle acquire sits _above_ the auth apply:
+
+```
+engine.ts:629   const { waited } = await acquireWithin(…)   ← the queue wait
+engine.ts:649   await cfg.auth.apply(req, …)                ← signing
+engine.ts:652   await cfg.hooks?.onRequest?.(…)
+```
+
+and each attempt gets fresh headers off the _unsigned_ base request.
+
+**Measured:**
+
+|                                                               | signature age on arrival               | statuses                 |
+| ------------------------------------------------------------- | -------------------------------------- | ------------------------ |
+| 4 calls behind `rate: '1/2m'`, granted at 0/2/4/6 virtual min | **0, 0, 0, 0 ms**                      | `200, 200, 200, 200`     |
+| the same calls **pre-signed** (the botocore shape)            | 0, 2, 4, **6 min**                     | `200, 200, 200, **403**` |
+| held 6 min behind `concurrency: 1`                            | **0 ms**                               | `200`                    |
+| 3 attempts 6 min apart, long backoff                          | **0, 0, 0 ms** — 3 distinct signatures |                          |
+| a 10-minute `Retry-After` park                                | **0 ms**                               | `200`                    |
+
+**A StitchAPI throttle cannot expire a signature.** The circuit breaker doesn't either — it
+fast-fails _before_ signing, so three blocked calls produced **zero** signings.
+
+## Clock drift is still yours — 26 lines
+
+Per-attempt signing re-mints the _same wrong time_: measured, 4 attempts, 4 identical
+600,000 ms skews. The correction AWS SDKs implement — learn the offset from the server's `Date`
+header, re-sign — is reachable through `AuthStrategy.shouldRefresh`/`refresh`:
+
+```ts
+shouldRefresh: (res) => res.status === 403 && isSkew(res),
+refresh: async () => { /* offset learned from the Date header, via a closure */ },
+```
+
+**Measured:** the offset was learned (600,000 ms), the _same attempt_ re-signed, and the call
+returned `200` — costing **no retry budget**, because a refresh re-runs the attempt rather than
+consuming one. The offset persists, so the next call needed **one** request.
+
+Assembled: **4 of 4 calls succeeded through a 10-minute host drift _and_ a 6-minute rate-limited
+queue**, worst signature age 0 ms, breaker never opened — 26 lines in two declarations, all of
+it for the drift half. With no user code at all the same workload gave
+`["403", "403", "503", "503"]`.
+
+<Callout type="error">
+    **`hooks.onRequest` runs *after* signing** (`:652` vs `:649`) — and it is
+    the only user-code seam that does. A hand-rolled pacing gate there
+    **re-creates botocore#149 inside a library that doesn't have it**: measured,
+    a 6-minute wait in `onRequest` aged the signature 6 minutes and got a `403`.
+    Pace with `throttle`, never with a sleep in a hook.
+</Callout>
+
+## What StitchAPI does not solve here
+
+1. **Clock drift itself.** The library re-signs faithfully with whatever clock you have.
+2. **Skew correction has no config vocabulary** — it is `shouldRefresh`/`refresh` plus a closure,
+   because `refresh` cannot see the response that triggered it. The offset has to be smuggled out
+   of `shouldRefresh`.
+3. **A skew 403 counts as a circuit failure.** A fault _inside your own process_ opens the
+   dependency's breaker, and the half-open probe then reports `RequestTimeTooSkewed` rather than
+   the fault that opened it.
+4. **A breaker does not shed a burst already queued behind a throttle** — the circuit phase is
+   read before the throttle wait. Measured: 4 concurrent calls all reached the wire over 6
+   minutes _after_ the breaker opened; the same 4 issued sequentially stopped after 2.
+5. **SigV4 signs with `new Date()`, not the injected clock.** On real time the stamp is correct —
+   this is a testability defect, not a wire defect — but it means a skew test on a `manualClock`
+   is impossible: 600 virtual seconds moved the shipped stamp **0 seconds**, and under a default
+   `manualClock()` **0 of 3** calls were accepted, with ~20,670 days of apparent skew.
+
+<Callout type="warn">
+    **`verdict: { accept: [403], flag: 'ok' }` swallows the skew error.** The recipe that works
+    for a 401 in [the multi-tenant scenario](/docs/scenarios/multi-tenant-blast-radius) does not
+    transfer: `verdict.flag` is three-state, an **absent** flag means "no signal", and AWS error
+    bodies carry no flag. Measured: `ok: true`, with `RequestTimeTooSkewed` handed to the caller
+    as data. Six lines of `Surface.interpret` fix both this and finding 3 above.
+
+    Also: **`backoff.max` defaults to 10 s**, so `base: '6m'` silently waits 10 seconds.
+    Protective here — it cost this scenario's proofs a false negative.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+    <Card title="AWS SigV4" href="/docs/integrations/aws-sigv4" />
+    <Card title="Auth strategies" href="/docs/reference/auth-strategies" />
+    <Card
+        title="One customer's revoked token, everyone's outage"
+        href="/docs/scenarios/multi-tenant-blast-radius"
+    />
+</Cards>

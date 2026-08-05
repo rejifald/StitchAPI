@@ -26,6 +26,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 11  | Pagination over a live collection                     | `unstable-pagination`           | achievable with user code — keyset in 4 lines; detection is yours    | [page shipped](../../apps/docs/content/docs/scenarios/unstable-pagination.mdx) + 1 issue draft (dedupe in `items` **causes** data loss; 4 endings share one break)  |
 | 12  | A canary rollout of a response-shape change           | `intermittent-drift`            | achievable with user code — 9 declarative lines + ~84 for the rate   | [page shipped](../../apps/docs/content/docs/scenarios/intermittent-drift.mdx) + 1 issue draft (a `coerced` finding can't grade the coercion; nullable has no level) |
 | 13  | The export that eats the heap                         | `large-response-memory`         | achievable with user code — one seam, ~75 lines, **NDJSON only**     | [page shipped](../../apps/docs/content/docs/scenarios/large-response-memory.mdx) + 1 issue draft (**`.stream()` is not memory-bounded; `decode: 'json'` buffers**)  |
+| 14  | The signature that expired in your own queue          | `expiring-signatures`           | **ACHIEVABLE** — the queue/retry halves need no user code at all     | [page shipped](../../apps/docs/content/docs/scenarios/expiring-signatures.mdx) + 1 issue draft (SigV4 ignores the injected clock; a skew 403 opens the breaker)     |
 
 ## Open issue drafts
 
@@ -86,9 +87,15 @@ this pass had to remember to compose it first, and the one proof that omitted it
 every response including non-2xx on a buffered stitch (measured on `[200, 304, 404]`), and
 **zero times** on a streaming one. Anyone reasoning from one path to the other will be wrong.
 
-**2b. Two time-driven features ignore the injected clock** — `timeout.total` and `cache.ttl`
-both read wall-clock while their neighbours use `clock`. Two point fixes are less valuable
-than one audit plus a line in the testing guide.
+**2b. THREE time-driven features ignore the injected clock** — `timeout.total` (4), `cache.ttl`
+(6) and **SigV4 signing** (14) all read wall-clock while their neighbours use `clock`. Three
+point fixes are worth less than one audit plus a line in the testing guide.
+
+**2f. `verdict.flag`'s absent-path rule has produced a silent success three times** — a THROTTLED
+envelope returned as data (2), `flag: 'UnprocessedItems'` inert because arrays are truthy (11),
+and a `RequestTimeTooSkewed` 403 swallowed (14). Each time the fix was ~6 lines of
+`Surface.interpret`. An absent flag meaning "no signal" is defensible; it being the _quiet_
+answer three times running is the pattern.
 
 **2b-bis. The buffered and streaming paths disagree about six things, all silently.** Across
 scenarios 5 and 13: `retry` inert, `interpret` never called, `pick` never called, `transform`
