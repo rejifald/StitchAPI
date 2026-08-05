@@ -566,6 +566,50 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **BREAKING — an `input` schema now SHAPES the request, not just gates it.**
+  ([#648](https://github.com/rejifald/StitchAPI/issues/648)) `validateInput` awaited the validator,
+  checked `r.ok`, threw on failure — and dropped `r.value` on the floor. Its return type was
+  `Promise<void>`, so it structurally could not do otherwise, and the original **unparsed** input
+  went to the transport. `validateOutput` had done the opposite since
+  [ADR 0015](docs/adr/0015-schema-anchored-drift.md) — "on success returns the PARSED value —
+  coerced, defaulted, stripped — so the result matches the declared contract" — which left the two
+  halves of one feature behaving in opposite directions, and only the stripping half documented as
+  doing so.
+
+    Measured: a `query` validator that returned `{ limit: 10 }` still put
+    `?tenant=globex&limit=10&include=internal_notes` on the wire, overwriting a `tenant=acme`
+    pinned in the configured endpoint — and the vendor duly returned the other tenant's data.
+
+    ```ts
+    const getOrders = stitch({
+        url: 'https://api.vendor.test/v1/orders?tenant=acme',
+        input: { query: z.object({ limit: z.number() }) }, // strips by default
+    });
+    await getOrders({ query: { limit: 10, tenant: 'globex' } });
+    // before: /v1/orders?tenant=globex&limit=10   after: /v1/orders?tenant=acme&limit=10
+    ```
+
+    Two properties compounded. A schema constrains **one slot**, so an undeclared slot is a full
+    passthrough; and a pinned query pair is a **default**, not a pin (`{ ...predefined,
+...input.query }`). The one mechanism a reader would reach for to close the second — declare a
+    strict schema — silently did nothing, because stripping unknown keys is the DEFAULT in Zod,
+    Valibot and ArkType alike. It bit hardest on the MCP surface, where `run_stitch` forwards a
+    **model's** argument object, but nothing about it was MCP-specific.
+
+    Every declared slot — `params`, `query`, `body`, `headers`, and GraphQL `variables` — now
+    contributes its parsed value to the request, its cache key, and the events that echo it. The
+    parsed values land in a **copy**, so the object a caller passed is never rewritten.
+
+    **What did NOT change.** A slot with no schema stays the full passthrough it has always been:
+    this filters, it does not lock down. And the graphql surface's `input.variables ?? input.body`
+    fallback is intact — an absent optional slot parses to `undefined`, which is nullish.
+
+    Migration — **a declared slot now sends only what its schema returns.** If a call relied on
+    extra keys riding along beside a declared schema, name them in the schema, or use a passthrough
+    shape (`z.object({…}).loose()` in Zod 4, `.passthrough()` in Zod 3) to keep the old behaviour
+    for that slot. Coercions and defaults a schema declares now reach the wire, where they were
+    previously computed and discarded.
+
 - **A `bigint` path parameter no longer vanishes from the URL.** `stitch({ path: '/v1/things/{id}' })`
   called with `{ params: { id: 1234567890123456789n } }` built `https://api.test/v1/things/` — the id
   simply gone, no error, no event, no drift finding. A request meant for one item silently addressed

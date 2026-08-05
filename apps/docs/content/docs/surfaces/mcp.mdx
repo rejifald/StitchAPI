@@ -36,6 +36,11 @@ input. The tool call looks like this:
 stitch behind the [capability boundary](/docs/concepts/capability-not-credential)
 and returns its validated result.
 
+The agent's object is the _call_ input, not the request: a slot with a declared
+[`input` schema](/docs/guides/validation/validation) is rebuilt from what that
+schema returned, so a key the model invented is stripped before the request. A
+slot with no schema stays a passthrough — declare the slots an agent may fill.
+
 ## Options
 
 `run_stitch` takes `{ name, input }` and covers **every** registered stitch with
