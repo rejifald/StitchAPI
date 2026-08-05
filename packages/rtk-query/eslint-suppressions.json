@@ -1,0 +1,13 @@
+{
+  "test/rtk-query.spec.ts": {
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 2
+    },
+    "@typescript-eslint/no-empty-function": {
+      "count": 3
+    },
+    "@typescript-eslint/no-invalid-void-type": {
+      "count": 1
+    }
+  }
+}

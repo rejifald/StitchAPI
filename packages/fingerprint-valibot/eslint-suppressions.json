@@ -1,0 +1,10 @@
+{
+  "src/index.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 8
+    },
+    "@typescript-eslint/only-throw-error": {
+      "count": 14
+    }
+  }
+}

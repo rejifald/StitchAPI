@@ -251,9 +251,7 @@ describe('awsSigV4 strategy', () => {
     test('signBody:true on a form body signs the URL-encoded wire bytes, not JSON', async () => {
         const body = { Action: 'SendMessage', MessageBody: 'two words' };
         // What core's transport actually sends: 'Action=SendMessage&MessageBody=two+words'.
-        const wire = new URLSearchParams(
-            body as Record<string, string>,
-        ).toString();
+        const wire = new URLSearchParams(body).toString();
 
         const form = awsSigV4({
             region: 'us-east-1',

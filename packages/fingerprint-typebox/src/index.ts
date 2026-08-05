@@ -76,10 +76,10 @@ function assertRepresentable(node: AnyRec): void {
     // A transform attaches an opaque Decode/Encode codec that is INVISIBLE to
     // JSON.stringify — its presence changes the parsed value without changing the
     // serialised JSON Schema, so it must abstain.
-    if ((node as AnyRec)[TRANSFORM as unknown as string] !== undefined) {
+    if (node[TRANSFORM as unknown as string] !== undefined) {
         throw ABSTAIN;
     }
-    const kind = (node as AnyRec)[KIND as unknown as string];
+    const kind = node[KIND as unknown as string];
     if (typeof kind === 'string' && OPAQUE_KINDS.has(kind)) throw ABSTAIN;
     // No JSON-Schema discriminator → nothing structural to hash (Any/Unknown/Unsafe).
     if (!DISCRIMINATORS.some((d) => d in node)) throw ABSTAIN;

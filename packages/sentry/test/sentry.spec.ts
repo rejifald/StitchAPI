@@ -35,7 +35,7 @@ const ev = {
         name: 'getUser',
         method: 'GET',
         url: 'https://api.example.com/users?api_key=SUPERSECRET',
-        input: {} as never,
+        input: {},
         at: 0,
     },
     progressRetry: { type: 'progress', phase: 'retry', attempt: 1, at: 0 },
@@ -218,7 +218,7 @@ describe('sentrySink', () => {
             name: 'getUser',
             method: 'GET',
             url: 'https://alice:s3cr3t@api.example.com/users/1',
-            input: {} as never,
+            input: {},
             at: 0,
         };
         const { sentry, breadcrumbs, captures } = mockSentry();

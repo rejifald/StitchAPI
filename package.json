@@ -16,7 +16,7 @@
         "test:coverage": "pnpm -r test:coverage",
         "check:types": "pnpm -r check:types",
         "check:types-d": "pnpm -r check:types-d",
-        "check:lint": "pnpm -r check:lint",
+        "check:lint": "node scripts/check-lint.mjs",
         "check:exports": "pnpm -r check:exports",
         "check:exports:companions": "node scripts/check-companion-exports.mjs",
         "check:size": "pnpm -r check:size",
@@ -34,12 +34,18 @@
         "prepare": "lefthook install"
     },
     "devDependencies": {
+        "@eslint/js": "^9.39.4",
         "@trivago/prettier-plugin-sort-imports": "^6.0.2",
+        "@vitest/eslint-plugin": "^1.6.24",
+        "eslint": "^9.39.4",
+        "eslint-config-prettier": "^10.1.8",
         "fallow": "^3.10.0",
         "lefthook": "^2.1.10",
         "prettier": "3.9.6",
         "semver": "^7.8.5",
-        "tsx": "^4.23.1"
+        "tsx": "^4.23.1",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.65.0"
     },
     "pnpm": {
         "overrides": {

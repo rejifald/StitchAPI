@@ -88,9 +88,9 @@ function isJsonSurvivable(value: unknown, seen: Set<object>): boolean {
     if (value === null || value === undefined) return true;
     const t = typeof value;
     if (t === 'string' || t === 'boolean') return true;
-    if (t === 'number') return Number.isFinite(value as number);
+    if (t === 'number') return Number.isFinite(value);
     if (t !== 'object') return false; // function | symbol | bigint
-    const obj = value as object;
+    const obj = value;
     if (seen.has(obj)) return false; // cycle — JSON.stringify would throw
     seen.add(obj);
     let ok: boolean;
@@ -153,7 +153,7 @@ export function stitchQueryFn<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
 ): (input: Input) => Promise<QueryFnResult<T>>;
 export function stitchQueryFn<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
 ): (input: unknown) => Promise<QueryFnResult<T>> {
     return async (input: unknown): Promise<QueryFnResult<T>> => {
         try {
@@ -211,7 +211,7 @@ export function stitchStreamUpdater<Chunk, Input = unknown>(
     options?: StreamUpdaterMode | AtLeastOne<StreamUpdaterOptions>,
 ): (input: Input, api: CacheLifecycleApi<Chunk[]>) => Promise<void>;
 export function stitchStreamUpdater<Chunk>(
-    stitch: StreamableStitchLike<unknown, unknown>,
+    stitch: StreamableStitchLike<unknown>,
     options?: StreamUpdaterMode | AtLeastOne<StreamUpdaterOptions>,
 ): (input: unknown, api: CacheLifecycleApi<Chunk[]>) => Promise<void> {
     // The scalar shorthand normalises to the canonical `mode` field (CONTRACT.md P0/P12).

@@ -79,7 +79,7 @@ function readGraphqlBody(body: unknown): GraphqlRequestBody | null {
  */
 function extractUserSelection(query: string): string[] | null {
     // Find `user` followed by an optional (args) then a `{ ... }` block.
-    const match = query.match(/user\s*(?:\([^)]*\))?\s*\{([^}]*)\}/);
+    const match = /user\s*(?:\([^)]*\))?\s*\{([^}]*)\}/.exec(query);
     if (!match) return null;
     return match[1]
         .split(/[\s,]+/)
@@ -93,11 +93,11 @@ function resolveRequestedId(
     variables: Record<string, unknown> | undefined,
 ): number {
     // Inline literal: `user(id: 2)`.
-    const literal = query.match(/user\s*\(\s*id\s*:\s*(\d+)/);
+    const literal = /user\s*\(\s*id\s*:\s*(\d+)/.exec(query);
     if (literal) return parseInt(literal[1], 10);
 
     // Variable reference: `user(id: $id)` resolved from variables.id.
-    const varRef = query.match(/user\s*\(\s*id\s*:\s*\$(\w+)/);
+    const varRef = /user\s*\(\s*id\s*:\s*\$(\w+)/.exec(query);
     if (varRef && variables) {
         const v = variables[varRef[1]];
         if (typeof v === 'number') return v;

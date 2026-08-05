@@ -158,7 +158,7 @@ describe('stitch() middleware puts a seam on req', () => {
 
 describe('streamStitchSse writes SSE frames to res', () => {
     test('only delta events become data: frames; control events are not forwarded', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield {
                 type: 'start',
                 name: 's',
@@ -181,7 +181,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',
@@ -209,7 +209,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('error (function shorthand) opts in to the raw message on the error frame', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',
@@ -231,7 +231,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
 
     test('error can be the full object: data + a custom event name + observe', async () => {
         const observed: unknown[] = [];
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',
@@ -261,7 +261,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
 
     test('error.observe sees the real failure even when the client gets the generic token', async () => {
         const observed: unknown[] = [];
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',
@@ -287,7 +287,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('the data mapper + named event shape each delta frame', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: { text: 'a' }, at: 1 };
             yield { type: 'delta', chunk: { text: 'b' }, at: 2 };
         }
@@ -304,7 +304,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('accepts the { stream() } arm of StitchEventSource (e.g. a StitchResult)', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'via-stream', at: 1 };
         }
         const res = mockRes();
@@ -316,7 +316,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('the default data mapper sends a string verbatim and JSON-stringifies an object', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'plain', at: 1 };
             yield { type: 'delta', chunk: { a: 1 }, at: 2 };
         }
@@ -327,7 +327,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('delta as a function is shorthand for { data }', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: { text: 'a' }, at: 1 };
             yield { type: 'delta', chunk: { text: 'b' }, at: 2 };
         }
@@ -339,7 +339,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('the delta.id option emits an id: line per frame with the zero-based index', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'a', at: 1 };
             yield { type: 'delta', chunk: 'b', at: 2 };
         }
@@ -352,7 +352,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 
     test('a multi-line chunk gets one data: prefix per line (SSE spec)', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'line1\nline2', at: 1 };
         }
         const res = mockRes();
@@ -366,12 +366,11 @@ describe('streamStitchSse writes SSE frames to res', () => {
         // A stream that blocks after the first delta until torn down — exactly the shape of a real
         // stitch `.stream()` generator: an in-flight `next()` only settles when `return()` is called,
         // so this verifies the disconnect path resolves the hanging read rather than leaking it.
-        const source: AsyncIterable<StitchEvent<unknown>> = {
+        const source: AsyncIterable<StitchEvent> = {
             [Symbol.asyncIterator]() {
                 let sentFirst = false;
                 let resolvePending:
-                    | ((r: IteratorResult<StitchEvent<unknown>>) => void)
-                    | undefined;
+                    ((r: IteratorResult<StitchEvent>) => void) | undefined;
                 return {
                     next() {
                         if (!sentFirst) {
@@ -425,7 +424,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         let nextedWith: unknown = 'untouched';
         stitchErrorHandler()(
             err,
-            mockReq() as unknown as Request,
+            mockReq(),
             res as unknown as Response,
             (e?: unknown) => {
                 nextedWith = e;
@@ -447,7 +446,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         const res = mockRes();
         stitchErrorHandler()(
             err,
-            mockReq() as unknown as Request,
+            mockReq(),
             res as unknown as Response,
             () => undefined,
         );
@@ -468,7 +467,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         const res = mockRes();
         stitchErrorHandler()(
             err,
-            mockReq() as unknown as Request,
+            mockReq(),
             res as unknown as Response,
             () => undefined,
         );
@@ -486,7 +485,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         const res = mockRes();
         stitchErrorHandler({ body: (e) => ({ error: e.message }) })(
             err,
-            mockReq() as unknown as Request,
+            mockReq(),
             res as unknown as Response,
             () => undefined,
         );
@@ -505,7 +504,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         const res = mockRes();
         stitchErrorHandler({ status: (e) => e.status ?? 502 })(
             err,
-            mockReq() as unknown as Request,
+            mockReq(),
             res as unknown as Response,
             () => undefined,
         );
@@ -518,7 +517,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         let nextedWith: unknown;
         stitchErrorHandler()(
             plain,
-            mockReq() as unknown as Request,
+            mockReq(),
             res as unknown as Response,
             (e?: unknown) => {
                 nextedWith = e;

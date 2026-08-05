@@ -27,6 +27,7 @@ export interface ErrorContextLike {
  * with it (or read it loosely) — `({ stitch }) => stitch.stitch('/me')()`. It is a `type` (not an
  * `interface`) so it is assignable to Elysia's `Record<string, unknown>` derive constraint.
  */
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- see above: an `interface` gets no implicit index signature, so it fails Elysia's `SingletonBase`/derive constraint
 export type StitchContext = {
     stitch: ElysiaRequestSeam;
 };

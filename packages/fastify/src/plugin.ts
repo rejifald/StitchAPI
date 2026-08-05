@@ -110,7 +110,7 @@ const pluginImpl: FastifyPluginAsync<FastifyStitchPluginOptions> = async (
     // `logger: false`) by injecting a `fastifyLoggerSink(fastify.log)` as the seam's TraceSink.
     let instance: Seam;
     if (built) {
-        const cfg = options.seamConfig as SeamConfig;
+        const cfg = options.seamConfig;
         const wantLogger = options.logger !== false;
         const loggerOpts: FastifyLoggerSinkOptions =
             typeof options.logger === 'object' ? options.logger : {};
@@ -122,7 +122,7 @@ const pluginImpl: FastifyPluginAsync<FastifyStitchPluginOptions> = async (
                 : {}),
         });
     } else {
-        instance = options.seam as Seam;
+        instance = options.seam;
     }
 
     // Ownership (mirrors the Nest `borrowStore` rule): close only a seam we built, unless the

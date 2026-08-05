@@ -105,7 +105,7 @@ function defaultKey(input: unknown): string {
 }
 
 function useStitchInternal<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options: UseStitchOptions<T> & { streaming: boolean },
 ): UseStitchResult<T> {
@@ -127,7 +127,7 @@ function useStitchInternal<T>(
     // identity entering the dep key.
     const stitchRef = useRef(stitch);
     stitchRef.current = stitch;
-    const stableStitch = useRef<StitchLike<T, unknown>>((input?: unknown) =>
+    const stableStitch = useRef<StitchLike<T>>((input?: unknown) =>
         stitchRef.current(input),
     ).current;
 
@@ -142,7 +142,7 @@ function useStitchInternal<T>(
 
     const query: StitchQuery<T> = useMemo(
         () =>
-            createStitchQuery<T, unknown>(
+            createStitchQuery<T>(
                 stableStitch,
                 input,
                 compact({
@@ -208,7 +208,7 @@ export function useStitch<T, Input = unknown>(
     options?: UseStitchOptions<T>,
 ): UseStitchResult<T>;
 export function useStitch<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options: UseStitchOptions<T> = {},
 ): UseStitchResult<T> {
@@ -246,7 +246,7 @@ export function useStitchStream<T, Input = unknown>(
     options?: UseStitchOptions<T>,
 ): UseStitchResult<T>;
 export function useStitchStream<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options: UseStitchOptions<T> = {},
 ): UseStitchResult<T> {

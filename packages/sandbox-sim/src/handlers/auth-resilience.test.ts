@@ -191,7 +191,7 @@ async function main() {
             '/drift (no drift) body.name must be a string',
         );
         assert.equal(
-            body.hasOwnProperty('extra'),
+            Object.hasOwn(body, 'extra'),
             false,
             '/drift (no drift) must not have extra field',
         );
@@ -215,12 +215,12 @@ async function main() {
             '/drift (drift=true) body.id must be a STRING (type violation)',
         );
         assert.equal(
-            body.hasOwnProperty('name'),
+            Object.hasOwn(body, 'name'),
             false,
             '/drift (drift=true) must be missing name field',
         );
         assert.equal(
-            body.hasOwnProperty('extra'),
+            Object.hasOwn(body, 'extra'),
             true,
             '/drift (drift=true) must have unexpected extra field',
         );

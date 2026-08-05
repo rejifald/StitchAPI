@@ -1,0 +1,7 @@
+{
+  "src/index.ts": {
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 3
+    }
+  }
+}

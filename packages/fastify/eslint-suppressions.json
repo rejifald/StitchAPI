@@ -1,0 +1,20 @@
+{
+  "src/error-handler.ts": {
+    "@typescript-eslint/only-throw-error": {
+      "count": 1
+    }
+  },
+  "src/sse.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unsafe-assignment": {
+      "count": 1
+    }
+  },
+  "test/fastify.spec.ts": {
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 1
+    }
+  }
+}

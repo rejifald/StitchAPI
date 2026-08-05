@@ -6,8 +6,7 @@
 
 const REQUIRED = ['TextEncoder', 'TextDecoder', 'ReadableStream'] as const;
 
-const scopeOf = (): Record<string, unknown> =>
-    globalThis as unknown as Record<string, unknown>;
+const scopeOf = (): Record<string, unknown> => globalThis;
 
 const missingGlobals = (scope: Record<string, unknown>): string[] =>
     REQUIRED.filter((name) => typeof scope[name] === 'undefined');

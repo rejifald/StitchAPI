@@ -197,7 +197,7 @@ function schemaBody(s: AnyRec, type: string): string {
             const opts = (s['options'] as readonly unknown[]) ?? [];
             const tag =
                 type === 'variant' && typeof s['key'] === 'string'
-                    ? `key=${key(s['key'] as string)};`
+                    ? `key=${key(s['key'])};`
                     : '';
             return `union{${tag}${opts.map(describe).sort().join('|')}}`;
         }

@@ -1,0 +1,16 @@
+{
+  "src/index.ts": {
+    "@typescript-eslint/no-unnecessary-type-conversion": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unsafe-argument": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unsafe-member-access": {
+      "count": 17
+    },
+    "@typescript-eslint/only-throw-error": {
+      "count": 4
+    }
+  }
+}

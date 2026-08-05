@@ -1,0 +1,7 @@
+{
+  "src/index.ts": {
+    "@typescript-eslint/only-throw-error": {
+      "count": 6
+    }
+  }
+}

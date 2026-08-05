@@ -46,9 +46,7 @@ function streamStitch<T>(events: StitchEvent<T>[]): StitchLike<T> {
     return (): StitchCallResult<T> => {
         const terminal = events.find((e) => e.type === 'result');
         const value =
-            terminal && terminal.type === 'result'
-                ? terminal.data
-                : (undefined as T);
+            terminal?.type === 'result' ? terminal.data : (undefined as T);
         const promise = Promise.resolve(value);
         return {
             then: (onf, onr) => promise.then(onf, onr),
@@ -218,7 +216,7 @@ describe('refetch()', () => {
     });
 
     test('a fast refetch supersedes an in-flight slow run (no stale overwrite)', async () => {
-        const resolvers: Array<(v: number) => void> = [];
+        const resolvers: ((v: number) => void)[] = [];
         const stitch: StitchLike<number> = () => {
             const promise = new Promise<number>((res) => resolvers.push(res));
             return {
@@ -266,7 +264,7 @@ describe('streaming query', () => {
         const seen: number[][] = [];
         q.subscribe(() => {
             const d = q.getSnapshot().data;
-            if (Array.isArray(d)) seen.push(d as number[]);
+            if (Array.isArray(d)) seen.push(d);
         });
 
         // Drain all microtasks/macrotasks.

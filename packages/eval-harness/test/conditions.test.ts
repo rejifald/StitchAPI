@@ -30,7 +30,7 @@ async function main(): Promise<void> {
         warm.seeds.some((s) => s.rel === 'llms.txt'),
         'warm: seeds llms.txt',
     );
-    assert.ok(/llms\.txt/.test(warm.notes), 'warm: note mentions llms.txt');
+    assert.ok(warm.notes.includes('llms.txt'), 'warm: note mentions llms.txt');
     console.log('conditions T2 PASS — warm describe');
 
     // materialize(): COLD creates an empty scratch root, idempotently.

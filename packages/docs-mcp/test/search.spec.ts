@@ -26,7 +26,7 @@ vi.mock('@orama/orama', () => ({
     search: (...args: unknown[]) => searchMock(...args),
 }));
 vi.mock('@orama/plugin-data-persistence', () => ({
-    restore: vi.fn(async () => ({}) as unknown),
+    restore: vi.fn(async () => ({})),
 }));
 
 describe('searchDocs query cap (DoS defense at the shared seam)', () => {

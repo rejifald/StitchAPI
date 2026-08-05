@@ -1,0 +1,35 @@
+{
+  "src/lifecycle.ts": {
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 3
+    }
+  },
+  "test/adapter.spec.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 1
+    }
+  },
+  "test/lifecycle.spec.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 2
+    }
+  },
+  "test/polyfills.spec.ts": {
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 4
+    },
+    "@typescript-eslint/no-extraneous-class": {
+      "count": 8
+    }
+  },
+  "test/store.spec.ts": {
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 2
+    }
+  },
+  "test/stubs/react-native.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 1
+    }
+  }
+}

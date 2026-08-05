@@ -120,7 +120,7 @@ function resolveInfra(options: StitchModuleOptions): Infra {
                 : logger !== false
                   ? nestLoggerSink(new Logger('Stitch'), sinkOptions)
                   : false,
-        defaults: defaults as Omit<SeamOptions, 'store' | 'trace'>,
+        defaults: defaults,
     };
 }
 

@@ -25,7 +25,7 @@ function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
                 controller.close();
                 return;
             }
-            controller.enqueue(enc.encode(chunks[i++] as string));
+            controller.enqueue(enc.encode(chunks[i++]));
         },
     });
 }

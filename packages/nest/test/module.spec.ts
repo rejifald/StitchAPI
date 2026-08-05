@@ -22,13 +22,13 @@ import { memoryStore } from 'stitchapi';
 import { describe, expect, it } from 'vitest';
 
 // Minimal view of a provider object literal, for poking at the factories.
-type FProv = {
+interface FProv {
     provide: unknown;
     useFactory?: (...args: any[]) => unknown;
     useValue?: unknown;
     inject?: unknown[];
     scope?: unknown;
-};
+}
 
 const recordingAdapter = (sink: string[]): Adapter => {
     return async (req) => {
