@@ -114,7 +114,7 @@ export function clearFingerprinters(): void {
  * - `fast` — the stored value is bound to a known token (or to nothing — no output
  *   schema); serve it without re-validating, and fold `generation` into the cache
  *   generation.
- * - `revalidate` — opt-in (`onUnfingerprintable: 'revalidate'`): cache despite an
+ * - `revalidate` — opt-in (`cache.fingerprint.fallback: 'revalidate'`): cache despite an
  *   un-fingerprintable schema, but re-validate the stored value against the current
  *   schema on every hit. Catches schema changes that REJECT the stored value;
  *   assumes validation is idempotent (no coercion/transform inside the schema).
@@ -137,21 +137,22 @@ export interface FingerprintInput {
     readonly transform?: ((body: unknown) => unknown) | undefined;
     /** `config.pick` — a dot-path string; serialisable, so always sound. */
     readonly pick?: string | undefined;
-    /** Explicit `cache.version` — authoritative override; always wins. */
+    /** `cache.fingerprint.version` — authoritative override; always wins. */
     readonly version?: string | number | undefined;
-    /** `cache.transform.version` — a user tag making an opaque `transform` sound. */
+    /** `cache.fingerprint.transform.version` — a user tag making an opaque `transform` sound. */
     readonly transformVersion?: string | number | undefined;
-    /** `cache.transform.trust` — cache despite an un-versioned `transform`, bounded only by TTL. */
+    /** `cache.fingerprint.transform.trust` — cache despite an un-versioned `transform`, TTL-bounded. */
     readonly transformTrust?: boolean | undefined;
     /**
-     * Policy when an OUTPUT SCHEMA is present but can't be soundly fingerprinted
-     * (unknown/unregistered vendor, non-Standard-Schema validator, or the strategy
-     * abstained). `'refuse'` (the default) does not cache — fail closed, and a
-     * clear nudge to register the vendor's fingerprint package. `'revalidate'`
-     * caches but re-validates on every hit (network savings, but only sound for
-     * pure validators — see {@link CachePolicy}).
+     * `cache.fingerprint.fallback` — where the ladder lands when an OUTPUT SCHEMA
+     * is present but can't be soundly fingerprinted (unknown/unregistered vendor,
+     * non-Standard-Schema validator, or the strategy abstained). `'refuse'` (the
+     * default) does not cache — fail closed, and a clear nudge to register the
+     * vendor's fingerprint package. `'revalidate'` caches but re-validates on every
+     * hit (network savings, but only sound for pure validators — see
+     * {@link CachePolicy}).
      */
-    readonly onUnfingerprintable?: 'refuse' | 'revalidate' | undefined;
+    readonly fallback?: 'refuse' | 'revalidate' | undefined;
 }
 
 export interface FingerprintResolution {
@@ -176,7 +177,7 @@ function vendorOf(schema: unknown): string | undefined {
  * 3. a registered strategy returns a non-null token → fast path, token folded
  *    into `generation`;
  * 4. no output schema at all → fast (nothing validated, so no shape to go stale);
- * 5. an output schema is present but un-fingerprintable → `onUnfingerprintable`
+ * 5. an output schema is present but un-fingerprintable → `fallback`
  *    (default `refuse`; opt into `revalidate`).
  */
 export function resolveFingerprint(
@@ -184,12 +185,12 @@ export function resolveFingerprint(
 ): FingerprintResolution {
     const pick = input.pick ?? '';
 
-    // rung 1 — explicit cache.version is authoritative.
+    // rung 1 — an explicit cache.fingerprint.version is authoritative.
     if (input.version != null) {
         return {
             generation: hash(`v|${input.version}|u|${pick}`),
             policy: 'fast',
-            reason: 'explicit cache.version',
+            reason: 'explicit cache.fingerprint.version',
         };
     }
 
@@ -224,7 +225,7 @@ export function resolveFingerprint(
         return {
             generation: '',
             policy: 'refuse',
-            reason: 'opaque transform without a cache.transform declaration. Fix: set cache.transform to a version tag you bump when the transform changes, or cache.transform: { trust: true } to opt out.',
+            reason: "opaque transform without a cache.fingerprint.transform declaration. Fix: set cache.fingerprint: { transform: '<version>' } and bump it when the transform changes, or { transform: { trust: true } } to opt out.",
         };
     }
 
@@ -254,15 +255,12 @@ export function resolveFingerprint(
     // Default to refusing (fail closed); a caller may opt into re-validate-on-hit.
     const reason = vendor
         ? fp
-            ? `fingerprint strategy for '${vendor}' abstained. Fix: set cache.version, or onUnfingerprintable: 'revalidate'.`
-            : `no fingerprinter registered for '${vendor}'. Fix: install @stitchapi/fingerprint-${vendor}, set cache.version, or onUnfingerprintable: 'revalidate'.`
-        : "output is not a Standard Schema, so a stale value can't be detected. Fix: set cache.version, pass onUnfingerprintable: 'revalidate', or use a blessed validator with a fingerprint-* vendor pkg.";
+            ? `fingerprint strategy for '${vendor}' abstained. Fix: set cache.fingerprint to a version tag, or cache.fingerprint: { fallback: 'revalidate' }.`
+            : `no fingerprinter registered for '${vendor}'. Fix: install @stitchapi/fingerprint-${vendor}, set cache.fingerprint to a version tag, or cache.fingerprint: { fallback: 'revalidate' }.`
+        : "output is not a Standard Schema, so a stale value can't be detected. Fix: set cache.fingerprint to a version tag, pass cache.fingerprint: { fallback: 'revalidate' }, or use a blessed validator with a fingerprint-* vendor pkg.";
     return {
         generation: '',
-        policy:
-            input.onUnfingerprintable === 'revalidate'
-                ? 'revalidate'
-                : 'refuse',
+        policy: input.fallback === 'revalidate' ? 'revalidate' : 'refuse',
         reason,
     };
 }

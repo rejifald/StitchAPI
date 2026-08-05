@@ -87,9 +87,16 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
         stitch({
             baseUrl: 'https://x',
             path: '/y',
+            // @ts-expect-error — `cache.fingerprint: {}` is rejected; use a version tag or set a field.
+            cache: { ttl: '60s', fingerprint: {} },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
             transform: (b) => b,
-            // @ts-expect-error — `cache.transform: {}` is rejected; name a version or set `trust`.
-            cache: { ttl: '60s', transform: {} },
+            // @ts-expect-error — the nested `fingerprint.transform: {}` is rejected too; name a
+            // version or set `trust`. P20 holds at both depths of the two-level slot.
+            cache: { ttl: '60s', fingerprint: { transform: {} } },
         }),
     ];
     // The assertions that matter are the @ts-expect-error directives above (checked by `check:types`).
@@ -130,18 +137,29 @@ test('the scalar / ≥1-field forms are accepted at each slot (P12/P13/P20)', ()
             path: '/y',
             retry: { backoff: { base: 5 } },
         }),
-        // P24/P12: `cache.transform` takes the bare version tag or a ≥1-field envelope.
+        // P24/P12: `cache.fingerprint` and the `transform` inside it each take the bare version tag
+        // or a ≥1-field envelope — the same shorthand, one level apart.
         stitch({
             baseUrl: 'https://x',
             path: '/y',
-            transform: (b) => b,
-            cache: { ttl: '60s', transform: 3 },
+            cache: { ttl: '60s', fingerprint: 3 },
         }),
         stitch({
             baseUrl: 'https://x',
             path: '/y',
             transform: (b) => b,
-            cache: { ttl: '60s', transform: { trust: true } },
+            cache: { ttl: '60s', fingerprint: { transform: 3 } },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            transform: (b) => b,
+            cache: { ttl: '60s', fingerprint: { transform: { trust: true } } },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            cache: { ttl: '60s', fingerprint: { fallback: 'revalidate' } },
         }),
     ];
     expect(typeof accepted).toBe('function');

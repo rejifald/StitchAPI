@@ -304,15 +304,15 @@ const listAnnouncements = stitch({
     pick: 'data',
     cache: {
         ttl: '1h',
-        scope: 'app',
+        tenancy: 'app',
         vary: ['accept-language'],
         entries: 500,
-        version: 1, // pins the shape — cacheable without a fingerprinter
+        fingerprint: 1, // pins the shape — cacheable without a fingerprinter
     },
 });
 ```
 
-Caching is sound by construction: a stitch with an `output` schema caches only when that schema can be fingerprinted or you pin a `version` — otherwise it **refuses to cache** rather than serve a stale shape. Mark sensitive data `sensitive: true` to opt out entirely.
+Caching is sound by construction: a stitch with an `output` schema caches only when that schema can be fingerprinted or you pin a `fingerprint` tag — otherwise it **refuses to cache** rather than serve a stale shape. Mark sensitive data `sensitive: true` to opt out entirely.
 
 ## Auth as a boundary
 
