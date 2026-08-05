@@ -1,0 +1,148 @@
+---
+title: 'The page that moved while you were reading it'
+description: 'Offset pagination over a live collection silently returns wrong lists. A client cannot fix that — but it should not report a clean run over data it lost.'
+prerequisites:
+    ['/docs/guides/data/pagination', '/docs/guides/validation/validation']
+---
+
+## The problem
+
+You page through a live collection — `?offset=0&limit=100`, then `100`, then `200` — while
+other people are inserting and deleting rows. You end up with a list, and it is quietly wrong.
+
+**Offset is a position in a result set, not a position in the data.** The two cases go in
+opposite directions, and it's worth getting them the right way round:
+
+- **An insert behind your cursor** pushes rows to _higher_ indices, so your next fixed offset
+  lands on a row you already read. Measured: `skipped []`, **`duplicated ["r04"]`** — 11 items
+  for 10 distinct rows. An offset insert can never cause a skip.
+- **A delete behind your cursor** pulls rows to _lower_ indices, so your next offset jumps past
+  one. Measured: **`skipped ["r05"]`**, `duplicated []`.
+
+And the case people don't believe until they see it: **a non-unique sort key breaks it with no
+writes at all.** Ten rows in, ten rows out, nothing created or destroyed — measured
+`skipped ["r05"]` _and_ `duplicated ["r03"]`, because the server returned tied `created_at`
+values in a different order on each query.
+
+The fix is **keyset (seek) pagination** on a composite `(sort, id)` cursor. That is a _server_
+capability — no client can make an offset API consistent. What a client can do is **notice**.
+
+<Callout type="error">
+    **Every damaged run above reported success.** `ok: true`, `error: null`,
+    `findings: []`, `status: 200`, `attempts: 1` — byte-identical to a clean
+    run. Measured on the insert, the delete, the tie case, and two more below.
+</Callout>
+
+## The common solutions
+
+| Approach                  | Where it breaks                                                               |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| Offset/limit, as offered  | Duplicates on insert, skips on delete, both under ties with no writes at all. |
+| Keyset / seek pagination  | The correct fix — if the vendor implemented it.                               |
+| Snapshot / point-in-time  | Ideal where offered. Rare in REST.                                            |
+| Sort by an immutable key  | Removes the mutable-sort case, not the insert/delete cases.                   |
+| Client-side dedupe by id  | Fixes duplicates, leaves skips invisible — **and see the callout below**.     |
+| Reconcile against `total` | The obvious check, and it misses the case that matters.                       |
+
+## What StitchAPI does
+
+**Keyset is four lines, and it works.** `next` receives the previous page's raw body, so a
+composite cursor is straightforward:
+
+```ts
+paginate: {
+    next: (body) => {
+        const rows = (body as Page).rows;
+        const last = rows.at(-1);
+        return last
+            ? { query: { after_ts: last.created_at, after_id: last.id } }
+            : undefined;
+    },
+    items: (v) => (v as Page).rows,
+}
+```
+
+**Measured:** against a real seek endpoint, every workload that broke offset came back complete
+and clean — the insert (which had cost a duplicate), the delete (a skip), and the ties (both) —
+`skipped []`, `duplicated []`, 10 rows in cursor order.
+
+<Callout type="warn">
+    **Sending a composite cursor does not make an endpoint a seek endpoint.**
+    The same four lines against a vendor that *accepts* `(after_ts, after_id)`
+    but orders by `created_at` alone lost `["r03"]` on one collection and
+    duplicated `["r13"]` on another — with zero writes. The client half of
+    keyset is four lines and it is not the half that decides.
+</Callout>
+
+**Detection, when only offset is on offer, is yours to write.** The library ships no comparison
+of any page to any other. The seam that works is `output` — a validator over the _aggregated_
+array, which runs after the loop:
+
+```ts
+output: reconcile, // dedupes, or fails the run with the ids named
+```
+
+Measured over 8 workloads: **zero false negatives** — every run that lost rows was flagged —
+and 3 false alarms on undamaged runs, which is the right trade for a sync job.
+
+**The signal that carries the delete case is not the one anyone writes.** It is that the
+**declared `total` moved** (10 → 9). A plain length-vs-total check fired **0 of 4** times; the
+deduped variant missed the delete entirely — because the delete removed a row from `total` at
+the same instant it removed one from your result, so the arithmetic balances perfectly while
+`r05` is gone.
+
+## StitchAPI vs the common solution
+
+**84 lines against 74 hand-rolled — the library version is longer.** The detection is identical
+in both, and a raw paging loop is cheaper to write than the declarative equivalent. The two
+agreed on rows and verdict across all 8 workloads.
+
+What the 74 lines don't have is the resilience stack: one `retry` line recovered a page that
+answered `500` mid-run — 4 wire requests, 10 rows, nothing skipped. Every page runs inside its
+own attempt loop, so retry, auth, throttle and the circuit breaker apply per page for free.
+
+## What StitchAPI does not solve here
+
+1. **No dedupe, no reconciliation, no page-to-page comparison.** Nothing in `paginate`'s three
+   fields (`next`, `items`, `pages`) looks at what the last page contained.
+2. **Four different endings share one `break` and one successful result** — the collection
+   ended, a page came back empty, the page cap was hit, or drift emptied a page mid-run. Measured
+   `pages: 50` silently returning **200 of 220 rows**, `ok`, with no event distinguishing cap
+   from end.
+3. **`total` is not surfaced anywhere structured** — it's a field in a body you have to catch
+   yourself, in `transform` or `hooks.onResponse` (`next` never sees the terminal page's).
+4. **No per-page state.** Every cross-page fact is a closure you own — with the reuse hazard
+   below.
+5. **You cannot both succeed and warn.** `output` either replaces the value or fails the run.
+6. **`drift()` cannot express this.** Deduping an array re-indexes it, so the findings come back
+   as `coerced`/`undeclared` on element paths — none of them says "duplicate".
+7. **`.report()` is a fresh probe.** It re-paginated the collection and did not reproduce the
+   duplicate at all — it describes a run it just made, never the run you made.
+
+<Callout type="error">
+    **Deduping inside the loop can cause the data loss it was meant to prevent.** `items` and
+    `transform` run *per page*, above the break. On a workload where page 2 repeated page 1
+    verbatim, the deduper emptied that page, the loop treated zero items as the end, and the run
+    finished `ok` having **skipped `["r05"…"r10"]` — 6 rows lost by the fix**, against a declared
+    total of 14. Dedupe in `output`, after the loop, not in `items`.
+
+    **And a deduping `items` on a reused stitch returns `[]` — successfully — on every call after
+    the first**, because the `seen` set outlives the call. The natural way to write it is defined
+    once and called many times.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Pagination" href="/docs/guides/data/pagination" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card
+        title="Batch writes that fail one item at a time"
+        href="/docs/scenarios/batch-partial-failure"
+    />
+    <Card
+        title="Mirror a paginated API"
+        href="/docs/recipes/mirror-a-paginated-api"
+    />
+</Cards>

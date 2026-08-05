@@ -11,18 +11,19 @@ proves (or fails to prove) it with **runnable offline code** under
 
 Issue drafts are **not filed** — they accumulate here for review when the loop stops.
 
-| #   | Scenario                                              | Slug                            | Verdict                                                              | Outcome                                                                                                                                                           |
-| --- | ----------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | OAuth2 rotating refresh tokens under concurrent calls | `oauth2-refresh-token-rotation` | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/oauth2-refresh-token-rotation.mdx) + 1 issue draft (`params` footgun)                                       |
-| 2   | Cost-based rate limits reported in the response body  | `cost-based-rate-limits`        | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/cost-based-rate-limits.mdx) + 1 issue draft (3 body-verdict footguns)                                       |
-| 3   | Batch writes with per-item partial failure            | `batch-partial-failure`         | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/batch-partial-failure.mdx) + 1 issue draft (`paginate` silent data loss)                                    |
-| 4   | Async job triangle — submit, poll, download           | `async-job-polling`             | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/async-job-polling.mdx) + 1 issue draft (clock + diagnostic side effects)                                    |
-| 5   | A stream that fails after 800 tokens                  | `mid-stream-failure`            | achievable with user code (resumable feeds: **achievable outright**) | [page shipped](../../apps/docs/content/docs/scenarios/mid-stream-failure.mdx) + 1 issue draft (**SSE reconnect replays completed streams — a bug in #622**)       |
-| 6   | ETag revalidation and the bodyless 304                | `conditional-requests-304`      | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/conditional-requests-304.mdx) + 1 issue draft (`cache` cannot revalidate; surfaces can't see the principal) |
-| 7   | Multipart upload and the mandatory abort              | `multipart-upload`              | achievable — but the library is a **bystander for the cleanup**      | [page shipped](../../apps/docs/content/docs/scenarios/multipart-upload.mdx) + 1 issue draft (no compensation seam)                                                |
-| 8   | Receiving a signed webhook                            | `webhook-receipt`               | **split — receipt OUT OF SCOPE by design, reaction in scope**        | [page shipped](../../apps/docs/content/docs/scenarios/webhook-receipt.mdx) + 1 issue draft (`void call()` drops work)                                             |
-| 9   | One tenant's revoked token, everyone's outage         | `multi-tenant-blast-radius`     | achievable with user code (~3 strings per tenant)                    | [page shipped](../../apps/docs/content/docs/scenarios/multi-tenant-blast-radius.mdx) + 1 issue draft (**resilience has no tenancy axis — 9/9 blast radius**)      |
-| 10  | Failing over to the backup provider                   | `provider-failover`             | achievable with user code (~30 lines of routing)                     | [page shipped](../../apps/docs/content/docs/scenarios/provider-failover.mdx) + 1 issue draft (`any()` priced as a hedge; per-call header broadcast)               |
+| #   | Scenario                                              | Slug                            | Verdict                                                              | Outcome                                                                                                                                                            |
+| --- | ----------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | OAuth2 rotating refresh tokens under concurrent calls | `oauth2-refresh-token-rotation` | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/oauth2-refresh-token-rotation.mdx) + 1 issue draft (`params` footgun)                                        |
+| 2   | Cost-based rate limits reported in the response body  | `cost-based-rate-limits`        | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/cost-based-rate-limits.mdx) + 1 issue draft (3 body-verdict footguns)                                        |
+| 3   | Batch writes with per-item partial failure            | `batch-partial-failure`         | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/batch-partial-failure.mdx) + 1 issue draft (`paginate` silent data loss)                                     |
+| 4   | Async job triangle — submit, poll, download           | `async-job-polling`             | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/async-job-polling.mdx) + 1 issue draft (clock + diagnostic side effects)                                     |
+| 5   | A stream that fails after 800 tokens                  | `mid-stream-failure`            | achievable with user code (resumable feeds: **achievable outright**) | [page shipped](../../apps/docs/content/docs/scenarios/mid-stream-failure.mdx) + 1 issue draft (**SSE reconnect replays completed streams — a bug in #622**)        |
+| 6   | ETag revalidation and the bodyless 304                | `conditional-requests-304`      | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/conditional-requests-304.mdx) + 1 issue draft (`cache` cannot revalidate; surfaces can't see the principal)  |
+| 7   | Multipart upload and the mandatory abort              | `multipart-upload`              | achievable — but the library is a **bystander for the cleanup**      | [page shipped](../../apps/docs/content/docs/scenarios/multipart-upload.mdx) + 1 issue draft (no compensation seam)                                                 |
+| 8   | Receiving a signed webhook                            | `webhook-receipt`               | **split — receipt OUT OF SCOPE by design, reaction in scope**        | [page shipped](../../apps/docs/content/docs/scenarios/webhook-receipt.mdx) + 1 issue draft (`void call()` drops work)                                              |
+| 9   | One tenant's revoked token, everyone's outage         | `multi-tenant-blast-radius`     | achievable with user code (~3 strings per tenant)                    | [page shipped](../../apps/docs/content/docs/scenarios/multi-tenant-blast-radius.mdx) + 1 issue draft (**resilience has no tenancy axis — 9/9 blast radius**)       |
+| 10  | Failing over to the backup provider                   | `provider-failover`             | achievable with user code (~30 lines of routing)                     | [page shipped](../../apps/docs/content/docs/scenarios/provider-failover.mdx) + 1 issue draft (`any()` priced as a hedge; per-call header broadcast)                |
+| 11  | Pagination over a live collection                     | `unstable-pagination`           | achievable with user code — keyset in 4 lines; detection is yours    | [page shipped](../../apps/docs/content/docs/scenarios/unstable-pagination.mdx) + 1 issue draft (dedupe in `items` **causes** data loss; 4 endings share one break) |
 
 ## Open issue drafts
 
@@ -40,6 +41,7 @@ Not filed — review these when the loop stops.
 | [`void-call-drops-work`](issue-drafts/void-call-drops-work.md)                                       | **high**                                    | `void call(input)` makes **0 HTTP calls and 0 errors** — the idiomatic fire-and-forget spelling silently drops the work; plus `backoff.base` clamped by `max` without warning                     |
 | [`resilience-has-no-tenancy`](issue-drafts/resilience-has-no-tenancy.md)                             | **highest production impact**               | `throttle`/`circuit` have no `tenancy`, so one customer's revoked token failed **9 of 9** healthy customers and never self-healed. Fix is one option name on two interfaces, on an existing axis  |
 | [`any-is-priced-as-a-hedge`](issue-drafts/any-is-priced-as-a-hedge.md)                               | **high** (a credential leak + silent spend) | a per-call `authorization` for the primary **arrived at the backup verbatim**; and `any()` is documented as failover while calling every member on every call — 20 requests for 10 answers        |
+| [`paginate-cannot-report-a-partial-run`](issue-drafts/paginate-cannot-report-a-partial-run.md)       | **high** (companion to the draft above)     | deduping in `items` — the standard mitigation — emptied a page and **lost 6 rows**; four different endings share one `break` and one successful result                                            |
 
 > **Triage note — two, in this order.**
 >
@@ -84,6 +86,14 @@ every response including non-2xx on a buffered stitch (measured on `[200, 304, 4
 both read wall-clock while their neighbours use `clock`. Two point fixes are less valuable
 than one audit plus a line in the testing guide.
 
-**3. My pre-verification hypotheses were wrong in every single scenario** — usually about
-which primitive would carry it. That is the strongest argument for the executable-proof bar:
+**2c. `paginate`'s `items.length === 0` break has now cost data in three separate scenarios**
+(3, 4 and 11) — a zero-progress batch round, a drifted page mid-collection, and a deduper doing
+its job. It is one line (`engine.ts:984`) and it is the single most expensive default found in
+this pass.
+
+**3. My pre-verification hypotheses were wrong in every single scenario.** Usually about which
+primitive would carry the solution — and twice (9, 10) wrong _optimistically_. Scenario 11 was
+the first wrong about a matter of **fact**: it had offset drift's causation backwards (insert
+→ skip, delete → duplicate; it is the reverse), and would have shipped a page teaching it wrong.
+That is the strongest argument for the executable-proof bar:
 a docs-and-source audit would have shipped four wrong pages.

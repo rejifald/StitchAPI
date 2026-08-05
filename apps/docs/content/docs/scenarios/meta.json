@@ -11,6 +11,7 @@
         "multipart-upload",
         "webhook-receipt",
         "multi-tenant-blast-radius",
-        "provider-failover"
+        "provider-failover",
+        "unstable-pagination"
     ]
 }
