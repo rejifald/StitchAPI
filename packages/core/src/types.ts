@@ -1056,6 +1056,16 @@ export interface RetryOptions {
     /**
      * Backoff policy. A bare curve is the P12 shorthand for `{ curve }`
      * (`backoff: 'fixed'` ≡ `backoff: { curve: 'fixed' }`); the envelope adds `base`/`max`.
+     *
+     * A `curve` outside {@link BackoffCurve} **throws** at construction — `bad backoff`, the
+     * same fail-loud stance as {@link ThrottleOptions.rate}, and for the same reason: the
+     * quiet path here is the PERMISSIVE one. An unreadable curve fell through to plain `expo` on the
+     * default 100ms base, so a typo shortened the wait instead of lengthening it, and a `backoff` the
+     * runtime cannot read is a resilience policy that silently isn't there.
+     *
+     * There is deliberately **no function form** — the curve plus its two bounds is the whole
+     * vocabulary. A computed wait per attempt belongs to a `Surface`: `interpret` returns a
+     * `SurfaceOutcome` whose `after` is honoured as the next delay (issue #609).
      */
     backoff?: BackoffCurve | AtLeastOne<BackoffOptions>;
     /**
