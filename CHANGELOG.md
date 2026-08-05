@@ -689,6 +689,29 @@ npm release are grouped under the in-development version that introduced them.
     cap exists for. Nothing about the public API changes; a stream that used to die at 8 MB now
     finishes, in bounded memory.
 
+- **An unusable `backoff` throws at construction instead of vanishing.**
+  ([#651](https://github.com/rejifald/StitchAPI/issues/651) §3) `backoff` takes a curve or the
+  `{ curve, base, max }` envelope — never a function — so `backoff: () => 6000` is correctly a type
+  error. Casting past it (which people do when they believe a feature exists) constructed clean and
+  then did **nothing**: the function was never invoked, and the waits fell back to the default curve
+  on the default 100ms base. Measured gaps of `100, 200`ms where the config asked for 6000, with no
+  throw, no event, and nothing in the trace that reads as wrong.
+
+    `expandShorthand` folds the bare form of the slot into `{ curve }` (P12), so every value a cast
+    can let through — a function, a bare `6000`, a misremembered `'exponential'` — lands on `curve`,
+    where `backoffDelay` matched neither `'fixed'` nor `'expo-jitter'` and fell through to the plain
+    `expo` branch. It now throws `bad backoff` from `stitch()`, mirroring the
+    `bad rate: …` an unparseable `throttle.rate` has thrown at construction since
+    [#618](https://github.com/rejifald/StitchAPI/pull/618). Silently degrading a resilience policy is
+    the one place a fallback is worse than a crash, and this one degraded in the **permissive**
+    direction — a shorter wait than asked for, which is the half that hurts.
+
+    The check sits at the fold itself, on the value it just produced, so one comparison over the
+    dominant field covers every authoring form and names the offending **fragment** rather than the
+    merged result. A `backoff` that sets `base`/`max` and no curve keeps the `expo-jitter` default,
+    and all three curve names are unaffected in either spelling. **Not a semver break in practice**: only a value `tsc` already
+    rejected can reach the throw, and its previous behaviour was to ignore what you wrote.
+
 - **A `bigint` path parameter no longer vanishes from the URL.** `stitch({ path: '/v1/things/{id}' })`
   called with `{ params: { id: 1234567890123456789n } }` built `https://api.test/v1/things/` — the id
   simply gone, no error, no event, no drift finding. A request meant for one item silently addressed
