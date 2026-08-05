@@ -521,6 +521,36 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`sse.reconnect` no longer replays a stream that already finished.** ([#640](https://github.com/rejifald/StitchAPI/issues/640))
+  Measured against an OpenAI-shaped completion — `data: {…}` frames with no `id:`, terminated by
+  `[DONE]` — `sse: { reconnect: true }` opened the body **4×**, delivered 24 deltas where 6 were
+  sent, handed the consumer `ABCDEABCDEABCDEABCDE` instead of `ABCDE`, and still ended
+  `done(ok: true)`. Against a real model API those are three billed completions nobody asked for.
+  It is now 1 open, 6 deltas, `ABCDE`. Two independent defects composed:
+
+    **Resumability was read off surface _capability_, before a single frame arrived.** The engine
+    asked "does this surface expose `resumeToken`/`applyResume`", and `sseSurface` exposes both
+    unconditionally — so an id-less body qualified as resumable. At reopen there was no token to
+    replay, the `applyResume` guard was skipped, and the request went out with **no
+    `Last-Event-ID`**: a request for the entire completion, not a resumption. Capability is now
+    necessary but not sufficient; the reconnect decision tests the token the stream actually
+    produced, since whether a body carries `id:` is a property of the body, not of the surface.
+
+    **A clean close was treated as a drop.** `'closed'` and `'error'` shared one path, so a body
+    that simply ran out spent the whole reconnect budget — which is why a stream that never failed
+    was reopened at all, and why a well-behaved id-carrying feed also opened 4× and replayed its
+    last id each time. A body that ends is now the stream _finishing_: it finalizes with what it
+    collected. Only a transport failure mid-flight reconnects, which is what
+    [the docs](https://stitchapi.dev/docs/reference/surfaces#resumable-sse--ssereconnect) always
+    said this option did.
+
+    `sse: true` is shorthand for `{ reconnect: true }`, so the shorthand carried both and is fixed
+    by the same change. Genuine drops are untouched: a mid-flight failure on an id-carrying feed
+    still reconnects and still sends `Last-Event-ID`, server `retry:` pacing still wins over the
+    fallback delay, and a drop before any delta was delivered still reconnects — nothing has been
+    handed over yet, so there is nothing to duplicate. The surfaces reference now states both
+    requirements, which it never did: the feed must emit `id:`, and the body must have dropped.
+
 - **An uncontended fleet-wide acquire no longer reports a phantom wait.** Under
   [ADR 0025](docs/adr/0025-fleet-wide-concurrency-by-lease.md) leases, `acquire` set
   `waited = clock.now() - blockStart` whenever that difference was non-zero — but `blockStart` is

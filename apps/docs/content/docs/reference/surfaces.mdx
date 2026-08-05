@@ -103,6 +103,22 @@ fallback delay. A server-sent `retry:` on the dropped connection always wins ove
     name="ReconnectOptions"
 />
 
+#### It needs a feed that emits `id:`
+
+Two things must hold before a body is reopened, and both are properties of the stream
+rather than of the flag:
+
+- **It has to have dropped.** A body that ran out is a stream that _finished_ — it is
+  never reopened. Only a transport failure mid-flight counts.
+- **It has to be resumable.** The reconnect replays the last `id:` as `Last-Event-ID`, so
+  a feed that never sends `id:` has no resume point. Reopening it could only re-request
+  the whole body, so it is not reopened either.
+
+That second point rules out OpenAI-shaped completions — `data: {…}` frames with no `id:`,
+terminated by a `[DONE]` sentinel. Turning `reconnect` on for one of those does nothing;
+it will not replay the completion. Use it for feeds that emit `id:` and honour
+`Last-Event-ID` — ticks, change feeds, event logs.
+
 ## stream
 
 `stream` is the raw streaming sibling — it hands back the response body decoded

@@ -1233,8 +1233,10 @@ async function* runFrom(
 // surface's `stream` hook (ADR 0005 Decisions 4-5). Still lean — no circuit/cache (streaming bypasses
 // the cache), but resumable when the surface opts in: a surface that exposes the resume hooks
 // (`resumeToken`/`applyResume`) AND a stitch that set `sse.reconnect` (off by default — issue #71)
-// reconnect a dropped body, replaying the last resume token (sse → `Last-Event-ID`) and honouring a
-// server-sent backoff (sse → the `retry:` field), capped at `reconnect.attempts`. The engine stays
+// reconnect a DROPPED body, replaying the last resume token (sse → `Last-Event-ID`) and honouring a
+// server-sent backoff (sse → the `retry:` field), capped at `reconnect.attempts`. Only a drop — a
+// body that ran out has finished, and a stream with no resume token to replay is not reopened at
+// all, since the reopened request could only ask for the whole body again (issue #640). The engine stays
 // surface-agnostic: it never branches on `kind.id === 'sse'`; it reads the resume token / server
 // backoff through the surface's generic hooks and the reconnect policy through one config accessor.
 // It charges the rate gate at every open (each reconnect is a fresh request) but takes NO concurrency
@@ -1280,12 +1282,18 @@ async function* runStreaming(
     state.attempts = 1;
 
     // Resumability is a GENERIC decision the engine makes from surface capability + config — never
-    // by sniffing `kind.id === 'sse'`. A surface is resumable when it can both read a resume token
+    // by sniffing `kind.id === 'sse'`. A surface CAN resume when it can both read a resume token
     // off a delta and inject it into the next request; the stitch enables it with `sse.reconnect`
     // (off by default — issue #71). `resolveReconnect` is the lone touch point for the `sse` config
     // slot, so no SSE-ism leaks into the loop below.
+    //
+    // Capability is necessary but NOT sufficient (issue #640). A surface exposes these hooks
+    // unconditionally — `sseSurface` does — so this flag says "an id-carrying body could be
+    // resumed here", not "this body carries ids". Whether THIS stream has a resume point is only
+    // known once a token has actually been read off a delta, which is why the reconnect decision
+    // below tests `lastToken` and not this flag alone.
     const policy = resolveReconnect(cfg);
-    const resumable = policy.enabled && !!resumeToken && !!applyResume;
+    const canResume = policy.enabled && !!resumeToken && !!applyResume;
 
     // State carried ACROSS reconnects: the await/`.stream()` result is the whole delta spine, and a
     // reconnect inherits the prior connection's last resume token (sse → the `Last-Event-ID` to
@@ -1300,10 +1308,10 @@ async function* runStreaming(
     let attempt = 0; // open count: 1 = first connection, 2+ = a reconnect
 
     // Open the live body and decode it into `delta` chunks. Returns how the connection ENDED so the
-    // reconnect loop can decide what to do: `'closed'` (the body ran out — for a resumable surface a
-    // normal SSE close the server may want us back from), `'error'` (the body threw mid-stream — a
-    // reconnectable drop), or `'fail'` (a terminal failure that already emitted its `error`+`done`,
-    // stop). It emits the per-open spine (throttle/request progress, deltas, drift) inline via `yield*`.
+    // reconnect loop can decide what to do: `'closed'` (the body ran out — the stream finished, and
+    // is never reopened), `'error'` (the body threw mid-stream, or never opened — a reconnectable
+    // drop), or `'fail'` (a terminal failure that already emitted its `error`+`done`, stop). It
+    // emits the per-open spine (throttle/request progress, deltas, drift) inline via `yield*`.
     async function* openAndDecode(): AsyncGenerator<
         StitchEvent,
         'closed' | 'error' | 'fail'
@@ -1447,23 +1455,37 @@ async function* runStreaming(
             lastError = e; // the body threw mid-stream — a reconnectable drop; keep the live error
             return 'error';
         }
-        // The body ran out. A clean close — for a resumable surface this is the SSE "reconnect"
-        // signal; for a non-resumable one (or reconnect off) the loop's `!resumable` guard finalizes.
+        // The body ran out. A clean close is the stream saying it is DONE, not a failure to paper
+        // over: the loop finalizes with what we collected rather than asking for it again (#640).
         return 'closed';
     }
 
-    // The reconnect loop. The first open is mandatory; each subsequent open is gated on a drop
-    // (`'closed'`/`'error'`) AND remaining attempts. On a drop we emit a `reconnect` progress event
-    // (reusing the `progress` spine — Decision: no new StitchEvent type), wait the backoff (the
-    // server `retry:` seen this run, else `reconnect.backoff`, else the `retry` policy), then loop
-    // — `openAndDecode` reapplies auth + injects the resume token on the reopened request.
+    // The reconnect loop. The first open is mandatory; each subsequent open is gated on a genuine
+    // DROP (`'error'`) that this stream can pick up from, AND remaining attempts. On such a drop we
+    // emit a `reconnect` progress event (reusing the `progress` spine — Decision: no new
+    // StitchEvent type), wait the backoff (the server `retry:` seen this run, else
+    // `reconnect.backoff`, else the `retry` policy), then loop — `openAndDecode` reapplies auth +
+    // injects the resume token on the reopened request.
     for (;;) {
         const ended = yield* openAndDecode();
         if (ended === 'fail') return; // terminal failure already emitted error + done
-        // A drop (`'closed'` or `'error'`). Reconnect only when resumable AND attempts remain;
-        // otherwise behave exactly as today — a clean close finalizes, a mid-stream error surfaces
-        // as error + done.
-        if (!resumable || attempt > policy.maxAttempts) {
+        // Reopening is only ever safe when the reopened body cannot re-deliver what the consumer
+        // already holds: either this stream carried a resume point (replayed as sse's
+        // `Last-Event-ID`, so the server continues from there), or nothing has been delivered yet
+        // — a connect-phase or first-frame failure, where there is nothing to duplicate. Without
+        // this an id-less body replayed itself in full on every reopen (issue #640).
+        const recoverable = lastToken !== undefined || chunks.length === 0;
+        // Reconnect only a recoverable drop, while attempts remain. `'closed'` is NOT a drop: the
+        // body ran out, which is the stream FINISHING — reopening it re-requests a body that
+        // already arrived in full (issue #640). Otherwise behave exactly as the reconnect-off path
+        // does — a clean close finalizes with what we collected, a mid-stream error surfaces as
+        // error + done.
+        if (
+            !canResume ||
+            ended === 'closed' ||
+            !recoverable ||
+            attempt > policy.maxAttempts
+        ) {
             if (ended === 'error') {
                 // Surface the REAL drop error (its message/status/`.response`), matching today's
                 // mid-stream-error behaviour, rather than a synthetic placeholder.
