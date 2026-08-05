@@ -1,6 +1,6 @@
 # Issue draft — there is no seam that runs on failure, so mandatory cleanup can't be expressed
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#656](https://github.com/rejifald/StitchAPI/issues/656)
 **Scenario:** [`multipart-upload`](../multipart-upload.md)
 **Suggested template:** feature_request.yml · **Suggested labels:** `enhancement`, `hooks`
 

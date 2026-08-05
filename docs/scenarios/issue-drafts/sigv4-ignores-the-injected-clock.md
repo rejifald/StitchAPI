@@ -1,6 +1,6 @@
 # Issue draft — SigV4 signs with `new Date()`, and a skew 403 opens the dependency's breaker
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#658](https://github.com/rejifald/StitchAPI/issues/658)
 **Scenario:** [`expiring-signatures`](../expiring-signatures.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `aws-sigv4`, `testing`, `resilience`
 

@@ -1,6 +1,6 @@
 # Issue draft — `hooks.onResponse` can rewrite the call, and a seam-level `kind` is a compile error that works
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#655](https://github.com/rejifald/StitchAPI/issues/655)
 **Scenario:** [`deprecation-headers`](../deprecation-headers.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `docs`, `hooks`, `types`
 

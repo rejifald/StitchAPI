@@ -1,6 +1,6 @@
 # Issue draft — `timeout.total` is untestable with `manualClock`, and `.inspect()`/`.report()` re-issue the request
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#652](https://github.com/rejifald/StitchAPI/issues/652)
 **Scenario:** [`async-job-polling`](../async-job-polling.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `bug`, `testing`, `dx`
 

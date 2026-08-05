@@ -1,6 +1,6 @@
 # Issue draft — `params` lets you configure a rotating refresh grant that works once, then revokes the account
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-04.
+**Status:** ✅ **FILED** as [#657](https://github.com/rejifald/StitchAPI/issues/657)
 **Scenario:** [`oauth2-refresh-token-rotation`](../oauth2-refresh-token-rotation.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `auth`, `footgun`, `docs`
 

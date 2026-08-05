@@ -1,6 +1,6 @@
 # Issue draft — a `coerced` finding can't say whether the coercion was destructive, and the nullable class has no level
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#654](https://github.com/rejifald/StitchAPI/issues/654)
 **Scenario:** [`intermittent-drift`](../intermittent-drift.md)
 **Suggested template:** feature_request.yml · **Suggested labels:** `drift`, `validation`, `enhancement`
 

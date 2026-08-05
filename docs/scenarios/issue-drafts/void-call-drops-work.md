@@ -1,6 +1,6 @@
 # Issue draft — `void call(input)` silently drops the work, and `backoff.base` is clamped without warning
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#660](https://github.com/rejifald/StitchAPI/issues/660)
 **Scenario:** [`webhook-receipt`](../webhook-receipt.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `dx`, `footgun`
 

@@ -1,6 +1,6 @@
 # Issue draft — a coalesced failure is not shared, and a `store` silently un-pools `pool: 'host'`
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#653](https://github.com/rejifald/StitchAPI/issues/653)
 **Scenario:** [`n-plus-one-fanout`](../n-plus-one-fanout.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `cache`, `throttle`, `enhancement`
 

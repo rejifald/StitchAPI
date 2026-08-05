@@ -1,6 +1,6 @@
 # Issue draft — three silent failures when the failure signal lives in the response body
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-04.
+**Status:** ✅ **FILED** as [#651](https://github.com/rejifald/StitchAPI/issues/651)
 **Scenario:** [`cost-based-rate-limits`](../cost-based-rate-limits.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `resilience`, `footgun`
 

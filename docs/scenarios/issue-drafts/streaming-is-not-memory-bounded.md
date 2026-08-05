@@ -1,6 +1,6 @@
 # Issue draft — `.stream()` is not memory-bounded, and `decode: 'json'` buffers the array it streams
 
-**Status:** DRAFT — not filed. Raised by the scenario pass on 2026-08-05.
+**Status:** ✅ **FILED** as [#659](https://github.com/rejifald/StitchAPI/issues/659)
 **Scenario:** [`large-response-memory`](../large-response-memory.md)
 **Suggested template:** bug_report.yml · **Suggested labels:** `bug`, `stream`, `memory`
 
