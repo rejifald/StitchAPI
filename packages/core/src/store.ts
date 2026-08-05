@@ -7,11 +7,25 @@ import type {
     StitchStore,
     ThrottleOptions,
 } from './types';
-import { now, parseRate, systemClock } from './util';
+import { hex, now, parseDuration, parseRate, systemClock } from './util';
+
+// How long a fleet-wide concurrency slot is held before it lapses, when `throttle.lease` says
+// nothing. Comfortably above a normal buffered call (streaming holds no slot at all — ADR 0005
+// Decision 12), and short enough that a crashed worker's slots come back on a human timescale.
+const DEFAULT_LEASE_MS = 30_000;
+// Ceiling on the wait between attempts when every slot is taken. There is no cross-process
+// handoff to wait on, so a blocked caller polls; the actual delay is uniform in [0, this), which
+// is full jitter — a fleet queued behind one slot must not retry in lockstep.
+const LEASE_POLL_MS = 50;
 
 /** Default store: in-memory, single process, with TTL + atomic increment. */
 export function memoryStore(): StitchStore {
     const data = new Map<string, { value: unknown; expires: number }>();
+    // Semaphores (ADR 0025) live in their own map, token → expiry, the way Redis keeps them in a
+    // sorted set beside its string keyspace. Kept apart from `data` rather than serialised into
+    // it because nothing else ever reads them: no JSON envelope, no key-level TTL to reconcile
+    // against the per-token expiry that already governs every holder.
+    const sems = new Map<string, Map<string, number>>();
     const live = (e?: { expires: number }) =>
         !!e && (e.expires === 0 || e.expires > now());
     // Opportunistic, bounded sweep of expired entries. The store evicts a key lazily on a `get`/
@@ -71,9 +85,29 @@ export function memoryStore(): StitchStore {
             });
             return grantAt;
         },
+        // The counting semaphore (ADR 0025). Atomic for free, like the two verbs above: one JS
+        // thread, nothing awaited between the read and the write.
+        async lease(key, token, limit, ttl, at) {
+            let held = sems.get(key);
+            if (!held) sems.set(key, (held = new Map<string, number>()));
+            // Prune first, ALWAYS — an attempt that goes on to refuse still has to drop the
+            // lapsed holders, or every later caller re-walks the same dead entries.
+            for (const [t, expiresAt] of held)
+                if (expiresAt <= at) held.delete(t);
+            // Already holding it ⇒ a renewal, never a second slot.
+            const got = held.has(token) || held.size < limit;
+            if (got) held.set(token, at + ttl);
+            return got;
+        },
+        async release(key, token) {
+            // Idempotent: a token that already lapsed (or was never held) is a no-op.
+            const held = sems.get(key);
+            if (held?.delete(token) && held.size === 0) sems.delete(key);
+        },
         // Lifecycle: drop everything. For the in-memory store this is all the state there is.
         async close() {
             data.clear();
+            sems.clear();
         },
     };
 }
@@ -97,6 +131,15 @@ export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
     if (reserve)
         view.reserve = (key, spacing, at, ttl) =>
             reserve(prefix + key, spacing, at, ttl);
+    // The lease pair travels together or not at all — forwarding one without the other would
+    // advertise a semaphore that can be taken and never given back.
+    const lease = store.lease?.bind(store);
+    const release = store.release?.bind(store);
+    if (lease && release) {
+        view.lease = (key, token, limit, ttl, at) =>
+            lease(prefix + key, token, limit, ttl, at);
+        view.release = (key, token) => release(prefix + key, token);
+    }
     // Delegate lifecycle to the backend (bind keeps `this` for stores that need it).
     if (store.close) view.close = store.close.bind(store);
     return view;
@@ -136,8 +179,16 @@ export interface Throttle {
  * the store: the Nth grant in a window is scheduled at `windowStart + (N-1)·(per/count)` — the
  * same cadence as the in-process limiter ({@link createThrottle}), so attaching a store no longer
  * silently switches pacing to bursty fixed-window (the spacing even carries across the window
- * boundary). A SHARED store paces calls across the whole fleet; concurrency stays in-process (a
- * distributed semaphore needs leases — out of scope here).
+ * boundary). A SHARED store paces calls across the whole fleet.
+ *
+ * **Concurrency is fleet-wide too when the store leases** ({@link StitchStore.lease} /
+ * {@link StitchStore.release}, ADR 0025): `concurrency: 10` then means ten calls in flight across
+ * every worker on that store rather than ten each, and a worker that crashes holding slots returns
+ * them when its leases lapse (`throttle.lease`, default 30s). Two differences from the in-process
+ * semaphore are inherent rather than incidental: a blocked caller POLLS, because no worker can be
+ * woken by another worker's release, so the FIFO handoff becomes jittered contention; and a
+ * release is fire-and-forget, because the lease expiry already covers a lost one. Without the
+ * verbs `concurrency` stays per-process exactly as before — pinned both ways in `store.spec.ts`.
  *
  * That slot schedule is a **floor**, applied on top of a per-key local pacing cursor — the same one
  * {@link createThrottle} keeps. Without the cursor a process joining mid-window would claim slots
@@ -171,6 +222,15 @@ export function createStoreThrottle(
 ): Throttle {
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
+    // The lease pair is all-or-nothing (ADR 0025); resolved once so the hot path is one check.
+    const leases =
+        store.lease && store.release
+            ? {
+                  lease: store.lease.bind(store),
+                  free: store.release.bind(store),
+              }
+            : undefined;
+    const leaseTtl = parseDuration(opts?.lease) ?? DEFAULT_LEASE_MS;
     const local = new Map<
         string,
         {
@@ -178,6 +238,7 @@ export function createStoreThrottle(
             waiters: (() => void)[];
             lastWindow?: number; // windowStart of the last `rl:` key this throttle minted
             nextGrantAt?: number; // earliest THIS process may take another rate grant
+            tokens?: string[]; // fleet-wide leases THIS process is holding, newest last
         }
     >();
 
@@ -198,6 +259,28 @@ export function createStoreThrottle(
         }
         return new Promise<void>((resolve) => s.waiters.push(resolve));
     };
+    // Fleet-wide slot (ADR 0025). Where `takeSlot` parks on an in-process queue and is handed the
+    // slot by whoever releases it, there is no cross-process handoff to wait for — a worker cannot
+    // be woken by another worker's release — so a blocked caller POLLS. The interval is fully
+    // jittered so a fleet that piles up behind one slot does not re-collide in lockstep on every
+    // retry, the same full-jitter reasoning `expo-jitter` uses for retry backoff.
+    const takeLease = async (key: string): Promise<void> => {
+        if (limit == null || !leases) return;
+        const token = hex(8);
+        for (;;) {
+            if (await leases.lease(key, token, limit, leaseTtl, clock.now())) {
+                // `stateFor` is resolved HERE, not before the loop. A poller that captured the
+                // state object up front could be holding an orphan: `release` drops a key's entry
+                // once its last token goes, so a caller that was still polling across that moment
+                // would push its token onto an object no longer in `local` — and the next
+                // `release` would look up the live entry, find nothing, and never free the slot.
+                // One leaked slot per occurrence, which under contention is a deadlock.
+                (stateFor(key).tokens ??= []).push(token);
+                return;
+            }
+            await clock.sleep(Math.random() * LEASE_POLL_MS);
+        }
+    };
 
     async function acquire(
         key: string,
@@ -208,11 +291,20 @@ export function createStoreThrottle(
         // slot (and so is never released); it still charges the rate window below.
         if (!acqOpts?.rateOnly) {
             // Only a real concurrency block counts as "waited" — not incidental store or
-            // scheduling time — so waited (and the 'throttled' event) is deterministic.
-            const blocked = limit != null && stateFor(key).inFlight >= limit;
+            // scheduling time — so waited (and the 'throttled' event) is deterministic. With
+            // leases the store owns the count, so "did I have to wait" is measured rather than
+            // predicted: a lease granted on the first attempt blocked nobody.
             const blockStart = clock.now();
-            await takeSlot(key);
-            if (blocked) waited = clock.now() - blockStart;
+            if (leases) {
+                await takeLease(key);
+                const spent = clock.now() - blockStart;
+                if (spent > 0) waited = spent;
+            } else {
+                const blocked =
+                    limit != null && stateFor(key).inFlight >= limit;
+                await takeSlot(key);
+                if (blocked) waited = clock.now() - blockStart;
+            }
         }
         if (rate) {
             const spacing = rate.per / rate.count; // ms between grants
@@ -295,6 +387,18 @@ export function createStoreThrottle(
         if (limit == null) return;
         const s = local.get(key);
         if (!s) return;
+        if (leases) {
+            // Give back the newest lease this process holds. Which one is arbitrary and does not
+            // matter — the slots are interchangeable — but LIFO keeps the pairing obvious when
+            // reading a trace, and every acquire is matched by exactly one release.
+            const token = s.tokens?.pop();
+            // Fire-and-forget on purpose, so a caller never pays a store round-trip on its way
+            // out. Safe because the lease expires anyway: a release lost to a network blip costs
+            // the fleet one slot for at most `lease`, which is the same guarantee that covers a
+            // holder crashing mid-call. Awaiting here would buy promptness, not correctness.
+            if (token) void leases.free(key, token).catch(() => undefined);
+            if (s.tokens?.length === 0) delete s.tokens;
+        }
         const next = s.waiters.shift();
         if (next) next();
         else if (s.inFlight > 0) s.inFlight--;
@@ -307,7 +411,8 @@ export function createStoreThrottle(
         if (
             s.inFlight === 0 &&
             s.waiters.length === 0 &&
-            s.lastWindow === undefined
+            s.lastWindow === undefined &&
+            !s.tokens?.length
         )
             local.delete(key);
     }

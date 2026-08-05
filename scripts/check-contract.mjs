@@ -377,6 +377,7 @@ const WIDENED_MEMBER = new Set([
     'cooldown', // CircuitOptions — fast-fail window
     'delay', // ReconnectOptions / MockResponse
     'interval', // any polling cadence
+    'lease', // ThrottleOptions — how long a fleet-wide concurrency slot is held
     'max', // BackoffOptions (delay ceiling) | ServeBodyOptions/ShellBufferOptions (byte cap)
     'perAttempt', // TimeoutOptions
     'resumeRetry', // Surface — the server-suggested reconnect backoff (returned by the seam)

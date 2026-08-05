@@ -429,6 +429,116 @@ export async function verifyStoreContract(
             ],
         );
     }
+    // The semaphore pair (ADR 0025) — optional, and checked only when BOTH are present, since the
+    // contract says implement both or neither. A store that leases must mean the same thing by it
+    // as everyone else, or a fleet-wide concurrency cap is worse than the per-process one.
+    if (store.lease && store.release) {
+        const lease = store.lease.bind(store);
+        const free = store.release.bind(store);
+        rules.push(
+            [
+                'lease: fills to the limit, then refuses',
+                async () => {
+                    const key = k('sem');
+                    const got = [];
+                    for (const t of ['a', 'b', 'c'])
+                        got.push(await lease(key, t, 2, 60_000, 1_000));
+                    expectDeepEqual(
+                        got,
+                        [true, true, false],
+                        'three callers against a 2-slot semaphore',
+                    );
+                },
+            ],
+            [
+                'lease: releasing frees a slot for the next caller',
+                async () => {
+                    const key = k('sem-free');
+                    await lease(key, 'a', 1, 60_000, 1_000);
+                    if (await lease(key, 'b', 1, 60_000, 1_000))
+                        throw new Error(
+                            'b took a slot while a held the only one',
+                        );
+                    await free(key, 'a');
+                    if (!(await lease(key, 'b', 1, 60_000, 1_000)))
+                        throw new Error("b did not get a's released slot");
+                },
+            ],
+            [
+                'lease: re-leasing the same token renews, it does not take a second slot',
+                async () => {
+                    const key = k('sem-renew');
+                    await lease(key, 'a', 1, 60_000, 1_000);
+                    if (!(await lease(key, 'a', 1, 60_000, 2_000)))
+                        throw new Error('a could not renew its own lease');
+                    // If the renewal had consumed the second slot, b would be refused below on a
+                    // 2-slot semaphore.
+                    const key2 = k('sem-renew2');
+                    await lease(key2, 'a', 2, 60_000, 1_000);
+                    await lease(key2, 'a', 2, 60_000, 2_000);
+                    if (!(await lease(key2, 'b', 2, 60_000, 2_000)))
+                        throw new Error(
+                            'a renewal consumed a slot: b was refused on a 2-slot semaphore',
+                        );
+                },
+            ],
+            [
+                'lease: a lapsed holder frees its slot without releasing',
+                async () => {
+                    // The reason leases exist: a holder that crashes never calls release, so the
+                    // expiry is what returns its slot. `now` is a parameter, so this needs no
+                    // sleeping — just ask again from a later instant.
+                    const key = k('sem-lapse');
+                    await lease(key, 'a', 1, 1_000, 1_000); // a holds until 2_000
+                    if (await lease(key, 'b', 1, 1_000, 1_500))
+                        throw new Error("b took a's slot before it lapsed");
+                    if (!(await lease(key, 'b', 1, 1_000, 2_500)))
+                        throw new Error("a's lapsed slot was not reclaimed");
+                },
+            ],
+            [
+                'release: releasing an unheld token is a no-op, not an error',
+                async () => {
+                    const key = k('sem-idem');
+                    await free(key, 'never-held');
+                    await lease(key, 'a', 1, 60_000, 1_000);
+                    await free(key, 'a');
+                    await free(key, 'a'); // twice
+                    if (!(await lease(key, 'b', 1, 60_000, 1_000)))
+                        throw new Error(
+                            'a double release corrupted the semaphore',
+                        );
+                },
+            ],
+            [
+                'lease: 20 concurrent callers, 5 slots — exactly 5 win',
+                async () => {
+                    // The atomicity rule. A non-atomic read-compute-write lets several callers
+                    // each see room and all take the last slot, which is precisely the
+                    // over-admission a fleet-wide cap exists to prevent.
+                    const key = k('sem-atomic');
+                    const results = await Promise.all(
+                        Array.from({ length: 20 }, (_, i) =>
+                            lease(key, `t${i}`, 5, 60_000, 1_000),
+                        ),
+                    );
+                    const won = results.filter(Boolean).length;
+                    if (won !== 5)
+                        throw new Error(
+                            `expected exactly 5 of 20 concurrent callers to win a slot, got ${won}`,
+                        );
+                },
+            ],
+            [
+                'lease: semaphores are isolated by key',
+                async () => {
+                    await lease(k('sem-a'), 'a', 1, 60_000, 1_000);
+                    if (!(await lease(k('sem-b'), 'a', 1, 60_000, 1_000)))
+                        throw new Error('a lease on sem-a leaked into sem-b');
+                },
+            ],
+        );
+    }
     return runRules('store', rules);
 }
 

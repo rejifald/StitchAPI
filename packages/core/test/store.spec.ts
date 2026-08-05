@@ -339,6 +339,45 @@ describe('Pluggable store — throttle', () => {
         };
     };
 
+    // Same idea for the ADR 0025 semaphore: every verb intact except the lease pair, so the
+    // per-process fallback stays pinned rather than merely described. Cloudflare KV takes this
+    // path for real.
+    const withoutLeases = (): StitchStore => {
+        const s = memoryStore();
+        return {
+            get: (k) => s.get(k),
+            set: (k, v, ttl) => s.set(k, v, ttl),
+            increment: (k, ttl) => s.increment(k, ttl),
+            reserve: (k, spacing, at, ttl) => s.reserve!(k, spacing, at, ttl),
+        };
+    };
+
+    // Run `calls` acquire/hold/release cycles spread over `procs` throttles sharing one store,
+    // and report the peak number held at once. That peak IS the concurrency cap's meaning.
+    const peakInFlight = async (
+        store: StitchStore,
+        procs: number,
+        calls: number,
+        opts: { concurrency: number; lease?: string },
+    ): Promise<number> => {
+        const ts = Array.from({ length: procs }, () =>
+            createStoreThrottle(opts, store),
+        );
+        let held = 0;
+        let peak = 0;
+        await Promise.all(
+            Array.from({ length: calls }, async (_, i) => {
+                const t = ts[i % procs]!;
+                await t.acquire('svc');
+                peak = Math.max(peak, ++held);
+                await new Promise((r) => setTimeout(r, 25));
+                held--;
+                t.release('svc');
+            }),
+        );
+        return peak;
+    };
+
     test('a fleet over one store paces on ONE schedule, wherever in a window it starts', async () => {
         const fleet = async (
             rate: string,
@@ -411,5 +450,79 @@ describe('Pluggable store — throttle', () => {
             for (let i = 1; i < mine.length; i++)
                 expect((mine[i] ?? 0) - (mine[i - 1] ?? 0)).toBe(500);
         }
+    });
+
+    // ADR 0025 — `concurrency` becomes fleet-wide when the store leases.
+    test('a fleet over one store holds ONE concurrency budget', async () => {
+        // Four workers, twelve calls, cap of 3. Per-process this is a cap of 3 EACH, so the peak
+        // would be up to 12; fleet-wide it is 3 full stop. Nothing is configured to switch — the
+        // throttle uses the lease verbs because `memoryStore` has them.
+        const peak = await peakInFlight(memoryStore(), 4, 12, {
+            concurrency: 3,
+        });
+        expect(peak).toBe(3);
+    });
+
+    test('without the lease verbs, concurrency stays PER-PROCESS', async () => {
+        // The documented fallback, asserted rather than described: the same four workers each
+        // enforce the cap alone, so the fleet runs at up to `concurrency × workers`. This is the
+        // path an eventually-consistent backend takes, so it is a live property.
+        const peak = await peakInFlight(withoutLeases(), 4, 12, {
+            concurrency: 3,
+        });
+        expect(peak).toBeGreaterThan(3);
+        expect(peak).toBeLessThanOrEqual(12);
+    });
+
+    test('a crashed holder frees its slot when the lease lapses', async () => {
+        // The reason leases exist. Acquire and never release — a worker that died mid-call — then
+        // show the slot comes back on its own, without anybody releasing it.
+        const store = memoryStore();
+        const dead = createStoreThrottle(
+            { concurrency: 1, lease: '80ms' },
+            store,
+        );
+        const live = createStoreThrottle(
+            { concurrency: 1, lease: '80ms' },
+            store,
+        );
+        await dead.acquire('svc'); // held, never released
+
+        const start = Date.now();
+        await live.acquire('svc');
+        const waited = Date.now() - start;
+        // It had to wait out the lease — proving the slot really was held — but not forever.
+        expect(waited).toBeGreaterThanOrEqual(50);
+        expect(waited).toBeLessThan(1_000);
+    });
+
+    test('a fleet-wide slot is reported as waited, so the throttled event still fires', async () => {
+        // `waited` drives the `progress.throttled` event. Under leases the store owns the count,
+        // so a blocked caller's wait is measured rather than predicted — this pins that it is
+        // still reported, and that an uncontended acquire reports nothing.
+        const store = memoryStore();
+        const a = createStoreThrottle({ concurrency: 1 }, store);
+        const b = createStoreThrottle({ concurrency: 1 }, store);
+
+        const first = await a.acquire('svc');
+        expect(first.waited).toBe(0); // uncontended
+
+        const blocked = b.acquire('svc');
+        await new Promise((r) => setTimeout(r, 60));
+        a.release('svc');
+        expect((await blocked).waited).toBeGreaterThan(0);
+        b.release('svc');
+    });
+
+    test('a streaming (rateOnly) acquire takes no fleet-wide slot either', async () => {
+        // ADR 0005 Decision 12 holds under leases: a long-lived stream must not pin a slot for
+        // its whole life, which is also what keeps `lease` a crash timer rather than a call timer.
+        const store = memoryStore();
+        const t = createStoreThrottle({ concurrency: 1 }, store);
+        await t.acquire('svc', { rateOnly: true });
+        await t.acquire('svc', { rateOnly: true });
+        // Neither took the single slot, so a normal acquire still walks straight in.
+        const normal = await t.acquire('svc');
+        expect(normal.waited).toBe(0);
     });
 });

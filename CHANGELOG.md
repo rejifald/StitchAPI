@@ -13,6 +13,45 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Added
 
+- **`throttle.concurrency` goes fleet-wide too, by lease.** ([ADR 0025](docs/adr/0025-fleet-wide-concurrency-by-lease.md))
+  [ADR 0024](docs/adr/0024-the-fleet-wide-pacing-cell.md) made the rate budget fleet-wide and left
+  the concurrency cap per-process, so `concurrency: 10` across eight workers was really a fleet cap
+  of eighty — "attach a store to share the policy" was true of one of the two limits. With a store
+  that leases, `concurrency: 10` now means ten calls in flight across every worker on it. Nothing
+  to configure; the throttle uses the verbs when the store has them.
+
+    **Why a counter could not do it.** A rate is a schedule — a function of time, which is why one
+    shared cursor settled it. A concurrency slot is _ownership_: held for an unknown interval, by a
+    specific holder, freed by news rather than by a clock. A holder that crashes never decrements, so
+    a shared counter decays monotonically toward zero — a limiter that gets stricter every time
+    something breaks, silently. A lease returns the slot when its holder stops renewing, alive or not.
+
+    `StitchStore` gains a paired pair of optional verbs, implemented by `memoryStore`,
+    `@stitchapi/redis` (a sorted set) and `@stitchapi/deno-kv` (compare-and-set):
+
+    ```ts
+    lease ? (key, token, limit, ttl, now) : Promise<boolean>; // take, renew, or refuse
+    release ? (key, token) : Promise<void>; // idempotent
+    ```
+
+    The caller mints the token, so `lease` doubles as renewal and is idempotent — a retry extends
+    a slot rather than silently consuming a second one. **Existing custom stores need no changes**;
+    without the pair, `concurrency` stays per-process exactly as before, which is the path an
+    eventually-consistent backend (`@stitchapi/cloudflare-kv`) takes, and which stays pinned in the
+    test suite against a store with the verbs deliberately withheld.
+
+    **One new knob, `throttle.lease`** (default 30s, `number | string`): how long a slot is held
+    before it lapses. Think crash timer, not call timer. Too long strands a dead worker's slots; too
+    short and a call still running has already lost its slot, so the fleet briefly exceeds the cap.
+    Streaming holds no slot at all ([ADR 0005](docs/adr/0005-surfaces-and-the-authoring-model.md)
+    Decision 12), so a `lease` above `timeout.total` cannot be outlived.
+
+    **Two behaviours differ from the in-process limiter, inherently.** A blocked caller **polls**
+    with full jitter instead of being handed the slot — no worker can be woken by another worker's
+    release — so strict FIFO fairness is gone and contention costs store round-trips. And a release
+    is fire-and-forget: a lost one costs the fleet a slot for at most `lease`, the same guarantee
+    that already covers a crash, so awaiting it would buy promptness rather than correctness.
+
 - **A fleet sharing a store now paces on ONE schedule, wherever in a window its workers start.**
   ([ADR 0024](docs/adr/0024-the-fleet-wide-pacing-cell.md)) [ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md)
   fixed the store-backed throttle's cold-start burst with a per-process pacing cursor and recorded

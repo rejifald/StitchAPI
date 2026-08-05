@@ -104,6 +104,19 @@ interface CounterWindow {
     deadline: number;
 }
 
+/**
+ * Read a stored lease set (ADR 0025) back as a mutable token→expiry record. Anything that is not
+ * a record of numbers — an absent key, a legacy value — reads as empty rather than throwing, so
+ * one malformed entry can never wedge a semaphore shut.
+ */
+function asLeases(value: unknown): Record<string, number> {
+    const out: Record<string, number> = {};
+    if (value && typeof value === 'object')
+        for (const [t, at] of Object.entries(value as Record<string, unknown>))
+            if (typeof at === 'number') out[t] = at;
+    return out;
+}
+
 /** A value is a live {@link CounterWindow} iff it's a `{ n, deadline }` object. */
 function asWindow(value: unknown): CounterWindow | null {
     if (value == null || typeof value !== 'object') return null;
@@ -342,6 +355,57 @@ export function denoKvStore(
             }
             throw new Error(
                 `@stitchapi/deno-kv: reserve(${key}) lost ${attempts} compare-and-set races`,
+            );
+        },
+        async lease(key, token, limit, ttl, at) {
+            // The counting semaphore (ADR 0025), on the same compare-and-set loop as the two verbs
+            // above. Held as a token→expiry record — Redis reaches for a sorted set here, and both
+            // satisfy the contract, which specifies behaviour rather than storage.
+            const kk = k(key);
+            for (let attempt = 1; attempt <= attempts; attempt++) {
+                const entry = await kv.get(kk);
+                const held = asLeases(entry.value);
+                // Prune first and commit the pruning even when the answer is "full", so a failed
+                // attempt never leaves lapsed holders for the next caller to re-walk.
+                for (const [t, expiresAt] of Object.entries(held))
+                    if (expiresAt <= at) delete held[t];
+                const got = token in held || Object.keys(held).length < limit;
+                if (got) held[token] = at + ttl; // already there ⇒ a renewal, not a second slot
+                const res = await kv
+                    .atomic()
+                    .check({ key: kk, versionstamp: entry.versionstamp })
+                    .set(kk, held, { expireIn: ttl * 2 })
+                    .commit();
+                if (res.ok) return got;
+                if (backoff && attempt < attempts) {
+                    await sleep(backoffDelay(backoff, attempt, base, max));
+                }
+            }
+            throw new Error(
+                `@stitchapi/deno-kv: lease(${key}) lost ${attempts} compare-and-set races`,
+            );
+        },
+        async release(key, token) {
+            const kk = k(key);
+            for (let attempt = 1; attempt <= attempts; attempt++) {
+                const entry = await kv.get(kk);
+                const held = asLeases(entry.value);
+                // Idempotent: a token that already lapsed (or was never held) is a no-op, and
+                // needs no commit at all.
+                if (!(token in held)) return;
+                delete held[token];
+                const res = await kv
+                    .atomic()
+                    .check({ key: kk, versionstamp: entry.versionstamp })
+                    .set(kk, held)
+                    .commit();
+                if (res.ok) return;
+                if (backoff && attempt < attempts) {
+                    await sleep(backoffDelay(backoff, attempt, base, max));
+                }
+            }
+            throw new Error(
+                `@stitchapi/deno-kv: release(${key}) lost ${attempts} compare-and-set races`,
             );
         },
     };

@@ -68,6 +68,25 @@ export interface RedisDriver {
         now: number,
         ttl?: number,
     ): Promise<number>;
+    /**
+     * Atomically take or renew one slot of a `limit`-slot counting semaphore, expiring `ttl` ms
+     * from `now` — the fleet-wide half of `throttle.concurrency` ({@link StitchStore.lease},
+     * ADR 0025). Resolves `true` when the caller holds a slot. Paired with
+     * {@link RedisDriver.releaseLease}: implement both or neither.
+     */
+    lease?(
+        key: string,
+        token: string,
+        limit: number,
+        ttl: number,
+        now: number,
+    ): Promise<boolean>;
+    /**
+     * Give back the slot {@link RedisDriver.lease} took for `token`; idempotent. Named for the
+     * lease rather than bare `release`, because this interface's `close` already owns the
+     * connection-lifecycle meaning of that word.
+     */
+    releaseLease?(key: string, token: string): Promise<void>;
     /** Release the connection (optional — `redisStore().close()` delegates here). */
     close?(): Promise<void>;
 }
@@ -104,6 +123,35 @@ if cell > at then at = cell end
 redis.call('SET', KEYS[1], at + spacing)
 if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
 return tostring(at)`;
+
+// The counting semaphore (ADR 0025) as a SORTED SET: member = token, score = expiry. The store
+// contract specifies behaviour, not storage, and here that pays — `ZREMRANGEBYSCORE` prunes every
+// lapsed holder in one command and `ZCARD` counts what is left, where the map-shaped stores have
+// to walk their entries. Redis drops an emptied zset by itself, so a fully-released semaphore
+// leaves no key behind.
+//
+// The prune runs BEFORE the decision and is therefore persisted even when the answer is "full" —
+// the contract requires that, so a failed attempt never leaves dead holders for the next caller.
+// `ZSCORE` non-nil means this token already holds a slot, which makes the call a renewal: `ZADD`
+// then just moves its score, never adding a second member. The key outlives its longest lease
+// (`ttl * 2`) so a full semaphore cannot evaporate under its own holders.
+const LEASE_SCRIPT = `local token = ARGV[1]
+local limit = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+local at = tonumber(ARGV[4])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', at)
+if redis.call('ZSCORE', KEYS[1], token) or redis.call('ZCARD', KEYS[1]) < limit then
+  redis.call('ZADD', KEYS[1], at + ttl, token)
+  redis.call('PEXPIRE', KEYS[1], ttl * 2)
+  return 1
+end
+return 0`;
+
+// Giving a slot back is one atomic command on its own; it rides EVAL only so the driver needs no
+// new client surface. `ZREM` on an absent member is a no-op, which is exactly the idempotence the
+// contract asks for — releasing a lease that already lapsed must not be an error.
+const RELEASE_SCRIPT = `redis.call('ZREM', KEYS[1], ARGV[1])
+return 1`;
 
 // ---------------------------------------------------------------------------
 // driver adapters (ioredis / node-redis)
@@ -205,6 +253,24 @@ export function fromIoredis(client: IoredisLike): RedisDriver {
                 ),
             );
         },
+        async lease(key, token, limit, ttl, at) {
+            return (
+                Number(
+                    await client.eval(
+                        LEASE_SCRIPT,
+                        1,
+                        key,
+                        token,
+                        limit,
+                        ttl,
+                        at,
+                    ),
+                ) === 1
+            );
+        },
+        async releaseLease(key, token) {
+            await client.eval(RELEASE_SCRIPT, 1, key, token);
+        },
         async close() {
             await client.quit?.();
         },
@@ -251,6 +317,27 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
                     arguments: [String(spacing), String(at), String(ttl ?? 0)],
                 }),
             );
+        },
+        async lease(key, token, limit, ttl, at) {
+            return (
+                Number(
+                    await client.eval(LEASE_SCRIPT, {
+                        keys: [key],
+                        arguments: [
+                            token,
+                            String(limit),
+                            String(ttl),
+                            String(at),
+                        ],
+                    }),
+                ) === 1
+            );
+        },
+        async releaseLease(key, token) {
+            await client.eval(RELEASE_SCRIPT, {
+                keys: [key],
+                arguments: [token],
+            });
         },
         async close() {
             await client.quit?.();
@@ -310,6 +397,20 @@ export function fromUpstash(client: UpstashLike): RedisDriver {
                     [String(spacing), String(at), String(ttl ?? 0)],
                 ),
             );
+        },
+        async lease(key, token, limit, ttl, at) {
+            return (
+                Number(
+                    await client.eval(
+                        LEASE_SCRIPT,
+                        [key],
+                        [token, String(limit), String(ttl), String(at)],
+                    ),
+                ) === 1
+            );
+        },
+        async releaseLease(key, token) {
+            await client.eval(RELEASE_SCRIPT, [key], [token]);
         },
     };
 }
@@ -381,6 +482,15 @@ export function redisStore(
         const reserve = driver.reserve.bind(driver);
         store.reserve = (key, spacing, at, ttl) =>
             reserve(k(key), spacing, at, ttl);
+    }
+    // The semaphore pair, forwarded only when the driver has BOTH — half a lease API would let a
+    // slot be taken and never given back.
+    const lease = driver.lease?.bind(driver);
+    const releaseLease = driver.releaseLease?.bind(driver);
+    if (lease && releaseLease) {
+        store.lease = (key, token, limit, ttl, at) =>
+            lease(k(key), token, limit, ttl, at);
+        store.release = (key, token) => releaseLease(k(key), token);
     }
     if (driver.close) {
         const close = driver.close.bind(driver);

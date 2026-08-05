@@ -29,6 +29,22 @@ interface Entry {
 /** The handful of Redis operations the store's two adapters depend on. */
 class FakeRedisEngine {
     private readonly data = new Map<string, Entry>();
+    // Sorted sets live beside the string keyspace, as they do in Redis. Member → score; the
+    // lease scripts are the only users, and they never need ordering, just prune + count.
+    private readonly zsets = new Map<
+        string,
+        { members: Map<string, number>; expiresAt: number }
+    >();
+
+    private liveZ(key: string): Map<string, number> | undefined {
+        const z = this.zsets.get(key);
+        if (!z) return undefined;
+        if (z.expiresAt <= Date.now()) {
+            this.zsets.delete(key);
+            return undefined;
+        }
+        return z.members;
+    }
 
     private live(key: string): Entry | undefined {
         const e = this.data.get(key);
@@ -96,12 +112,81 @@ class FakeRedisEngine {
         });
         return String(grantAt);
     }
+
+    // The semaphore script (ADR 0025), mirroring the Lua's sorted-set commands: prune every
+    // member scored at or below `at` (ZREMRANGEBYSCORE), then take a slot if this token already
+    // holds one (ZSCORE — a renewal) or there is room (ZCARD < limit). Same atomicity argument as
+    // the two above. Redis drops an emptied zset, so an all-released semaphore leaves no key.
+    leaseScript(
+        key: string,
+        token: string,
+        limit: number,
+        ttl: number,
+        at: number,
+    ): number {
+        const members = this.liveZ(key) ?? new Map<string, number>();
+        for (const [t, score] of members) if (score <= at) members.delete(t);
+        const got = members.has(token) || members.size < limit;
+        if (got) {
+            members.set(token, at + ttl);
+            this.zsets.set(key, {
+                members,
+                expiresAt: Date.now() + ttl * 2,
+            });
+        } else if (members.size === 0) this.zsets.delete(key);
+        else
+            this.zsets.set(key, {
+                members,
+                expiresAt: this.zsets.get(key)?.expiresAt ?? Infinity,
+            });
+        return got ? 1 : 0;
+    }
+
+    // ZREM; absent member is a no-op, and an emptied set drops its key.
+    releaseScript(key: string, token: string): number {
+        const members = this.liveZ(key);
+        if (!members) return 1;
+        members.delete(token);
+        if (members.size === 0) this.zsets.delete(key);
+        return 1;
+    }
 }
 
 // Which script the caller sent. The facades below take the script TEXT, exactly as a real client
 // does, so the fake routes on it rather than assuming every `eval` is the counter — which is what
 // it used to do, and why a second script silently read as an increment.
-const isIncr = (script: unknown): boolean => String(script).includes('INCR');
+//
+// Order matters: `ZREMRANGEBYSCORE` CONTAINS `ZREM`, so the lease script has to be recognised
+// before the release script or every lease would read as a release.
+type ScriptKind = 'incr' | 'reserve' | 'lease' | 'release';
+const scriptKind = (script: unknown): ScriptKind => {
+    const s = String(script);
+    if (s.includes('ZREMRANGEBYSCORE')) return 'lease';
+    if (s.includes('ZREM')) return 'release';
+    if (s.includes('INCR')) return 'incr';
+    return 'reserve';
+};
+
+// One dispatcher, shared by all three client facades: they differ only in how the client spells
+// `eval`, never in what the scripts mean.
+const runScript = (
+    engine: FakeRedisEngine,
+    script: unknown,
+    key: string,
+    args: unknown[],
+): unknown => {
+    const n = (i: number): number => Number(args[i]);
+    switch (scriptKind(script)) {
+        case 'incr':
+            return engine.incrScript(key, n(0));
+        case 'reserve':
+            return engine.reserveScript(key, n(0), n(1), n(2));
+        case 'lease':
+            return engine.leaseScript(key, String(args[0]), n(1), n(2), n(3));
+        case 'release':
+            return engine.releaseScript(key, String(args[0]));
+    }
+};
 
 // --- client-shaped facades over one engine --------------------------------
 
@@ -124,17 +209,8 @@ function ioredisFacade(engine: FakeRedisEngine): IoredisLike {
             return 1;
         },
         async eval(script, _numKeys, ...args) {
-            if (isIncr(script)) {
-                const [key, ttlMs] = args;
-                return engine.incrScript(String(key), Number(ttlMs));
-            }
-            const [key, spacing, at, ttlMs] = args;
-            return engine.reserveScript(
-                String(key),
-                Number(spacing),
-                Number(at),
-                Number(ttlMs),
-            );
+            const [key, ...rest] = args;
+            return runScript(engine, script, String(key), rest);
         },
         async quit() {
             return 'OK';
@@ -156,15 +232,11 @@ function nodeRedisFacade(engine: FakeRedisEngine): NodeRedisLike {
             return 1;
         },
         async eval(script, options) {
-            const key = options.keys[0] ?? '';
-            if (isIncr(script))
-                return engine.incrScript(key, Number(options.arguments[0]));
-            const [spacing, at, ttlMs] = options.arguments;
-            return engine.reserveScript(
-                key,
-                Number(spacing),
-                Number(at),
-                Number(ttlMs),
+            return runScript(
+                engine,
+                script,
+                options.keys[0] ?? '',
+                options.arguments,
             );
         },
         async quit() {
@@ -198,15 +270,7 @@ function upstashFacade(engine: FakeRedisEngine): UpstashLike {
             return 1;
         },
         async eval(script, keys, args) {
-            const key = keys[0] ?? '';
-            if (isIncr(script)) return engine.incrScript(key, Number(args[0]));
-            const [spacing, at, ttlMs] = args;
-            return engine.reserveScript(
-                key,
-                Number(spacing),
-                Number(at),
-                Number(ttlMs),
-            );
+            return runScript(engine, script, keys[0] ?? '', args);
         },
     };
 }
