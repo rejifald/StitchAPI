@@ -383,10 +383,23 @@ const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
     at: now(),
 });
 
+// Validate the call input against the declared per-slot schemas and RETURN the input the request is
+// built from. On success a declared slot's PARSED value replaces the one the caller passed —
+// coerced, defaulted, stripped — so the request matches the declared contract, which is the same
+// rule `validateValue` states for `output` (ADR 0015). Before issue #648 this returned `void` and
+// dropped `r.value`, so a schema gated the call without shaping it: the unparsed input went on the
+// wire, and an unknown `?tenant=` a caller tacked on still overwrote one pinned in the endpoint.
+//
+// It filters; it does not lock down. A slot with NO schema is untouched — an undeclared slot stays
+// the full passthrough it has always been (a schema constrains one slot, not the call). The parsed
+// values land in a COPY: the caller still holds the object it passed, so filtering the request can
+// never rewrite a bound partial or a literal reused across a loop.
 async function validateInput(
     cfg: ResolvedStitchConfig,
     input: StitchInput,
-): Promise<void> {
+): Promise<StitchInput> {
+    if (!cfg.input) return input;
+    const out = { ...input } as Record<string, unknown>;
     for (const part of [
         'params',
         'query',
@@ -396,11 +409,13 @@ async function validateInput(
     ] as const) {
         // `input.*` is widened to SchemaLike for authoring ergonomics, but `compose` →
         // `normalizeInput` has already coerced every present slot to a Validator by now.
-        // `variables` (the graphql surface's primary input) validates here too; the validated
-        // value still flows untouched into the `{ query, variables }` body the surface packs.
-        const v = cfg.input?.[part] as Validator | undefined;
+        // `variables` (the graphql surface's primary input) validates here too, and its parsed
+        // value reaches the `{ query, variables }` body because the surface's `buildRequest` is
+        // handed THIS object. An absent optional slot parses to `undefined`, which leaves the
+        // surface's `input.variables ?? input.body` fallback intact.
+        const v = cfg.input[part] as Validator | undefined;
         if (!v) continue;
-        const r = await v.validate((input as Record<string, unknown>)[part]);
+        const r = await v.validate(out[part]);
         if (!r.ok) {
             const e = new Error(
                 `invalid ${part}: ${r.issues.map((i) => i.message).join(', ')}`,
@@ -408,7 +423,9 @@ async function validateInput(
             e.name = 'ValidationError';
             throw e;
         }
+        out[part] = r.value;
     }
+    return out;
 }
 
 // Validate ONE value against the output schema (ADR 0015). On success returns the PARSED value —
@@ -1689,7 +1706,7 @@ async function* runCached(
 
 export async function* execute(
     rt: Runtime,
-    input: StitchInput = {},
+    callInput: StitchInput = {},
     // Run identity (ADR 0007). Defaults to a fresh root run; the caller supplies one to make
     // this a CHILD run — `newRunContext(parent)` inherits the parent's `traceId` and sets
     // `parentSpanId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
@@ -1707,8 +1724,12 @@ export async function* execute(
     if (flags?.retainRaw) state.retainRaw = true;
     const budget = totalBudget(cfg, t0);
 
+    // Everything below runs on the VALIDATED input — the parsed value of every declared slot
+    // (issue #648) — so the request, the cache key it derives, and the events that echo it all
+    // describe the same call.
+    let input: StitchInput;
     try {
-        await validateInput(cfg, input);
+        input = await validateInput(cfg, callInput);
     } catch (e) {
         yield errEvt(e, name, 0);
         yield doneEvt(false, t0, 0);
@@ -1753,12 +1774,18 @@ export async function* execute(
  *  non-cacheable-method stitch. Backs `stitch.invalidate(input)` (ADR 0003 §8). */
 export async function cacheInvalidateExact(
     rt: Runtime,
-    input: StitchInput = {},
+    callInput: StitchInput = {},
 ): Promise<void> {
     const ctl = await ensureCache(rt);
     if (!ctl) return;
     let baseReq: AdapterRequest;
+    let input: StitchInput;
     try {
+        // The stored key mirrors the RESOLVED request, so eviction must derive it from the same
+        // VALIDATED input the run stored under (issue #648) — otherwise this computes the key of a
+        // request that was never made and evicts nothing. Input the schema rejects was never cached
+        // either, so it exits as the same no-op a failed `buildRequest` already is.
+        input = await validateInput(rt.cfg, callInput);
         baseReq = buildRequest(rt.cfg, input);
     } catch {
         return;

@@ -167,6 +167,41 @@ test('run_stitch drops an agent-injected header when the stitch declares no inpu
     expect(JSON.stringify(seen)).not.toContain('INJECTED');
 });
 
+// Issue #648 on the surface where it bit hardest: `run_stitch` forwards a MODEL's argument object,
+// so the keys a stitch never declared are keys nobody wrote. Nothing here is MCP-specific — the
+// filtering happens in the engine, for every caller — but this is the call site that made a
+// validating-but-not-filtering `input` schema a security property rather than a surprise.
+test('run_stitch cannot smuggle an undeclared query key past a declared input.query schema', async () => {
+    let url = '';
+    const search = stitch({
+        // `?tenant=acme` is pinned in the endpoint, and a predefined query pair is a DEFAULT that
+        // caller input overrides — so before the fix a model could name another tenant.
+        url: 'https://x.test/search?tenant=acme',
+        input: { query: asValidator(z.object({ q: z.string() })) },
+        adapter: (request) => {
+            url = request.url;
+            return Promise.resolve({
+                status: 200,
+                headers: {},
+                body: { ok: true },
+            });
+        },
+    });
+    const mcp = createMcpServer({ search });
+    const res = await mcp.handle(
+        req('tools/call', {
+            name: 'run_stitch',
+            arguments: {
+                name: 'search',
+                input: { query: { q: 'widgets', tenant: 'globex' } },
+            },
+        }),
+    );
+    expect((res?.result as ToolCallResult).isError).toBeFalsy();
+    expect(url).toContain('tenant=acme');
+    expect(url).not.toContain('globex');
+});
+
 test('tools/call run_stitch on an unknown stitch is a tool error, not a crash', async () => {
     const res = await server.handle(
         req('tools/call', { name: 'run_stitch', arguments: { name: 'nope' } }),
