@@ -424,6 +424,13 @@ interface CachedToken {
     expiresAt: number; // epoch ms; 0 = no known expiry (never proactively refreshed)
 }
 
+// Read time off the engine-threaded Clock (ADR 0010), falling back to the wall clock when the
+// context carries none (a hand-built AuthContext in a strategy's own unit test). Token freshness
+// is CONTROL-FLOW time — it decides whether the next call fetches — so it belongs on the same
+// seam that already drives retry/throttle/timeout/circuit, which is what lets a `manualClock()`
+// advance a test past `expires_in` without real waiting.
+const clockNow = (ctx: AuthContext): number => ctx.clock?.now() ?? now();
+
 /**
  * In-process single-flight: concurrent callers of the same key await ONE shared
  * promise instead of each running `run` themselves (GAP-AUDIT §2.6). The entry
@@ -498,8 +505,8 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         return `${baseKey}\u0000${principal}`;
     };
 
-    const isFresh = (t: CachedToken | undefined): boolean =>
-        !!t && (t.expiresAt === 0 || now() < t.expiresAt - skew);
+    const isFresh = (t: CachedToken | undefined, at: number): boolean =>
+        !!t && (t.expiresAt === 0 || at < t.expiresAt - skew);
 
     // Fetch a new token from the endpoint and cache it (with TTL = expires_in). Always hits
     // the network; callers gate on `isFresh` to reuse the cached token instead.
@@ -561,7 +568,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
                 : undefined;
         const cached: CachedToken = {
             token: payload.access_token,
-            expiresAt: ttlMs ? now() + ttlMs : 0,
+            expiresAt: ttlMs ? clockNow(ctx) + ttlMs : 0,
         };
         // The token is a secret → it lives in the vault (off `__config`, redacted from traces),
         // not the inspectable store. A shared seam/store still shares one token across workers.
@@ -573,7 +580,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         const nsKey = keyFor(ctx);
         const cached = (await ctx.vault.get(nsKey)) as CachedToken | undefined;
         // Cache miss/stale: coalesce concurrent callers into ONE in-flight fetch.
-        return isFresh(cached)
+        return isFresh(cached, clockNow(ctx))
             ? cached!.token
             : flight(nsKey, () => fetchToken(ctx, nsKey));
     };

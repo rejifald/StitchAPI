@@ -99,3 +99,55 @@ describe('mockAdapter spy', () => {
         expect((await api(req('http://h/a'))).body).toBe(1); // sequence replays from the start
     });
 });
+
+// `verifyAdapterContract`'s abort rule — "a pre-aborted AbortSignal rejects" — is one of the nine
+// the library holds every transport to, and the mock used to fail it: `req.signal` was consulted
+// only inside the `delay` branch, so a delay-less route answered a cancelled request. A
+// cancellation test written against such a route asserted the OPPOSITE of production behaviour.
+describe('mockAdapter honours an aborted signal (adapter contract)', () => {
+    const aborted = (): AbortSignal => {
+        const c = new AbortController();
+        c.abort();
+        return c.signal;
+    };
+
+    test('a pre-aborted signal rejects on a route with NO delay', async () => {
+        const api = mockAdapter({ respond: { body: 'ok' } });
+        await expect(
+            api({ ...req('http://h/a'), signal: aborted() }),
+        ).rejects.toThrow(/abort/i);
+    });
+
+    test('a pre-aborted signal rejects before the route is matched at all', async () => {
+        // `onUnmatched: 'throw'` would otherwise be the only rejection path here.
+        const api = mockAdapter({ match: '/known', respond: { body: 'ok' } });
+        await expect(
+            api({ ...req('http://h/unknown'), signal: aborted() }),
+        ).rejects.toThrow(/abort/i);
+    });
+
+    test('a pre-aborted signal sends nothing: no spy entry, no sequence slot consumed', async () => {
+        const api = mockAdapter({ respond: [{ body: 1 }, { body: 2 }] });
+        await expect(
+            api({ ...req('http://h/a'), signal: aborted() }),
+        ).rejects.toThrow(/abort/i);
+        expect(api.callCount()).toBe(0); // a cancelled request never reached the wire
+        expect((await api(req('http://h/a'))).body).toBe(1); // the sequence is still at its head
+    });
+
+    test('a live (un-aborted) signal is unaffected', async () => {
+        const api = mockAdapter({ respond: { body: 'ok' } });
+        const c = new AbortController();
+        const res = await api({ ...req('http://h/a'), signal: c.signal });
+        expect(res.body).toBe('ok');
+        expect(api.callCount()).toBe(1);
+    });
+
+    test('the existing delay branch still aborts mid-flight', async () => {
+        const api = mockAdapter({ respond: { body: 'ok', delay: 50 } });
+        const c = new AbortController();
+        const p = api({ ...req('http://h/a'), signal: c.signal });
+        c.abort();
+        await expect(p).rejects.toThrow(/abort/i);
+    });
+});

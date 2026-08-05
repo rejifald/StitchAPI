@@ -84,6 +84,12 @@ Omit `match` (and `method`) and the route catches every request.
 `body` is the already-decoded body: an object is delivered as-is. `delay` is
 **abortable**, so a stitch `timeout` cancels it just like a real slow endpoint.
 
+Cancellation is honoured on **every** route, delay or not: a request whose
+`signal` is already aborted rejects without being answered, matching what a real
+transport does (and what [`verifyAdapterContract`](/docs/reference/conformance-kits)
+requires of one). Nothing is sent, so such a request is absent from the spy and
+leaves a response sequence at its current position.
+
 A status sequence drives [retry](/docs/guides/resilience/retry), and the call
 spy proves how many attempts happened:
 
@@ -293,9 +299,10 @@ asserting that your code consumed the stream it was given.
 
 ## Controlling time — `manualClock`
 
-Retry backoff, throttle pacing, and the per-attempt timeout are time-driven, so
-testing them used to mean real waiting. Inject a `manualClock()` as `clock` and
-drive that time by hand with `advance(ms)` — no real delay, no fake-timer library:
+Retry backoff, throttle pacing, the per-attempt timeout and OAuth2 token expiry
+are time-driven, so testing them used to mean real waiting. Inject a
+`manualClock()` as `clock` and drive that time by hand with `advance(ms)` — no
+real delay, no fake-timer library:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -324,7 +331,92 @@ await p; // { ok: true } — with zero real waiting
 order, and `pending()` reports the timers still waiting. The default is the real
 `systemClock` (exported from the main entry), so this changes nothing until you
 inject a clock; you can also supply your own object implementing `Clock`.
-`timeout.total` and event timestamps stay on wall-clock.
+
+### Token expiry
+
+`oauth2` decides token freshness on the same clock, so "does my client refresh
+before the token expires?" is a test you can write — `advance` past
+`expires_in` minus `refresh.skew` and assert the second fetch:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { oauth2 } from 'stitchapi/auth';
+import { manualClock, mockAdapter } from 'stitchapi/testing';
+
+const clock = manualClock();
+const api = mockAdapter([
+    {
+        method: 'POST',
+        match: '/token',
+        respond: ({ index }) => ({
+            body: { access_token: `T${index + 1}`, expires_in: 60 },
+        }),
+    },
+    { method: 'GET', match: '/data', respond: { body: { ok: true } } },
+]);
+
+const call = stitch({
+    baseUrl: 'https://api.test',
+    path: '/data',
+    adapter: api,
+    clock,
+    auth: oauth2({
+        tokenUrl: 'https://api.test/token',
+        clientId: 'cid',
+        clientSecret: 'csecret',
+        adapter: api,
+    }),
+});
+
+await call();
+api.callCount('/token'); // 1
+
+await clock.advance(600_000); // ten virtual minutes, past a 60s token
+await call();
+api.callCount('/token'); // 2 — refreshed, with zero real waiting
+```
+
+### What the clock drives, and what it does not
+
+The clock owns **control-flow** time — the waiting and the deciding — not
+bookkeeping. That boundary is deliberate, and knowing where it falls is the
+difference between a test that asserts something and one that only looks like it
+does:
+
+| Feature                | Under `manualClock`                                  |
+| ---------------------- | ---------------------------------------------------- |
+| `retry` backoff        | **virtual** — `advance` fires each backoff           |
+| `retry.respect` delays | **virtual** — a parsed `Retry-After` is a wait       |
+| `throttle` rate        | **virtual** — spacing is exact, `waited` reports it  |
+| `throttle` concurrency | **virtual** — a holder releases on virtual time      |
+| `circuit.cooldown`     | **virtual** — `advance` past it opens the probe      |
+| `timeout.each`         | **virtual** — the per-attempt clamp fires on it      |
+| OAuth2 token expiry    | **virtual** — `expires_in` minus `refresh.skew`      |
+| `timeout.total`        | wall-clock — the budget deadline is wall-anchored    |
+| `cache.ttl`            | wall-clock — cache expiry is a store concern         |
+| `memoryStore` TTL      | wall-clock — same                                    |
+| Event `at` / `done.ms` | wall-clock — timestamps are cosmetic                 |
+| AWS SigV4 signing date | wall-clock — `new Date()`, in `@stitchapi/aws-sigv4` |
+| `paginate`             | no time to drive                                     |
+
+<Callout type="info">
+    The four core wall-clock rows are **decisions, not gaps** — ADR 0010 scoped
+    the clock to control flow on purpose. `timeout.total`'s budget is anchored
+    to a wall-clock deadline, so virtual sleeps never drain it and it does
+    **not** stop a virtual-time retry loop: assert a total budget against the
+    real clock, or assert attempt counts instead. Store and cache TTLs are a
+    separate concern (expiry, not scheduling), and threading the clock through
+    ~30 event builders to move a cosmetic timestamp would buy no determinism.
+</Callout>
+
+<Callout type="warn">
+    `manualClock()` starts at epoch `0`. A `Retry-After` given as an
+    **HTTP-date** is honoured relative to the clock, so a fixture carrying a
+    real date resolves to a wait of roughly twenty thousand days — which
+    presents as a hang, not a failure. Use `retryAfterSeconds` with a **number**
+    in fixtures, or seed the clock with a realistic epoch:
+    `manualClock(Date.now())`.
+</Callout>
 
 ## See also
 

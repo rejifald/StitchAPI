@@ -56,15 +56,18 @@ const toError = (e: unknown): StitchError =>
           ? new StitchError(e.message, { cause: e })
           : new StitchError(String(e));
 
-const resolve = <TOut>(
+// `async` is load-bearing, not style: written as `Promise.resolve(impl(input))` the call is an
+// ARGUMENT, so a SYNCHRONOUS throw escaped before there was a chain to catch it — and `.safe()`,
+// the never-throws accessor, threw. An async function body turns that throw into a rejection, so
+// a sync throw and an async rejection are indistinguishable to every caller (matching the real
+// stitch, which reports an adapter's sync throw as `ok: false`).
+const resolve = async <TOut>(
     impl: StubImpl<TOut>,
     input: StitchInput,
 ): Promise<TOut> =>
-    Promise.resolve(
-        typeof impl === 'function'
-            ? (impl as (i: StitchInput) => TOut | Promise<TOut>)(input)
-            : impl,
-    );
+    typeof impl === 'function'
+        ? (impl as (i: StitchInput) => TOut | Promise<TOut>)(input)
+        : impl;
 
 function defaultEvents<TOut>(
     name: string,

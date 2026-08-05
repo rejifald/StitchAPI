@@ -1,9 +1,11 @@
 // ADR 0010 — the injectable Clock. A `manualClock()` injected as `clock` makes retry backoff,
-// throttle pacing, and the per-attempt timeout deterministic with zero real waiting: `advance(ms)`
-// drives them. Verified against the REAL engine via the published mock adapter.
+// throttle pacing, the per-attempt timeout and OAuth2 token expiry deterministic with zero real
+// waiting: `advance(ms)` drives them. Verified against the REAL engine via the published mock
+// adapter.
 import { seam, stitch } from '../src';
+import { oauth2 } from '../src/auth';
 import { manualClock, mockAdapter } from '../src/testing';
-import type { Adapter } from '../src/types';
+import type { Adapter, Clock } from '../src/types';
 
 describe('manualClock drives retry backoff (ADR 0010)', () => {
     test('each backoff elapses only when the clock is advanced', async () => {
@@ -117,6 +119,113 @@ describe('manualClock drives throttle rate spacing (ADR 0010)', () => {
         await clock.advance(500);
         await Promise.all([a, b]);
         expect(api.callCount()).toBe(2);
+    });
+});
+
+// The token cache's freshness math (`expiresAt` and the `refresh.skew` window) is control-flow
+// time — it decides whether the next call fetches — so ADR 0010's seam has to reach it. Before
+// this, `oauth2` read the module-global wall clock: 600,000 virtual ms past a 60s `expires_in`
+// refetched nothing, so "does my client refresh the token before it expires" could not be tested.
+describe('manualClock drives OAuth2 token expiry (ADR 0010)', () => {
+    // One mock serves both the token endpoint and the protected resource, so a single spy reports
+    // how many token fetches happened.
+    const api = () =>
+        mockAdapter([
+            {
+                method: 'POST',
+                match: '/token',
+                respond: ({ index }) => ({
+                    body: {
+                        access_token: `T${index + 1}`,
+                        token_type: 'Bearer',
+                        expires_in: 60, // 60s, and the default refresh skew is 30s
+                    },
+                }),
+            },
+            { method: 'GET', match: '/data', respond: { body: { ok: true } } },
+        ]);
+
+    const protectedStitch = (mock: ReturnType<typeof api>, clock: Clock) =>
+        stitch({
+            baseUrl: 'https://api.test',
+            path: '/data',
+            adapter: mock,
+            clock,
+            auth: oauth2({
+                tokenUrl: 'https://api.test/token',
+                clientId: 'cid',
+                clientSecret: 'csecret',
+                adapter: mock,
+            }),
+        });
+
+    test('advancing past `expires_in` refetches the token', async () => {
+        const clock = manualClock();
+        const mock = api();
+        const call = protectedStitch(mock, clock);
+
+        await call();
+        expect(mock.callCount('/token')).toBe(1);
+        expect(mock.lastRequest()?.headers['authorization']).toBe('Bearer T1');
+
+        // Still inside the freshness window (60s expiry − 30s skew = fresh until virtual 30s).
+        await clock.advance(20_000);
+        await call();
+        expect(mock.callCount('/token')).toBe(1); // reused, not refetched
+
+        // Past it, on virtual time alone — no real waiting.
+        await clock.advance(580_000); // virtual 600s, ten minutes past a 60s token
+        await call();
+        expect(mock.callCount('/token')).toBe(2);
+        expect(mock.lastRequest()?.headers['authorization']).toBe('Bearer T2');
+    });
+
+    test('the `refresh.skew` window is honoured on virtual time', async () => {
+        const clock = manualClock();
+        const mock = api();
+        const call = stitch({
+            baseUrl: 'https://api.test',
+            path: '/data',
+            adapter: mock,
+            clock,
+            auth: oauth2({
+                tokenUrl: 'https://api.test/token',
+                clientId: 'cid',
+                clientSecret: 'csecret',
+                adapter: mock,
+                refresh: { skew: '10s' }, // fresh until virtual 50s (60s expiry − 10s skew)
+            }),
+        });
+
+        await call();
+        expect(mock.callCount('/token')).toBe(1);
+
+        await clock.advance(49_999);
+        await call();
+        expect(mock.callCount('/token')).toBe(1); // one ms inside the window
+
+        await clock.advance(1);
+        await call();
+        expect(mock.callCount('/token')).toBe(2); // the skew boundary, on the injected clock
+    });
+
+    test('with no clock injected, expiry still rides the system clock', async () => {
+        const mock = api();
+        const call = stitch({
+            baseUrl: 'https://api.test',
+            path: '/data',
+            adapter: mock,
+            auth: oauth2({
+                tokenUrl: 'https://api.test/token',
+                clientId: 'cid',
+                clientSecret: 'csecret',
+                adapter: mock,
+            }),
+        });
+
+        await call();
+        await call();
+        expect(mock.callCount('/token')).toBe(1); // a 60s token is fresh across two calls
     });
 });
 

@@ -566,6 +566,55 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **OAuth2 token expiry rides the injected clock, so "does my client refresh before expiry?" is
+  finally a test you can write.** ([#650](https://github.com/rejifald/StitchAPI/issues/650))
+  `oauth2` decided token freshness on the module-global wall clock, so 600,000 **virtual** ms past a
+  60s `expires_in` refetched nothing. The test people actually want to write — advance past the
+  expiry, assert the second token fetch — passed while asserting nothing, because the cached token
+  was still fresh by a clock the test could not move.
+
+    [ADR 0010](docs/adr/0010-injectable-clock.md) had already scoped this correctly — the clock owns
+    **control-flow** time — and token freshness is control flow: it decides whether the next call
+    fetches. It was simply out of reach. `auth.ts` contained zero occurrences of `clock` and
+    `AuthContext` carried none, so this was never one line pointing at the wrong function; the seam
+    did not extend that far.
+
+    `AuthContext` now carries the stitch's resolved `clock`, threaded by the engine from the same
+    place `Runtime.clock` comes from — the fifth injectable arriving the way `store`, `vault`,
+    `principal` and `run` already do. Both halves of the freshness math (`expiresAt` at fetch time,
+    and the `refresh.skew` window at read time) read it. **Nothing changes under the default
+    `systemClock`**, which is ADR 0010's own guarantee; the capability activates only when a clock is
+    injected. The field is optional, so a hand-built `AuthContext` in a custom strategy's unit test
+    still type-checks and falls back to the wall clock.
+
+    The mocking guide now carries the full map of which time-driven features `manualClock` drives and
+    which read wall-clock, because ADR 0010 §4 and a `types.ts` JSDoc are not where someone writing a
+    test looks. **`timeout.total`, event `at`/`done.ms` and store/cache TTL remain deliberately
+    wall-clock** — decisions, not gaps — and are now documented as such where testers will find them.
+
+- **`stubStitch(...).safe()` no longer throws when the stub's impl throws synchronously.**
+  ([#650](https://github.com/rejifald/StitchAPI/issues/650)) `.safe()` is the never-throws accessor —
+  that is the entire reason it exists — and a synchronous `throw` inside a function impl escaped it,
+  while the async twin (`() => Promise.reject(e)`) correctly resolved `{ ok: false }` and the **real**
+  stitch reported an adapter's synchronous throw as `ok: false`. The stub was the only one of the
+  three that threw.
+
+    `resolve()` evaluated `impl(input)` as an **argument** to `Promise.resolve`, so the throw escaped
+    before there was a chain to catch it. It is now an `async` function, whose body turns the throw
+    into a rejection. `.unwrap()` and the awaited call result are fixed by the same change;
+    `.stream()` was never affected (an async generator already caught it).
+
+- **`mockAdapter` honours an aborted signal on every route, not just delayed ones.**
+  ([#650](https://github.com/rejifald/StitchAPI/issues/650)) `verifyAdapterContract(mockAdapter(…))`
+  passed 8 of 9 rules and failed **"abort: a pre-aborted signal rejects"** — the mock answered a
+  cancelled request. `req.signal` was consulted only inside the `delay` branch, so any route without
+  a `delay` ignored a signal every real transport honours, and a cancellation test written against a
+  delay-less route asserted the **opposite** of production behaviour.
+
+    The signal is now checked before anything else happens. Nothing was sent, so a pre-aborted
+    request records no spy entry and consumes no slot of a route's response sequence — `callCount()`
+    keeps meaning "requests that reached the wire", which is what a cancellation test asserts on.
+
 - **BREAKING — an `input` schema now SHAPES the request, not just gates it.**
   ([#648](https://github.com/rejifald/StitchAPI/issues/648)) `validateInput` awaited the validator,
   checked `r.ok`, threw on failure — and dropped `r.value` on the floor. Its return type was
