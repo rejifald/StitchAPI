@@ -1160,7 +1160,13 @@ shape, not as today's surface: nothing on the surface carries an alias.
   identical-by-design host envelopes; **R6** a consumer-input slot — top-level, nested,
   or **inherited** — with an all-optional bag in **any arm** of its union, so `{}`
   type-checks (P20); the bag is resolved across files within a package and against
-  core's, and through `extends` including a non-exported base;
+  core's, through `extends` including a non-exported base, and through **one level** of
+  `type` alias (`type X = A | Bag` makes `X` admit `{}`) — one level and against
+  interfaces only, so an alias naming another alias does not chain. What it still cannot
+  see is a bag reached through an alias in a container **outside** the `*Options` +
+  blessed `*Config` family: `MockRoute.respond: MockResponder` resolves the alias now but
+  `MockRoute` is not an `*Options`, so it stays under-flagged (#564) — widening that
+  filter is the 23-findings/20-noise experiment the family exists to prevent;
   **R7** a `@deprecated` JSDoc **tag** on a published surface (at tag position inside
   a block comment — prose that merely names the marker is documentation, not a shim) —
   the surface is shim-free since the sweep, so a post-GA deprecation alias (mandated by
