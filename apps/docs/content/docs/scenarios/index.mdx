@@ -86,4 +86,9 @@ real runtime, not by reading the source.
         href="/docs/scenarios/expiring-signatures"
         description="A rate-limited queue cannot age a SigV4 signature here — the wait happens before signing, by construction. Clock drift still needs 26 lines."
     />
+    <Card
+        title="The charge you can't confirm"
+        href="/docs/scenarios/unconfirmed-write"
+        description="A timeout tells you nothing about the server. keyOf fixes the restart and the race in config alone — the default key double-charged a re-driven job."
+    />
 </Cards>

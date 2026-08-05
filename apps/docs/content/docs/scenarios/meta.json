@@ -15,6 +15,7 @@
         "unstable-pagination",
         "intermittent-drift",
         "large-response-memory",
-        "expiring-signatures"
+        "expiring-signatures",
+        "unconfirmed-write"
     ]
 }
