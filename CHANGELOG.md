@@ -521,6 +521,22 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **An uncontended fleet-wide acquire no longer reports a phantom wait.** Under
+  [ADR 0025](docs/adr/0025-fleet-wide-concurrency-by-lease.md) leases, `acquire` set
+  `waited = clock.now() - blockStart` whenever that difference was non-zero — but `blockStart` is
+  read before the `lease` call, which is a store round-trip. A grant on the **first** attempt
+  blocked nobody, yet any round-trip that happened to straddle a millisecond reported `waited: 1`
+  and fired a spurious `progress.throttled` event, telling an operator their limiter was pacing
+  calls it never paced. The gate is now "did it have to poll" — `takeLease` reports whether it went
+  round the loop — so store latency alone can never register, which is what the code's own comment
+  ("not incidental store or scheduling time") always claimed. A genuine block still measures its
+  real elapsed wait, unchanged.
+
+    This also fixes a flaky test: `store.spec.ts`'s `expect(first.waited).toBe(0)` failed whenever
+    the machine was slow enough, reliably under `--coverage` (it blocked CI on #632 twice). The new
+    pin injects 5ms of store latency into an uncontended grant, so it fails deterministically
+    against the old behaviour instead of once every few runs.
+
 - **`Surface.resumeRetry` takes the canonical duration form too: its return widens to
   `number | string`.** The sibling of the `SurfaceOutcome.after` fix below, found by sweeping the
   surface under the new [P17](docs/CONTRACT.md#p17--one-canonical-duration-form)/[P25](docs/CONTRACT.md#p25--one-canonical-size-form)
