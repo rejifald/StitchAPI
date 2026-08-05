@@ -859,7 +859,8 @@ export interface StreamBufferOptions {
      * the throw into an `error` event). Counts characters of the DECODED text — UTF-16 code
      * units, so an astral character costs 2 — not bytes off the socket. Guards every un-framed /
      * never-closing case against growing client memory without limit (an OOM DoS):
-     *   - `'json'` — a single in-progress value (e.g. an unclosed `[`).
+     *   - `'json'` — a single in-progress value (e.g. an unterminated string). A streamed array is
+     *     bounded by its largest ELEMENT, not its length — elements are released as they close.
      *   - `'lines'` / `'ndjson'` — a single un-terminated line (a run of text with no `\n`).
      *   - the `sse` surface — one un-dispatched event's `data:` payload (a frame with no blank line).
      * Default ~8M characters (see `json-stream.ts`). Not meaningful for `decode: 'bytes'` (raw,

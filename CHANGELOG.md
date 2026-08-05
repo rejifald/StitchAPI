@@ -615,6 +615,36 @@ npm release are grouped under the in-development version that introduced them.
     request records no spy entry and consumes no slot of a route's response sequence — `callCount()`
     keeps meaning "requests that reached the wire", which is what a cancellation test asserts on.
 
+- **`decode: 'json'` no longer buffers the array it is streaming.**
+  ([#659](https://github.com/rejifald/StitchAPI/issues/659)) Streaming a top-level JSON array
+  retained the **whole array text** — 19.48 MB held for a 21.5 MB body (0.90× the wire), growing
+  linearly with the response — and then tripped the decoder's own 8 MB `stream.buffer.chars`
+  default mid-stream. A 60,000-row array delivered **37,288 rows and then an `error` /
+  `done(ok: false)`**, which a loop matching only `delta` never sees, under a message —
+  _"a malformed or never-closing value was streamed"_ — that blamed the vendor for a
+  perfectly well-formed body. Scanning was superlinear too: 43× the time for 10× the rows.
+
+    **Emission was never the problem.** One delta per top-level element, correct under `,` `]` `}`
+    inside string values, escaped quotes, embedded newlines, pretty-printed multi-line records, deep
+    nesting and 1-character chunk boundaries — all of it already right, and now pinned by a test that
+    feeds hard records **one byte per chunk** while compaction runs on every read.
+
+    The window was. `compact()` floors on the start of the value in flight, and a top-level array
+    recorded its opening `[` as that start and held it until the closing `]` — so for the array's
+    whole lifetime the floor was byte zero and `compact()` was a no-op. But an array is **never
+    emitted as a value**; only its elements are (`[{…},{…}]` is one delta per element, by design).
+    It therefore needs no start recorded at all, and now records none: `elementStart` alone floors
+    the window while an element is mid-flight, and between elements the floor is the scan cursor —
+    exactly how the concatenated-value form (`{…}{…}`, the other shape this decoder accepts) has
+    always released. The two shapes now measure alike: **0.11 MB flat for 100,000 rows either way**,
+    against 19.48 MB for the array before, with time linear in the rows.
+
+    **The cap keeps its teeth**, and its meaning sharpens: it bounds one **value**, so an array is
+    now capped by its largest _element_ rather than by its _length_. A single element still in
+    progress across reads still floors the window and still trips the cap — which is the case the
+    cap exists for. Nothing about the public API changes; a stream that used to die at 8 MB now
+    finishes, in bounded memory.
+
 - **A `bigint` path parameter no longer vanishes from the URL.** `stitch({ path: '/v1/things/{id}' })`
   called with `{ params: { id: 1234567890123456789n } }` built `https://api.test/v1/things/` — the id
   simply gone, no error, no event, no drift finding. A request meant for one item silently addressed
