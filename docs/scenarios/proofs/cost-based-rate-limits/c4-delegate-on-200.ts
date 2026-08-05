@@ -89,11 +89,13 @@ async function main(): Promise<void> {
         check('(b) RateLimitError.retryAfter', rle.retryAfter, undefined);
     }
 
-    // ── (b2) …but `.safe()` DOWNGRADES it: the class and the body are both gone ────────────────
-    // `consumeSafe` coerces every terminal through `asStitchError` (stitch.ts:738-745), which
-    // copies `message` + `status` + `cause` and NOT `body`. `SafeResult.error` is a StitchError by
-    // contract, so the RateLimitError survives only as `.cause` — the payload an outer gate needs
-    // is one undocumented hop away, and `error.body` reads as "there was no body".
+    // ── (b2) `.safe()` gives back the SAME error — no downgrade ───────────────────────────────
+    // FIXED by #662 (issue #651, finding 2). This block used to measure the opposite: `.safe()`
+    // coerced every terminal through `asStitchError`, which copied `message` + `status` + `cause`
+    // and NOT `body`, so a RateLimitError arrived as a bare StitchError with `body: undefined` and
+    // the real instance one undocumented hop away on `.cause`. `RateLimitError` now extends
+    // `StitchError`, so `SafeResult.error` (typed `StitchError`) holds it without coercion and the
+    // pacing payload is on the error itself.
     {
         const clock = manualClock();
         const shop = new FakeShopify({ clock, costs: { BigSync: 300 } });
@@ -109,23 +111,24 @@ async function main(): Promise<void> {
         check(
             '(b2) safe() → instanceof RateLimitError',
             r.error instanceof RateLimitError,
-            false,
-        );
-        check('(b2) safe() error class', r.error?.name, 'StitchError');
-        check('(b2) safe() error.body', r.error?.body, undefined);
-        check('(b2) safe() error.status survives', r.error?.status, 200);
-        // It is recoverable — but only by reaching through `.cause`.
-        const cause = r.error?.cause;
-        check(
-            '(b2) error.cause IS the RateLimitError',
-            cause instanceof RateLimitError,
             true,
         );
+        check('(b2) safe() error class', r.error?.name, 'RateLimitError');
+        check('(b2) safe() error.status survives', r.error?.status, 200);
+        // The pacing payload is on the error itself now — no `.cause` hop.
         check(
-            '(b2) …and error.cause.body has extensions.cost',
-            costOfBody((cause as RateLimitError | undefined)?.body)
-                ?.requestedQueryCost,
+            '(b2) safe() error.body has extensions.cost',
+            costOfBody(r.error?.body)?.requestedQueryCost,
             300,
+        );
+        check(
+            '(b2) …and it is the same error the throwing path raises',
+            r.error instanceof RateLimitError && r.error.response.status,
+            200,
+        );
+        note(
+            '(b2) → .safe() and try/catch now agree',
+            'RateLimitError extends StitchError (#662), so no coercion happens',
         );
     }
 
