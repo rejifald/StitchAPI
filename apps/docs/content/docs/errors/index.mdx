@@ -105,7 +105,9 @@ try {
     await report();
 } catch (e) {
     if (e instanceof RateLimitError) {
-        // The one catalog entry that IS a runtime identity of its own.
+        // The one catalog entry that IS a runtime identity of its own. It
+        // subclasses StitchError, so this arm MUST come before the one below —
+        // otherwise the generic arm swallows it.
         console.error('back off for', e.retryAfter);
     } else if (e instanceof StitchError) {
         if (e.attempts === 0) {

@@ -7,9 +7,11 @@ description: 'The delegate-backoff error: a rate-limit response surfaced for an 
 
 A stitch with [`throttle: { delegate: true }`](/docs/guides/resilience/delegate-backoff)
 that gets a rate-limit response (status in `throttle.on`, default `[429]`)
-rejects with a **`RateLimitError`** instead of retrying. Unlike most failures,
-this is _not_ a `StitchError` — it's its own exported class, so you can catch it
-specifically and hand the signal to whatever owns your backoff:
+rejects with a **`RateLimitError`** instead of retrying. It is a `StitchError`
+— a **subclass** — so it carries the usual `status` / `attempts` / `body` / `url`
+and is caught by a generic `instanceof StitchError` arm, while remaining its own
+exported class you can catch specifically to hand the signal to whatever owns
+your backoff:
 
 ```ts twoslash
 import { RateLimitError, stitch } from 'stitchapi';
@@ -31,15 +33,25 @@ try {
 }
 ```
 
-`RateLimitError` carries:
+`RateLimitError` carries, on top of the inherited `StitchError` fields
+(`status`, `attempts`, `body`, `url`):
 
-- **`status`** — the rate-limit status (e.g. `429`, or whatever you listed in
-  `throttle.on`).
 - **`retryAfter`** — the wait the server asked for, parsed from `Retry-After`
   (delta-seconds **or** an HTTP-date) into milliseconds; `undefined` when the
   header is absent or unparseable.
 - **`response`** — the raw `AdapterResponse`, so you can read other rate
   headers the API sent (`X-RateLimit-Remaining`, a reset timestamp, and so on).
+
+Its `status` is the rate-limit status (e.g. `429`, or whatever you listed in
+`throttle.on`) — always present, where the base class leaves it optional.
+
+<Callout type="warn">
+    **Test `RateLimitError` before `StitchError`.** Because it subclasses
+    `StitchError`, a `catch` whose first arm is `instanceof StitchError` will
+    swallow the rate-limit signal and never reach a later `RateLimitError` arm —
+    which defeats the point of delegating. Put the specific class first, as the
+    example above does.
+</Callout>
 
 <Callout type="info">
     This is the one entry in the [error catalog](/docs/errors) that is a real
@@ -68,9 +80,10 @@ purpose.
   [the event stream](/docs/concepts/event-stream) rather than awaiting, the same
   outcome arrives as an `error` event carrying `status` and `retryAfter` — no
   `try`/`catch` needed.
-- **Branch without throwing.** `.safe()` returns the failure as a `StitchError`
-  whose `.status` is the rate-limit status and whose `.cause` is the original
-  `RateLimitError` (so `retryAfter` is still reachable via the cause).
+- **Branch without throwing.** `.safe()` returns the very same `RateLimitError`
+  in `error` — `SafeResult.error` is typed `StitchError`, and this is one, so
+  nothing is downgraded. `instanceof RateLimitError`, `retryAfter`, `body` and
+  `response` all work identically whether you `await` or `.safe()`.
 - **Reconsider whether to delegate.** If nothing outside StitchAPI actually
   owns the backoff, you probably want internal handling instead — drop
   `throttle.delegate` and use [retry](/docs/guides/resilience/retry) +

@@ -12,6 +12,10 @@ import type {
     StitchStore,
     ThrottleOptions,
 } from './types';
+// The one VALUE import from `./types` (everything else above is type-only): `RateLimitError`
+// extends `StitchError` per CONTRACT.md P10. `types.ts` imports nothing at runtime — its own
+// imports are all type-only — so this edge adds no cycle.
+import { StitchError } from './types';
 import { parseDuration, parseRate, systemClock } from './util';
 
 export class TimeoutError extends Error {}
@@ -261,23 +265,30 @@ export class CircuitOpenError extends Error {
  * (`throttle.delegate`) and the response carries a rate-limit status (default `429`). Instead of
  * retrying internally or pacing on the built-in throttle, the engine surfaces the outcome so an
  * OUTER gate/circuit — owned by the host — decides the backoff (issue #145). Carries the structured
- * signal that gate needs: the `status`, the `retryAfter` parsed from `Retry-After` (delta-seconds
- * OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw `response` so the
- * host can read other rate headers (`X-RateLimit-*`, etc.). `attempts`/`body`/`url` mirror
- * {@link StitchError}'s field set (CONTRACT.md P10), lifted from the response/run state at
- * construction. The full `response` rides on the live instance only — never the serialized `error`
- * event — so it cannot leak into a trace sink.
+ * signal that gate needs on top of what it inherits: the `retryAfter` parsed from `Retry-After`
+ * (delta-seconds OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw
+ * `response` so the host can read other rate headers (`X-RateLimit-*`, etc.). The full `response`
+ * rides on the live instance only — never the serialized `error` event — so it cannot leak into a
+ * trace sink.
+ *
+ * A **subclass of {@link StitchError}** (CONTRACT.md P10): `status`/`attempts`/`body`/`url` are the
+ * inherited field set rather than a hand-kept copy, so the one identity survives every consumer —
+ * `await` throws it, `.safe()` returns it in `error` (no downgrade to a bare `StitchError`, no
+ * reaching through `.cause` for the body), and a `catch (e instanceof StitchError)` sees it like
+ * any other failure.
+ *
+ * ⚠️ Because it IS a `StitchError`, a handler that branches on both **must test this class first** —
+ * a leading `instanceof StitchError` arm swallows the delegate signal, which defeats delegating.
  */
-export class RateLimitError extends Error {
-    readonly status: number;
+export class RateLimitError extends StitchError {
     /** `Retry-After` parsed to ms (delta-seconds OR HTTP-date); `undefined` when absent/unparseable. */
     readonly retryAfter: number | undefined;
-    /** Attempts made before the rate-limit outcome surfaced (1 = the first request). Mirrors `StitchError.attempts` (P10). */
-    readonly attempts: number;
-    /** The parsed body of the rate-limited response, lifted from `response.body` (P10). */
-    readonly body?: unknown;
-    /** The final request URL of the rate-limited response, when the transport exposes it (P10). */
-    readonly url?: string;
+    /**
+     * The rate-limit status that was hit — narrowed from the base's `number | undefined`, since a
+     * delegate outcome always has one. `declare` (no emit): the value is the base's, and under
+     * `useDefineForClassFields` a real field here would clobber it with `undefined`.
+     */
+    declare readonly status: number;
     readonly response: AdapterResponse;
     constructor(opts: {
         status: number;
@@ -285,17 +296,20 @@ export class RateLimitError extends Error {
         response: AdapterResponse;
         attempts?: number | undefined;
         message?: string;
+        cause?: unknown;
     }) {
-        super(opts.message ?? `rate limited (HTTP ${opts.status})`);
+        // Lift the response's `body`/`url` at construction so a caller reads them off the error
+        // itself — the inherited fields — without reaching into `.response`.
+        super(opts.message ?? `rate limited (HTTP ${opts.status})`, {
+            status: opts.status,
+            attempts: opts.attempts,
+            body: opts.response.body,
+            url: opts.response.url,
+            cause: opts.cause,
+        });
         this.name = 'RateLimitError';
-        this.status = opts.status;
         this.retryAfter = opts.retryAfter;
-        this.attempts = opts.attempts ?? 0;
         this.response = opts.response;
-        // Lift the P10 fields off the response at construction so the error matches StitchError's
-        // shape without the caller reaching into `.response`.
-        if (opts.response.body !== undefined) this.body = opts.response.body;
-        if (opts.response.url !== undefined) this.url = opts.response.url;
     }
 }
 

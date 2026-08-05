@@ -4,6 +4,7 @@
 // `__config`/`__stitch` — so `isStitch()`, a registry, or a Nest `overrideProvider(useValue:…)`
 // accept it. A call spy records every invocation. Browser-safe: no `node:*`.
 import { compact } from './compact';
+import { RateLimitError } from './resilience';
 import {
     type RedactedStitchConfig,
     type SafeResult,
@@ -45,6 +46,9 @@ export interface StubStitchOptions<TOut = unknown> {
 export type StubImpl<TOut> =
     TOut | ((input: StitchInput) => TOut | Promise<TOut>);
 
+// A thrown StitchError passes through untouched — which since P10 includes a RateLimitError, so a
+// stub that rejects with one keeps that identity all the way to `.safe()` and `.stream()` instead of
+// being flattened to a bare StitchError the way it was when the two classes were siblings.
 const toError = (e: unknown): StitchError =>
     e instanceof StitchError
         ? e
@@ -86,6 +90,10 @@ function defaultEvents<TOut>(
             attempts: 1,
             at,
             status: error.status,
+            // Mirror the engine's delegate-backoff stamp (engine.ts `errEvt`), so a stub that
+            // rejects with a RateLimitError yields the same event shape a real 429 would.
+            retryAfter:
+                error instanceof RateLimitError ? error.retryAfter : undefined,
         });
         return [
             start,

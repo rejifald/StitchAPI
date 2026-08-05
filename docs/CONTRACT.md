@@ -269,6 +269,26 @@ Every thrown error type (`StitchError`, `RateLimitError`, and per-package re-exp
 **MUST** guarantee the same field set (`status?`, `attempts`, `body?`, `url?`, and a
 stable discriminator) so a consumer can branch on any thrown error uniformly.
 
+Parity is achieved by **inheritance, not duplication**: `StitchError` is the root, and
+every other thrown class **MUST** extend it rather than re-declare its fields. A new
+class adds only what is genuinely its own (`RateLimitError` adds `retryAfter` and
+`response`) and **MUST** keep `name` as its own discriminator — that is what the
+serialising hosts branch on once the instance is gone (rtk-query stores a plain object).
+
+Two consequences the surface **MUST** hold to:
+
+- `SafeResult.error` is typed `StitchError`, so `.safe()` **MUST NOT** downgrade a
+  subclass to the base. `await` and `.safe()` hand back the _same_ instance; no field is
+  reachable only through `.cause`.
+- Because the arms overlap, any `instanceof` chain — in this repo or in a doc example —
+  **MUST** test the subclass first. `engine.ts`'s `errEvt` and the delegate-backoff docs
+  are the reference spellings.
+
+_History:_ `RateLimitError` was a sibling of `StitchError` until rc.8, with the field set
+copied by hand. `.safe()` downgraded it (dropping `body`, burying the instance on
+`.cause`) and every dispatch site carried a two-arm `instanceof` check; both went away
+with the subclass.
+
 ### P11 · Async/sync signature parity
 
 The same verb **MUST** keep the same sync/async shape across every surface and adapter.
