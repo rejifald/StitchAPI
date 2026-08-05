@@ -423,11 +423,11 @@ describe('cache — scope isolation', () => {
 });
 
 describe('cache — re-validate on hit vs version fast path', () => {
-    test('onUnfingerprintable:"revalidate" self-heals a stale-shaped hit', async () => {
+    test('fingerprint.fallback:"revalidate" self-heals a stale-shaped hit', async () => {
         // First origin call returns a string `n`; later calls return a number. A loose writer
         // (accept-anything predicate) caches the string; a strict reader (number predicate) sharing
         // the store + key re-validates on hit, finds it stale, evicts, and refetches a conforming
-        // value. Both outputs are predicates — un-fingerprintable — so with onUnfingerprintable:
+        // value. Both outputs are predicates — un-fingerprintable — so with fallback:
         // 'revalidate' both take policy 'revalidate' and share one (empty-fingerprint) bucket.
         const { adapter, calls } = counting({
             body: (n) => ({ n: n === 1 ? 'oops' : 7 }),
@@ -442,7 +442,7 @@ describe('cache — re-validate on hit vs version fast path', () => {
             cache: {
                 ttl: '60s',
                 tenancy: 'app' as const,
-                onUnfingerprintable: 'revalidate' as const,
+                fingerprint: { fallback: 'revalidate' as const },
             },
         };
         const writer = stitch({
@@ -460,7 +460,7 @@ describe('cache — re-validate on hit vs version fast path', () => {
         expect(calls()).toBe(2);
     });
 
-    test('cache.version pins the schema — a hit is trusted, not re-validated', async () => {
+    test('a bare cache.fingerprint pins the schema — a hit is trusted, not re-validated', async () => {
         const { adapter, calls } = counting({
             body: (n) => ({ n: n === 1 ? 'oops' : 7 }),
         });
@@ -471,7 +471,8 @@ describe('cache — re-validate on hit vs version fast path', () => {
             adapter,
             store,
             trace: false as const,
-            cache: { ttl: '60s', tenancy: 'app' as const, version: '1' },
+            // P12 scalar at the outer slot ≡ `fingerprint: { version: '1' }`.
+            cache: { ttl: '60s', tenancy: 'app' as const, fingerprint: '1' },
         };
         const writer = stitch(base);
         const reader = stitch({
@@ -551,7 +552,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
         expect(calls()).toBe(2); // never cached — each call is live
     });
 
-    test('onUnfingerprintable:"revalidate" caches and re-validates the stored value on each hit', async () => {
+    test('fingerprint.fallback:"revalidate" caches and re-validates the stored value on each hit', async () => {
         registerFingerprinter(testFingerprinter);
         const { adapter, calls } = counting();
         const s = stitch({
@@ -561,7 +562,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             cache: {
                 ttl: '60s',
                 tenancy: 'app',
-                onUnfingerprintable: 'revalidate',
+                fingerprint: { fallback: 'revalidate' },
             },
             output: fpSchema({ opaque: true }), // abstains → policy 'revalidate'
         });
@@ -571,7 +572,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
         expect(calls()).toBe(1); // value re-validates fine → still cached
     });
 
-    test('an opaque transform refuses to cache unless cache.transform makes it sound', async () => {
+    test('an opaque transform refuses to cache unless fingerprint.transform makes it sound', async () => {
         const refused = counting();
         const r = stitch({
             url: URL,
@@ -579,7 +580,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             adapter: refused.adapter,
             trace: false,
             cache: { ttl: '60s', tenancy: 'app' },
-            transform: (b) => b, // opaque closure, no cache.transform declaration → refuse
+            transform: (b) => b, // opaque closure, no transform declaration → refuse
         });
         const trace = await cacheTrace(r.stream());
         expect(trace.some((d) => d.startsWith('bypass:'))).toBe(true);
@@ -593,7 +594,12 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             name: 'txv',
             adapter: versioned.adapter,
             trace: false,
-            cache: { ttl: '60s', tenancy: 'app', transform: '1' }, // P12 scalar ≡ { version: '1' }
+            // P12 scalar one level in ≡ `fingerprint: { transform: { version: '1' } }`.
+            cache: {
+                ttl: '60s',
+                tenancy: 'app',
+                fingerprint: { transform: '1' },
+            },
             transform: (b) => b, // now sound (version named) → fast
         });
         await v();
@@ -601,34 +607,53 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
         expect(versioned.calls()).toBe(1); // second call is a hit
     });
 
-    test('the bare version tag folds to `{ version }` in __config (P0/P12)', () => {
-        const s = stitch({
+    test('both bare version tags fold to `{ version }` in __config (P0/P12)', () => {
+        const outer = stitch({
             url: URL,
             trace: false,
-            cache: { ttl: '60s', transform: 3 },
+            cache: { ttl: '60s', fingerprint: 3 },
+        });
+        const inner = stitch({
+            url: URL,
+            trace: false,
+            cache: { ttl: '60s', fingerprint: { transform: 3 } },
             transform: (b) => b,
         });
-        // The engine only ever sees the object form, so the scalar never reaches the store key or
-        // a serialized config — the same fold `retry.backoff` and `wire.multipart` get.
-        expect(s.__config.cache?.transform).toEqual({ version: 3 });
+        // The engine only ever sees the object form, so a scalar never reaches the store key or a
+        // serialized config — the same fold `retry.backoff` and `wire.multipart` get, applied at
+        // both depths of the only two-level slot on the surface.
+        expect(outer.__config.cache?.fingerprint).toEqual({ version: 3 });
+        expect(inner.__config.cache?.fingerprint).toEqual({
+            transform: { version: 3 },
+        });
     });
 
-    test('the flat `transformVersion`/`trustTransform` pair is off the type surface (P24)', () => {
+    test('the ladder`s flat spellings are off the type surface (P24)', () => {
         // One literal per key: excess-property checking reports only the FIRST unknown key, so a
         // second directive in the same object would be unused (and `check:types` fails on that).
         const versioned: CacheOptions = {
             ttl: '60s',
-            // @ts-expect-error — folded into `cache.transform`, whose bare tag IS the version;
-            // the envelope names the subject once (CONTRACT.md P24, hard break under P19).
+            // @ts-expect-error — `version` moved into the `fingerprint` envelope, whose bare tag IS
+            // the version (CONTRACT.md P24, hard break under P19).
+            version: 3,
+        };
+        const transformed: CacheOptions = {
+            ttl: '60s',
+            // @ts-expect-error — the transform declaration is `fingerprint.transform` now; the flat
+            // `transformVersion`/`trustTransform` pair folded into it one commit earlier.
             transformVersion: 3,
         };
-        const trusted: CacheOptions = {
+        const revalidating: CacheOptions = {
             ttl: '60s',
-            // @ts-expect-error — `cache.transform: { trust: true }` is the weak arm of that same
-            // envelope, one word shorter for having dropped the subject from the field name.
-            trustTransform: true,
+            // @ts-expect-error — `onUnfingerprintable` is `fingerprint.fallback`: inside the
+            // envelope the subject is named once, and `on*` is reserved for handlers.
+            onUnfingerprintable: 'revalidate',
         };
-        expect([versioned.ttl, trusted.ttl]).toEqual(['60s', '60s']);
+        expect([versioned.ttl, transformed.ttl, revalidating.ttl]).toEqual([
+            '60s',
+            '60s',
+            '60s',
+        ]);
     });
 });
 

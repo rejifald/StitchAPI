@@ -114,7 +114,7 @@ describe('resolveFingerprint — the fallback ladder', () => {
     it('rung 1: explicit version is authoritative (fast)', () => {
         const r = resolveFingerprint({ output: userSchema(), version: 'v3' });
         expect(r.policy).toBe('fast');
-        expect(r.reason).toBe('explicit cache.version');
+        expect(r.reason).toBe('explicit cache.fingerprint.version');
         expect(r.generation).not.toBe('');
     });
 
@@ -183,11 +183,11 @@ describe('resolveFingerprint — the fallback ladder', () => {
         expect(r.reason).toContain('no fingerprinter registered');
     });
 
-    it('rung 5: opt-in onUnfingerprintable:revalidate', () => {
+    it('rung 5: opt-in fallback:revalidate', () => {
         clearFingerprinters();
         const r = resolveFingerprint({
             output: userSchema(),
-            onUnfingerprintable: 'revalidate',
+            fallback: 'revalidate',
         });
         expect(r.policy).toBe('revalidate');
     });

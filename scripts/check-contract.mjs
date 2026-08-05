@@ -327,7 +327,7 @@ const PREFIX_GROUP_ALLOW = new Map([
     ],
     [
         'FingerprintInput.transform',
-        'transform/transformVersion/transformTrust is a derived read-view that FLATTENS the authored CacheOptions.transform envelope (version/trust) back alongside the top-level StitchConfig.transform closure for the hash — the envelope P24 asks for is the authored one; re-nesting it here would only re-wrap what the resolver reads flat',
+        'transform/transformVersion/transformTrust is a derived read-view that FLATTENS the authored cache.fingerprint.transform envelope (version/trust) back alongside the top-level StitchConfig.transform closure for the hash — the envelope P24 asks for is the authored one; re-nesting it here would only re-wrap what the resolver reads flat',
     ],
     [
         'CliIO.write',

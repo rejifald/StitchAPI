@@ -170,33 +170,51 @@ npm release are grouped under the in-development version that introduced them.
     Taking it here would have made one word mean both an index and a duration, which is the P1/P2
     collision the rename exists to avoid.
 
-- **BREAKING CHANGE: `cache.transformVersion` + `cache.trustTransform` fold into one
-  `cache.transform` envelope.**
-  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
-  The two fields were the two arms of a single decision — how an opaque `transform` clears
-  [ADR 0004](docs/adr/0004-standard-schema-fingerprint-for-cache-invalidation.md)'s rung 2 — with
-  their precedence (`version` wins; `trust` is then inert) living only in the resolver. They are
-  now one envelope that names its subject once, so the members carry only what distinguishes them
-  and the precedence is a within-envelope rule. A bare tag is the P12 shorthand for the dominant
-  field: `transform: 3` ≡ `transform: { version: 3 }`.
+- **BREAKING CHANGE: the four cache fingerprint fields become one `cache.fingerprint` envelope.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope),
+  [P25](docs/CONTRACT.md#p25--one-canonical-size-form)) `version`, `transformVersion`,
+  `trustTransform` and `onUnfingerprintable` were four flat fields sitting among the cache's keying
+  and lifetime options, but they are one capability: the whole of
+  [ADR 0004](docs/adr/0004-standard-schema-fingerprint-for-cache-invalidation.md)'s ladder for
+  detecting that a stored value has gone stale against its contract.
 
-    Migration — move each field into the envelope and drop the redundant prefix:
+    Migration — every field moves into the envelope, and two shed a prefix the envelope now carries:
 
     ```ts
     // before
-    cache: { ttl: '60s', transformVersion: 3 },
-    cache: { ttl: '60s', trustTransform: true },
+    cache: { ttl: '1h', version: 3 },
+    cache: { ttl: '1h', transformVersion: 2 },
+    cache: { ttl: '1h', trustTransform: true },
+    cache: { ttl: '1h', onUnfingerprintable: 'revalidate' },
     // after
-    cache: { ttl: '60s', transform: 3 },              // ≡ { version: 3 }
-    cache: { ttl: '60s', transform: { trust: true } },
+    cache: { ttl: '1h', fingerprint: 3 },                              // ≡ { version: 3 }
+    cache: { ttl: '1h', fingerprint: { transform: 2 } },               // ≡ { transform: { version: 2 } }
+    cache: { ttl: '1h', fingerprint: { transform: { trust: true } } },
+    cache: { ttl: '1h', fingerprint: { fallback: 'revalidate' } },
     ```
 
-    `tsc` catches the migration — `NoUnknownNestedKeys` rejects both old keys by name at the
-    `cache:` slot, and neither had a runtime fallback, so there is no silent path. Behaviour is
-    unchanged end to end: the ladder, the refuse-by-default for an un-versioned transform, and the
-    generation token a given version produces are all exactly as they were. The refusal `reason`
-    surfaced on the cache trace now names the new spelling. `resolveFingerprint`'s read-view keeps
-    the flat shape it always had, with `trustTransform` renamed to `transformTrust` so the
+    Two rules drive it. **P24** for `transformVersion`+`trustTransform`: a shared prefix across two
+    flat fields is an envelope, and these were the two arms of one decision (name a version, or
+    trust it) whose precedence — `version` wins, `trust` is then inert — lived only in the resolver
+    and is now a within-envelope rule. **P25's envelope test** for the grouping: an envelope is
+    licensed where it names an unambiguous subject, and every member here is a staleness-detection
+    choice, so `fingerprint` is exhaustive over its contents the way `wire` is, while `ttl`,
+    `tenancy`, `vary`, `methods`, `entries`, `coalesce` and `keyOf` answer a different question and
+    stay outside.
+
+    `onUnfingerprintable` becomes **`fallback`** because inside the envelope the subject is named
+    once, and `on*` is this surface's handler convention — a policy string wearing it reads as a
+    callback slot. A bare tag is the P12 dominant-field shorthand at **both** depths, so the common
+    cases stay one word longer than before at most, and the manual override is now
+    `cache: { ttl, fingerprint: 3 }`.
+
+    `tsc` catches the whole migration — `NoUnknownNestedKeys` rejects every old key by name at the
+    `cache:` slot, and none had a runtime fallback, so there is no silent path. Behaviour is
+    unchanged end to end: the ladder, its rung order, the refuse-by-default for an un-versioned
+    transform or an un-fingerprintable schema, and the generation token a given version produces are
+    all exactly as they were. The refusal `reason` surfaced on the cache trace names the new
+    spellings. `resolveFingerprint`'s read-view stays flat — it is a derived view, not an authored
+    config — with `trustTransform` → `transformTrust` and `onUnfingerprintable` → `fallback` so the
     published `stitchapi/fingerprint` surface carries one vocabulary.
 
 - **BREAKING CHANGE: `circuit.halfOpenAfter` is removed — `cooldown` is the one open→half-open

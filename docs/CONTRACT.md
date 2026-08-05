@@ -1085,6 +1085,24 @@ shape, not as today's surface: nothing on the surface carries an alias.
   under `cache` rather than moving beside the closure it versions because it must round-trip as JSON
   (§1) while `transform` itself is function sugar on `__rawConfig`. Genuine breaking flat→envelope,
   no alias. **R8 never flagged this pair** — see its leading-word gap in §7.
+- **P25 envelope test (cache fingerprint, 2026-08-04)** in the same sweep, the **whole ADR 0004
+  ladder** moves under one `cache.fingerprint` envelope: `version` (rung 1), the `transform` fold
+  above (rung 2), and `onUnfingerprintable` → **`fallback`** (rung 5), typed
+  `fingerprint?: string | number | AtLeastOne<CacheFingerprintOptions>`. The licence is P25's — an
+  envelope is licensed where it **names an unambiguous subject** — and this passes the same test
+  `wire` does: every member is a staleness-detection choice, so the name is exhaustive over its
+  contents, while `ttl`/`tenancy`/`vary`/`methods`/`entries`/`coalesce`/`keyOf` answer a different
+  question (what the key is, how long an entry lives) and stay outside. It is **not** a P24 fold —
+  the four fields never shared a prefix, which is why nothing flagged them.
+
+    `fallback` rather than `onUnfingerprintable`: inside the envelope the subject is named once, so
+    the member carries only the dimension (P25's `max`/`chars` idiom), and `on*` is the handler
+    convention (carve-out (c)) — a policy string wearing it reads as a callback slot. A bare tag is
+    the P12 shorthand at **both** depths (`fingerprint: 3` ≡ `{ version: 3 }`;
+    `fingerprint: { transform: 3 }` ≡ `{ transform: { version: 3 } }`) — the only two-level fold on
+    the surface, and `NestedEnvelopes` carries it to that depth so a misspelling inside either
+    envelope is a compile error. Genuine breaking flat→envelope, no alias.
+
 - **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
   now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
   `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`

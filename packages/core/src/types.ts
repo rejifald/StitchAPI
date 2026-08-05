@@ -381,7 +381,19 @@ interface NestedEnvelopes {
     cache: [
         CacheOptions,
         'CacheOptions',
-        { transform: [CacheTransformOptions, 'CacheTransformOptions', object] },
+        {
+            fingerprint: [
+                CacheFingerprintOptions,
+                'CacheFingerprintOptions',
+                {
+                    transform: [
+                        CacheTransformOptions,
+                        'CacheTransformOptions',
+                        object,
+                    ];
+                },
+            ];
+        },
     ];
     hooks: [Hooks, 'Hooks', object];
     paginate: [PaginateOptions, 'PaginateOptions', object];
@@ -1223,6 +1235,43 @@ export interface CacheTransformOptions {
 }
 
 /**
+ * How the cache detects that a stored value has gone stale against its contract — the whole of
+ * [ADR 0004](../../../docs/adr/0004-standard-schema-fingerprint-for-cache-invalidation.md)'s
+ * fallback ladder in one envelope. Every member is a rung of that ladder, so the name is
+ * exhaustive over its contents the way `wire`'s is (CONTRACT.md P24/P25); `ttl`, `tenancy`,
+ * `vary`, `methods` and the rest of {@link CacheOptions} answer a different question — what the
+ * key is and how long an entry lives — and stay outside.
+ *
+ * Nothing here is required: with no `fingerprint` block a registered `@stitchapi/fingerprint-*`
+ * strategy makes `output` changes self-invalidate, and an un-fingerprintable schema refuses to
+ * cache (fail closed). The members are the three ways to override that.
+ */
+export interface CacheFingerprintOptions {
+    /**
+     * Opaque schema/version tag — the **authoritative** rung: setting it pins the contract and
+     * takes the **no-revalidate** fast path (you promise `output`/`transform`/`pick` are unchanged
+     * for this tag). A bare `string | number` at the slot is the P12 shorthand for this field.
+     */
+    version?: string | number;
+    /**
+     * What the cache knows about an opaque `transform` (rung 2). A `transform` is a closure that
+     * cannot be soundly hashed, so a stitch carrying one **refuses to cache** until one of
+     * {@link CacheTransformOptions}' two declarations clears the gate. A bare `string | number` is
+     * the P12 shorthand for the dominant field — `transform: 3` ≡ `transform: { version: 3 }`.
+     */
+    transform?: string | number | AtLeastOne<CacheTransformOptions>;
+    /**
+     * Where the ladder lands when an `output` schema is present but cannot be soundly fingerprinted
+     * (no `@stitchapi/fingerprint-*` registered for its vendor, a non-Standard-Schema validator, or
+     * the strategy abstained). `'refuse'` (default, **fail-closed**) does not cache — and nudges you
+     * to register the vendor package or set `version`. `'revalidate'` caches but **re-validates the
+     * stored value on every hit** against the current schema (saves the network, still safe; sound
+     * only for pure validators with no coercion/transform inside the schema).
+     */
+    fallback?: 'refuse' | 'revalidate';
+}
+
+/**
  * Transport-level response cache + in-process request coalescing (ADR 0003). The key is
  * **derived** from the resolved request — no caller-authored keys — so it cannot drift from
  * what it names. Off by default: no `cache` block ⇒ no caching and no hot-path cost. The engine
@@ -1268,31 +1317,14 @@ export interface CacheOptions {
      */
     coalesce?: 'process' | 'cluster' | false;
     /**
-     * Opaque schema/version tag — the **authoritative** rung of the fingerprint ladder (ADR 0004):
-     * setting it pins the contract and takes the **no-revalidate** fast path (you promise the
-     * `output`/`transform`/`pick` are unchanged for this tag). Leaving it unset hands off to the
-     * automatic fingerprint: a registered `@stitchapi/fingerprint-*` strategy makes `output`
-     * changes self-invalidate on the fast path; an un-fingerprintable schema falls to
-     * {@link CacheOptions.onUnfingerprintable} (default **refuse-to-cache**, fail-closed).
+     * How a stored value is detected as stale against its contract — the ADR 0004 ladder, whose
+     * rungs are {@link CacheFingerprintOptions}' three members. Unset is the automatic path: a
+     * registered `@stitchapi/fingerprint-*` strategy makes `output` changes self-invalidate, and an
+     * un-fingerprintable schema refuses to cache (fail-closed). A bare `string | number` is the P12
+     * shorthand for the dominant field — `fingerprint: 3` ≡ `fingerprint: { version: 3 }`, the
+     * always-available manual override.
      */
-    version?: string | number;
-    /**
-     * What the cache knows about an opaque `transform` (ADR 0004 rung 2). A `transform` is a
-     * closure that cannot be soundly hashed, so a stitch carrying one **refuses to cache** until
-     * one of {@link CacheTransformOptions}' two declarations clears the gate. A bare
-     * `string | number` is the P12 shorthand for the dominant field — `transform: 3` ≡
-     * `transform: { version: 3 }`.
-     */
-    transform?: string | number | AtLeastOne<CacheTransformOptions>;
-    /**
-     * Policy when an `output` schema is present but cannot be soundly fingerprinted (no
-     * `@stitchapi/fingerprint-*` registered for its vendor, a non-Standard-Schema validator, or the
-     * strategy abstained). `'refuse'` (default, **fail-closed**) does not cache — and nudges you to
-     * register the vendor package or set `version`. `'revalidate'` caches but **re-validates the
-     * stored value on every hit** against the current schema (saves the network, still safe; sound
-     * only for pure validators with no coercion/transform inside the schema).
-     */
-    onUnfingerprintable?: 'refuse' | 'revalidate';
+    fingerprint?: string | number | AtLeastOne<CacheFingerprintOptions>;
     /** Sugar: author the key seed from the input instead of deriving it from the request (CONTRACT.md P6). */
     keyOf?: (input: StitchInput) => string;
 }
@@ -1690,16 +1722,27 @@ export interface StitchConfig {
 }
 
 /**
+ * {@link CacheFingerprintOptions} after {@link compose}: the nested `transform` scalar is folded to
+ * `{ version }`, so the resolver reads one shape.
+ */
+export type ResolvedCacheFingerprintOptions = Omit<
+    CacheFingerprintOptions,
+    'transform'
+> & {
+    transform?: CacheTransformOptions;
+};
+
+/**
  * {@link CacheOptions} after {@link compose}: the `T | T[]` list fields are always arrays and the
- * `transform` scalar is folded to `{ version }`.
+ * `fingerprint` scalar is folded to `{ version }` (with its own nested fold applied).
  */
 export type ResolvedCacheOptions = Omit<
     CacheOptions,
-    'vary' | 'methods' | 'transform'
+    'vary' | 'methods' | 'fingerprint'
 > & {
     vary?: string[];
     methods?: string[];
-    transform?: CacheTransformOptions;
+    fingerprint?: ResolvedCacheFingerprintOptions;
 };
 
 /** {@link StreamOptions} after {@link compose}: the `buffer` scalar is folded to `{ chars }`. */

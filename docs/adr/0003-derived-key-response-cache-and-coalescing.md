@@ -95,7 +95,7 @@ round-trips as JSON; functions are sugar).
     must fold into the generation** (decision 8) so a schema change invalidates the bucket.
     Fingerprinting a Standard Schema is its own hard problem (a schema is a closure graph; no
     universal serialisation), split into its own concern (**ADR 0004**): per-validator strategies
-    behind a contract, a manual `cache.version` as the fail-closed fallback, and **re-validate on
+    behind a contract, a manual `cache.fingerprint` tag as the fail-closed fallback, and **re-validate on
     hit** as the safe default for any stitch whose schema can't be fingerprinted (it forfeits this
     decision's skip for that stitch only, trading speed for correctness).
 
@@ -262,8 +262,8 @@ round-trips as JSON; functions are sugar).
   warn-and-pass-through (decision 3).
 - **Schema-fingerprinting (ADR 0004).** ✅ _Resolved & wired._ A Standard Schema fingerprint folds
   into the generation so an `output`/`unwrap`/versioned-`transform` change invalidates cached
-  values (decision 2): per-validator strategies behind a contract, a manual `cache.version`
-  fallback, refuse-to-cache by default when un-fingerprintable, and `onUnfingerprintable:
+  values (decision 2): per-validator strategies behind a contract, a manual `cache.fingerprint`
+  tag, refuse-to-cache by default when un-fingerprintable, and `fingerprint.fallback:
 'revalidate'` for opt-in re-validate-on-hit. `resolveFingerprint` is computed once per stitch in
   `createCache`; its `policy` drives fast / revalidate / refuse and its `reason` rides the cache
   trace.

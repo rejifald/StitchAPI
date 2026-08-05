@@ -4,12 +4,29 @@
 - **Date:** 2026-06-14
 - **Tags:** caching, validation, schema, standard-schema, contract-not-dependency, runtime
 
-> **Amended 2026-08-04 (spelling only, rung 2 unchanged).** The two ways to clear the transform
-> gate were authored as the flat pair `cache.transformVersion` + `cache.trustTransform`; they are
-> now the one envelope [P24](../CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
-> asks for — **`cache.transform: string | number | { version?, trust? }`**, where a bare tag is the
-> P12 shorthand for `{ version }`. The ladder, its precedence, and every default below are
-> unchanged; only the authored spelling moved. The prose here uses the new one throughout.
+> **Amended 2026-08-04 (spelling only — every rung, default and precedence below is unchanged).**
+> This ladder was authored as four flat fields on `CacheOptions`, sitting among the keying and
+> lifetime options. It is now **one envelope, `cache.fingerprint`**, whose members are its rungs:
+>
+> ```ts
+> cache: {
+>     ttl: '1h', tenancy: 'app',                    // keying + lifetime — unchanged
+>     fingerprint: {                                // ← the whole of this ADR
+>         version: 3,                               // was cache.version          (rung 1)
+>         transform: { version: 2, trust: false },  // was cache.transformVersion / trustTransform (rung 2)
+>         fallback: 'revalidate',                   // was cache.onUnfingerprintable (rung 5)
+>     },
+> }
+> ```
+>
+> A bare tag is the P12 shorthand at both depths (`fingerprint: 3` ≡ `{ version: 3 }`;
+> `fingerprint: { transform: 3 }` ≡ `{ transform: { version: 3 } }`). Two rules drive it:
+> [P24](../CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) for the
+> `transformVersion`/`trustTransform` pair, and P25's "an envelope is licensed where it names an
+> unambiguous subject" for the grouping — every member is a staleness-detection choice, so the name
+> is exhaustive over its contents the way `wire`'s is. `onUnfingerprintable` became `fallback`
+> because inside the envelope the subject is named once, and `on*` is reserved for handlers.
+> The prose below uses the new spellings throughout.
 
 ## Context
 
@@ -75,7 +92,7 @@ _because_ it is opaque.)
   never per request.
 - **Declarative spelling:** every capability needs a JSON-serialisable spelling.
   `transform` is "sugar, never the only way." The declarative escape hatch here
-  is an explicit `cache.version`, which always round-trips as data.
+  is an explicit `cache.fingerprint` tag, which always round-trips as data.
 
 ## Decisions
 
@@ -162,7 +179,9 @@ whole design is between `S` and `X`:
 // core, at stitch-definition time (sketch)
 function stitchGeneration(cfg: StitchConfig): string {
     const unwrap = cfg.unwrap ?? '';
-    if (cfg.cache?.version != null) return h(['v', cfg.cache.version, unwrap]); // rung 1 — authoritative
+    const fingerprint = cfg.cache?.fingerprint;
+    if (fingerprint?.version != null)
+        return h(['v', fingerprint.version, unwrap]); // rung 1 — authoritative
 
     const vendor = (cfg.output as StandardSchemaV1)?.['~standard']?.vendor;
     const fp = vendor
@@ -171,8 +190,8 @@ function stitchGeneration(cfg: StitchConfig): string {
 
     const xTag = !cfg.transform
         ? 'x:none'
-        : cfg.cache?.transform?.version != null
-          ? `x:${cfg.cache.transform.version}`
+        : fingerprint?.transform?.version != null
+          ? `x:${fingerprint.transform.version}`
           : 'x:OPAQUE';
 
     if (xTag === 'x:OPAQUE') return REFUSE; // un-versioned transform → don't cache
@@ -181,9 +200,7 @@ function stitchGeneration(cfg: StitchConfig): string {
     if (cfg.output == null) return h(['noschema', unwrap, xTag]); // nothing to go stale → fast
 
     // output present but un-fingerprintable → refuse (default) | revalidate (opt-in)
-    return cfg.cache?.onUnfingerprintable === 'revalidate'
-        ? REVALIDATE
-        : REFUSE;
+    return fingerprint?.fallback === 'revalidate' ? REVALIDATE : REFUSE;
 }
 ```
 
@@ -191,15 +208,15 @@ function stitchGeneration(cfg: StitchConfig): string {
 
 Resolved once per stitch, highest precedence first:
 
-1.  **Explicit `cache.version` → authoritative.** The user owns correctness; the
+1.  **Explicit `cache.fingerprint.version` → authoritative.** The user owns correctness; the
     fingerprint is `hash(version, unwrap)`. JSON-serialisable, satisfies the
     declarative-spelling gate, and is the always-available manual override. Fast
     path.
 2.  **Un-versioned `transform` present** → **refuse-to-cache.** Re-validation
     cannot see a transform change (Decision 2 — a stale value still satisfies an
     unchanged schema), so neither fast nor revalidate is sound. Lift it with
-    `cache.transform: '<version>'` (→ a sound fingerprint) or
-    `cache.transform: { trust: true }` (cache anyway, bounded only by TTL).
+    `cache.fingerprint: { transform: '<version>' }` (→ a sound fingerprint) or
+    `{ transform: { trust: true } }` (cache anyway, bounded only by TTL).
 3.  **Sound structural fingerprint** — a compliant strategy is registered for the
     vendor and reports full capture (`value !== null`). Fold `hash(vendor, S, U, X)`
     into the generation. Fast path.
@@ -210,20 +227,20 @@ Resolved once per stitch, highest precedence first:
     non-Standard-Schema validator, or the strategy abstains) → **refuse-to-cache**
     by default. Failing closed is unambiguously sound and a clear, actionable nudge
     to register the vendor's fingerprint package. Opt into **re-validate-on-hit**
-    with `cache.onUnfingerprintable: 'revalidate'` — it catches schema changes that
+    with `cache.fingerprint: { fallback: 'revalidate' }` — it catches schema changes that
     _reject_ the stored value, but only soundly so for pure validators (it assumes
     validation is idempotent; coercing/transforming schemas can break that), which
     is why it is opt-in rather than the default.
 
 **Recommended defaults:**
 
-| Situation                                                     | Default behaviour                           |
-| ------------------------------------------------------------- | ------------------------------------------- |
-| Known vendor + serialisable pipeline (no/versioned transform) | auto-fingerprint, fast path                 |
-| No output schema (and no/sound transform)                     | fast — nothing to go stale                  |
-| Unknown/unregistered vendor, non-Standard-Schema, or abstains | **refuse-to-cache** (`onUnfingerprintable`) |
-| Un-versioned `transform` present                              | refuse-to-cache (re-validate can't see it)  |
-| Anything                                                      | `cache.version` overrides everything        |
+| Situation                                                     | Default behaviour                            |
+| ------------------------------------------------------------- | -------------------------------------------- |
+| Known vendor + serialisable pipeline (no/versioned transform) | auto-fingerprint, fast path                  |
+| No output schema (and no/sound transform)                     | fast — nothing to go stale                   |
+| Unknown/unregistered vendor, non-Standard-Schema, or abstains | **refuse-to-cache** (`fingerprint.fallback`) |
+| Un-versioned `transform` present                              | refuse-to-cache (re-validate can't see it)   |
+| Anything                                                      | `cache.fingerprint` overrides everything     |
 
 Why refuse (not re-validate) is the default for an un-fingerprintable schema:
 re-validate-on-hit is only sound when validation is idempotent, and it silently
@@ -273,7 +290,7 @@ Therefore opaque logic is handled by **abstain-or-version**, never by hashing it
 - If a strategy encounters an opaque `.refine`/`.transform`/`.brand`/predicate
   it cannot represent, it **abstains** (`value: null`) → conservative fallback.
 - `config.transform` is opaque to core. Its provenance enters the fingerprint
-  only as `cache.transform.version` (a user tag); otherwise it forces refuse
+  only as `cache.fingerprint.transform.version` (a user tag); otherwise it forces refuse
   (Decision 4, rung 2).
 
 This is exactly how every prior-art system treats non-serialisable logic:
@@ -391,7 +408,7 @@ assertConformance(
   vendor packages and run once at definition time.
 - Every failure mode degrades safely (re-validate-on-hit or refuse-to-cache);
   the system never silently serves a value bound to an unverifiable shape.
-- `cache.version` is a always-available, JSON-serialisable manual override.
+- `cache.fingerprint` is a always-available, JSON-serialisable manual override.
 
 ### Negative / trade-offs
 
@@ -402,7 +419,7 @@ assertConformance(
   ([zod #4497](https://github.com/colinhacks/zod/issues/4497)).
 - **Transforms are a genuine blind spot.** An un-versioned `transform` forces
   refuse-to-cache; this is correct but costs the cache for transform-heavy
-  stitches until the author adds `cache.transform`.
+  stitches until the author adds `cache.fingerprint.transform`.
 - **Over-invalidation by design.** Strong-by-default fingerprints will bump on
   cosmetic schema refactors (e.g. inlining a sub-schema) unless a weak strategy
   is chosen. We accept refetch cost over staleness risk.
@@ -416,7 +433,7 @@ assertConformance(
   sound (re-validate-on-hit assumes idempotent validation), and a missing
   fingerprint package surfaces as a clear, actionable reason rather than a silent
   perf tax. Re-validate-on-hit is retained as an explicit opt-in
-  (`cache.onUnfingerprintable: 'revalidate'`). A stitch with **no** output schema
+  (`cache.fingerprint: { fallback: 'revalidate' }`). A stitch with **no** output schema
   still caches fast (no shape to go stale). Placement (bare-stitch vs subpath) does
   not change the default — both fail closed.
 
@@ -445,7 +462,7 @@ conformance-tested):
   over-invalidation of the opaque token.
 - **The fold (`stitchapi/cache`)** — `createCache` calls `resolveFingerprint`
   once per stitch from its `output`/`transform`/`unwrap` + the `cache` options
-  (`version`, `transform`, `onUnfingerprintable`). The
+  (the `cache.fingerprint` envelope: `version`, `transform`, `fallback`). The
   `generation` token folds into the cache namespace **alongside** the per-stitch
   generation counter (so a schema/unwrap/versioned-transform change moves the
   bucket while bulk-invalidate still bumps the counter); the `policy` selects

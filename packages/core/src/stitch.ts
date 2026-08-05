@@ -229,18 +229,28 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     // P7: the cache's list fields take a bare string as the one-element list. Widened HERE, before
     // the deep-merge, so a string in one layer and a list in another merge as one shape and the
     // controller reads the settled `ResolvedCacheOptions` — always arrays, never re-normalising.
-    // Nested fold (P12/P24) in the same pass: `cache.transform` is a scalar-or-envelope slot, so a
-    // bare version tag folds to `{ version }` and `__config` never carries the scalar form (P0).
+    // Nested folds (P12/P24) in the same pass: `cache.fingerprint` and the `transform` inside it are
+    // both scalar-or-envelope slots, so a bare version tag at either depth folds to `{ version }`
+    // and `__config` never carries a scalar form (P0). Outermost first — the inner fold reads the
+    // envelope the outer one just produced. Two levels is the deepest nesting on the surface, and
+    // the resolver reads `fingerprint.transform.version` without ever re-normalising.
     const cache = cfg.cache as CacheOptions | undefined;
-    if (cache !== undefined)
+    if (cache !== undefined) {
+        const fingerprint = envelope(cache.fingerprint, 'version');
         cfg.cache = {
             ...cache,
             ...compact({
                 vary: listOf(cache.vary),
                 methods: listOf(cache.methods),
-                transform: envelope(cache.transform, 'version'),
+                fingerprint: fingerprint && {
+                    ...fingerprint,
+                    ...compact({
+                        transform: envelope(fingerprint.transform, 'version'),
+                    }),
+                },
             }),
         };
+    }
     // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque
     // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
     if (cfg.sse === true) cfg.sse = { reconnect: true };

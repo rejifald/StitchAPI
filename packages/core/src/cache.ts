@@ -386,10 +386,10 @@ export function createCache(opts: CacheControllerOptions): CacheController {
         output: opts.output,
         transform: opts.transform,
         pick: opts.pick,
-        version: config.version,
-        transformVersion: config.transform?.version,
-        transformTrust: config.transform?.trust,
-        onUnfingerprintable: config.onUnfingerprintable,
+        version: config.fingerprint?.version,
+        transformVersion: config.fingerprint?.transform?.version,
+        transformTrust: config.fingerprint?.transform?.trust,
+        fallback: config.fingerprint?.fallback,
     });
     const fpTag = `f${fp.generation}:`;
     // 'cluster' is reserved for the deferred cross-process protocol; v1 degrades it to process.

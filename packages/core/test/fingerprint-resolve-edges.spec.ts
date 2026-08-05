@@ -6,7 +6,7 @@
 //   - an opaque transform with no output still REFUSES — the transform gate (rung 2) outranks the
 //     no-schema fast path (rung 4);
 //   - `transformTrust` clears the transform gate but does NOT rescue an un-fingerprintable schema:
-//     it still refuses (rung 5), and only `onUnfingerprintable: 'revalidate'` caches it.
+//     it still refuses (rung 5), and only `fallback: 'revalidate'` caches it.
 import { clearFingerprinters, resolveFingerprint } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
 
@@ -69,12 +69,12 @@ describe('resolveFingerprint: transformTrust does not rescue an un-fingerprintab
         expect(r.reason).not.toContain('opaque transform');
     });
 
-    it('the same case caches under onUnfingerprintable: revalidate', () => {
+    it('the same case caches under fallback: revalidate', () => {
         const r = resolveFingerprint({
             output: unregisteredSchema(),
             transform: (x: unknown) => x,
             transformTrust: true,
-            onUnfingerprintable: 'revalidate',
+            fallback: 'revalidate',
         });
         expect(r.policy).toBe('revalidate');
     });

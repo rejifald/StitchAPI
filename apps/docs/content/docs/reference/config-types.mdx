@@ -136,13 +136,31 @@ request, so it cannot drift from what it names.
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="CacheOptions" />
 
+#### CacheFingerprintOptions
+
+The shape behind `cache.fingerprint` — how a stored value is detected as stale against
+its contract (the [ADR 0004](https://github.com/rejifald/StitchAPI/blob/main/docs/adr/0004-standard-schema-fingerprint-for-cache-invalidation.md)
+ladder). Every member is a rung of that ladder; `ttl`, `tenancy`, `vary` and the rest of
+`CacheOptions` answer a different question and stay outside. A bare version tag is the
+shorthand for `{ version }` — `fingerprint: 3` ≡ `fingerprint: { version: 3 }`, the
+always-available manual override.
+
+Unset is the automatic path: a registered `@stitchapi/fingerprint-*` strategy makes
+`output` changes self-invalidate, and an un-fingerprintable schema refuses to cache.
+
+<AutoTypeTable
+    path="../../packages/core/src/types.ts"
+    name="CacheFingerprintOptions"
+/>
+
 #### CacheTransformOptions
 
-The shape behind `cache.transform` — what the cache knows about an opaque `transform`.
-A bare version tag is the shorthand for `{ version }` — `transform: 3` ≡
-`transform: { version: 3 }`. A stitch that has a `transform` and none of this **refuses
-to cache**: the closure cannot be hashed, and re-validation cannot detect a transform
-change, so no policy would be sound. `version` wins when both are set.
+The shape behind `cache.fingerprint.transform` — what the cache knows about an opaque
+`transform`. A bare version tag is the shorthand for `{ version }` here too, one level
+in: `fingerprint: { transform: 3 }` ≡ `fingerprint: { transform: { version: 3 } }`. A
+stitch that has a `transform` and none of this **refuses to cache**: the closure cannot
+be hashed, and re-validation cannot detect a transform change, so no policy would be
+sound. `version` wins when both are set.
 
 <AutoTypeTable
     path="../../packages/core/src/types.ts"
