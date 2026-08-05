@@ -229,6 +229,8 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     // P7: the cache's list fields take a bare string as the one-element list. Widened HERE, before
     // the deep-merge, so a string in one layer and a list in another merge as one shape and the
     // controller reads the settled `ResolvedCacheOptions` — always arrays, never re-normalising.
+    // Nested fold (P12/P24) in the same pass: `cache.transform` is a scalar-or-envelope slot, so a
+    // bare version tag folds to `{ version }` and `__config` never carries the scalar form (P0).
     const cache = cfg.cache as CacheOptions | undefined;
     if (cache !== undefined)
         cfg.cache = {
@@ -236,6 +238,7 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
             ...compact({
                 vary: listOf(cache.vary),
                 methods: listOf(cache.methods),
+                transform: envelope(cache.transform, 'version'),
             }),
         };
     // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque

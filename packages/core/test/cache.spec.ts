@@ -4,7 +4,7 @@
 // eviction, the `sensitive` bypass, principal scope isolation, re-validate-on-hit + the
 // `version` fast path, and the cacheable-method gate (GraphQL opt-in).
 import { graphql, memoryStore, seam, stitch } from '../src';
-import type { Adapter } from '../src';
+import type { Adapter, CacheOptions } from '../src';
 import { clearFingerprinters, registerFingerprinter } from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
@@ -571,7 +571,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
         expect(calls()).toBe(1); // value re-validates fine → still cached
     });
 
-    test('an opaque transform refuses to cache unless a transformVersion makes it sound', async () => {
+    test('an opaque transform refuses to cache unless cache.transform makes it sound', async () => {
         const refused = counting();
         const r = stitch({
             url: URL,
@@ -579,7 +579,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             adapter: refused.adapter,
             trace: false,
             cache: { ttl: '60s', tenancy: 'app' },
-            transform: (b) => b, // opaque closure, no transformVersion/trustTransform → refuse
+            transform: (b) => b, // opaque closure, no cache.transform declaration → refuse
         });
         const trace = await cacheTrace(r.stream());
         expect(trace.some((d) => d.startsWith('bypass:'))).toBe(true);
@@ -593,12 +593,42 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             name: 'txv',
             adapter: versioned.adapter,
             trace: false,
-            cache: { ttl: '60s', tenancy: 'app', transformVersion: '1' },
+            cache: { ttl: '60s', tenancy: 'app', transform: '1' }, // P12 scalar ≡ { version: '1' }
             transform: (b) => b, // now sound (version named) → fast
         });
         await v();
         await v();
         expect(versioned.calls()).toBe(1); // second call is a hit
+    });
+
+    test('the bare version tag folds to `{ version }` in __config (P0/P12)', () => {
+        const s = stitch({
+            url: URL,
+            trace: false,
+            cache: { ttl: '60s', transform: 3 },
+            transform: (b) => b,
+        });
+        // The engine only ever sees the object form, so the scalar never reaches the store key or
+        // a serialized config — the same fold `retry.backoff` and `wire.multipart` get.
+        expect(s.__config.cache?.transform).toEqual({ version: 3 });
+    });
+
+    test('the flat `transformVersion`/`trustTransform` pair is off the type surface (P24)', () => {
+        // One literal per key: excess-property checking reports only the FIRST unknown key, so a
+        // second directive in the same object would be unused (and `check:types` fails on that).
+        const versioned: CacheOptions = {
+            ttl: '60s',
+            // @ts-expect-error — folded into `cache.transform`, whose bare tag IS the version;
+            // the envelope names the subject once (CONTRACT.md P24, hard break under P19).
+            transformVersion: 3,
+        };
+        const trusted: CacheOptions = {
+            ttl: '60s',
+            // @ts-expect-error — `cache.transform: { trust: true }` is the weak arm of that same
+            // envelope, one word shorter for having dropped the subject from the field name.
+            trustTransform: true,
+        };
+        expect([versioned.ttl, trusted.ttl]).toEqual(['60s', '60s']);
     });
 });
 

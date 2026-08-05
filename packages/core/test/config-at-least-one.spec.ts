@@ -84,6 +84,13 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
             // @ts-expect-error — `circuit: {}` is rejected; both fields are required (P15).
             circuit: {},
         }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            transform: (b) => b,
+            // @ts-expect-error — `cache.transform: {}` is rejected; name a version or set `trust`.
+            cache: { ttl: '60s', transform: {} },
+        }),
     ];
     // The assertions that matter are the @ts-expect-error directives above (checked by `check:types`).
     expect(typeof rejected).toBe('function');
@@ -122,6 +129,19 @@ test('the scalar / ≥1-field forms are accepted at each slot (P12/P13/P20)', ()
             baseUrl: 'https://x',
             path: '/y',
             retry: { backoff: { base: 5 } },
+        }),
+        // P24/P12: `cache.transform` takes the bare version tag or a ≥1-field envelope.
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            transform: (b) => b,
+            cache: { ttl: '60s', transform: 3 },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            transform: (b) => b,
+            cache: { ttl: '60s', transform: { trust: true } },
         }),
     ];
     expect(typeof accepted).toBe('function');

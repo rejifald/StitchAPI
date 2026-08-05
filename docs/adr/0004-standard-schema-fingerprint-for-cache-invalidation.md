@@ -4,6 +4,13 @@
 - **Date:** 2026-06-14
 - **Tags:** caching, validation, schema, standard-schema, contract-not-dependency, runtime
 
+> **Amended 2026-08-04 (spelling only, rung 2 unchanged).** The two ways to clear the transform
+> gate were authored as the flat pair `cache.transformVersion` + `cache.trustTransform`; they are
+> now the one envelope [P24](../CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+> asks for — **`cache.transform: string | number | { version?, trust? }`**, where a bare tag is the
+> P12 shorthand for `{ version }`. The ladder, its precedence, and every default below are
+> unchanged; only the authored spelling moved. The prose here uses the new one throughout.
+
 ## Context
 
 [ADR 0003](0003-derived-key-response-cache-and-coalescing.md) makes one decision
@@ -164,8 +171,8 @@ function stitchGeneration(cfg: StitchConfig): string {
 
     const xTag = !cfg.transform
         ? 'x:none'
-        : cfg.cache?.transformVersion != null
-          ? `x:${cfg.cache.transformVersion}`
+        : cfg.cache?.transform?.version != null
+          ? `x:${cfg.cache.transform.version}`
           : 'x:OPAQUE';
 
     if (xTag === 'x:OPAQUE') return REFUSE; // un-versioned transform → don't cache
@@ -191,8 +198,8 @@ Resolved once per stitch, highest precedence first:
 2.  **Un-versioned `transform` present** → **refuse-to-cache.** Re-validation
     cannot see a transform change (Decision 2 — a stale value still satisfies an
     unchanged schema), so neither fast nor revalidate is sound. Lift it with
-    `cache.transformVersion` (→ a sound fingerprint) or `cache.trustTransform:
-true` (cache anyway, bounded only by TTL).
+    `cache.transform: '<version>'` (→ a sound fingerprint) or
+    `cache.transform: { trust: true }` (cache anyway, bounded only by TTL).
 3.  **Sound structural fingerprint** — a compliant strategy is registered for the
     vendor and reports full capture (`value !== null`). Fold `hash(vendor, S, U, X)`
     into the generation. Fast path.
@@ -266,7 +273,7 @@ Therefore opaque logic is handled by **abstain-or-version**, never by hashing it
 - If a strategy encounters an opaque `.refine`/`.transform`/`.brand`/predicate
   it cannot represent, it **abstains** (`value: null`) → conservative fallback.
 - `config.transform` is opaque to core. Its provenance enters the fingerprint
-  only as `cache.transformVersion` (a user tag); otherwise it forces refuse
+  only as `cache.transform.version` (a user tag); otherwise it forces refuse
   (Decision 4, rung 2).
 
 This is exactly how every prior-art system treats non-serialisable logic:
@@ -395,7 +402,7 @@ assertConformance(
   ([zod #4497](https://github.com/colinhacks/zod/issues/4497)).
 - **Transforms are a genuine blind spot.** An un-versioned `transform` forces
   refuse-to-cache; this is correct but costs the cache for transform-heavy
-  stitches until the author adds `cache.transformVersion`.
+  stitches until the author adds `cache.transform`.
 - **Over-invalidation by design.** Strong-by-default fingerprints will bump on
   cosmetic schema refactors (e.g. inlining a sub-schema) unless a weak strategy
   is chosen. We accept refetch cost over staleness risk.
@@ -438,7 +445,7 @@ conformance-tested):
   over-invalidation of the opaque token.
 - **The fold (`stitchapi/cache`)** — `createCache` calls `resolveFingerprint`
   once per stitch from its `output`/`transform`/`unwrap` + the `cache` options
-  (`version`, `transformVersion`, `trustTransform`, `onUnfingerprintable`). The
+  (`version`, `transform`, `onUnfingerprintable`). The
   `generation` token folds into the cache namespace **alongside** the per-stitch
   generation counter (so a schema/unwrap/versioned-transform change moves the
   bucket while bulk-invalidate still bumps the counter); the `policy` selects

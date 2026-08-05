@@ -136,6 +136,19 @@ request, so it cannot drift from what it names.
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="CacheOptions" />
 
+#### CacheTransformOptions
+
+The shape behind `cache.transform` — what the cache knows about an opaque `transform`.
+A bare version tag is the shorthand for `{ version }` — `transform: 3` ≡
+`transform: { version: 3 }`. A stitch that has a `transform` and none of this **refuses
+to cache**: the closure cannot be hashed, and re-validation cannot detect a transform
+change, so no policy would be sound. `version` wins when both are set.
+
+<AutoTypeTable
+    path="../../packages/core/src/types.ts"
+    name="CacheTransformOptions"
+/>
+
 ### PaginateOptions
 
 The shape behind `paginate`. `next` drives the loop; auth, retry, and throttle apply to

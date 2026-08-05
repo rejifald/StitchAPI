@@ -167,11 +167,11 @@ describe('resolveFingerprint — the fallback ladder', () => {
         expect(a.generation).not.toBe(b.generation);
     });
 
-    it('rung 2: trustTransform + sound schema → fast', () => {
+    it('rung 2: transformTrust + sound schema → fast', () => {
         const r = resolveFingerprint({
             output: userSchema(),
             transform: (b) => b,
-            trustTransform: true,
+            transformTrust: true,
         });
         expect(r.policy).toBe('fast');
     });
