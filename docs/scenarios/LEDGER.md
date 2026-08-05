@@ -29,6 +29,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 14  | The signature that expired in your own queue          | `expiring-signatures`           | **ACHIEVABLE** — the queue/retry halves need no user code at all     | [page shipped](../../apps/docs/content/docs/scenarios/expiring-signatures.mdx) + 1 issue draft (SigV4 ignores the injected clock; a skew 403 opens the breaker)                     |
 | 15  | The charge you can't confirm                          | `unconfirmed-write`             | achievable with user code — 43 lines, 19 of them the recovery        | [page shipped](../../apps/docs/content/docs/scenarios/unconfirmed-write.mdx) + 1 issue draft (**`idempotency: true` double-charged a re-driven job; `retry` silences the warning**) |
 | 16  | One list, a hundred follow-up calls                   | `n-plus-one-fanout`             | achievable with user code — ~8 lines, the partial-failure branch     | [page shipped](../../apps/docs/content/docs/scenarios/n-plus-one-fanout.mdx) + 1 issue draft (a coalesced failure is not shared; a `store` un-pools `pool: 'host'`)                 |
+| 17  | The deprecation you never saw                         | `deprecation-headers`           | achievable with user code — 3 seams, ~112 lines, **0 config keys**   | [page shipped](../../apps/docs/content/docs/scenarios/deprecation-headers.mdx) + 1 issue draft (hooks can rewrite the call; seam-level `kind` is a compile error that works)        |
 
 ## Open issue drafts
 
@@ -52,6 +53,7 @@ Not filed — review these when the loop stops.
 | [`sigv4-ignores-the-injected-clock`](issue-drafts/sigv4-ignores-the-injected-clock.md)               | medium (+ a third clock instance)           | SigV4 signs with `new Date()` so skew is untestable on a virtual clock; a skew 403 opens the dependency's breaker; `onRequest` runs after signing                                                                   |
 | [`idempotency-default-is-not-restart-safe`](issue-drafts/idempotency-default-is-not-restart-safe.md) | **highest stakes — measured in charges**    | `idempotency: true` minted a new key on a re-driven job → **8 charges for 6 intended payments**; and adding `retry`, which the warning itself advises, silences the warning                                         |
 | [`coalescing-does-not-share-failures`](issue-drafts/coalescing-does-not-share-failures.md)           | medium (+ a strong positive)                | in-flight coalescing genuinely works (100 calls / 30 ids → 30 requests), but a coalesced FAILURE releases every joiner — 100 requests for one 404ing id; and a `store` silently un-pools `pool: 'host'` concurrency |
+| [`hooks-can-rewrite-the-call`](issue-drafts/hooks-can-rewrite-the-call.md)                           | medium-high (a docs/behaviour mismatch)     | the hooks guide says hooks never change what a stitch returns; mutating `ctx.res.status` turned a vendor 200 into a thrown 503. Plus the definitive accessor→headers table                                          |
 
 > **Triage note — two, in this order.**
 >

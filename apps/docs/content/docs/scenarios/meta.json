@@ -17,6 +17,7 @@
         "large-response-memory",
         "expiring-signatures",
         "unconfirmed-write",
-        "n-plus-one-fanout"
+        "n-plus-one-fanout",
+        "deprecation-headers"
     ]
 }
