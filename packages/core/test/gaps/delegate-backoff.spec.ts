@@ -1,7 +1,12 @@
 // Pins issue #145: an opt-in delegate-backoff mode that SURFACES a rate-limit outcome (status in
 // `throttle.on`, default [429]) as a RateLimitError instead of retrying it internally, and bypasses
 // the built-in throttle so an OUTER gate (owned by the host) — not StitchAPI — paces the backoff.
-import { RateLimitError, type StitchEvent, stitch } from '../../src';
+import {
+    RateLimitError,
+    StitchError,
+    type StitchEvent,
+    stitch,
+} from '../../src';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 
@@ -239,10 +244,13 @@ test('a success response still runs transform, pick, and output validation', asy
     await expect(call()).resolves.toEqual({ id: 7, label: 'widget' });
 });
 
-// ── H. .safe() returns a StitchError carrying the rate-limit status (never throws) ──
-// `.safe()`'s contract is a StitchError in `error`; a delegate RateLimitError is coerced to one with
-// its `status` and the original kept as `.cause`.
-test('.safe() surfaces the rate-limit status as a non-throwing StitchError', async () => {
+// ── H. .safe() returns the SAME RateLimitError the awaited path throws (never throws) ──
+// `.safe()`'s contract is a StitchError in `error` — and since P10 a RateLimitError IS one, so it
+// needs no coercion: the identity, `retryAfter`, `body` and `response` all survive the safe path.
+// This is the parity that matters for delegate-backoff, whose whole point is handing an outer gate
+// the pacing signal; before the class was a subclass, `.safe()` handed back a bare StitchError with
+// `body: undefined` and buried the real one on `.cause`.
+test('.safe() surfaces the rate-limit failure as the real RateLimitError', async () => {
     server.route('GET', '/rl-safe', {
         statuses: [429],
         retryAfterSeconds: 2,
@@ -257,9 +265,42 @@ test('.safe() surfaces the rate-limit status as a non-throwing StitchError', asy
     const out = await call.safe();
     expect(out.ok).toBe(false);
     expect(out.error?.status).toBe(429);
-    // The real RateLimitError is preserved as the cause.
-    expect(out.error?.cause).toBeInstanceOf(RateLimitError);
-    expect((out.error?.cause as RateLimitError).retryAfter).toBe(2000);
+    // Not a downgraded copy — the real instance, in `error` itself.
+    expect(out.error).toBeInstanceOf(RateLimitError);
+    expect(out.error).toBeInstanceOf(StitchError);
+    const rl = out.error as RateLimitError;
+    expect(rl.retryAfter).toBe(2000);
+    // The pacing payload an outer gate reads is on the error directly, not via `.cause`.
+    expect(rl.body).toEqual({ error: 'slow down' });
+    expect(rl.response.status).toBe(429);
+});
+
+// ── H2. the hierarchy itself (CONTRACT.md P10) ──
+// A RateLimitError satisfies `instanceof StitchError`, carries the whole inherited field set, and
+// keeps `name` as its own discriminator (what the serialising hosts — rtk-query — branch on).
+test('a RateLimitError is a StitchError, with the P10 field set inherited', async () => {
+    server.route('GET', '/rl-hierarchy', {
+        statuses: [429],
+        retryAfterSeconds: 1,
+        body: { error: 'nope' },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/rl-hierarchy',
+        throttle: { delegate: true },
+    });
+
+    const err = await rejectionOf(call());
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err).toBeInstanceOf(StitchError);
+    expect(err).toBeInstanceOf(Error);
+    // `name` stays the discriminator — inheritance must not make it read 'StitchError'.
+    expect(err.name).toBe('RateLimitError');
+    expect(err.status).toBe(429);
+    expect(err.attempts).toBe(1);
+    expect(err.body).toEqual({ error: 'nope' });
+    expect(typeof err.url).toBe('string');
+    expect(err.retryAfter).toBe(1000);
 });
 
 // ── I. predicate widening (CONTRACT.md P7) ──

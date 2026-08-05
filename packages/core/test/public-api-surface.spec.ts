@@ -98,7 +98,7 @@ describe('public API surface (src/index.ts)', () => {
         expect(typeof api.systemClock.clearTimer).toBe('function');
     });
 
-    test('exports the error classes (both extend Error)', () => {
+    test('exports the error classes (RateLimitError extends StitchError extends Error)', () => {
         const response: AdapterResponse = {
             status: 429,
             headers: {},
@@ -106,8 +106,13 @@ describe('public API surface (src/index.ts)', () => {
         };
         const rate = new api.RateLimitError({ status: 429, response });
         expect(rate).toBeInstanceOf(Error);
+        // CONTRACT.md P10: one taxonomy, parity by inheritance rather than a hand-kept copy.
+        expect(rate).toBeInstanceOf(api.StitchError);
         expect(rate.status).toBe(429);
+        expect(rate.name).toBe('RateLimitError');
         expect(new api.StitchError('x')).toBeInstanceOf(Error);
+        // ...but not the other way round: the base is not a rate limit.
+        expect(new api.StitchError('x')).not.toBeInstanceOf(api.RateLimitError);
     });
 });
 

@@ -882,7 +882,7 @@ try {
 }
 ```
 
-Prefer to branch rather than wrap in `try`/`catch`? `.safe()` never throws — it resolves to `{ ok, data, error }`. Branch on `.status` and `.attempts` (plus `instanceof RateLimitError`) — the `STITCH_*` names below are **documentation IDs, not runtime values**, so there is no `error.code` to match on. Each has a docs page whose slug is a stable URL:
+Prefer to branch rather than wrap in `try`/`catch`? `.safe()` never throws — it resolves to `{ ok, data, error }`, and `error` is the same instance the throwing path raises. Branch on `.status` and `.attempts` (plus `instanceof RateLimitError`, which subclasses `StitchError` — so test it **before** any generic `StitchError` arm) — the `STITCH_*` names below are **documentation IDs, not runtime values**, so there is no `error.code` to match on. Each has a docs page whose slug is a stable URL:
 
 | Catalog ID            | When                                                                |
 | --------------------- | ------------------------------------------------------------------- |

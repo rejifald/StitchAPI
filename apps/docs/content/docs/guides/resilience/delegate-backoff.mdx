@@ -47,6 +47,14 @@ A `429` no longer retries: the call rejects with a
 the raw `response` so you can read any other rate headers the API sent. The
 internal throttle is bypassed for the call, so it adds no pacing of its own.
 
+`RateLimitError` **subclasses `StitchError`**, so it also carries the usual
+`attempts` / `body` / `url`, and `.safe()` hands back the same instance rather
+than a downgraded copy — branch with `.safe()` or `try`/`catch`, whichever you
+prefer, and `instanceof RateLimitError` works in both. The one rule that follows
+from the subclassing: if you branch on both classes, **test `RateLimitError`
+first**, or a generic `instanceof StitchError` arm will swallow the signal you
+opted in to receive.
+
 ## Options
 
 `delegate` switches the mode on; it defaults to `false`, so a stitch behaves

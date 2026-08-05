@@ -1849,6 +1849,10 @@ export class StitchError extends Error {
  * The outcome of a never-throwing call ({@link Stitch.safe}). A discriminated union: check `error`
  * (or `ok`) — when `error` is `null` the call succeeded and `data` is the result; otherwise `error`
  * is the {@link StitchError} and `data` is `null`.
+ *
+ * `error` is the SAME instance the throwing path raises, never a downgraded copy — so when the
+ * failure is a delegate-backoff `RateLimitError` (a `StitchError` subclass, CONTRACT.md P10) it
+ * arrives here as one, with `retryAfter`/`response` intact and `instanceof` still true.
  */
 export type SafeResult<T> =
     | { ok: true; data: T; error: null }

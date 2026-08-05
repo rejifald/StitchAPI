@@ -25,7 +25,7 @@ import {
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpSink } from './otlp';
-import { RateLimitError, createThrottle } from './resilience';
+import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface, httpSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
@@ -475,9 +475,10 @@ export function resolveTrace(trace: StitchConfig['trace']): TraceSink {
 //
 // The non-enumerable ERROR_SOURCE key (engine.ts) pins the live error behind the event without
 // leaking its payload into a trace sink. Two kinds ride it:
-//   • a delegate-backoff RateLimitError (issue #145): re-surface THAT instance unchanged, so the
-//     caller keeps the real class identity plus `retryAfter`/`response`.
-//   • a plain HTTP error carrying `.response` (issue #155): flatten into a StitchError, lifting the
+//   • an error that is already a StitchError — including a delegate-backoff RateLimitError, which
+//     subclasses it (issue #145): re-surface THAT instance unchanged, so the caller keeps the real
+//     class identity plus `retryAfter`/`response`.
+//   • a foreign error carrying `.response` (issue #155): flatten into a StitchError, lifting the
 //     response `body`/`url` onto the error so a result-shaped caller can read the API's error
 //     payload (`{ error: "…" }`) it would otherwise never see.
 async function drain<T>(
@@ -493,12 +494,12 @@ async function drain<T>(
 }
 
 // Rebuild the terminal error from an `error` event, honouring the non-enumerable ERROR_SOURCE channel
-// (engine.ts). Three kinds ride it: a delegate-backoff RateLimitError is re-surfaced UNCHANGED (the
-// caller keeps its class identity + `retryAfter`/`response`); a plain HTTP error (`.response`, but
-// not a StitchError/RateLimitError) is flattened into a StitchError carrying the response `body`/`url`;
-// a contract-violation StitchError (pinned by `.inspect()`'s retain path) passes through. Absent a
-// source, build a StitchError from the event's `status`/`attempts`. Shared by `drain` and
-// `consumeInspect`.
+// (engine.ts). Two kinds ride it: an error that is ALREADY a StitchError is re-surfaced UNCHANGED —
+// that covers both a delegate-backoff RateLimitError (a subclass since P10, so the caller keeps its
+// class identity + `retryAfter`/`response`) and a contract-violation StitchError pinned by
+// `.inspect()`'s retain path; a foreign error carrying `.response` is flattened into a StitchError
+// carrying the response `body`/`url`. Absent a source, build a StitchError from the event's
+// `status`/`attempts`. Shared by `drain` and `consumeInspect`.
 function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
     const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
     const res =
@@ -506,11 +507,7 @@ function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
             ? undefined
             : (source as { response?: { body?: unknown; url?: string } })
                   .response;
-    if (
-        res !== undefined &&
-        !(source instanceof StitchError) &&
-        !(source instanceof RateLimitError)
-    ) {
+    if (res !== undefined && !(source instanceof StitchError)) {
         return new StitchError(ev.message, {
             status: ev.status,
             attempts: ev.attempts,
@@ -744,10 +741,11 @@ async function consume<T>(
     return out.value;
 }
 
-// Coerce any thrown value to a StitchError — a real StitchError passes through unchanged; anything
-// else is wrapped with its message and original `cause`. A numeric `status` on the source (e.g. a
-// delegate-backoff RateLimitError) is carried onto the wrapper so `.safe()` callers still see it.
-// Shared by the safe consumers.
+// Coerce any thrown value to a StitchError — a real StitchError passes through unchanged (which
+// since P10 includes a delegate-backoff RateLimitError, so `.safe()` hands back the SAME instance
+// the awaited path throws: `retryAfter`/`response`/`body` intact, no reaching through `.cause`);
+// anything else is wrapped with its message and original `cause`, carrying a numeric `status` off
+// the source onto the wrapper. Shared by the safe consumers.
 function asStitchError(e: unknown): StitchError {
     if (e instanceof StitchError) return e;
     const status = (e as { status?: unknown }).status;
@@ -759,9 +757,9 @@ function asStitchError(e: unknown): StitchError {
 
 // Safe consumer: `stitch.safe(...)` / `stitch(...).safe()`. Never throws — an `error` event or an
 // unexpected throw both come back as `{ ok: false, data: null, error }`. `SafeResult.error` is
-// always a StitchError by contract, so a non-StitchError terminal (e.g. a delegate-backoff
-// RateLimitError, which the throwing path re-throws verbatim) is coerced via `asStitchError`,
-// preserving the original as `.cause` and its `status`.
+// always a StitchError by contract; a foreign terminal is coerced via `asStitchError`, preserving
+// the original as `.cause` and its `status`. A RateLimitError needs no coercion (it IS a
+// StitchError), so `.safe()` and `await` surface one and the same error.
 async function consumeSafe<T>(
     gen: AsyncGenerator<StitchEvent<T>, void>,
 ): Promise<SafeResult<T>> {

@@ -355,6 +355,8 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     if (e.status !== undefined) evt.status = e.status;
     // Delegate-backoff signal: stamp the structured `retryAfter` onto the event (so `.stream()`
     // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
+    // ORDER IS LOAD-BEARING: a RateLimitError also carries `.response`, so the generic arm below
+    // would swallow it (and drop `retryAfter`) if this subclass test did not come first.
     if (err instanceof RateLimitError) {
         if (err.retryAfter !== undefined) evt.retryAfter = err.retryAfter;
         Object.defineProperty(evt, ERROR_SOURCE, {

@@ -143,6 +143,33 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `RateLimitError` now extends `StitchError`.**
+  ([CONTRACT.md P10](docs/CONTRACT.md#p10--error-class-taxonomy-parity)) The two classes were
+  siblings, and P10 held them in parity by having `RateLimitError` re-declare `status` / `attempts` /
+  `body` / `url` by hand — a rule enforcing exactly what `extends` gives for free. They are now one
+  taxonomy rooted at `StitchError`.
+
+    **The bug this fixes.** `SafeResult.error` is typed `StitchError`, so `.safe()` had to coerce a
+    delegate-backoff `RateLimitError` into a bare one: the instance moved to `.cause`, the
+    `instanceof` test stopped working, and **`error.body` came back `undefined`** — dropping the
+    payload (`X-RateLimit-*` siblings, a vendor's cost envelope) an outer gate reads to pace itself.
+    The mode whose whole point is handing back-pressure outward lost its signal on the path this
+    codebase otherwise recommends. `.safe()` now returns the same instance `await` throws.
+
+    Migration — **check the order of your `instanceof` arms**:
+
+    ```ts
+    // before: order was free, the classes were disjoint
+    // after: a leading StitchError arm SWALLOWS the rate-limit signal
+    if (e instanceof RateLimitError) gate.penalize(e.retryAfter ?? 1000);
+    else if (e instanceof StitchError) report(e.status);
+    ```
+
+    Everything else is additive: `RateLimitError` keeps `name`, `retryAfter` and `response`, gains a
+    `cause`, and a generic `catch (e instanceof StitchError)` now sees rate limits like any other
+    failure. Serialising hosts (`@stitchapi/rtk-query`) are unaffected — they branch on `name` and
+    project own fields, both unchanged.
+
 - **BREAKING CHANGE: `timeout.perAttempt` is renamed to `timeout.each`.**
   ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space) +
   [P4](docs/CONTRACT.md#p4--one-cap-vocabulary)) `timeout` already names the subject, so by
