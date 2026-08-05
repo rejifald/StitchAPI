@@ -10,6 +10,7 @@
         "conditional-requests-304",
         "multipart-upload",
         "webhook-receipt",
-        "multi-tenant-blast-radius"
+        "multi-tenant-blast-radius",
+        "provider-failover"
     ]
 }

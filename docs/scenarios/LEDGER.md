@@ -22,6 +22,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 7   | Multipart upload and the mandatory abort              | `multipart-upload`              | achievable — but the library is a **bystander for the cleanup**      | [page shipped](../../apps/docs/content/docs/scenarios/multipart-upload.mdx) + 1 issue draft (no compensation seam)                                                |
 | 8   | Receiving a signed webhook                            | `webhook-receipt`               | **split — receipt OUT OF SCOPE by design, reaction in scope**        | [page shipped](../../apps/docs/content/docs/scenarios/webhook-receipt.mdx) + 1 issue draft (`void call()` drops work)                                             |
 | 9   | One tenant's revoked token, everyone's outage         | `multi-tenant-blast-radius`     | achievable with user code (~3 strings per tenant)                    | [page shipped](../../apps/docs/content/docs/scenarios/multi-tenant-blast-radius.mdx) + 1 issue draft (**resilience has no tenancy axis — 9/9 blast radius**)      |
+| 10  | Failing over to the backup provider                   | `provider-failover`             | achievable with user code (~30 lines of routing)                     | [page shipped](../../apps/docs/content/docs/scenarios/provider-failover.mdx) + 1 issue draft (`any()` priced as a hedge; per-call header broadcast)               |
 
 ## Open issue drafts
 
@@ -38,6 +39,7 @@ Not filed — review these when the loop stops.
 | [`no-compensation-seam`](issue-drafts/no-compensation-seam.md)                                       | medium (capability gap, sharp edges)        | nothing runs on failure, so a mandatory cleanup call can't be expressed — and the two natural ways to hand-write it (`.safe()` on the abort; cleanup inside `Surface.execute`) are silently wrong |
 | [`void-call-drops-work`](issue-drafts/void-call-drops-work.md)                                       | **high**                                    | `void call(input)` makes **0 HTTP calls and 0 errors** — the idiomatic fire-and-forget spelling silently drops the work; plus `backoff.base` clamped by `max` without warning                     |
 | [`resilience-has-no-tenancy`](issue-drafts/resilience-has-no-tenancy.md)                             | **highest production impact**               | `throttle`/`circuit` have no `tenancy`, so one customer's revoked token failed **9 of 9** healthy customers and never self-healed. Fix is one option name on two interfaces, on an existing axis  |
+| [`any-is-priced-as-a-hedge`](issue-drafts/any-is-priced-as-a-hedge.md)                               | **high** (a credential leak + silent spend) | a per-call `authorization` for the primary **arrived at the backup verbatim**; and `any()` is documented as failover while calling every member on every call — 20 requests for 10 answers        |
 
 > **Triage note — two, in this order.**
 >
