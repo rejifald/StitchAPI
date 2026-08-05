@@ -1,6 +1,6 @@
 # `input` schemas check but never filter — the parsed value is discarded
 
-**Status:** drafted, not filed
+**Status:** ✅ **FILED** as [#648](https://github.com/rejifald/StitchAPI/issues/648)
 **Scenario:** [agent-holds-the-tool](../agent-holds-the-tool.md)
 **Proofs:** `docs/scenarios/proofs/agent-holds-the-tool/c7-schema.ts`
 
