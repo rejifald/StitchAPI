@@ -1,0 +1,158 @@
+---
+title: "The customer data you didn't mean to log"
+description: 'Response bodies reach 13 destinations and metadata reaches 11 — with nothing in between. An output allowlist takes it to zero; sensitive: true does not, and only gates the cache.'
+prerequisites:
+    ['/docs/guides/observability/trace-sinks', '/docs/guides/validation/drift']
+---
+
+## The problem
+
+You integrate a vendor API that returns customer records — names, emails, addresses, health or
+legal detail. You add tracing, because you are responsible about observability. Six months later
+someone greps the log aggregator and finds all of it in plain text.
+
+Nobody logs PII on purpose. **Middleware does** — the two most-cited causes in the field are a
+debug endpoint returning full user objects and
+[a logging middleware that captures raw request bodies](https://hoop.dev/blog/why-pii-leakage-happens-in-apis/),
+and the second is exactly what a well-instrumented client library is.
+
+Three things make it structural rather than careless. **You cannot enumerate what is sensitive in
+advance** — a denylist of field names misses `primaryContactMail`, `profile.contact.mail`, and
+an address inside a free-text note. **The vendor adds a field and it starts flowing**, which makes
+this a drift problem, not a configuration one. And **the regulation is about defaults**: GDPR
+Article 25 mandates protection by design _and by default_, so "we can turn redaction on" is not
+the same thing.
+
+## The common solutions
+
+| Approach                      | What it is                    | Where it breaks                                                                               |
+| ----------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------- |
+| **Denylist of field names**   | Scrub `email`, `ssn`, `card`. | Misses renamed, nested and free-text fields. Silently incomplete the day the vendor adds one. |
+| **Allowlist of safe fields**  | Log only what you named.      | Correct by construction; needs the whole response shape — the thing that drifts.              |
+| **Don't log bodies at all**   | Metadata only.                | Safe and often unusable: the body is what you need when debugging an integration.             |
+| **Scrub at the aggregator**   | Filter on ingest.             | The data already left your process and crossed a network.                                     |
+| **Gateway/sidecar redaction** | Strip in a proxy.             | Another hop, and it cannot know which field is sensitive in _your_ domain.                    |
+
+## What StitchAPI does
+
+### The exposure is binary, which makes it auditable
+
+Measured with seven distinct sentinels — a name, an email, an SSN, a nested
+`profile.contact.mail`, an email inside a prose `note`, one in `contacts[1].email`, and a renamed
+`primaryContactMail`. **Thirteen destinations carry all seven. Eleven carry zero. Nothing is
+partially redacted.**
+
+| carries the whole body                                                                                                                                                                                | carries none of it                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| the `result` event · `fileSink` at any non-zero cap · `.inspect().raw` · `.inspect().data` · `JSON.stringify(inspect())` · `.report()` · `StitchError.body` · `JSON.stringify(err)` · the cache entry | `start` / `progress` / `done` / `error` events · `consoleSink` · `loggerSink` · `otlpSink` · `StitchError.message` · `String(err)` · `err.stack` |
+
+Exactly **one event** carries the response body — `result`, on `data`. "The event spine leaks" is
+really "one event leaks", which is a much smaller thing to reason about.
+
+### An `output` allowlist genuinely filters — 9 lines
+
+This is the answer, and it works because of an asymmetry
+[measured in scenario 20](/docs/scenarios/precision-loss): the engine serves the **validated**
+value, so `output` filters where `input` merely checks.
+
+```ts
+const SAFE = z.object({
+    id: z.string(),
+    status: z.string(),
+    total: z.number(),
+});
+
+const getCustomer = stitch({ url: '…', output: drift(SAFE) });
+```
+
+A four-field schema took the JSONL sink, the `result` event, the console line, the cache entry
+and the whole `.inspect()` wrapper from **7 sentinels to 0** — at depth (`profile.contact` gone)
+and inside array elements (`contacts[].email` gone), **without naming a single PII field
+anywhere**. That is the allowlist property: it survives the vendor adding a field.
+
+### `drift()` gives you the inventory without the data
+
+Wrapped in `drift()`, the same allowlist emits a value-free record of everything it stripped —
+seven `undeclared` findings whose paths name the fields and whose details are **kinds only**
+(`undeclared field (string)`), with zero sentinels across every finding, every drift event and
+every sink. That is exactly the _log the detection, not the data_ shape the guidance recommends.
+
+When the vendor adds `taxId` at three levels, you get exactly three new `undeclared` findings.
+
+### Declarative credentials never enter the spine
+
+`auth.apply` runs on a request clone inside the attempt loop, while the `start` event was built
+from the pre-auth request — so a `bearer` token or `apiKey` in query or cookie is **0 of 3** even
+for a naive custom sink. Hand-rolled request credentials are scrubbed by every built-in sink:
+`"authorization":"[REDACTED]"`, a scrubbed `url`, and no headers at all on console, logger or
+OTLP.
+
+## What StitchAPI does not solve
+
+1. **`sensitive: true` does not mean "do not log".** It changed the leak at **1 of 11**
+   destinations — the cache. Across all of `packages/core/src` there is exactly **one** read of
+   the value, `engine.ts:1022`, inside `ensureCache`. No sink, no trace module and no event
+   builder mentions it. It means _do not persist this to the cache_, and while it is set the
+   JSONL sink still writes the full body to disk. It also survives onto the public `__config`, so
+   `.report()` prints `"sensitive":true` beside the record it did not protect.
+2. **`.inspect({ redact: true })` removes 0 of 7.** The shared denylist is the _credential_ list
+   (`token`, `secret`, `password`, `apikey`, `signature`, …) reused — and no PII field name is on
+   it. `redact: ['mail', 'email']` does work, at depth and across array elements, but only for
+   names you enumerate; a renamed key and an address in free text are unreachable by
+   construction. There is no stitch-level or process-level default — ADR 0018's `defaultInspect`
+   was never implemented.
+3. **`JSON.stringify(err)` leaks the whole record; `console.error(err)` does not.**
+   `StitchError.body` is an own enumerable property while `message` is not. So `err.stack` and
+   `String(err)` are clean, and **`logger.error({ err })` is the leak.** The same shape repeats on
+   success: ADR 0016's non-enumerability protects `.inspect().raw` and nothing else, because
+   `.inspect().data` holds the same record enumerably.
+4. **A validation error can carry the value into a log.** `validationErrors`
+   (`drift.ts:50-56`) copies the validator's own message into `detail`, and Zod's enum message
+   quotes back the value it received — so an SSN reaching an enum field is written out verbatim.
+   Measured reaching the JSONL file, `consoleSink` **and** `loggerSink` — the two
+   sinks that are otherwise 0 of 7. Only OTLP stays clean, because it drops `detail`.
+5. **The `fileSink` body cap is a size control, not a privacy control.** On a 2.9 KB body all
+   seven sentinels still persisted into the `preview`; only an eighth planted past character 2048
+   was absent. It keeps a _prefix_, so reordering the vendor's JSON changes which fields leak.
+6. **Only `hooks.onResponse` covers the failure path.** On a 200, `interpret`, `transform` and the
+   hook are equivalent. On a 500 the engine throws carrying the untouched response, so
+   `StitchError.body` stays at 7/7 under `transform` and under a stripping `interpret` — the hook
+   holds at 0/7 only because it _mutated_ `ctx.res.body` in place. Its type is `(ctx) => void`,
+   and mutating the body there is nowhere described as a privacy mechanism.
+7. **The boundary and the drift signal are mutually exclusive.** Stripping in the hook takes
+   `drift()` to **0 findings**, because drift diffs exactly the bytes the boundary removed.
+   Having both means re-implementing `drift.ts`'s walker — 23 lines, and not exported.
+8. **Nothing here is upstream of the `Adapter`**, which read the bytes first. A spy inside the
+   transport still sees all seven.
+
+<Callout type="warn">
+    **A credential that rides the payload is treated exactly like PII.** An
+    `access_token` in a *response* body, or a `client_secret` in a *request*
+    body, is written to the JSONL log in full, because that sink's redactor is a
+    five-name **header** denylist rather than the deep secret-key scrubber. The
+    same file already ships that scrubber and applies it to a request body for
+    the `serve` SSE transport — the disk sink simply never calls it.
+    `redactHeaders` is the one config-reachable way to point the redactor at a
+    body key, and its type and JSDoc both say "header names", so nothing tells
+    you that works.
+</Callout>
+
+## The assembled setup
+
+**42 executable lines across 2 seams** — `hooks.onResponse` plus `output: drift(SAFE)` — reaches
+**0 of 9 destinations on both the success and the failure path**, and still recovers a names-only
+inventory of every undeclared field. Of those 42 lines, 23 re-implement the walker `drift.ts`
+already contains.
+
+The cheaper variants are honest about their edges: the allowlist alone is 9 lines and 1 of 10 on
+a 200 (only `.inspect().raw`, by design) but leaves the 500 path untouched; the boundary alone is
+7 lines and 0 of 10 on both paths, at the cost of the entire drift signal.
+
+## See also
+
+- [Trace sinks](/docs/guides/observability/trace-sinks) — the sinks measured above
+- [Drift](/docs/guides/validation/drift) — the inventory channel
+- [Scenario: the ID that changed on the way in](/docs/scenarios/precision-loss) — where the
+  `output`-uses-its-parsed-value asymmetry was measured
+- [Scenario: the agent picks the arguments](/docs/scenarios/agent-holds-the-tool) — the other
+  scenario about data reaching somewhere it should not

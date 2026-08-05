@@ -21,6 +21,7 @@
         "deprecation-headers",
         "agent-holds-the-tool",
         "stale-fixture",
-        "precision-loss"
+        "precision-loss",
+        "pii-in-the-logs"
     ]
 }

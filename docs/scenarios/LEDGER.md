@@ -33,6 +33,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 18  | The agent picks the arguments                         | `agent-holds-the-tool`          | **credential boundary held** (30 scans, 0 hits); argument boundary is the user's — safe exposure = 3 seams, 47 lines | [page shipped](../../apps/docs/content/docs/scenarios/agent-holds-the-tool.mdx) + 2 issue drafts (unfiltered MCP error channel leaks a query credential; input schemas check but never filter) |
 | 19  | The mock that passed for six months                   | `stale-fixture`                 | **split** — resilience/streams test perfectly offline; the scenario's own direction is **invisible** offline         | [page shipped](../../apps/docs/content/docs/scenarios/stale-fixture.mdx) + 1 issue draft (**`manualClock` covers 6 of 12 time-driven features; 2 bugs in the testing kit**)                    |
 | 20  | The ID that changed on the way in                     | `precision-loss`                | **achievable in config** — `wire.response` + `transform` = 16 lines, exact digits; the default corrupts silently     | [page shipped](../../apps/docs/content/docs/scenarios/precision-loss.mdx) + 1 issue draft (**a `bigint` in `params` silently vanishes while `query` handles it**)                              |
+| 21  | The customer data you didn't mean to log              | `pii-in-the-logs`               | **achievable** — an `output` allowlist filters 7 → 0 without naming a PII field; assembled = 2 seams, 42 lines       | [page shipped](../../apps/docs/content/docs/scenarios/pii-in-the-logs.mdx) + 1 issue draft **HELD (security)**                                                                                 |
 
 ## Open issue drafts
 
@@ -64,6 +65,10 @@ security-sensitive — see the note below.
 | [`bigint-in-params-vanishes`](issue-drafts/bigint-in-params-vanishes.md)                                                                                            | medium-high (silent data loss)                  | `expandTemplateVar` (`util.ts:392`) omits `bigint` while `stringifyLeaf` includes it, so the same id is exact in `query` and gone in `params`; plus `.report()` throws under a bigint body                                                               |
 
 > **Held back from filing — security-sensitive, review before disclosing.**
+>
+> 0. [`adr-0018-findings-can-leak-a-value`](issue-drafts/adr-0018-findings-can-leak-a-value.md) —
+>    ADR 0018 §4's "findings never leak a secret" is false for hard validation, and the disk sink
+>    skips the deep scrubber that sits in its own file. Section 3 is ordinary and splittable.
 >
 > 1. [`mcp-error-channel-leaks-a-query-credential`](issue-drafts/mcp-error-channel-leaks-a-query-credential.md) —
 >    an unfiltered MCP error channel puts an `apiKey({ in: 'query' })` credential into a
