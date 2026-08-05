@@ -35,7 +35,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 
 ## Open issue drafts
 
-Seven are filed (#640–#645, #648). The rest are unfiled — review when the loop stops.
+Eight are filed (#640–#645, #648, #650). The rest are unfiled — review when the loop stops.
 
 | Draft                                                                                                                                                               | Severity                                        | Ask                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -58,7 +58,7 @@ Seven are filed (#640–#645, #648). The rest are unfiled — review when the lo
 | [`hooks-can-rewrite-the-call`](issue-drafts/hooks-can-rewrite-the-call.md)                                                                                          | medium-high (a docs/behaviour mismatch)         | the hooks guide says hooks never change what a stitch returns; mutating `ctx.res.status` turned a vendor 200 into a thrown 503. Plus the definitive accessor→headers table                                                                               |
 | [`mcp-error-channel-leaks-a-query-credential`](issue-drafts/mcp-error-channel-leaks-a-query-credential.md)                                                          | medium-high (**scoped** leak + a real positive) | the MCP error channel renders `Error.message` unfiltered, so a DNS failure under `apiKey({ in: 'query' })` put the key in the model's context. **The credential boundary itself held: 30 scans, 0 hits.** Plus a rename bypasses the registry allow-list |
 | [`input-schemas-check-but-never-filter`](issue-drafts/input-schemas-check-but-never-filter.md) **→ [#648](https://github.com/rejifald/StitchAPI/issues/648)**       | **high** (not MCP-specific)                     | `validateInput` discards the parsed value while `validateOutput` returns it, so a stripping schema — the Zod/Valibot/ArkType default — does not strip. Declaring a strict schema to constrain an untrusted caller silently does nothing                  |
-| [`testing-kit-clock-gaps-and-two-bugs`](issue-drafts/testing-kit-clock-gaps-and-two-bugs.md)                                                                        | **high — 2 bugs + a soundness table**           | `manualClock` drives 6 of 12 time-driven features (OAuth2 expiry is NEW and undocumented); `stubStitch().safe()` throws on a sync throw; `mockAdapter` violates the library's own `abort` rule                                                           |
+| [`testing-kit-clock-gaps-and-two-bugs`](issue-drafts/testing-kit-clock-gaps-and-two-bugs.md) **→ [#650](https://github.com/rejifald/StitchAPI/issues/650)**         | **high — 2 bugs + a soundness table**           | `manualClock` drives 6 of 12 time-driven features (OAuth2 expiry is NEW and undocumented); `stubStitch().safe()` throws on a sync throw; `mockAdapter` violates the library's own `abort` rule                                                           |
 
 > **Triage note — two, in this order.**
 >
@@ -103,7 +103,7 @@ every response including non-2xx on a buffered stitch (measured on `[200, 304, 4
 `manualClock` drives `retry` backoff, `throttle` (rate and concurrency), `circuit.cooldown`, the
 per-attempt `timeout` and `Retry-After`. It does **not** drive `timeout.total`, `cache.ttl`, the
 `memoryStore` TTL beneath it, event `at`/`done.elapsed`, **OAuth2 token expiry** or SigV4. ADR
-0010 §4 documents three of those as deliberate; **OAuth2 expiry is not mentioned there**, and
+0010 §4 documents **four** as deliberate; **SigV4 and OAuth2 expiry are documented nowhere**, and
 `auth.ts` has no clock plumbing at all. Measured cost: a `timeout: { total: 1000 }` call survived
 **2700 virtual ms** and returned `ok: true`. Superseded note below —
 

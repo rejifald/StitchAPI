@@ -1,6 +1,6 @@
 # The testing kit's clock covers half its own features — plus two bugs
 
-**Status:** drafted, not filed
+**Status:** ✅ **FILED** as [#650](https://github.com/rejifald/StitchAPI/issues/650)
 **Scenario:** [stale-fixture](../stale-fixture.md)
 **Proofs:** `docs/scenarios/proofs/stale-fixture/` (8 scripts, 168 checks, offline)
 
@@ -33,8 +33,10 @@ The findings below are the edges.
 | **AWS SigV4 signing date**    | **wall clock** | `new Date()`, no `clock` option exists                          |
 | `paginate`                    | no time        | nothing to drive                                                |
 
-ADR 0010 §4 documents `timeout.total`, `cache.ttl` and SigV4 as deliberate. **OAuth2 token expiry
-is not mentioned there**, and it is the one that looks least intentional:
+ADR 0010 §4 documents **four** of these as deliberate — `timeout.total`, event `at`/`done.ms`
+and `memoryStore`/cache TTL — and `types.ts:1476` repeats the event one in JSDoc. **SigV4 and
+OAuth2 token expiry are documented nowhere.** OAuth2 is the one worth acting on, because it is in
+core and looks unintentional rather than scoped out:
 `packages/core/src/auth.ts:502` is
 
 ```ts
@@ -54,8 +56,12 @@ does not _ignore_ the clock. The per-attempt clamp fires on virtual time
 than being ignored. On a real clock it behaves correctly — this is specifically a testing
 unsoundness.
 
-**Ask:** route OAuth2 expiry through the injected clock; and mark the wall-clock rows in the
-mocking guide so a reader knows which assertions are vacuous.
+ADR 0010 also closes with _"Follow-ups (out of scope here): driving `timeout.total`, event
+timestamps, and store/cache TTL off the clock, **should a concrete need arise**."_ The measured
+vacuous pass is that concrete need.
+
+**Ask:** route OAuth2 expiry through the injected clock; and put the table in the mocking guide —
+an ADR section and a `types.ts` JSDoc are not where someone writing a test will look.
 
 ## 2. `Retry-After` as an HTTP-date is a trap _because_ it honours the clock
 
