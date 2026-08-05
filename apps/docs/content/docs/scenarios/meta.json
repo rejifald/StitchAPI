@@ -18,6 +18,7 @@
         "expiring-signatures",
         "unconfirmed-write",
         "n-plus-one-fanout",
-        "deprecation-headers"
+        "deprecation-headers",
+        "agent-holds-the-tool"
     ]
 }
