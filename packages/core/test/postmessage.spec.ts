@@ -166,7 +166,7 @@ describe('request → response (correlated RPC)', () => {
         // The iframe emits an UNSOLICITED `sum-result` (no id) BEFORE any responder — it must NOT
         // resolve the pending request (whose reply correlates on the minted id too).
         const sum = parent.request('sum', {
-            timeout: { perAttempt: 60 },
+            timeout: { each: 60 },
         });
         const p = sum({ body: { a: 1, b: 1 } });
         // fire a bare {type:'sum-result'} with no id from the iframe side
@@ -187,7 +187,7 @@ describe('request timeout reuses the engine resilience chain', () => {
     test('no responder → the engine `timeout` rejects with a StitchError', async () => {
         const { parent, closeBoth } = channelPair();
         const lonely = parent.request('noone-home', {
-            timeout: { perAttempt: 40 },
+            timeout: { each: 40 },
         });
         await expect(lonely({ body: { x: 1 } })).rejects.toMatchObject({
             name: 'StitchError',
@@ -209,7 +209,7 @@ describe('origin gate (structural, gate-before-validation)', () => {
         const evil = channel(b, { allowedOrigins: [ORIGIN_A] });
         evil.respond('sum', () => ({ total: 999 }));
         const sum = parent.request('sum', {
-            timeout: { perAttempt: 40 },
+            timeout: { each: 40 },
         });
         await expect(sum({ body: { a: 1, b: 2 } })).rejects.toMatchObject({
             name: 'StitchError',
@@ -253,7 +253,7 @@ describe('validation on both boundaries', () => {
         });
         // Send a string where a number is required → the responder validates-and-drops → no reply.
         const call = parent.request('strict', {
-            timeout: { perAttempt: 40 },
+            timeout: { each: 40 },
         });
         await expect(
             call({ body: { n: 'not-a-number' } }),
@@ -293,7 +293,7 @@ describe('validation on both boundaries', () => {
             input: inputSchema,
         });
         const call = parent.request('dbl', {
-            timeout: { perAttempt: 200 },
+            timeout: { each: 200 },
         });
         await expect(call({ body: { n: 21 } })).resolves.toEqual({
             doubled: 42,
@@ -311,7 +311,7 @@ describe('validation on both boundaries', () => {
             input: inputSchema,
         });
         const call = parent.request('dbl2', {
-            timeout: { perAttempt: 40 },
+            timeout: { each: 40 },
         });
         await expect(
             call({ body: { n: 'not-a-number' } }),
@@ -331,7 +331,7 @@ describe('validation on both boundaries', () => {
             output: outputSchema,
         });
         const call = parent.request('dbl3', {
-            timeout: { perAttempt: 200 },
+            timeout: { each: 200 },
         });
         await expect(call({ body: { n: 5 } })).resolves.toEqual({
             doubled: 10,
@@ -568,7 +568,7 @@ describe('channel() over an arbitrary transport', () => {
         const parent = channel(a, { allowedOrigins: [] }); // allow NOTHING
         const iframe = channel(b, { allowedOrigins: [ORIGIN_A] });
         iframe.respond('x', () => 'ok');
-        const call = parent.request('x', { timeout: { perAttempt: 40 } });
+        const call = parent.request('x', { timeout: { each: 40 } });
         // The iframe's reply carries origin ORIGIN_B, which is not in [] → dropped → times out.
         await expect(call({ body: {} })).rejects.toMatchObject({
             name: 'StitchError',

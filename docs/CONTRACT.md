@@ -864,6 +864,28 @@ against both — the findings sit at the end of the list:
   `circuit: { …, halfOpenAfter }` is a compile error naming the key, and the nudge is now a
   second line of defence for JS callers rather than the only one. It stays runtime-only (no
   `@deprecated` tag, so **R7** stays clean) and is deleted at 1.0 GA.
+- **P1 + P4 (a scope wearing the name of what it counts)** — `TimeoutOptions.perAttempt`.
+  `timeout` already names the subject, so by
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)/[P25](#p25--one-canonical-size-form)
+  ("inside the envelope the subject is named once") the member owes only its **scope** —
+  and `total`'s opposite number is a scope, not an attempt counter. The obvious
+  de-prefixing was blocked: [P4](#p4--one-cap-vocabulary) reserves singular `attempt` for
+  the current index (the engine emits it on every `progress` event) and plural `attempts`
+  for the running count, so `timeout.attempt` would have made one word mean both an index
+  and a duration — the [P1](#p1--one-word-one-concept-one-value-space)/[P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)
+  collision the rename was meant to avoid. **Fixed** (2026-08-04: **`each`** — the
+  one-word token P1 prefers, free across the surface, and the natural pair for `total`:
+  `timeout: { total: '10s', each: '3s' }`. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); a stale
+  `timeout: { perAttempt }` is a compile error naming the key via `NoUnknownNestedKeys`.)
+  _Why it survived the 2026-08-01 multi-word pass:_ that pass verified 249 multi-word
+  names and `perAttempt` reads as an accurate description of what it does — the defect is
+  not that it is wrong but that it is not the _shortest_ true token, which is the half of
+  P1 a name can fail while still describing its value correctly. No rule in
+  [§7](#7-enforcement) reaches it either: **R8** needs a shared leading-word prefix and
+  `total`/`perAttempt` share none, and **R9** pins the _type_ of a duration member, never
+  its spelling. Same blind spot as the `halfOpenAfter` entry above — a naming rule whose
+  violations are individually well-formed.
 - **P25** — the flat, suffix-carrying size caps (`ServeOptions.maxBodyBytes`,
   `TraceOptions.maxBodyChars`, `StreamOptions.maxBufferChars`). **Fixed** (2026-08-01:
   folded into subject-named envelopes — `serve`'s `body` (`{ max }`), trace's `body`
@@ -1115,7 +1137,7 @@ shape, not as today's surface: nothing on the surface carries an alias.
   **R9** a consumer-authored duration or byte size typed `number` with no `string` arm
   (P17/P25), plus the reverse — a `chars` code-unit cap that grew one. Type info is not
   needed because two source-text signals carry it: a **closed, curated member
-  vocabulary** (`ttl`, `timeout`, `total`, `perAttempt`, `delay`, `cooldown`, `skew`,
+  vocabulary** (`ttl`, `timeout`, `total`, `each`, `delay`, `cooldown`, `skew`,
   `after`, `base`, `max`, `since`, `interval`, `resumeRetry`)
   and P3's own `*Options` = consumer-input signal, which excludes every produced shape
   **by name** so the emitted complement can never be flagged. A vocabulary rather than a

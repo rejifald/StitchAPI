@@ -1135,8 +1135,12 @@ export interface TimeoutOptions {
      * Bounds each individual attempt — `3000`, `'3s'`. With `retry` enabled this alone does NOT cap
      * the call: N attempts plus their backoff waits can overrun it many times over. Pair it with
      * `total` for a real deadline.
+     *
+     * Named for the scope it bounds, not the thing it counts: `timeout` already names the subject,
+     * so the member carries only the scope (P24/P25), and P4 reserves `attempt`/`attempts` for the
+     * current index and the running count.
      */
-    perAttempt?: number | string;
+    each?: number | string;
 }
 export interface CircuitOptions {
     /**
@@ -1616,9 +1620,9 @@ export interface StitchConfig {
      */
     throttle?: string | AtLeastOne<ThrottleOptions>;
     /**
-     * Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the
-     * total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`; the opaque `timeout: {}` is rejected
-     * (CONTRACT.md P20).
+     * Timeouts, by scope: `total` for the whole call, `each` for one attempt. A bare number (ms) or
+     * duration string is shorthand for the total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`;
+     * the opaque `timeout: {}` is rejected (CONTRACT.md P20).
      */
     timeout?: number | string | AtLeastOne<TimeoutOptions>;
     /**

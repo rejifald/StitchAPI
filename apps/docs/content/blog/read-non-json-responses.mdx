@@ -180,7 +180,7 @@ const fetchPage = stitch({
     output: PageSchema,
     auth: bearer(env('API_TOKEN')),
     retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
-    timeout: { total: '30s', perAttempt: '10s' },
+    timeout: { total: '30s', each: '10s' },
     trace: 'console',
 });
 ```

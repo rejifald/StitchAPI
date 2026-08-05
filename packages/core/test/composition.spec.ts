@@ -347,7 +347,7 @@ test('stream/wire.multipart scalars and the sse toggle expand to option objects'
 test('a scalar shorthand merges over an inherited object, preserving siblings', () => {
     const base = {
         retry: { attempts: 2, on: [429, 503] },
-        timeout: { total: '30s', perAttempt: '10s' },
+        timeout: { total: '30s', each: '10s' },
         throttle: { rate: '2/s', concurrency: 4 },
     };
     const resolved = compose({
@@ -358,7 +358,7 @@ test('a scalar shorthand merges over an inherited object, preserving siblings', 
         throttle: '1/s',
     });
     expect(resolved.retry).toEqual({ attempts: 5, on: [429, 503] });
-    expect(resolved.timeout).toEqual({ total: '5s', perAttempt: '10s' });
+    expect(resolved.timeout).toEqual({ total: '5s', each: '10s' });
     expect(resolved.throttle).toEqual({ rate: '1/s', concurrency: 4 });
 });
 

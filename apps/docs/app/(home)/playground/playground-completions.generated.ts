@@ -135,7 +135,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "timeout",
             type: "property",
             detail: "number | string | AtLeastOne<TimeoutOptions>",
-            info: "Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`; the opaque `timeout: {}` is rejected (CONTRACT.md P20).",
+            info: "Timeouts, by scope: `total` for the whole call, `each` for one attempt. A bare number (ms) or duration string is shorthand for the total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`; the opaque `timeout: {}` is rejected (CONTRACT.md P20).",
         },
         {
             label: "circuit",
