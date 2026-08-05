@@ -21,6 +21,7 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 6   | ETag revalidation and the bodyless 304                | `conditional-requests-304`      | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/conditional-requests-304.mdx) + 1 issue draft (`cache` cannot revalidate; surfaces can't see the principal) |
 | 7   | Multipart upload and the mandatory abort              | `multipart-upload`              | achievable — but the library is a **bystander for the cleanup**      | [page shipped](../../apps/docs/content/docs/scenarios/multipart-upload.mdx) + 1 issue draft (no compensation seam)                                                |
 | 8   | Receiving a signed webhook                            | `webhook-receipt`               | **split — receipt OUT OF SCOPE by design, reaction in scope**        | [page shipped](../../apps/docs/content/docs/scenarios/webhook-receipt.mdx) + 1 issue draft (`void call()` drops work)                                             |
+| 9   | One tenant's revoked token, everyone's outage         | `multi-tenant-blast-radius`     | achievable with user code (~3 strings per tenant)                    | [page shipped](../../apps/docs/content/docs/scenarios/multi-tenant-blast-radius.mdx) + 1 issue draft (**resilience has no tenancy axis — 9/9 blast radius**)      |
 
 ## Open issue drafts
 
@@ -36,10 +37,18 @@ Not filed — review these when the loop stops.
 | [`cache-cannot-revalidate`](issue-drafts/cache-cannot-revalidate.md)                                 | medium (capability gap)                     | `cache` is a value store so an ETag can never reach it; a surface can't see the bound principal, which is what makes a hand-written ETag store leak across credentials                            |
 | [`no-compensation-seam`](issue-drafts/no-compensation-seam.md)                                       | medium (capability gap, sharp edges)        | nothing runs on failure, so a mandatory cleanup call can't be expressed — and the two natural ways to hand-write it (`.safe()` on the abort; cleanup inside `Surface.execute`) are silently wrong |
 | [`void-call-drops-work`](issue-drafts/void-call-drops-work.md)                                       | **high**                                    | `void call(input)` makes **0 HTTP calls and 0 errors** — the idiomatic fire-and-forget spelling silently drops the work; plus `backoff.base` clamped by `max` without warning                     |
+| [`resilience-has-no-tenancy`](issue-drafts/resilience-has-no-tenancy.md)                             | **highest production impact**               | `throttle`/`circuit` have no `tenancy`, so one customer's revoked token failed **9 of 9** healthy customers and never self-healed. Fix is one option name on two interfaces, on an existing axis  |
 
-> **Triage note.** [`sse-reconnect-replays-completed-streams`](issue-drafts/sse-reconnect-replays-completed-streams.md)
-> is the one to look at first. It is a bug in code that shipped in **#622**, it delivers
-> duplicated content to end users on a stream that never failed, and the run ends `ok: true`.
+> **Triage note — two, in this order.**
+>
+> 1. [`resilience-has-no-tenancy`](issue-drafts/resilience-has-no-tenancy.md) — highest
+>    production impact. One customer's revoked token failed **9 of 9** healthy customers, and the
+>    outage does not self-heal. Not a bug (everything behaves as documented) but the composition
+>    has a 100% blast radius, and the fix is one option name on two interfaces, on an axis
+>    `CacheOptions`/`OAuth2Options` already carry.
+> 2. [`sse-reconnect-replays-completed-streams`](issue-drafts/sse-reconnect-replays-completed-streams.md) —
+>    a genuine bug in code that shipped in **#622**. It delivers duplicated content to end users
+>    on a stream that never failed, and the run ends `ok: true`.
 
 ### Patterns across the pass
 

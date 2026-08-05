@@ -1,0 +1,149 @@
+---
+title: "One customer's revoked token, everyone's outage"
+description: 'Tokens and caches isolate per tenant automatically. Rate budgets and circuit breakers do not — they isolate only by a string you have to remember to write.'
+prerequisites:
+    ['/docs/concepts/the-seam', '/docs/guides/resilience/circuit-breaker']
+---
+
+## The problem
+
+You integrate a vendor API on behalf of each of your customers. Every call carries that
+customer's credential. At 500 customers with 8 connections each, that's
+[4,000 token lifecycles](https://truto.one/blog/how-to-architect-a-scalable-oauth-token-management-system-for-saas-integrations/).
+
+**The unit of failure is the tenant. The unit of protection usually isn't.** Rate budgets and
+circuit breakers are scoped to a _dependency_, but what goes wrong is scoped to a _customer_ —
+their token was revoked, their admin changed a permission, their batch job went rogue. When the
+protection is broader than the failure, one customer's problem becomes everyone's.
+
+<Callout type="error">
+    **Measured, on a shared seam with `circuit: { failures: 3, cooldown: '30s' }`:** one customer
+    with a revoked token failed **9 of 9 healthy customers**, and **zero** of their requests ever
+    reached the vendor — they fast-failed in-process with `503 circuit open`.
+
+    **And the outage does not end on its own.** Half-open admits exactly one trial call, and the
+    broken tenant is the one retrying hardest — so across four full cooldown windows the healthy
+    tenant measured `503, 503, 503, 503`. Recovery happens when a healthy tenant *happens* to win
+    the probe. That's a race, not a policy.
+
+</Callout>
+
+## The common solutions
+
+| Approach                               | Where it breaks                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| One client instance per tenant         | Correct by construction — and usually assumed not to scale.                               |
+| Partitioned limiter                    | The right shape, if your client offers one. Most don't.                                   |
+| Per-tenant circuit breaker             | The named mitigation. Needs the breaker to accept a per-tenant key.                       |
+| Global breaker, tuned high             | Trades one failure mode for another — a real outage now takes far longer to trip.         |
+| Exclude auth failures from the breaker | Genuinely correct and usually forgotten. A `401` says the credential is bad, not the API. |
+| Sharded workers by tenant              | Real isolation, at the cost of a routing tier.                                            |
+
+## What StitchAPI does
+
+The library already carries a tenancy axis — and it reaches exactly half of what you need.
+`AuthContext.principal` is visible to the auth strategies and the cache-key builder, **and
+nothing else**. So the split falls on the auth/resilience line:
+
+| resource            | isolated by                                        | fails                                        |
+| ------------------- | -------------------------------------------------- | -------------------------------------------- |
+| **Token**           | `oauth2({ tenancy: 'principal' })` + `seam.as(id)` | **closed** — errors if no principal is bound |
+| **Cache**           | `tenancy`, defaults to `'principal'`               | **closed**                                   |
+| **Rate budget**     | a per-tenant limiter **key** you write             | **open, silently**                           |
+| **Circuit breaker** | a per-tenant `circuit.key` you write               | **open, silently**                           |
+
+The two whose isolation is a _security_ property fail closed. The two whose isolation is an
+_availability_ property fail open. That is the whole scenario in one table.
+
+The working construction is one shared seam plus a per-tenant member:
+
+```ts
+const vendor = seam({
+    baseUrl: 'https://api.vendor.com',
+    auth: oauth2({ tenancy: 'principal' /* … */ }),
+    store: redisStore(/* … */),
+});
+
+const itemsFor = (tenant: string) =>
+    vendor.as(tenant).stitch({
+        path: '/v1/items',
+        name: `items:${tenant}`, // partitions the rate budget
+        circuit: { failures: 3, cooldown: '30s', key: `items:${tenant}` }, // and the breaker
+        // A 401 means the CREDENTIAL is bad, not the vendor — don't let it trip the breaker,
+        // but don't swallow it either.
+        verdict: { accept: [401], flag: 'ok' },
+    });
+```
+
+**Measured:** the same revoked credential that took down 9 of 9 in the callout above took down
+**0 of 9** here. The broken tenant still received a real `401`. A genuine `500` still opened
+**that tenant's own** breaker (`500, 500, 500, 503`) with zero effect on the others. And the
+20-call burst that pushed a quiet customer from t=0 to **t=2000 ms** arrived at **t=0**.
+
+## Isolation is a property of the key string, never of the object graph
+
+This is the part worth internalising, because the intuitive constructions don't work:
+
+- **10 separate `.as()`-bound stitch objects** resolving to the same `path` → **1** breaker key,
+  9 of 9 healthy tenants down.
+- **10 separate seams** sharing one store → same result.
+- A **`url`-only stitch** keys its breaker on the literal string `'stitch'` — so every such
+  stitch sharing a store shares one process-wide breaker, across tenants _and_ endpoints.
+
+Conversely the correct partition is cheap: 100 keyed stitches built in under 100 ms with zero
+timers armed, and 100 per-tenant seams cost well under 40 kb each with **zero** connection pools
+— a seam owns no transport, so the "4,000 pools" the literature warns about isn't a cost this
+construction has.
+
+<Callout type="warn">
+    **A per-tenant seam isolates the rate budget and *not* the breaker.** Measured in one run:
+    the quiet tenant left at t=0 (rate isolated) while 3 of 3 healthy tenants got `503` (breaker
+    shared). The most isolated-looking construction is half a fix, and the missing half is the
+    one that causes outages.
+
+    **And `throttle: { pool: 'host' }` silently re-keys the *circuit* onto the host.** A
+    per-tenant `name` partition evaporates, and an unrelated endpoint for an unrelated tenant
+    measured `503`.
+
+</Callout>
+
+## What StitchAPI does not solve here
+
+1. **No per-tenant declaration exists for either resource.** `ThrottleOptions.pool` is
+   `'stitch' | 'host'`; `CircuitOptions` is `{ failures, cooldown, key }`. `pool: 'principal'`,
+   `throttle.key`, `throttle.tenancy` and `circuit.tenancy` are all compile errors. You smuggle
+   tenancy through key strings.
+2. **`oauth2` defaults to `tenancy: 'app'`** — three different customers measured **one** token
+   fetch and one shared `Authorization` header. Nothing at the call site hints at it.
+3. **`tenancy` partitions the token _cache_, not the _credential_.** All tenants' tokens are
+   minted from one `client_id`, because `Secret` is a niladic thunk with no context. Per-customer
+   credentials need a custom `AuthStrategy.apply(req, ctx)` reading `ctx.principal` — the only
+   user-reachable hook that sees the bound principal at call time.
+4. **Global quota _and_ per-tenant fairness is not expressible in one construction.** A member
+   throttle stacks tighten-only on the seam bucket, so declaring "1000/m to the vendor" puts the
+   noisy neighbour straight back (quiet tenant returns to t=2000).
+5. **Breaker records have no TTL.** A churned tenant's key was still resident after a virtual
+   _year_, and nothing sweeps them — while the rate counter beside it does expire.
+6. **`seam.stitch()` pins every stitch it creates.** Measured with `WeakRef` after a forced GC:
+   200/200 root-created still reachable, versus **0/200** created through `seam.as(p).stitch()`.
+   The per-request shape is the one that doesn't leak; the only release for the other is
+   `seam.close()`, which also closes the store.
+7. **Seam ids are a creation-order counter**, so per-tenant seams over a shared durable store
+   collide across worker processes non-deterministically.
+8. **`CircuitOpenError` names nothing about who tripped it.** When the breaker is shared, you
+   cannot tell from the error which tenant caused the outage.
+
+## See also
+
+<Cards>
+    <Card title="The seam" href="/docs/concepts/the-seam" />
+    <Card
+        title="Circuit breaker"
+        href="/docs/guides/resilience/circuit-breaker"
+    />
+    <Card title="Verdict" href="/docs/guides/resilience/verdict" />
+    <Card
+        title="OAuth2 refresh tokens that rotate"
+        href="/docs/scenarios/oauth2-refresh-token-rotation"
+    />
+</Cards>

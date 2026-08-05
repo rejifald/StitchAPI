@@ -9,6 +9,7 @@
         "mid-stream-failure",
         "conditional-requests-304",
         "multipart-upload",
-        "webhook-receipt"
+        "webhook-receipt",
+        "multi-tenant-blast-radius"
     ]
 }
