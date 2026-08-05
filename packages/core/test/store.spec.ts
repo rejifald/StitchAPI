@@ -514,6 +514,33 @@ describe('Pluggable store — throttle', () => {
         b.release('svc');
     });
 
+    test('a SLOW but uncontended lease still reports waited: 0', async () => {
+        // Regression: `waited` used to be `clock.now() - blockStart` whenever it was non-zero, so
+        // a store round-trip that merely straddled a millisecond reported `waited: 1` on an
+        // acquire that blocked nobody — a spurious `throttled` event, and a flaky
+        // `expect(waited).toBe(0)` above whenever CI was slow enough (reliably under --coverage).
+        // The gate is now "did it have to poll", so store latency alone can never register.
+        const inner = memoryStore();
+        const slow: StitchStore = {
+            ...inner,
+            get: inner.get.bind(inner),
+            set: inner.set.bind(inner),
+            lease: async (
+                ...args: Parameters<NonNullable<StitchStore['lease']>>
+            ) => {
+                // 5ms of pure store latency, granted on the FIRST attempt — nobody was blocked.
+                await new Promise((r) => setTimeout(r, 5));
+                return inner.lease!(...args);
+            },
+            release: inner.release!.bind(inner),
+        };
+        const t = createStoreThrottle({ concurrency: 1 }, slow);
+
+        const first = await t.acquire('svc');
+        expect(first.waited).toBe(0);
+        t.release('svc');
+    });
+
     test('a streaming (rateOnly) acquire takes no fleet-wide slot either', async () => {
         // ADR 0005 Decision 12 holds under leases: a long-lived stream must not pin a slot for
         // its whole life, which is also what keeps `lease` a crash timer rather than a call timer.

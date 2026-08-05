@@ -264,9 +264,13 @@ export function createStoreThrottle(
     // be woken by another worker's release — so a blocked caller POLLS. The interval is fully
     // jittered so a fleet that piles up behind one slot does not re-collide in lockstep on every
     // retry, the same full-jitter reasoning `expo-jitter` uses for retry backoff.
-    const takeLease = async (key: string): Promise<void> => {
-        if (limit == null || !leases) return;
+    // Resolves to whether the caller was actually BLOCKED — i.e. it went round the poll loop at
+    // least once. The first `lease` call is a store round-trip whose duration is not a wait on
+    // anyone; only a retry means a slot was genuinely held elsewhere.
+    const takeLease = async (key: string): Promise<boolean> => {
+        if (limit == null || !leases) return false;
         const token = hex(8);
+        let polled = false;
         for (;;) {
             if (await leases.lease(key, token, limit, leaseTtl, clock.now())) {
                 // `stateFor` is resolved HERE, not before the loop. A poller that captured the
@@ -276,8 +280,9 @@ export function createStoreThrottle(
                 // `release` would look up the live entry, find nothing, and never free the slot.
                 // One leaked slot per occurrence, which under contention is a deadlock.
                 (stateFor(key).tokens ??= []).push(token);
-                return;
+                return polled;
             }
+            polled = true;
             await clock.sleep(Math.random() * LEASE_POLL_MS);
         }
     };
@@ -296,9 +301,11 @@ export function createStoreThrottle(
             // predicted: a lease granted on the first attempt blocked nobody.
             const blockStart = clock.now();
             if (leases) {
-                await takeLease(key);
-                const spent = clock.now() - blockStart;
-                if (spent > 0) waited = spent;
+                // Gate on "did it poll", not on "did the clock move". `lease` is a store
+                // round-trip, and an uncontended one that happens to straddle a millisecond
+                // boundary would otherwise report `waited: 1` and fire a spurious `throttled`
+                // event — incidental store time, which is exactly what this must not count.
+                if (await takeLease(key)) waited = clock.now() - blockStart;
             } else {
                 const blocked =
                     limit != null && stateFor(key).inFlight >= limit;
