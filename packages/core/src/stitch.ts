@@ -560,8 +560,7 @@ function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
     }
     // A pass-through terminal — a delegate-backoff RateLimitError or a contract-violation StitchError
     // (`.inspect()` retain path) — is re-surfaced UNCHANGED.
-    if (source instanceof StitchError || source instanceof RateLimitError)
-        return source;
+    if (source instanceof StitchError) return source;
     // Otherwise a StitchError from the event, carrying any bare transport/internal `source` the engine
     // pinned (an undici UND_ERR_SOCKET / ECONNRESET, a DNS failure, an AbortError, …) as `cause` — so
     // callers can read `err.cause` (and its `.code`) to tell a socket reset from a generic "fetch
