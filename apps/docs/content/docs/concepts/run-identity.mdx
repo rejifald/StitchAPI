@@ -23,15 +23,15 @@ once, and one id can't:
 The tree comes from **composition**, not configuration. When a stitch spawns another
 run, the child **inherits** the `traceId` and points its `parentSpanId` at the parent's
 `spanId`. Two paths do this today: a `cookieSession` login runs as a child of the call
-that triggered it, and each step of a `pipe()` is a child of the step before it.
+that triggered it, and each call in a `linked()` scope is a child of the call before it.
 
 ```
 traceId = abc…   (shared by every node below)
 
 [spanId A]                         ← root: a getUser call. parentSpanId = none
    └─ [spanId B]  parentSpanId = A     ← the cookieSession login it triggered
-[spanId C]                         ← a pipe(): step 1. parentSpanId = none
-   └─ [spanId D]  parentSpanId = C     ← step 2, a child of step 1
+[spanId C]                         ← a linked() scope: call 1. parentSpanId = none
+   └─ [spanId D]  parentSpanId = C     ← call 2, a child of call 1
 ```
 
 A single flat per-call id could say "these are different calls" but never "this login
