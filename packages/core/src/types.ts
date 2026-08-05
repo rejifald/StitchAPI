@@ -1361,6 +1361,15 @@ export interface AuthContext {
      */
     run?: RunContext;
     /**
+     * The stitch's resolved {@link Clock} (ADR 0010), threaded by the engine — `systemClock`
+     * unless one was injected as `clock`. A strategy whose CONTROL FLOW is time-driven reads it
+     * instead of the wall clock, so a `manualClock()` drives it: `oauth2` decides token freshness
+     * (`expires_in` minus `refresh.skew`) on this, which is what makes "does my client refresh
+     * before expiry" testable without real waiting. Optional so a hand-built context (a unit test
+     * of a custom strategy) still type-checks; fall back to the system clock when it is absent.
+     */
+    clock?: Clock;
+    /**
      * Announce an `info` StitchEvent onto the run's event stream — a strategy reporting a
      * decision it made (e.g. which env var a `bearer` token resolved from via `optionalEnv`, or
      * that `oauth2` fetched a token). NEVER carries the secret itself. The engine buffers these

@@ -161,6 +161,12 @@ export function mockAdapter(
     };
 
     const adapter = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+        // The adapter contract's abort rule: a pre-aborted signal REJECTS. Checked here rather
+        // than only in the `delay` branch below, so a delay-less route can't answer a cancelled
+        // request — every real transport refuses it, and a cancellation test written against a
+        // mock that answered was asserting the opposite of production. Nothing was sent, so the
+        // spy records no call and the route's response sequence keeps its place.
+        if (req.signal?.aborted) throw new Error('aborted');
         log.push(req);
         const idx = list.findIndex(
             (r) =>

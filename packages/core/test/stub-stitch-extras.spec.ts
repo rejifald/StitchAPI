@@ -52,6 +52,51 @@ describe('stubStitch call spy', () => {
     });
 });
 
+// `.safe()` is the never-throws accessor — that is the whole reason it exists. A function impl
+// that throws SYNCHRONOUSLY used to escape it, because `resolve()` evaluated `impl(input)` as an
+// ARGUMENT to `Promise.resolve` (no chain to catch it yet). The async twin already resolved
+// `{ ok: false }`, and so does the real stitch when its adapter throws synchronously — the stub
+// was the odd one out.
+describe('stubStitch: a synchronous throw in the impl', () => {
+    const boom = () =>
+        stubStitch<string>(() => {
+            throw new Error('boom');
+        });
+
+    test('.safe() resolves { ok: false } instead of throwing', async () => {
+        const res = await boom().safe();
+        expect(res.ok).toBe(false);
+        expect(res.error?.message).toBe('boom');
+    });
+
+    test("the call result's .safe() resolves { ok: false } too", async () => {
+        const res = await boom()().safe();
+        expect(res.ok).toBe(false);
+        expect(res.error?.message).toBe('boom');
+    });
+
+    test('.unwrap() REJECTS rather than throwing synchronously', async () => {
+        const s = boom();
+        let p: Promise<string> | undefined;
+        expect(() => {
+            p = s.unwrap();
+        }).not.toThrow();
+        await expect(p).rejects.toThrow('boom');
+    });
+
+    test('an async rejection behaves identically (the two twins agree)', async () => {
+        const s = stubStitch<string>(() => Promise.reject(new Error('boom')));
+        const res = await s.safe();
+        expect(res.ok).toBe(false);
+        expect(res.error?.message).toBe('boom');
+    });
+
+    test('.stream() still yields start → error → done', async () => {
+        const types = (await collect(boom().stream())).map((e) => e.type);
+        expect(types).toEqual(['start', 'error', 'done']);
+    });
+});
+
 describe('stubStitch options', () => {
     test('opts.events overrides the synthesized stream', async () => {
         const s = stubStitch('ignored', {
