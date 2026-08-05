@@ -29,8 +29,10 @@ async function drain(stream: ReadableStream<Uint8Array>): Promise<string> {
     return out + decoder.decode();
 }
 
-const fetchReturning = (make: () => Response): typeof fetch =>
-    (async () => make()) as unknown as typeof fetch;
+const fetchReturning =
+    (make: () => Response): typeof fetch =>
+    async () =>
+        make();
 
 describe('expoFetchAdapter', () => {
     test('hands back the live ReadableStream body for a streaming request', async () => {

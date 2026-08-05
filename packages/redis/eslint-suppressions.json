@@ -1,0 +1,7 @@
+{
+  "test/store.spec.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  }
+}

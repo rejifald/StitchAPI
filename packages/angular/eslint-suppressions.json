@@ -1,0 +1,17 @@
+{
+  "src/index.ts": {
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 1
+    }
+  },
+  "test/bindings.spec.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 4
+    }
+  },
+  "test/setup.ts": {
+    "@typescript-eslint/no-deprecated": {
+      "count": 2
+    }
+  }
+}

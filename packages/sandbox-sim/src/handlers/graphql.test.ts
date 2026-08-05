@@ -78,7 +78,7 @@ async function main() {
             undefined,
             'a valid query must not carry errors',
         );
-        const user = body.data!.user!;
+        const user = body.data.user!;
         assert.equal(user.id, 1, 'resolved user id should be 1');
         assert.equal(user.name, 'Alice Liddell');
         assert.ok(typeof user.email === 'string', 'email should be a string');
@@ -128,15 +128,15 @@ async function main() {
         );
         const body = res.body as {
             data?: unknown;
-            errors?: Array<{ message: string }>;
+            errors?: { message: string }[];
         };
         assert.ok(
             Array.isArray(body.errors),
             'unknown-field query must return an errors[] array',
         );
-        assert.ok(body.errors!.length > 0, 'errors[] must be non-empty');
+        assert.ok(body.errors.length > 0, 'errors[] must be non-empty');
         assert.ok(
-            /Cannot query field "phoneNumber"/.test(body.errors![0].message),
+            body.errors[0].message.includes('Cannot query field "phoneNumber"'),
             'error message should name the offending field',
         );
         assert.equal(
@@ -153,7 +153,7 @@ async function main() {
         const req = makeReq('{ widgets { id } }');
         const res = await dispatch(req);
         assert.equal(res.status, 200);
-        const body = res.body as { errors?: Array<{ message: string }> };
+        const body = res.body as { errors?: { message: string }[] };
         assert.ok(
             Array.isArray(body.errors),
             'a non-user query must return errors[]',

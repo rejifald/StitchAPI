@@ -81,7 +81,7 @@ export function stitchExecute<T, Input = unknown, Args = Input>(
     toInput?: (args: Args) => Input,
 ): ToolExecute<Args, T>;
 export function stitchExecute<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     toInput?: (args: unknown) => unknown,
 ): ToolExecute<unknown, T> {
     return (args: unknown): Promise<T> =>
@@ -182,7 +182,7 @@ export function stitchTool<T, Input = unknown>(
     inputSchema: StitchToolSchema,
 ): StitchTool<Input, T>;
 export function stitchTool<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     optionsOrSchema: StitchToolOptions<unknown, unknown> | StitchToolSchema,
 ): StitchTool<unknown, T> {
     const options: StitchToolOptions<unknown, unknown> = isToolOptions(
@@ -193,6 +193,7 @@ export function stitchTool<T>(
     // `compact` is the wrong tool here: `parameters`/`inputSchema` are required `unknown`
     // keys it would optionalize. Keep the explicit spread to omit only `description`.
     return {
+        // eslint-disable-next-line no-restricted-syntax -- `compact` would optionalize the required `parameters`/`inputSchema: unknown`; keep the explicit spread here
         ...(options.description !== undefined
             ? { description: options.description }
             : {}),

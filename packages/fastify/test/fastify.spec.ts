@@ -36,7 +36,7 @@ function fakeAdapter(handler: (req: AdapterRequest) => AdapterResponse): {
     return { adapter, seen };
 }
 
-const apps: Array<{ close: () => Promise<void> }> = [];
+const apps: { close: () => Promise<void> }[] = [];
 afterEach(async () => {
     while (apps.length) await apps.pop()!.close();
 });
@@ -147,7 +147,7 @@ describe('stitchPlugin', () => {
 
     test('streamStitchSse streams delta events to the reply', async () => {
         // A hand-built event stream — the SSE bridge consumes any AsyncIterable<StitchEvent>.
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield {
                 type: 'start',
                 name: 's',
@@ -184,7 +184,7 @@ describe('stitchPlugin', () => {
     });
 
     test('accepts the { stream() } arm of StitchEventSource', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'via-stream()', at: 1 };
             yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 };
         }
@@ -213,7 +213,7 @@ describe('stitchPlugin', () => {
     });
 
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',
@@ -253,7 +253,7 @@ describe('stitchPlugin', () => {
     });
 
     test('error (function shorthand) opts in to the raw message on the error frame', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',
@@ -289,7 +289,7 @@ describe('stitchPlugin', () => {
 
     test('error.observe sees the real failure while the client gets the generic token', async () => {
         const observed: unknown[] = [];
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+        async function* events(): AsyncGenerator<StitchEvent> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',

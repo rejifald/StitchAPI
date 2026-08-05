@@ -24,9 +24,7 @@ function streamStitch<T>(events: StitchEvent<T>[]): StreamableStitchLike<T> {
     return () => {
         const terminal = events.find((e) => e.type === 'result');
         const value =
-            terminal && terminal.type === 'result'
-                ? terminal.data
-                : (undefined as T);
+            terminal?.type === 'result' ? terminal.data : (undefined as T);
         const promise = Promise.resolve(value);
         return {
             then: (onf, onr) => promise.then(onf, onr),
@@ -215,6 +213,11 @@ describe('stitchStreamUpdater', () => {
             stream() {
                 return (async function* () {
                     await new Promise<void>(() => {});
+                    // Unreachable — the promise above never settles, which is the
+                    // point (the stream neither yields nor completes). Present so
+                    // this reads as a generator to `require-yield`; `never` keeps it
+                    // assignable to the AsyncIterable<StitchEvent<number>> contract.
+                    yield undefined as never;
                 })();
             },
         });

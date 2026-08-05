@@ -49,9 +49,7 @@ function streamStitch<T>(events: StitchEvent<T>[]): StitchLike<T> {
     return (): StitchCallResult<T> => {
         const terminal = events.find((e) => e.type === 'result');
         const value =
-            terminal && terminal.type === 'result'
-                ? terminal.data
-                : (undefined as T);
+            terminal?.type === 'result' ? terminal.data : (undefined as T);
         const promise = Promise.resolve(value);
         return {
             then: (onf, onr) => promise.then(onf, onr),

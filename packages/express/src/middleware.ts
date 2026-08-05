@@ -80,7 +80,7 @@ export function stitch(
  * ```
  */
 export function currentStitch(req: Request): ExpressRequestSeam | undefined {
-    return req.stitch as ExpressRequestSeam | undefined;
+    return req.stitch;
 }
 
 // Augment Express's `Request` so `req.stitch` is typed app-wide once this package is imported.

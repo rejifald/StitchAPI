@@ -23,7 +23,7 @@ import { dispatch } from '../dispatch';
 function normalizeUrl(input: RequestInfo | URL): URL {
     if (typeof input === 'string') return new URL(input);
     if (input instanceof URL) return input;
-    return new URL((input as Request).url);
+    return new URL(input.url);
 }
 
 /** Normalise the method, defaulting to `GET` and upper-casing. */
@@ -40,9 +40,7 @@ function normalizeHeaders(
 ): Headers {
     const rawHeaders =
         init?.headers ?? (input instanceof Request ? input.headers : undefined);
-    return rawHeaders instanceof Headers
-        ? rawHeaders
-        : new Headers(rawHeaders as HeadersInit | undefined);
+    return rawHeaders instanceof Headers ? rawHeaders : new Headers(rawHeaders);
 }
 
 /** Best-effort parse: try JSON, fall back to the raw text. */

@@ -34,7 +34,7 @@ async function main() {
     );
     assert.ok(res.stream, '/events should produce a stream, not a body');
 
-    const text = await collect(res.stream as AsyncIterable<Uint8Array>);
+    const text = await collect(res.stream);
     assert.ok(
         text.includes('order.created'),
         'stream should include the order.created event',

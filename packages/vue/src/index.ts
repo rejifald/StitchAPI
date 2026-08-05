@@ -126,7 +126,7 @@ function defaultKey(input: unknown): string {
 // composable in a `<script setup>` re-runs the call when they change. `toValue`
 // unwraps all three.
 function useStitchInternal<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>>,
     streaming: boolean,
@@ -152,7 +152,7 @@ function useStitchInternal<T>(
 
         const opts = toValue(options);
         const resolvedInput = toValue(input);
-        query = createStitchQuery<T, unknown>(
+        query = createStitchQuery<T>(
             stitch,
             resolvedInput,
             compact({
@@ -256,7 +256,7 @@ export function useStitch<T, Input = unknown>(
     options?: MaybeRefOrGetter<UseStitchOptions<T>>,
 ): VueUseStitchResult<T>;
 export function useStitch<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
 ): VueUseStitchResult<T> {
@@ -294,7 +294,7 @@ export function useStitchStream<T, Input = unknown>(
     options?: MaybeRefOrGetter<UseStitchOptions<T>>,
 ): VueUseStitchResult<T>;
 export function useStitchStream<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
 ): VueUseStitchResult<T> {

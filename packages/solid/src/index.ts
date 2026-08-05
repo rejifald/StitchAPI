@@ -96,7 +96,7 @@ const IDLE_STATE: StitchQueryResult<unknown> = {
 };
 
 function createStitchInternal<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeAccessor<unknown>,
     options: MaybeAccessor<CreateStitchOptions<T>>,
     streaming: boolean,
@@ -112,8 +112,7 @@ function createStitchInternal<T>(
     // INLINE stitch hands a fresh function identity, which must NOT recreate the
     // handle; the store always calls through this stable wrapper.
     let liveStitch = stitch;
-    const stableStitch: StitchLike<T, unknown> = (arg?: unknown) =>
-        liveStitch(arg);
+    const stableStitch: StitchLike<T> = (arg?: unknown) => liveStitch(arg);
 
     // The live query handle — reassigned by the effect on input/option changes.
     let query: StitchQuery<T> | undefined;
@@ -130,7 +129,7 @@ function createStitchInternal<T>(
                 query?.destroy();
 
                 const { mode, enabled, onSuccess, onError } = currentOptions;
-                const handle = createStitchQuery<T, unknown>(
+                const handle = createStitchQuery<T>(
                     stableStitch,
                     currentInput,
                     compact({
@@ -203,7 +202,7 @@ export function createStitch<T, Input = unknown>(
     options?: MaybeAccessor<CreateStitchOptions<T>>,
 ): SolidStitchStore<T>;
 export function createStitch<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeAccessor<unknown>,
     options: MaybeAccessor<CreateStitchOptions<T>> = {},
 ): SolidStitchStore<T> {
@@ -239,7 +238,7 @@ export function createStitchStream<T, Input = unknown>(
     options?: MaybeAccessor<CreateStitchOptions<T>>,
 ): SolidStitchStore<T>;
 export function createStitchStream<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeAccessor<unknown>,
     options: MaybeAccessor<CreateStitchOptions<T>> = {},
 ): SolidStitchStore<T> {

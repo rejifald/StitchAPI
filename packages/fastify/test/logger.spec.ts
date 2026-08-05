@@ -17,9 +17,9 @@ type Level = 'error' | 'warn' | 'info' | 'debug';
 // with its level, so a test asserts both the level rule and the message text.
 function recorder(): {
     logger: FastifyLoggerLike;
-    calls: Array<{ level: Level; message: string }>;
+    calls: { level: Level; message: string }[];
 } {
-    const calls: Array<{ level: Level; message: string }> = [];
+    const calls: { level: Level; message: string }[] = [];
     const logger: FastifyLoggerLike = {
         error: (m) => calls.push({ level: 'error', message: m }),
         warn: (m) => calls.push({ level: 'warn', message: m }),

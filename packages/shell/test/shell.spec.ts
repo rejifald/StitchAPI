@@ -87,9 +87,9 @@ test('a non-zero exit surfaces as a StitchError carrying the exit code + stderr'
 
 test('arguments must be a string[] — a non-array body is rejected', async () => {
     const x = shell(NODE);
-    await expect(
-        x({ body: { not: 'an array' } as unknown as string[] }),
-    ).rejects.toThrow(/string\[\]/);
+    await expect(x({ body: { not: 'an array' } })).rejects.toThrow(
+        /string\[\]/,
+    );
 });
 
 test('the resilience chain wraps the subprocess — a per-attempt timeout aborts it', async () => {

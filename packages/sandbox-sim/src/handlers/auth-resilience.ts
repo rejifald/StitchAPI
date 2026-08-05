@@ -45,7 +45,7 @@ function extractBearer(req: SimRequest): string | null {
     const authHeader =
         req.headers.get('Authorization') ?? req.headers.get('authorization');
     if (!authHeader) return null;
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const match = /^Bearer\s+(.+)$/i.exec(authHeader);
     return match ? match[1] : null;
 }
 

@@ -4,5 +4,6 @@
         "types": ["node"]
     },
     "include": ["src/**/*.ts"],
-    "comment": "CI/install-checked type-check for test files. Extends the package tsconfig (strict, ES2022, Bundler moduleResolution) and adds @types/node so node:assert, node:assert/strict, and process are all in scope. Replaces the source tsconfig's exclude of test files. Run with: npx tsc --noEmit -p packages/sandbox-sim/tsconfig.test.json"
+    "exclude": [],
+    "comment": "CI/install-checked type-check for test files. Extends the package tsconfig (strict, ES2022, Bundler moduleResolution) and adds @types/node so node:assert, node:assert/strict, and process are all in scope. Replaces the source tsconfig's exclude of test files — `exclude` is INHERITED through `extends`, so it must be reset to [] explicitly or the base config's \"**/*.test.ts\" carries over and this project resolves to zero test files (which is what it did until #457 wired the lint gate through it). Run with: npx tsc --noEmit -p packages/sandbox-sim/tsconfig.test.json"
 }

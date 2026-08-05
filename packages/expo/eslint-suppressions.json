@@ -1,0 +1,15 @@
+{
+  "test/store.spec.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 1
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 1
+    }
+  },
+  "test/stubs/react-native.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 1
+    }
+  }
+}

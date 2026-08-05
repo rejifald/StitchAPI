@@ -123,5 +123,5 @@ export function makeFixtureFetch(): typeof globalThis.fetch {
         graphqlHandler,
         ...allHandlers,
     ];
-    return createFetchShim(handlers) as typeof globalThis.fetch;
+    return createFetchShim(handlers);
 }

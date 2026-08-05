@@ -330,14 +330,13 @@ describe('denoKvStore — increment TTL window', () => {
 
     test('a fixed curve sleeps backoff.base between attempts, but not after the last', async () => {
         const delays: number[] = [];
-        const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
-            fn: () => void,
-            ms?: number,
-        ) => {
-            delays.push(ms ?? 0);
-            fn();
-            return 0 as unknown as ReturnType<typeof setTimeout>;
-        }) as unknown as typeof setTimeout);
+        const spy = vi
+            .spyOn(globalThis, 'setTimeout')
+            .mockImplementation((fn: () => void, ms?: number) => {
+                delays.push(ms ?? 0);
+                fn();
+                return 0 as unknown as ReturnType<typeof setTimeout>;
+            });
         const rec = recordingKv({ failAtomic: true });
         const store = denoKvStore(rec.kv, {
             retry: { attempts: 4, backoff: { curve: 'fixed', base: '20ms' } },
@@ -352,14 +351,13 @@ describe('denoKvStore — increment TTL window', () => {
 
     test('an expo curve doubles and clamps at backoff.max', async () => {
         const delays: number[] = [];
-        const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
-            fn: () => void,
-            ms?: number,
-        ) => {
-            delays.push(ms ?? 0);
-            fn();
-            return 0 as unknown as ReturnType<typeof setTimeout>;
-        }) as unknown as typeof setTimeout);
+        const spy = vi
+            .spyOn(globalThis, 'setTimeout')
+            .mockImplementation((fn: () => void, ms?: number) => {
+                delays.push(ms ?? 0);
+                fn();
+                return 0 as unknown as ReturnType<typeof setTimeout>;
+            });
         const rec = recordingKv({ failAtomic: true });
         const store = denoKvStore(rec.kv, {
             retry: {
@@ -374,6 +372,7 @@ describe('denoKvStore — increment TTL window', () => {
         spy.mockRestore();
     });
 
+    // eslint-disable-next-line vitest/expect-expect -- type-level test: the assertion IS the `@ts-expect-error` below, enforced by tsc, so there is nothing to expect()
     test('the empty object is a compile error (P20), the envelope needs a field', () => {
         // @ts-expect-error `{}` must not satisfy AtLeastOne<DenoKvRetryOptions>
         denoKvStore(recordingKv().kv, { retry: {} });

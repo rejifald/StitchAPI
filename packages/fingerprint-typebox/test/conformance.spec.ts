@@ -189,7 +189,7 @@ const fixtures: FingerprintFixtures = {
                     Type.Object({
                         a: Type.Transform(Type.String())
                             .Decode((s) => s)
-                            .Encode((s) => s) as unknown as TSchema,
+                            .Encode((s) => s),
                     }),
                 ),
         },

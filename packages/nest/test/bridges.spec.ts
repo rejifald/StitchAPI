@@ -17,9 +17,9 @@ type RecordedLevel = 'log' | 'warn' | 'error' | 'debug' | 'verbose';
 // sink guards those optional methods.
 function recorder(partial = false): {
     logger: NestLoggerLike;
-    calls: Array<{ level: RecordedLevel; message: string }>;
+    calls: { level: RecordedLevel; message: string }[];
 } {
-    const calls: Array<{ level: RecordedLevel; message: string }> = [];
+    const calls: { level: RecordedLevel; message: string }[] = [];
     const push =
         (level: RecordedLevel) =>
         (m: string): void => {

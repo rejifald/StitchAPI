@@ -143,12 +143,12 @@ export type QueryInput<S> =
 
 // `NoInfer` keeps `data` from driving `T`'s inference (so a `data: undefined`
 // branch does not collapse `T` to `undefined`). TS ships it as of 5.4.
-type Core<T> = {
+interface Core<T> {
     status: StitchQueryStatus;
     data: NoInfer<T> | undefined;
     error: unknown;
     chunks: readonly unknown[];
-};
+}
 
 const IDLE: StitchQueryResult<never> = freeze<never>({
     status: 'idle',
@@ -190,7 +190,7 @@ export function createStitchQuery<T, Input = unknown>(
     options?: CreateStitchQueryOptions<T>,
 ): StitchQuery<T>;
 export function createStitchQuery<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options: CreateStitchQueryOptions<T> = {},
 ): StitchQuery<T> {
@@ -393,7 +393,11 @@ export interface StitchQueryOptions<T> {
 
 /** The `__config` slice a key derives from. Mirrors core's `nameOf`
  * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
-type KeyConfig = { name?: string; path?: string; url?: string };
+interface KeyConfig {
+    name?: string;
+    path?: string;
+    url?: string;
+}
 
 /** A stable, human-meaningful name for the stitch — the first segment of a
  * derived query key. Mirrors core's `nameOf` (`packages/core/src/engine.ts`) —
@@ -516,7 +520,7 @@ export function stitchQueryOptions<T, Input = unknown>(
     input: Input,
 ): StitchQueryOptions<T>;
 export function stitchQueryOptions<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
 ): StitchQueryOptions<T> {
     return {

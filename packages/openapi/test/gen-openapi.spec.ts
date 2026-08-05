@@ -517,7 +517,6 @@ describe('planGen — untrusted-spec safety', () => {
         expect((m as RegExpExecArray)[1]).toContain('\\n');
         expect((m as RegExpExecArray)[1]).not.toContain('\n');
         // Round-trip: the emitted literal parses back to the original path.
-        // eslint-disable-next-line no-eval
         expect(eval(`'${(m as RegExpExecArray)[1]}'`)).toBe('/a\nb');
     });
 

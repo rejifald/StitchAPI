@@ -24,7 +24,9 @@ import { join } from 'node:path';
 // Structural shapes for the optional dependency, so this module type-checks whether or not
 // `@huggingface/transformers` is installed — a hard `import type` from an absent optional peer is
 // itself a compile error in a consumer's tree.
-type Tensor = { tolist(): unknown };
+interface Tensor {
+    tolist(): unknown;
+}
 type FeatureExtractionPipeline = (
     texts: string[],
     opts: { pooling: 'mean'; normalize: boolean },

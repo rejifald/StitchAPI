@@ -1,0 +1,12 @@
+{
+  "src/index.ts": {
+    "@typescript-eslint/no-dynamic-delete": {
+      "count": 2
+    }
+  },
+  "test/store-behaviour.spec.ts": {
+    "vitest/no-identical-title": {
+      "count": 1
+    }
+  }
+}

@@ -73,7 +73,7 @@ export interface SvelteStitchStore<T> extends Readable<StitchQueryResult<T>> {
 // ---------------------------------------------------------------------------
 
 function makeStore<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options: CreateStitchQueryOptions<T>,
 ): SvelteStitchStore<T> {
@@ -84,7 +84,7 @@ function makeStore<T>(
     // kick it off in `readable`'s start callback — so a store nobody subscribes to
     // never fires a request.
     const { enabled = true, ...rest } = options;
-    const query: StitchQuery<T> = createStitchQuery<T, unknown>(stitch, input, {
+    const query: StitchQuery<T> = createStitchQuery<T>(stitch, input, {
         ...rest,
         enabled: false,
     });
@@ -149,7 +149,7 @@ export function stitchStore<T, Input = unknown>(
     options?: Omit<CreateStitchQueryOptions<T>, 'streaming'>,
 ): SvelteStitchStore<T>;
 export function stitchStore<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options: Omit<CreateStitchQueryOptions<T>, 'streaming'> = {},
 ): SvelteStitchStore<T> {
@@ -188,7 +188,7 @@ export function stitchStreamStore<T, Input = unknown>(
     options?: Omit<CreateStitchQueryOptions<T>, 'streaming'>,
 ): SvelteStitchStore<T>;
 export function stitchStreamStore<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options: Omit<CreateStitchQueryOptions<T>, 'streaming'> = {},
 ): SvelteStitchStore<T> {

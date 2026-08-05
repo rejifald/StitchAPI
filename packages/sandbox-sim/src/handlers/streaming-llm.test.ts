@@ -12,10 +12,7 @@
  *   5. POST /v1/chat/completions (non-streaming, tools=[...]) returns tool_calls JSON.
  *   6. Two runs of the same handler produce byte-identical output (determinism).
  */
-import type {
-    SimRequest,
-    SimResponse,
-} from '../../../../docs/sandbox/contracts/sim.js';
+import type { SimRequest } from '../../../../docs/sandbox/contracts/sim.js';
 import { streamingLlmHandlers } from './streaming-llm.js';
 
 import assert from 'node:assert/strict';
@@ -33,7 +30,6 @@ function assertDefined<T>(
         throw new Error(msg ?? 'Expected defined value, got ' + String(c));
 }
 
-const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 function makeReq(method: string, pathname: string, body?: unknown): SimRequest {
@@ -89,7 +85,7 @@ async function main() {
     {
         const req = makeReq('GET', '/stream');
         const h = findHandler(req);
-        const res = (await h.handle(req, {})) as SimResponse;
+        const res = await h.handle(req, {});
         assert.equal(res.status, 200, 'GET /stream status');
         assertDefined(res.stream, 'GET /stream must have a stream');
 
@@ -99,7 +95,7 @@ async function main() {
         assert(text.includes('chunk-delta'), 'stream contains chunk-delta');
 
         // Determinism: run the handler again, compare bytes
-        const res2 = (await h.handle(req, {})) as SimResponse;
+        const res2 = await h.handle(req, {});
         assertDefined(res2.stream, 'GET /stream second run must have a stream');
         const bytes2 = await collectStream(res2.stream);
         assert(
@@ -117,7 +113,7 @@ async function main() {
             messages: [],
         });
         const h = findHandler(req);
-        const res = (await h.handle(req, {})) as SimResponse;
+        const res = await h.handle(req, {});
         assert.equal(res.status, 200, 'chat/completions SSE status');
         assertDefined(res.stream, 'chat/completions SSE must have a stream');
 
@@ -136,7 +132,7 @@ async function main() {
         );
 
         // Determinism
-        const res2 = (await h.handle(req, {})) as SimResponse;
+        const res2 = await h.handle(req, {});
         assertDefined(res2.stream, 'second run must have stream');
         const bytes2 = await collectStream(res2.stream);
         assert(
@@ -155,7 +151,7 @@ async function main() {
             tools: [{ type: 'function', function: { name: 'get_weather' } }],
         });
         const h = findHandler(req);
-        const res = (await h.handle(req, {})) as SimResponse;
+        const res = await h.handle(req, {});
         assert.equal(res.status, 200, 'chat/completions tool SSE status');
         assertDefined(
             res.stream,
@@ -180,7 +176,7 @@ async function main() {
         );
 
         // Determinism
-        const res2 = (await h.handle(req, {})) as SimResponse;
+        const res2 = await h.handle(req, {});
         assertDefined(res2.stream, 'second run must have stream');
         const bytes2 = await collectStream(res2.stream);
         assert(
@@ -198,7 +194,7 @@ async function main() {
             messages: [],
         });
         const h = findHandler(req);
-        const res = (await h.handle(req, {})) as SimResponse;
+        const res = await h.handle(req, {});
         assert.equal(res.status, 200, 'chat/completions JSON status');
         assert(
             res.body !== undefined,
@@ -208,16 +204,16 @@ async function main() {
 
         const body = res.body as Record<string, unknown>;
         assert.equal(body['object'], 'chat.completion', 'body.object');
-        const choices = body['choices'] as Array<{
+        const choices = body['choices'] as {
             message: { content: string };
-        }>;
+        }[];
         assert(
             choices[0].message.content.includes('Hello'),
             'body content includes Hello',
         );
 
         // Determinism (body should be identical object structure)
-        const res2 = (await h.handle(req, {})) as SimResponse;
+        const res2 = await h.handle(req, {});
         assert.deepEqual(
             res.body,
             res2.body,
@@ -235,18 +231,18 @@ async function main() {
             tools: [{ type: 'function', function: { name: 'get_weather' } }],
         });
         const h = findHandler(req);
-        const res = (await h.handle(req, {})) as SimResponse;
+        const res = await h.handle(req, {});
         assert.equal(res.status, 200, 'chat/completions tool JSON status');
 
         const body = res.body as Record<string, unknown>;
-        const choices = body['choices'] as Array<{
+        const choices = body['choices'] as {
             message: { tool_calls?: unknown[]; content: unknown };
-        }>;
+        }[];
         assert(
             Array.isArray(choices[0].message.tool_calls),
             'tool-call response must have tool_calls array',
         );
-        const tc = choices[0].message.tool_calls![0] as {
+        const tc = choices[0].message.tool_calls[0] as {
             function: { name: string; arguments: string };
         };
         assert.equal(
@@ -261,7 +257,7 @@ async function main() {
         );
 
         // Determinism
-        const res2 = (await h.handle(req, {})) as SimResponse;
+        const res2 = await h.handle(req, {});
         assert.deepEqual(
             res.body,
             res2.body,

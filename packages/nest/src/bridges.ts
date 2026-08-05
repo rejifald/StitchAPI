@@ -180,7 +180,7 @@ export function fromNestConfig(
     // `getOrThrow` already throws on a missing key (Nest's own error); core's `secretFrom` adds
     // the empty-value rejection and the `() => string` thunk shape, matching `env()`/`secretFrom()`.
     return (key: string) =>
-        secretFrom((name) => String(config.getOrThrow<string>(name)), key);
+        secretFrom((name) => String(config.getOrThrow(name)), key);
 }
 
 /**

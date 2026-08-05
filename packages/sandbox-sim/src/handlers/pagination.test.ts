@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 // ---------------------------------------------------------------------------
 
 interface PageBody {
-    items: Array<{ id: number; name: string; email: string }>;
+    items: { id: number; name: string; email: string }[];
     nextCursor: string | null;
 }
 

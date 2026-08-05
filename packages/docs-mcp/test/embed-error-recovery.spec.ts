@@ -21,7 +21,7 @@ describe('getEmbedder retry on failure', () => {
     it('retries pipeline() on the next call after a transient rejection, instead of replaying the stale rejection forever', async () => {
         pipelineMock
             .mockRejectedValueOnce(new Error('model download failed'))
-            .mockResolvedValueOnce('the-pipeline' as unknown);
+            .mockResolvedValueOnce('the-pipeline');
         const { getEmbedder } = await import('../src/embed');
 
         await expect(getEmbedder()).rejects.toThrow('model download failed');
@@ -33,7 +33,7 @@ describe('getEmbedder retry on failure', () => {
     });
 
     it('caches a successful pipeline() call (does not re-invoke it)', async () => {
-        pipelineMock.mockResolvedValue('the-pipeline' as unknown);
+        pipelineMock.mockResolvedValue('the-pipeline');
         const { getEmbedder } = await import('../src/embed');
 
         await getEmbedder();

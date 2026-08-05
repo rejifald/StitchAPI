@@ -159,11 +159,11 @@ function inputObservable<I>(
         const source = computed(() => (input as () => I)());
         return toObservable(source, { injector });
     }
-    return of(input as I);
+    return of(input);
 }
 
 function injectStitchInternal<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeSignal<unknown>,
     options: InjectStitchOptions<T>,
     streaming: boolean,
@@ -191,7 +191,7 @@ function injectStitchInternal<T>(
         switchMap(
             (value) =>
                 new Observable<StitchQueryResult<T>>((subscriber) => {
-                    const handle = createStitchQuery<T, unknown>(
+                    const handle = createStitchQuery<T>(
                         stitch,
                         value,
                         coreOptions,
@@ -266,7 +266,7 @@ export function injectStitch<T, Input = unknown>(
     options?: InjectStitchOptions<T>,
 ): InjectStitchResult<T>;
 export function injectStitch<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeSignal<unknown>,
     options: InjectStitchOptions<T> = {},
 ): InjectStitchResult<T> {
@@ -301,7 +301,7 @@ export function injectStitchStream<T, Input = unknown>(
     options?: InjectStitchOptions<T>,
 ): InjectStitchResult<T>;
 export function injectStitchStream<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: MaybeSignal<unknown>,
     options: InjectStitchOptions<T> = {},
 ): InjectStitchResult<T> {

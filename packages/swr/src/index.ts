@@ -66,7 +66,11 @@ export type StitchSWRKey = readonly [name: string, input: unknown];
 
 /** The `__config` slice a key derives from. Mirrors core's `nameOf`
  * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
-type KeyConfig = { name?: string; path?: string; url?: string };
+interface KeyConfig {
+    name?: string;
+    path?: string;
+    url?: string;
+}
 
 /** A stable, human-meaningful name for the stitch. Mirrors core's `nameOf`
  * (`packages/core/src/engine.ts`) — `name ?? path ?? url ?? 'stitch'` — so two
@@ -160,10 +164,7 @@ export function swrKey<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
 ): StitchSWRKey;
-export function swrKey<T>(
-    stitch: StitchLike<T, unknown>,
-    input: unknown,
-): StitchSWRKey {
+export function swrKey<T>(stitch: StitchLike<T>, input: unknown): StitchSWRKey {
     return [nameOf(stitch), keyInputFor(input)];
 }
 
@@ -204,7 +205,7 @@ export function useStitchSWR<T, Input = unknown>(
     options?: SWRConfiguration<T>,
 ): SWRResponse<T>;
 export function useStitchSWR<T>(
-    stitch: StitchLike<T, unknown>,
+    stitch: StitchLike<T>,
     input: unknown,
     options?: SWRConfiguration<T>,
 ): SWRResponse<T> {

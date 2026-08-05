@@ -139,7 +139,7 @@ async function main() {
         const res = await dispatch(req);
 
         assert.equal(res.status, 200, '/users/1/orders should return 200');
-        const body = res.body as { data: Array<Record<string, unknown>> };
+        const body = res.body as { data: Record<string, unknown>[] };
         assert.ok(
             Array.isArray(body.data),
             '/users/1/orders body.data should be an array',
@@ -196,7 +196,7 @@ async function main() {
             '/malformed body should be a string (not JSON)',
         );
         assert.ok(
-            (res.body as string).startsWith('<!DOCTYPE html>'),
+            res.body.startsWith('<!DOCTYPE html>'),
             '/malformed body should be HTML',
         );
         // Confirm content-type is text/html to prove it's not JSON

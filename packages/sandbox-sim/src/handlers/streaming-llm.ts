@@ -79,11 +79,11 @@ interface ChatChunk {
     object: 'chat.completion.chunk';
     created: number;
     model: string;
-    choices: Array<{
+    choices: {
         index: number;
         delta: Delta;
         finish_reason: string | null;
-    }>;
+    }[];
 }
 
 interface ChatCompletion {
@@ -91,7 +91,7 @@ interface ChatCompletion {
     object: 'chat.completion';
     created: number;
     model: string;
-    choices: Array<{
+    choices: {
         index: number;
         message: {
             role: string;
@@ -99,7 +99,7 @@ interface ChatCompletion {
             tool_calls?: ToolCall[];
         };
         finish_reason: string;
-    }>;
+    }[];
     usage: {
         prompt_tokens: number;
         completion_tokens: number;

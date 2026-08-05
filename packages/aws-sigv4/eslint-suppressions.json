@@ -1,0 +1,18 @@
+{
+  "src/index.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unnecessary-type-conversion": {
+      "count": 1
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 1
+    }
+  },
+  "test/sigv4.spec.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 1
+    }
+  }
+}

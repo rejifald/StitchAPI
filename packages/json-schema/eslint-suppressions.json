@@ -1,0 +1,7 @@
+{
+  "test/json-schema.spec.ts": {
+    "vitest/no-conditional-expect": {
+      "count": 6
+    }
+  }
+}

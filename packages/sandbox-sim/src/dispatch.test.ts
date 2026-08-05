@@ -166,7 +166,7 @@ async function main(): Promise<void> {
         );
 
         const chunks: string[] = [];
-        for await (const chunk of res.stream!) {
+        for await (const chunk of res.stream) {
             chunks.push(new TextDecoder().decode(chunk));
         }
         const full = chunks.join('');

@@ -115,6 +115,35 @@ as CI**, cheap → expensive:
 You can run any of these by hand — `pnpm check:format`, `pnpm check:lint`,
 `pnpm check:types`, `pnpm test` — to reproduce a gate locally.
 
+## Linting
+
+One ESLint config at the repo root ([`eslint.config.ts`](eslint.config.ts)) covers
+the whole workspace. `pnpm check:lint` runs
+[`scripts/check-lint.mjs`](scripts/check-lint.mjs), which lints the `src/` and
+`test/` of **every** `packages/*` directory it finds on disk — enumerating the
+filesystem, not the packages that happen to declare a script, so a new package is
+covered the moment it exists. Scope it while iterating:
+
+```sh
+node scripts/check-lint.mjs redis    # just @stitchapi/redis
+node scripts/check-lint.mjs --list   # what would run
+```
+
+The rules are type-aware, so the runner spawns one ESLint per package (a single
+whole-workspace pass exhausts Node's default heap). That also gives each package
+its own baseline file.
+
+**Pre-existing violations are baselined, not disabled.** Each package may carry an
+`eslint-suppressions.json` — ESLint's [bulk-suppressions](https://eslint.org/docs/latest/use/suppressions)
+ratchet. Existing violations are recorded there; **new** ones fail the gate. Adding
+to a baseline is not the way to land a change — fix the violation, or (rarely) keep
+an inline `eslint-disable-next-line` with a `--` justification. When you fix one,
+drop it from the baseline:
+
+```sh
+node scripts/check-lint.mjs --prune-suppressions
+```
+
 ## Tests come with the change
 
 **New functionality lands with tests for it, and a bug fix lands with a test that

@@ -1,0 +1,10 @@
+{
+  "test/swr.spec.tsx": {
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 3
+    },
+    "@typescript-eslint/no-empty-function": {
+      "count": 2
+    }
+  }
+}
