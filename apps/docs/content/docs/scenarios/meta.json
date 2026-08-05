@@ -16,6 +16,7 @@
         "intermittent-drift",
         "large-response-memory",
         "expiring-signatures",
-        "unconfirmed-write"
+        "unconfirmed-write",
+        "n-plus-one-fanout"
     ]
 }
