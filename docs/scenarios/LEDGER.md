@@ -11,13 +11,14 @@ proves (or fails to prove) it with **runnable offline code** under
 
 Issue drafts are **not filed** — they accumulate here for review when the loop stops.
 
-| #   | Scenario                                              | Slug                            | Verdict                                                              | Outcome                                                                                                                                                     |
-| --- | ----------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | OAuth2 rotating refresh tokens under concurrent calls | `oauth2-refresh-token-rotation` | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/oauth2-refresh-token-rotation.mdx) + 1 issue draft (`params` footgun)                                 |
-| 2   | Cost-based rate limits reported in the response body  | `cost-based-rate-limits`        | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/cost-based-rate-limits.mdx) + 1 issue draft (3 body-verdict footguns)                                 |
-| 3   | Batch writes with per-item partial failure            | `batch-partial-failure`         | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/batch-partial-failure.mdx) + 1 issue draft (`paginate` silent data loss)                              |
-| 4   | Async job triangle — submit, poll, download           | `async-job-polling`             | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/async-job-polling.mdx) + 1 issue draft (clock + diagnostic side effects)                              |
-| 5   | A stream that fails after 800 tokens                  | `mid-stream-failure`            | achievable with user code (resumable feeds: **achievable outright**) | [page shipped](../../apps/docs/content/docs/scenarios/mid-stream-failure.mdx) + 1 issue draft (**SSE reconnect replays completed streams — a bug in #622**) |
+| #   | Scenario                                              | Slug                            | Verdict                                                              | Outcome                                                                                                                                                           |
+| --- | ----------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | OAuth2 rotating refresh tokens under concurrent calls | `oauth2-refresh-token-rotation` | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/oauth2-refresh-token-rotation.mdx) + 1 issue draft (`params` footgun)                                       |
+| 2   | Cost-based rate limits reported in the response body  | `cost-based-rate-limits`        | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/cost-based-rate-limits.mdx) + 1 issue draft (3 body-verdict footguns)                                       |
+| 3   | Batch writes with per-item partial failure            | `batch-partial-failure`         | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/batch-partial-failure.mdx) + 1 issue draft (`paginate` silent data loss)                                    |
+| 4   | Async job triangle — submit, poll, download           | `async-job-polling`             | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/async-job-polling.mdx) + 1 issue draft (clock + diagnostic side effects)                                    |
+| 5   | A stream that fails after 800 tokens                  | `mid-stream-failure`            | achievable with user code (resumable feeds: **achievable outright**) | [page shipped](../../apps/docs/content/docs/scenarios/mid-stream-failure.mdx) + 1 issue draft (**SSE reconnect replays completed streams — a bug in #622**)       |
+| 6   | ETag revalidation and the bodyless 304                | `conditional-requests-304`      | achievable with user code                                            | [page shipped](../../apps/docs/content/docs/scenarios/conditional-requests-304.mdx) + 1 issue draft (`cache` cannot revalidate; surfaces can't see the principal) |
 
 ## Open issue drafts
 
@@ -30,6 +31,7 @@ Not filed — review these when the loop stops.
 | [`paginate-silent-data-loss`](issue-drafts/paginate-silent-data-loss.md)                             | **high — a bug, not a footgun**             | a zero-item page ends `paginate` with `ok: true` and the remainder unfetched; "finished" and "gave up" are the same value                                                                        |
 | [`clock-and-diagnostic-side-effects`](issue-drafts/clock-and-diagnostic-side-effects.md)             | **high ×2**                                 | `timeout.total` is wall-clock while its sleeps use the injected clock, so a `manualClock` test of it passes vacuously; `.inspect()`/`.report()` re-issue the request and duplicated a job submit |
 | [`sse-reconnect-replays-completed-streams`](issue-drafts/sse-reconnect-replays-completed-streams.md) | **highest — a bug in freshly shipped #622** | `sse: { reconnect: true }` reopens a **completed** id-less stream 4× and delivers `ABCDEABCDEABCDEABCDE` to the consumer, ending `ok: true`                                                      |
+| [`cache-cannot-revalidate`](issue-drafts/cache-cannot-revalidate.md)                                 | medium (capability gap)                     | `cache` is a value store so an ETag can never reach it; a surface can't see the bound principal, which is what makes a hand-written ETag store leak across credentials                           |
 
 > **Triage note.** [`sse-reconnect-replays-completed-streams`](issue-drafts/sse-reconnect-replays-completed-streams.md)
 > is the one to look at first. It is a bug in code that shipped in **#622**, it delivers
@@ -37,16 +39,25 @@ Not filed — review these when the loop stops.
 
 ### Patterns across the pass
 
-**1. Achievable, but only off the documented path — 4 for 4.** Every scenario so far was
-solvable, and in none of them did the built-in the docs point at carry it. `throttle` sends
-you to `delegate` (status-keyed, wrong); `paginate` looks like the loop and is a trap twice
-over; `retry.respect` is inert on the body path. The recurring answer is a custom `Surface`
-plus a hook. Worth deciding: is this signposting — an "if the failure signal is in the body,
-write a surface" pointer from each guide — or are the built-ins scoped one notch too narrow?
+**1. Achievable, but only off the documented path — 6 for 6.** Every scenario was solvable,
+and in none of them did the built-in the docs point at carry it. `throttle` sends you to
+`delegate` (status-keyed, wrong); `paginate` looks like the loop and is a trap twice over;
+`retry.respect` is inert on the body path; `cache` cannot revalidate. **A custom `Surface` has
+now been the answer in five of six** — `interpret` in 2 and 4, `execute` in 5 and 6, both in 3.
+Worth deciding: is this signposting — an "if the signal is in the body, write a surface"
+pointer from each guide — or are the built-ins scoped one notch too narrow?
 
-**2. `verdictOf` is mandatory by convention, not by construction.** All four surfaces written
-in this pass had to remember to compose it first, and the one proof that omitted it returned a
+**2. `verdictOf` is mandatory by convention, not by construction.** Every surface written in
+this pass had to remember to compose it first, and the one proof that omitted it returned a
 404 as `ok: true`. A correctness requirement currently enforced by documentation.
+
+**2a. The buffered and streaming paths disagree about `interpret`, undocumented.** It runs for
+every response including non-2xx on a buffered stitch (measured on `[200, 304, 404]`), and
+**zero times** on a streaming one. Anyone reasoning from one path to the other will be wrong.
+
+**2b. Two time-driven features ignore the injected clock** — `timeout.total` and `cache.ttl`
+both read wall-clock while their neighbours use `clock`. Two point fixes are less valuable
+than one audit plus a line in the testing guide.
 
 **3. My pre-verification hypotheses were wrong in every single scenario** — usually about
 which primitive would carry it. That is the strongest argument for the executable-proof bar:

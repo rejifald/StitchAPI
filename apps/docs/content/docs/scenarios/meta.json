@@ -6,6 +6,7 @@
         "cost-based-rate-limits",
         "batch-partial-failure",
         "async-job-polling",
-        "mid-stream-failure"
+        "mid-stream-failure",
+        "conditional-requests-304"
     ]
 }

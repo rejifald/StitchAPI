@@ -41,4 +41,9 @@ real runtime, not by reading the source.
         href="/docs/scenarios/mid-stream-failure"
         description="The 200 was spent on the first token, so failure arrives in-band or not at all — and a retry duplicates what the user already read."
     />
+    <Card
+        title="The free poll — ETag revalidation and the bodyless 304"
+        href="/docs/scenarios/conditional-requests-304"
+        description='A 304 means "use what you have", carries no body, and is not a 2xx. Turning it back into the resource takes one seam — and the cache primitive cannot help.'
+    />
 </Cards>
