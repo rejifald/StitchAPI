@@ -11,7 +11,7 @@
 // Node 20+, edge runtimes (Workers / Deno), and the browser; Node 18 falls back to
 // `node:crypto`'s `webcrypto`. The low-level `signRequestV4` is exported too, so it
 // can be unit-tested against the official AWS test vectors.
-import type { AuthStrategy } from 'stitchapi';
+import type { AuthContext, AuthStrategy } from 'stitchapi';
 import type { Secret } from 'stitchapi/auth';
 
 // ---------------------------------------------------------------------------
@@ -249,6 +249,23 @@ function amzDateOf(d: Date): string {
 }
 
 /**
+ * Read signing time off the engine-threaded `Clock` (ADR 0010), falling back to the wall
+ * clock when the context carries none (a hand-built `AuthContext` in a unit test, or a `stitchapi`
+ * older than the field). Mirrors core's `clockNow` in `packages/core/src/auth.ts` exactly — one
+ * convention, not two.
+ *
+ * The signing timestamp is CONTROL-FLOW time, not bookkeeping: `x-amz-date` is inside the
+ * string-to-sign and AWS rejects a stamp more than ~5 minutes off with `RequestTimeTooSkewed`, so
+ * it decides whether the call is accepted. Putting it on the same seam that already drives
+ * retry/throttle/timeout/circuit and OAuth2 token freshness is what makes SigV4 testable under a
+ * `manualClock()` — before this, 600 virtual seconds moved the stamp 0 seconds (issue #658 §2).
+ *
+ * Nothing changes on the wire: the engine always threads `systemClock` unless a clock was
+ * injected, and `systemClock.now()` IS `Date.now()`.
+ */
+const clockNow = (ctx: AuthContext): number => ctx.clock?.now() ?? Date.now();
+
+/**
  * Serialise a non-string `bodyType: 'form'` body to `application/x-www-form-urlencoded`
  * for payload signing. A byte-for-byte mirror of core's transport — `encodeRequestBody`
  * in `packages/core/src/http-adapter.ts` (a `URLSearchParams`, `String(v)`, null/undefined
@@ -287,6 +304,12 @@ function formEncode(body: unknown): string {
  * Credentials resolve at call time (so an agent never sees them), and the signature
  * is computed on the final request — after path templating and query building — so
  * it always matches the bytes the transport sends.
+ *
+ * `x-amz-date` is stamped from the stitch's {@link https://stitchapi.dev/docs/guides/testing/mocking | injected clock}
+ * (ADR 0010) — wall-clock under the default `systemClock`, and drivable by a
+ * `manualClock()` in a test. Note a default `manualClock()` starts at epoch `0`, which
+ * signs `19700101T000000Z`; seed it (`manualClock(Date.now())`) when the stamp must be
+ * plausible to a real endpoint.
  */
 export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
     return {
@@ -298,7 +321,7 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
                 ? resolveSecret(opts.sessionToken)
                 : undefined;
 
-            const amzDate = amzDateOf(new Date());
+            const amzDate = amzDateOf(new Date(clockNow(ctx)));
             const url = new URL(req.url);
 
             const body = req.body;

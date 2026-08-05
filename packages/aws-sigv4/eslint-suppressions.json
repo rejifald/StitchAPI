@@ -9,10 +9,5 @@
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     }
-  },
-  "test/sigv4.spec.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    }
   }
 }
