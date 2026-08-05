@@ -167,8 +167,10 @@ const unionArms = (type) =>
 function typeAliases(src) {
     const out = [];
     const re = /(?:^|\n)\s*(?:export\s+)?type\s+([A-Za-z_]\w*)\s*=\s*/g;
+    // \b matters: without it the `type` alternative also matches the `type` in a `typeof Foo`
+    // arm sitting at the start of a continuation line, ending the RHS one line early.
     const NEXT_DECL =
-        /^\n[ \t]*(?:export|interface|type|class|const|let|function|declare|abstract|enum|\/\*)/;
+        /^\n[ \t]*(?:(?:export|interface|type|class|const|let|function|declare|abstract|enum)\b|\/\*)/;
     let m;
     while ((m = re.exec(src))) {
         let depth = 0;
