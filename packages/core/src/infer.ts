@@ -392,14 +392,23 @@ type SchemaParams<C> =
         : Record<never, never>;
 /**
  * The folded `params` slot: the schema-declared shape ({@link SchemaParams}) intersected with the
- * path-only var names typed `string | number` (what `expandPath` ultimately stringifies). Path-only
- * keys are `Exclude`d of the schema's keys, so a key the schema already names KEEPS its schema type —
- * schema wins. Placed as a REQUIRED property, so `HasRequired`/`Args` make the call argument required —
- * the correctness win. {@link Prettify} flattens the intersection for clean errors and tsd identity.
+ * path-only var names typed `string | number | bigint` (what `expandPath` ultimately stringifies).
+ * Path-only keys are `Exclude`d of the schema's keys, so a key the schema already names KEEPS its
+ * schema type — schema wins. Placed as a REQUIRED property, so `HasRequired`/`Args` make the call
+ * argument required — the correctness win. {@link Prettify} flattens the intersection for clean
+ * errors and tsd identity.
+ *
+ * `bigint` is in the set because it is the value a caller holds after parsing a 64-bit id OUT of the
+ * double-precision range JSON would have rounded it into — the standard repair for that precision
+ * loss. `expandPath` stringifies it exactly like a number, so the type admitting it is the type
+ * telling the truth about what the runtime accepts.
  */
 type PathParams<C> = Prettify<
     SchemaParams<C> &
-        Record<Exclude<PathVarsOf<C>, keyof SchemaParams<C>>, string | number>
+        Record<
+            Exclude<PathVarsOf<C>, keyof SchemaParams<C>>,
+            string | number | bigint
+        >
 >;
 
 /**
@@ -456,8 +465,8 @@ type FoldPathParams<C, Base> = [PathVarsOf<C>] extends [never]
  * - **Without input schemas** (`Base = StitchInput`, a CONCRETE interface): build `params` purely from
  *   the path vars via `Omit<StitchInput, 'params'> & { params }`. `Omit` over a concrete type resolves
  *   immediately (no deferral → no boundary break) and DROPS `StitchInput`'s loose
- *   `params?: Record<string, unknown>`, so the slot is exactly `{ id: string | number }` rather than
- *   that intersected with the catch-all index signature.
+ *   `params?: Record<string, unknown>`, so the slot is exactly `{ id: string | number | bigint }`
+ *   rather than that intersected with the catch-all index signature.
  */
 export type InputOf<C> = [C] extends [
     { extends: readonly [unknown, ...unknown[]] },

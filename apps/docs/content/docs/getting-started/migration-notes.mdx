@@ -182,12 +182,11 @@ import { type Stitch, stitch } from 'stitchapi';
 const registry = new Map<string, Stitch>();
 registry.set('item', stitch({ path: '/items/{id}' }) as Stitch);
 
-// Single field you want to keep precise — annotate it with the narrowed type
-// and you keep the required-params check (path vars stringify to `string | number`).
+// Single field you want to keep precise — annotate it with the narrowed type and you keep
+// the required-params check (path vars stringify to `string | number | bigint`).
 class Catalog {
-    getItem: Stitch<unknown, { params: { id: string | number } }> = stitch({
-        path: '/items/{id}',
-    });
+    getItem: Stitch<unknown, { params: { id: string | number | bigint } }> =
+        stitch({ path: '/items/{id}' });
 }
 ```
 

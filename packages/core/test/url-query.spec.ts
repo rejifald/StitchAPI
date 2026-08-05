@@ -60,6 +60,74 @@ describe('expandPath (RFC 6570)', () => {
             'https://h.io/x/1',
         );
     });
+
+    // Regression: a `bigint` var used to match none of the scalar `typeof` arms and fell through to
+    // the object arm, where `Object.entries(1n)` is `[]` — so the var expanded to NOTHING and
+    // `/things/{id}` silently became `/things/`, addressing the COLLECTION instead of the item. No
+    // error, no event. This is the exact value 64-bit IDs are parsed into to dodge JSON precision
+    // loss, so the drop hit the people who had already done the right thing.
+    describe('bigint vars (issue: silently dropped path parameter)', () => {
+        const id = 9007199254740993n; // Number.MAX_SAFE_INTEGER + 2 — unrepresentable as a double
+
+        test('a bigint expands in every scalar position, not just some', () => {
+            expect(expandPath('/v1/things/{id}', { id })).toBe(
+                '/v1/things/9007199254740993',
+            );
+            expect(expandPath('/v1/{+id}', { id })).toBe(
+                '/v1/9007199254740993',
+            );
+            expect(expandPath('{#id}', { id })).toBe('#9007199254740993');
+            expect(expandPath('{.id}', { id })).toBe('.9007199254740993');
+            expect(expandPath('/v1{/id}', { id })).toBe('/v1/9007199254740993');
+            expect(expandPath('/v1{;id}', { id })).toBe(
+                '/v1;id=9007199254740993',
+            );
+            expect(expandPath('/v1{?id}', { id })).toBe(
+                '/v1?id=9007199254740993',
+            );
+            expect(expandPath('/v1{?a}{&id}', { a: 1, id })).toBe(
+                '/v1?a=1&id=9007199254740993',
+            );
+        });
+
+        test('every digit survives — the whole reason the caller reached for a bigint', () => {
+            const url = expandPath('/v1/things/{id}', { id });
+            expect(url).toBe(`/v1/things/${id.toString()}`);
+            // The same id through a `number` loses the low digits; that lossy form must NOT appear.
+            expect(url).not.toContain(String(Number(id))); // 9007199254740992
+        });
+
+        test('the prefix (:n) modifier truncates a bigint by decimal digits', () => {
+            expect(expandPath('/{id:4}', { id })).toBe('/9007');
+        });
+
+        test('0n expands to "0" rather than vanishing as an empty value', () => {
+            // `0n` is falsy — it must still take the scalar arm, like the number `0` does.
+            expect(expandPath('/v1/things/{id}', { id: 0n })).toBe(
+                '/v1/things/0',
+            );
+            expect(expandPath('/v1{?id}', { id: 0n })).toBe('/v1?id=0');
+        });
+
+        test('bigints inside lists and objects keep working', () => {
+            // These arms already routed through `String()`/`stringifyLeaf`; pin them so a future
+            // refactor of the scalar arm cannot regress the composite ones.
+            expect(expandPath('/{ids}', { ids: [1n, 2n] })).toBe('/1,2');
+            expect(expandPath('{?ids*}', { ids: [1n, 2n] })).toBe(
+                '?ids=1&ids=2',
+            );
+            expect(expandPath('/{o}', { o: { a: 1n } })).toBe('/a,1');
+            expect(expandPath('{?o*}', { o: { a: 1n } })).toBe('?a=1');
+        });
+
+        test('the path and query builders agree on a bigint', () => {
+            // The bug was the two URL-building paths disagreeing: `buildQuery`/`stringifyLeaf`
+            // rendered a bigint while `expandPath` erased it. Same value, same rendering.
+            expect(expandPath('/v1{?since}', { since: id })).toBe(
+                `/v1${buildQuery({ since: id })}`,
+            );
+        });
+    });
 });
 
 // ---- qs-style query encoding ----------------------------------------------
