@@ -79,6 +79,12 @@ pre-push:
         # Cheap source scan, same tier as the contract ratchet. Mirrors CI's step.
         - name: unknown-keys
           run: '{setup} pnpm check:unknown-keys'
+        # CHANGELOG shape: one `###` section per kind per release block, plus the Keep a
+        # Changelog order within [Unreleased]. Catches the second `Added`/`Fixed` a branch
+        # cut from an older `main` grafts on — git merges both cleanly, so nothing else
+        # notices. Text-only scan. Mirrors CI's step.
+        - name: changelog
+          run: '{setup} pnpm check:changelog'
         # Demo-media drift gate (docs/media/README.md): a branch that edits the
         # demo scene or its generator must also regenerate the committed README
         # webp pair. Cheap path diff; STITCH_MEDIA_STALE_OK=1 defers.

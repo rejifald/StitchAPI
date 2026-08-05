@@ -77,6 +77,12 @@ jobs:
             # excess-property checking, so a misspelled or REMOVED slot typechecks and is
             # silently dropped — which is what makes a slot rename unsafe. Source scan — no build.
             - run: pnpm check:unknown-keys
+            # CHANGELOG shape: one `###` section per kind per release block, and the
+            # Keep a Changelog order within [Unreleased]. A branch cut from an older
+            # `main` re-adds a heading its base lacked; git merges both cleanly because
+            # they sit at different offsets, and Unreleased ends up with two `Added`s
+            # (#620) or two `Fixed`s (#597). Text-only scan — no build.
+            - run: pnpm check:changelog
             # Release coherence: version lockstep + prerelease-aware peer ranges +
             # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
             # the PR, not the publish.
