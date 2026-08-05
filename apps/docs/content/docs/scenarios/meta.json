@@ -12,6 +12,7 @@
         "webhook-receipt",
         "multi-tenant-blast-radius",
         "provider-failover",
-        "unstable-pagination"
+        "unstable-pagination",
+        "intermittent-drift"
     ]
 }
