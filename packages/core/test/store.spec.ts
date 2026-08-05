@@ -501,15 +501,17 @@ describe('Pluggable store — throttle', () => {
         // so a blocked caller's wait is measured rather than predicted — this pins that it is
         // still reported, and that an uncontended acquire reports nothing.
         //
-        // Measured means an uncontended acquire is near-zero, not exactly zero: one that straddles
-        // a millisecond boundary reports 1. The tolerance is what separates "walked straight in"
-        // from a real block, which below is ~60ms — the two cases are nowhere near each other.
+        // Exactly nothing, not merely near-zero. Measured no longer means timed: the gate is "did
+        // `takeLease` have to poll", so a first-attempt grant reports 0 however long the store
+        // round-trip took — which is what the sibling below proves by injecting 5ms of latency and
+        // still pinning 0. A tolerance here would re-admit the phantom `waited: 1` that this is
+        // meant to exclude, since 1 < 5.
         const store = memoryStore();
         const a = createStoreThrottle({ concurrency: 1 }, store);
         const b = createStoreThrottle({ concurrency: 1 }, store);
 
         const first = await a.acquire('svc');
-        expect(first.waited).toBeLessThan(5); // uncontended
+        expect(first.waited).toBe(0); // uncontended
 
         const blocked = b.acquire('svc');
         await new Promise((r) => setTimeout(r, 60));
@@ -545,6 +547,44 @@ describe('Pluggable store — throttle', () => {
         t.release('svc');
     });
 
+    test('no `concurrency` at all still reports waited: 0, however the clock moves', async () => {
+        // The sibling above pins the `concurrency: 1` path. This pins the one with NO concurrency
+        // configured, where `takeLease` no-ops — but is still an `async` function, so `await` costs
+        // a microtask hop that a `Date.now()` millisecond boundary can straddle. That is the exact
+        // path the shared-rate-budget test at the top of this file runs on, and the reason it
+        // failed ~1 run in 12 with `expected 2 to be 1`: the UNPACED caller reported `waited: 1`
+        // and fired a `throttled` event beside the paced caller's 1000. Same root cause as the
+        // phantom wait above, not a separate bug in shared rate budgeting — the shared budget was
+        // always correct, `reserve` grants the first caller `at` and its `wait` is never positive.
+        //
+        // A clock that advances on every read makes that deterministic instead of a race.
+        const ticking = (): Clock => {
+            let t = 1_000_000;
+            return {
+                now: () => (t += 1),
+                sleep: async () => undefined,
+                setTimer: (fn, ms) => setTimeout(fn, ms),
+                clearTimer: (h) => {
+                    clearTimeout(h as ReturnType<typeof setTimeout>);
+                },
+            };
+        };
+        const store = memoryStore();
+
+        // Nothing to wait for at all: no concurrency, no rate.
+        const bare = createStoreThrottle({}, store, ticking());
+        expect((await bare.acquire('bare')).waited).toBe(0);
+
+        // The shape the shared-rate-budget test runs on, FIRST caller — the one that must stay
+        // silent for `throttled` to mark the one call that really paced.
+        const paced = createStoreThrottle(
+            { rate: '1/s', pool: 'host' },
+            store,
+            ticking(),
+        );
+        expect((await paced.acquire('paced')).waited).toBe(0);
+    });
+
     test('a streaming (rateOnly) acquire takes no fleet-wide slot either', async () => {
         // ADR 0005 Decision 12 holds under leases: a long-lived stream must not pin a slot for
         // its whole life, which is also what keeps `lease` a crash timer rather than a call timer.
@@ -552,11 +592,11 @@ describe('Pluggable store — throttle', () => {
         const t = createStoreThrottle({ concurrency: 1 }, store);
         await t.acquire('svc', { rateOnly: true });
         await t.acquire('svc', { rateOnly: true });
-        // Neither took the single slot, so a normal acquire still walks straight in. Tolerance,
-        // not exact zero, for the same reason as the sibling test above: `waited` is measured, so
-        // an uncontended acquire across a millisecond boundary reports 1. Had a stream pinned the
-        // slot, this acquire would have blocked for the whole lease — orders of magnitude away.
+        // Neither took the single slot, so a normal acquire still walks straight in — reporting
+        // exactly zero, for the same reason as the sibling above: a grant that never polled never
+        // opens the measurement, so no amount of store or scheduling time can leak in. Had a
+        // stream pinned the slot, this acquire would have blocked for the whole lease.
         const normal = await t.acquire('svc');
-        expect(normal.waited).toBeLessThan(5);
+        expect(normal.waited).toBe(0);
     });
 });

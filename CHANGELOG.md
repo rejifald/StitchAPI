@@ -537,6 +537,14 @@ npm release are grouped under the in-development version that introduced them.
     pin injects 5ms of store latency into an uncontended grant, so it fails deterministically
     against the old behaviour instead of once every few runs.
 
+    It fixes a **second** flake in that file too, which #635 recorded as having a different root
+    cause: the shared-rate-budget test failed ~1 run in 12 with `expected 2 to be 1` because the
+    phantom wait also reaches the path where no `concurrency` is configured at all — `takeLease`
+    no-ops there, but is still `async`, so the microtask hop alone could straddle a millisecond.
+    The **unpaced** caller reported `waited: 1` and fired a `throttled` event beside the paced
+    caller's 1000. Shared rate budgeting was never implicated: `reserve` grants the first caller
+    `at`, so its `wait` is never positive. That path is now pinned deterministically too.
+
 - **`Surface.resumeRetry` takes the canonical duration form too: its return widens to
   `number | string`.** The sibling of the `SurfaceOutcome.after` fix below, found by sweeping the
   surface under the new [P17](docs/CONTRACT.md#p17--one-canonical-duration-form)/[P25](docs/CONTRACT.md#p25--one-canonical-size-form)
