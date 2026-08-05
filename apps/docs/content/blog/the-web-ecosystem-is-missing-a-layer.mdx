@@ -83,20 +83,20 @@ const listUsers = stitch({
     path: '/users',
     auth: bearer(env('API_TOKEN')),
     output: drift(z.array(User)),
-    retry: { attempts: 3 },
-    throttle: { rate: '10/s', pool: 'host' },
-    timeout: { total: '10s', each: '3s' },
+    retry: 3,
+    throttle: '10/s',
+    timeout: '10s',
 });
 
 const users = await listUsers();
 //    ^?
 ```
 
-That declaration is `listUsers` again — same endpoint, same concerns — but every line is now configuration, and the implementation behind each line ships with the library instead of growing in your `utils` folder. `retry` is a real retry: exponential backoff with jitter, and it honors `Retry-After` by default when a server sends one. `throttle` with `pool: 'host'` shares one limiter across every stitch that hits the host — the thing no hand-rolled helper can do, because each call site only knows about itself. `timeout` bounds the whole call, retries and backoff waits included, not each attempt in isolation.
+That declaration is `listUsers` again — same endpoint, same concerns — but every line is now configuration, and the implementation behind each line ships with the library instead of growing in your `utils` folder. The bare values carry full policies: `retry: 3` is exponential backoff with jitter that honors `Retry-After` when a server sends one; `timeout: '10s'` bounds the whole call, retries and backoff waits included; `throttle: '10/s'` paces every call through this stitch. And each shorthand grows into an envelope the day the endpoint needs more — `pool: 'host'` on the throttle shares one limiter across every stitch hitting that host, the thing no hand-rolled helper can do, because each call site only knows about itself.
 
 `drift` is the part that takes the boundary seriously. Because the other end can change without telling you, the stitch validates every live response against the declared schema and reports differences as [a leveled drift signal](/docs/guides/validation/drift) at the boundary — an undeclared new field as information, a broken shape as a typed error — instead of an `undefined` surfacing three layers into your app. The static type on `users` is inferred from the same schema that runs at runtime, so the type you program against and the check that guards it can't fall out of sync.
 
-And declaring is what ends the side-project problem: extending this layer is no longer engineering work. When a provider starts rate-limiting you next quarter, the fix is a `throttle` field on one declaration — not a helper to design, implement, test, and maintain. The layer stops being under-implemented because there is nothing left for you to implement.
+And declaring is what ends the side-project problem: extending this layer is no longer engineering work. When an endpoint starts failing in bursts next quarter, the fix is one more field on the declaration — `circuit: [5, '30s']`, a circuit breaker — not a helper to design, implement, test, and maintain. The layer stops being under-implemented because there is nothing left for you to implement.
 
 ## What it isn't
 
