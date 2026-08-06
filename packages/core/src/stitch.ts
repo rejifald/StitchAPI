@@ -30,6 +30,7 @@ import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface, httpSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
+    type AtLeastOne,
     type CacheOptions,
     type CacheOutcome,
     type Clock,
@@ -212,12 +213,48 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
     // normalizes too — `__config` never carries the string form (P0). Read back through the
     // normalised shape the loop just wrote.
+    //
+    // **And the fold is where an unusable curve dies** (issue #651 §3), on the value it just
+    // produced — `bad backoff`, the same slot-named message and the same construction-time timing
+    // `parseRate` has for an unparseable `throttle.rate`. Silently degrading a resilience
+    // policy is the one place a fallback is worse than a crash, and this one degraded in the
+    // PERMISSIVE direction: `backoff: () => 6000` cast past its type folded to `{ curve: <fn> }`,
+    // matched neither branch of `backoffDelay`, and walked the plain `expo` curve on the default
+    // 100ms base — measured gaps of 100, 200ms where the config asked for 6000, with nothing said
+    // anywhere. Checking HERE rather than after the merge is what makes ONE check cover the whole
+    // slot: every spelling a cast can let through (a function, a bare `6000`, a misremembered
+    // `'exponential'`, an array, `null`) is non-object, so the fold has just put it on `curve`. It
+    // also names the offending FRAGMENT rather than the merged result, and reuses the accessor the
+    // fold already needs — which, with the terse message, is what buys the whole check its 33
+    // bytes on a path that had 33 left.
+    //
+    // Only a PRESENT curve is judged, and only against the three values `backoffDelay` dispatches
+    // on. Nothing here decides what a *reasonable* backoff is.
     const retry = cfg.retry as RetryOptions | undefined;
-    if (retry?.backoff !== undefined)
-        cfg.retry = {
-            ...retry,
-            backoff: envelope(retry.backoff, 'curve'),
-        };
+    if (retry?.backoff !== undefined) {
+        // Read the folded envelope's `curve` at `string`, not at `BackoffCurve`. The whole point of
+        // the check is a value the TYPE already excludes, so narrowing against the union would leave
+        // `never` and the exhaustive comparison would read as dead code to tsc and eslint alike —
+        // which is the shape of a guard that cannot fire, not the one that fires here every time a
+        // cast lets something through.
+        const backoff = envelope(retry.backoff, 'curve') as { curve?: string };
+        // Three shapes here are load-bearing for SIZE, not for style, and this check lands one
+        // byte inside the gate — so measure before touching any of them:
+        //   • `'expo-jitter'` FIRST, so the `'expo'` literal after it compresses as a
+        //     back-reference into the one already emitted (4 B; alphabetising costs them back);
+        //   • a `!==` chain rather than `['expo', …].includes(…)` (the array measured 4 B worse);
+        //   • a message with no interpolated value (5 B). `parseRate` can afford `bad rate: ${r}`
+        //     and this cannot — the offending value is in the caller's own `stitch({…})` literal,
+        //     which is the one consolation. Restore it the moment the budget has room.
+        if (
+            backoff.curve !== undefined &&
+            backoff.curve !== 'expo-jitter' &&
+            backoff.curve !== 'expo' &&
+            backoff.curve !== 'fixed'
+        )
+            throw new Error('bad backoff');
+        cfg.retry = { ...retry, backoff } as AtLeastOne<RetryOptions>;
+    }
     // Nested fold (P25): `stream.buffer` is a scalar-or-envelope slot too — the bare char count
     // folds to `{ chars }`, so `__config` never carries the number form (P0).
     const stream = cfg.stream as StreamOptions | undefined;

@@ -566,6 +566,28 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`@stitchapi/aws-sigv4` stamps `x-amz-date` from the injected clock, so SigV4 is testable on
+  virtual time.** ([#658](https://github.com/rejifald/StitchAPI/issues/658)) The signer called
+  `amzDateOf(new Date())`, so 600 **virtual** seconds moved the shipped stamp **0** seconds and a
+  default `manualClock()` (which starts at epoch `0`) produced a real-time stamp regardless. Every
+  test that wanted to assert anything about signing time — skew handling, a signature's age across a
+  throttle wait — had to inject its own clock-reading signer to measure it.
+
+    [#664](https://github.com/rejifald/StitchAPI/pull/664) put the stitch's `clock` on `AuthContext`
+    for `oauth2`; this is the companion package taking the same seam. The signing timestamp is
+    control-flow time by ADR 0010's own definition — `x-amz-date` is inside the string-to-sign, and
+    AWS refuses a stamp more than ~5 minutes out with `RequestTimeTooSkewed` — so it belongs on the
+    clock that already drives retry, throttle, timeout, circuit and token freshness. It reads it
+    through the identical `ctx.clock?.now() ?? Date.now()` fallback core's `auth.ts` uses, so a
+    hand-built `AuthContext` in a custom strategy's unit test still type-checks.
+
+    **Nothing changes on the wire.** The engine threads `systemClock` unless a clock was injected,
+    and `systemClock.now()` _is_ `Date.now()` — pinned by a test that signs a request on the wall
+    clock, reads back the instant it stamped, re-signs on a clock pinned to that instant, and
+    asserts the `Authorization` header is byte-identical. Payload hashing and the `signBody`
+    branches are untouched. The mocking guide's clock map moves the SigV4 row from wall-clock to
+    **virtual** accordingly.
+
 - **OAuth2 token expiry rides the injected clock, so "does my client refresh before expiry?" is
   finally a test you can write.** ([#650](https://github.com/rejifald/StitchAPI/issues/650))
   `oauth2` decided token freshness on the module-global wall clock, so 600,000 **virtual** ms past a
@@ -688,6 +710,29 @@ npm release are grouped under the in-development version that introduced them.
     progress across reads still floors the window and still trips the cap — which is the case the
     cap exists for. Nothing about the public API changes; a stream that used to die at 8 MB now
     finishes, in bounded memory.
+
+- **An unusable `backoff` throws at construction instead of vanishing.**
+  ([#651](https://github.com/rejifald/StitchAPI/issues/651) §3) `backoff` takes a curve or the
+  `{ curve, base, max }` envelope — never a function — so `backoff: () => 6000` is correctly a type
+  error. Casting past it (which people do when they believe a feature exists) constructed clean and
+  then did **nothing**: the function was never invoked, and the waits fell back to the default curve
+  on the default 100ms base. Measured gaps of `100, 200`ms where the config asked for 6000, with no
+  throw, no event, and nothing in the trace that reads as wrong.
+
+    `expandShorthand` folds the bare form of the slot into `{ curve }` (P12), so every value a cast
+    can let through — a function, a bare `6000`, a misremembered `'exponential'` — lands on `curve`,
+    where `backoffDelay` matched neither `'fixed'` nor `'expo-jitter'` and fell through to the plain
+    `expo` branch. It now throws `bad backoff` from `stitch()`, mirroring the
+    `bad rate: …` an unparseable `throttle.rate` has thrown at construction since
+    [#618](https://github.com/rejifald/StitchAPI/pull/618). Silently degrading a resilience policy is
+    the one place a fallback is worse than a crash, and this one degraded in the **permissive**
+    direction — a shorter wait than asked for, which is the half that hurts.
+
+    The check sits at the fold itself, on the value it just produced, so one comparison over the
+    dominant field covers every authoring form and names the offending **fragment** rather than the
+    merged result. A `backoff` that sets `base`/`max` and no curve keeps the `expo-jitter` default,
+    and all three curve names are unaffected in either spelling. **Not a semver break in practice**: only a value `tsc` already
+    rejected can reach the throw, and its previous behaviour was to ignore what you wrote.
 
 - **A `bigint` path parameter no longer vanishes from the URL.** `stitch({ path: '/v1/things/{id}' })`
   called with `{ params: { id: 1234567890123456789n } }` built `https://api.test/v1/things/` — the id

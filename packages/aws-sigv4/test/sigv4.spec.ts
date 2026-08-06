@@ -3,6 +3,8 @@
 // that it runs); the strategy is driven with a fake request + context.
 import { EMPTY_PAYLOAD_SHA256, awsSigV4, signRequestV4 } from '../src';
 
+import { stitch } from 'stitchapi';
+import { manualClock, mockAdapter } from 'stitchapi/testing';
 import { describe, expect, test } from 'vitest';
 
 // The canonical AWS SigV4 example credentials (aws-sig-v4-test-suite).
@@ -28,7 +30,25 @@ function fakeReq(
         ...(over.bodyType !== undefined ? { bodyType: over.bodyType } : {}),
     };
 }
-const fakeCtx = { emit: (): void => {} };
+// These tests assert the headers the strategy attaches, not the run's event stream,
+// so `emit` discards. (`=> undefined`, not an empty body — one shared no-op keeps
+// `no-empty-function` satisfied instead of baselined.)
+const noEmit = (): void => undefined;
+const fakeCtx = { emit: noEmit };
+// The same context carrying an injected `Clock` — what the engine threads onto
+// `AuthContext.clock` (types.ts), so the signer's timestamp is testable.
+const ctxAt = (epochMs: number) => ({
+    emit: noEmit,
+    clock: manualClock(epochMs),
+});
+
+/** `'20150830T123600Z'` → epoch ms. The inverse of the signer's `amzDateOf`. */
+function parseAmzDate(stamp: string): number {
+    return Date.parse(
+        `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}T` +
+            `${stamp.slice(9, 11)}:${stamp.slice(11, 13)}:${stamp.slice(13, 15)}Z`,
+    );
+}
 
 // --- signRequestV4 — official vector ---------------------------------------
 
@@ -429,6 +449,163 @@ describe('awsSigV4 strategy', () => {
         await strategy.apply(reqMultipart, fakeCtx as never);
         expect(reqMultipart.headers['x-amz-content-sha256']).toBe(
             'UNSIGNED-PAYLOAD',
+        );
+    });
+});
+
+// --- the injected clock (ADR 0010, issue #658 §2) ---------------------------
+//
+// The signing timestamp is CONTROL-FLOW time — it decides whether AWS accepts the
+// request — so it rides the engine-threaded `Clock` (`AuthContext.clock`), the same
+// seam that drives retry/throttle/timeout/circuit and OAuth2 token freshness. Reading
+// `new Date()` instead made SigV4 untestable on a virtual clock: 600 virtual seconds
+// moved the stamp 0 seconds, and a default `manualClock()` (which starts at epoch)
+// produced a real-time stamp, so nothing about skew could be asserted at all.
+
+const CLOCK_KEYS = {
+    region: 'us-east-1',
+    service: 's3',
+    accessKeyId: ACCESS_KEY,
+    secretAccessKey: SECRET_KEY,
+} as const;
+
+describe('awsSigV4 (the injected clock)', () => {
+    test('the x-amz-date stamp moves with virtual time, not wall-clock time', async () => {
+        const strategy = awsSigV4(CLOCK_KEYS);
+        const start = Date.UTC(2015, 7, 30, 12, 36, 0);
+
+        const first = fakeReq();
+        await strategy.apply(first, ctxAt(start) as never);
+        expect(first.headers['x-amz-date']).toBe('20150830T123600Z');
+
+        // The issue's measurement: 600 virtual seconds must move the stamp 600 seconds.
+        const later = fakeReq();
+        await strategy.apply(later, ctxAt(start + 600_000) as never);
+        expect(later.headers['x-amz-date']).toBe('20150830T124600Z');
+
+        expect(
+            parseAmzDate(later.headers['x-amz-date'] as string) -
+                parseAmzDate(first.headers['x-amz-date'] as string),
+        ).toBe(600_000);
+    });
+
+    test('a default manualClock() signs at the epoch it actually reads', async () => {
+        // `manualClock()` starts at 0. The stamp must say so — that apparent ~20,670-day
+        // skew is the clock the test chose, and being able to SEE it is the point.
+        const strategy = awsSigV4(CLOCK_KEYS);
+        const req = fakeReq();
+        await strategy.apply(req, ctxAt(0) as never);
+        expect(req.headers['x-amz-date']).toBe('19700101T000000Z');
+    });
+
+    test('the signature itself changes with the clock (the stamp is inside it)', async () => {
+        // Not just the header: the timestamp and its derived credential scope are part of
+        // the string-to-sign, so a different virtual instant must yield a different
+        // signature — otherwise the stamp is cosmetic.
+        const strategy = awsSigV4(CLOCK_KEYS);
+        const a = fakeReq();
+        const b = fakeReq();
+        await strategy.apply(
+            a,
+            ctxAt(Date.UTC(2015, 7, 30, 12, 36, 0)) as never,
+        );
+        await strategy.apply(
+            b,
+            ctxAt(Date.UTC(2015, 7, 31, 12, 36, 0)) as never,
+        );
+
+        expect(a.headers['authorization']).not.toBe(b.headers['authorization']);
+        // A day later ⇒ a different credential scope date, too.
+        expect(a.headers['authorization']).toContain('/20150830/us-east-1/s3/');
+        expect(b.headers['authorization']).toContain('/20150831/us-east-1/s3/');
+    });
+
+    // The wire behaviour must not change. With no clock on the context — a hand-built
+    // AuthContext, or any caller on the system clock — the signature must be exactly
+    // what it is today. Proven without a race: sign once on the wall clock, read back
+    // the instant it stamped, then re-sign the identical request on a clock pinned to
+    // that instant. Byte-identical output ⇒ this is a testability fix, not a wire fix.
+    test('no injected clock ⇒ byte-identical to the wall-clock signature', async () => {
+        const strategy = awsSigV4(CLOCK_KEYS);
+
+        const before = Date.now();
+        const wall = fakeReq({ method: 'PUT', body: 'payload' });
+        await strategy.apply(wall, fakeCtx as never);
+        const after = Date.now();
+
+        // It really is wall-clock time (the stamp truncates to the second, so it can
+        // sit up to 999 ms behind the reading taken just before `apply`).
+        const stamped = parseAmzDate(wall.headers['x-amz-date'] as string);
+        expect(stamped).toBeGreaterThanOrEqual(before - 1000);
+        expect(stamped).toBeLessThanOrEqual(after);
+
+        const pinned = fakeReq({ method: 'PUT', body: 'payload' });
+        await strategy.apply(pinned, ctxAt(stamped) as never);
+
+        expect(pinned.headers['x-amz-date']).toBe(wall.headers['x-amz-date']);
+        expect(pinned.headers['x-amz-content-sha256']).toBe(
+            wall.headers['x-amz-content-sha256'],
+        );
+        expect(pinned.headers['authorization']).toBe(
+            wall.headers['authorization'],
+        );
+    });
+
+    // A golden signature, pinned to a fixed instant: proof the on-the-wire bytes for a
+    // known clock reading are what they have always been. If the timestamp path ever
+    // changes shape (precision, format, scope derivation), this literal fails.
+    //
+    // The literal is not "whatever the code emits" — it was cross-checked against an
+    // independent SigV4 implementation that reproduces the official `get-vanilla`
+    // vector above. Same request and instant as that vector, plus the
+    // `x-amz-content-sha256` header the strategy attaches (hence a different signature).
+    test('a pinned clock reproduces the exact Authorization header', async () => {
+        const strategy = awsSigV4({
+            region: 'us-east-1',
+            service: 'service',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+        });
+        const req = fakeReq({ url: 'https://example.amazonaws.com/' });
+        await strategy.apply(
+            req,
+            ctxAt(Date.UTC(2015, 7, 30, 12, 36, 0)) as never,
+        );
+
+        expect(req.headers['x-amz-date']).toBe('20150830T123600Z');
+        expect(req.headers['authorization']).toBe(
+            'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, ' +
+                'SignedHeaders=host;x-amz-content-sha256;x-amz-date, ' +
+                'Signature=726c5c4879a6b4ccbbd3b24edbd6b8826d34f87450fbbf4e85546fc7ba9c1642',
+        );
+    });
+
+    // End-to-end through the public API: the engine threads the stitch's `clock` onto
+    // `AuthContext`, so a `manualClock()` on the stitch drives the signature the
+    // transport actually receives. This is the seam the issue asked for.
+    test('a stitch clock drives the signed request the transport receives', async () => {
+        const clock = manualClock(Date.UTC(2015, 7, 30, 12, 36, 0));
+        const api = mockAdapter({
+            match: '/objects',
+            respond: { body: { ok: true } },
+        });
+        const call = stitch({
+            baseUrl: 'https://my-bucket.s3.us-east-1.amazonaws.com',
+            path: '/objects',
+            adapter: api,
+            clock,
+            auth: awsSigV4(CLOCK_KEYS),
+        });
+
+        await call();
+        expect(api.lastRequest()?.headers['x-amz-date']).toBe(
+            '20150830T123600Z',
+        );
+
+        await clock.advance(600_000); // ten virtual minutes
+        await call();
+        expect(api.lastRequest()?.headers['x-amz-date']).toBe(
+            '20150830T124600Z',
         );
     });
 });

@@ -34,12 +34,22 @@
 // not source text. The parse is pinned behaviourally instead, by tests that assert an elapsed
 // floor and fail in milliseconds without it (`sse-reconnect.spec.ts`, `interpret-in-loop.spec.ts`).
 //
+// R6 also resolves ONE level of `type` ALIAS (#564 item 1): `type X = A | B` marks `X` as
+// admitting `{}` when a bare-identifier arm is a known all-optional INTERFACE. One level only,
+// and against interfaces only — an arm naming another alias does not resolve, so the pass is
+// bounded and cannot chain. Arms are filtered by the same `unionArms()` the member check uses,
+// so `AtLeastOne<Bag>` and `Bag[]` are not arms and the prescribed fix clears the finding by
+// construction. Generic aliases (`type X<T> = …`) are skipped: whether they admit `{}` depends
+// on the argument, which is the type-aware phase's problem.
+//
 // Still deferred to a type-aware phase (needs the TS checker): shape-diffing (full P9 —
 // R5's watch list is the by-name proxy), default-value inversion (P8), cross-PACKAGE parity
-// of the same capability (P16), and resolving a `type` ALIAS whose union admits an
-// all-optional bag (so `MockRoute.respond: MockResponder` is under-flagged — an alias is not
-// an interface block; the same blind spot puts `SurfaceOutcome.after`, a union member, out of
-// R9's reach). Under-flagging is deliberate: a ratchet that guesses is a ratchet nobody trusts.
+// of the same capability (P16), and the CONTAINER half of the alias gap — R6 scans only the
+// `*Options` + blessed `*Config` family, so `MockRoute.respond: MockResponder` stays
+// under-flagged even now that the alias resolves, because `MockRoute` is not an `*Options`
+// (#564 item 2: widen the filter and take the noise, or rename the type). The same blind spot
+// puts `SurfaceOutcome.after`, a union member, out of R9's reach.
+// Under-flagging is deliberate: a ratchet that guesses is a ratchet nobody trusts.
 import {
     existsSync,
     readFileSync,
@@ -130,6 +140,53 @@ function interfaceBlocks(src, { includeLocal = false } = {}) {
         });
     }
     return blocks;
+}
+
+// The arms of a union type that are BARE type identifiers — `A | B[] | ((c) => D)` yields
+// `[A]`. Shared by R6's member check and the alias pre-pass so the two can never drift.
+//
+// Bare-only is the precision guarantee, not a shortcut. `AtLeastOne<Bag>` is not an arm, so
+// the fix R6 prescribes clears its own finding; `Bag[]` is not an arm, because an array does
+// not accept `{}`. It also makes the naive `split('|')` safe: any nesting (`(A | Bag)`,
+// `{ a?: A | Bag }`, `Map<K, A | Bag>`) leaves a bracket or paren welded to the token, so a
+// `|` that was never a top-level separator cannot yield a bare identifier.
+const unionArms = (type) =>
+    type
+        .split('|')
+        .map((a) => a.trim())
+        .filter((a) => /^[A-Z]\w*$/.test(a));
+
+// Top-level `type X = …;` aliases in a file, with their right-hand side. NON-generic only:
+// the `=` must follow the name directly, so `type X<T> = …` is skipped (see the header).
+//
+// The RHS runs to the first `;` at depth 0, counting only braces/parens/brackets — NOT angle
+// brackets, whose `>` also closes an arrow (`=> string`) and would end the type early, the
+// same convention depthAt() uses. A missing semicolon (ASI) would otherwise run to EOF and
+// swallow the next declaration's body, where a stray `| Bag` would read as an arm of THIS
+// alias — so the scan also stops at the next top-level declaration.
+function typeAliases(src) {
+    const out = [];
+    const re = /(?:^|\n)\s*(?:export\s+)?type\s+([A-Za-z_]\w*)\s*=\s*/g;
+    // \b matters: without it the `type` alternative also matches the `type` in a `typeof Foo`
+    // arm sitting at the start of a continuation line, ending the RHS one line early.
+    const NEXT_DECL =
+        /^\n[ \t]*(?:(?:export|interface|type|class|const|let|function|declare|abstract|enum)\b|\/\*)/;
+    let m;
+    while ((m = re.exec(src))) {
+        let depth = 0;
+        let j = re.lastIndex;
+        for (; j < src.length; j++) {
+            const ch = src[j];
+            if (ch === '{' || ch === '(' || ch === '[') depth++;
+            else if (ch === '}' || ch === ')' || ch === ']') depth--;
+            else if (depth === 0) {
+                if (ch === ';') break;
+                if (ch === '\n' && NEXT_DECL.test(src.slice(j, j + 24))) break;
+            }
+        }
+        out.push({ name: m[1], rhs: src.slice(re.lastIndex, j).trim() });
+    }
+    return out;
 }
 
 // True when the declaration at `idx` is immediately preceded by a JSDoc block carrying
@@ -500,21 +557,54 @@ function collect() {
     // packages declaring the same name is itself a P9 finding (R5), not this rule's problem.
     const allOptionalByPkg = new Map(); // dir -> Set(interface name)
     const ifaceByPkg = new Map(); // dir -> Map(name -> block, incl. non-exported bases)
+    const aliasByPkg = new Map(); // dir -> [{ name, rhs }] (non-generic `type X = …`)
     for (const { dir } of packages) {
         const names = new Set();
         const byName = new Map();
+        const aliases = [];
         for (const file of tsFiles(join(PKGS, dir, 'src'))) {
             const src = readFileSync(file, 'utf8');
             for (const blk of interfaceBlocks(src, { includeLocal: true })) {
                 if (isAllOptional(blk.body)) names.add(blk.name);
                 byName.set(blk.name, { ...blk, file, src });
             }
+            aliases.push(...typeAliases(src));
         }
         allOptionalByPkg.set(dir, names);
         ifaceByPkg.set(dir, byName);
+        aliasByPkg.set(dir, aliases);
     }
+
+    // ALIAS PASS (#564 item 1) — one level, interfaces only. `type X = A | Bag` makes `X`
+    // admit `{}` just as surely as the bag itself does, but an alias is not an interface
+    // block, so the pre-pass above cannot see it.
+    //
+    // The candidate set is SNAPSHOTTED from the interface pass before any alias is added, and
+    // core's snapshot is a copy. That is what bounds this to one level: an arm naming another
+    // alias is never in the snapshot, so aliases cannot chain, in either resolution order.
+    // Anything deeper is the type-aware phase's job.
+    const aliasBagByPkg = new Map(); // dir -> Map(alias name -> the bag it resolves through)
+    {
+        const coreIfaceOnly = new Set(allOptionalByPkg.get('core') ?? []);
+        for (const { dir } of packages) {
+            const resolvable = new Set([
+                ...(allOptionalByPkg.get(dir) ?? []),
+                ...coreIfaceOnly,
+            ]);
+            const bags = new Map();
+            for (const { name, rhs } of aliasByPkg.get(dir) ?? []) {
+                const bag = unionArms(rhs).find((a) => resolvable.has(a));
+                if (!bag) continue;
+                bags.set(name, bag);
+                allOptionalByPkg.get(dir)?.add(name);
+            }
+            aliasBagByPkg.set(dir, bags);
+        }
+    }
+
     const coreAllOptional = allOptionalByPkg.get('core') ?? new Set();
     const coreIfaces = ifaceByPkg.get('core') ?? new Map();
+    const coreAliasBags = aliasBagByPkg.get('core') ?? new Map();
 
     for (const { dir } of packages) {
         const srcRoot = join(PKGS, dir, 'src');
@@ -525,6 +615,12 @@ function collect() {
         const ifaces = new Map([
             ...coreIfaces,
             ...(ifaceByPkg.get(dir) ?? new Map()),
+        ]);
+        // Which of the names in `allOptional` got there through an alias, and the bag each
+        // resolves through — the fix goes on the bag ARM inside the alias, not on the alias.
+        const aliasBags = new Map([
+            ...coreAliasBags,
+            ...(aliasBagByPkg.get(dir) ?? new Map()),
         ]);
         // An envelope plus every interface it extends, transitively — the members a consumer
         // can actually write at that slot. `seen` guards a cyclic `extends`.
@@ -695,10 +791,11 @@ function collect() {
             // ANY arm of its union. The old check only matched a bare `X` or a leading
             // `boolean | X`, which is not what makes `{}` legal — one assignable arm is, in
             // any position. That blind spot hid `delta?: DeltaShaper | DeltaFrameOptions`
-            // (function first), `errorHandler?: StitchErrorOptions | false` (bag first,
-            // non-boolean second), and `respond?: MockResponder` on a non-`*Options` bag.
-            // `AtLeastOne<X>` is never an all-optional interface name, so the canonical fix
-            // clears the finding by construction.
+            // (function first) and `errorHandler?: StitchErrorOptions | false` (bag first,
+            // non-boolean second). The bag may now also be reached through one level of `type`
+            // alias (#564 item 1) — resolved in the alias pass above, reported against the bag
+            // the alias unions in. `AtLeastOne<X>` is never an all-optional interface name and
+            // is never a bare arm, so the canonical fix clears the finding by construction.
             for (const blk of blocks) {
                 // Only CONSUMER-INPUT envelopes — P20 governs what a caller authors, not what
                 // the engine hands back. P3 already draws that line, so reuse it: `*Options`
@@ -720,11 +817,9 @@ function collect() {
                     while ((m6 = mre.exec(owner.body))) {
                         // Arms of the union, minus generic payloads — `AtLeastOne<Foo>` must not
                         // read as bare `Foo`, or the prescribed fix would flag itself.
-                        const arms = m6[2]
-                            .split('|')
-                            .map((a) => a.trim())
-                            .filter((a) => /^[A-Z]\w*$/.test(a));
-                        const bag = arms.find((a) => allOptional.has(a));
+                        const bag = unionArms(m6[2]).find((a) =>
+                            allOptional.has(a),
+                        );
                         if (!bag) continue;
                         const at = owner.bodyStart + m6.index;
                         if (deprecatedBefore(owner.src ?? src, at)) continue;
@@ -735,11 +830,17 @@ function collect() {
                         const site = `${owner.file ?? file}|${at}`;
                         if (seenR6.has(site)) continue;
                         seenR6.add(site);
+                        // Through an alias, the edit belongs on the bag ARM inside the alias
+                        // (`type R = AtLeastOne<Bag> | …`), not on the alias name — wrapping a
+                        // union that also carries a function arm would be nonsense.
+                        const via = aliasBags.get(bag);
                         add(
                             'R6',
                             owner.file ?? file,
                             `${owner.name}.${m6[1]}`,
-                            `all-optional ${bag} in the union — {} type-checks → AtLeastOne<${bag}> (P20)`,
+                            via
+                                ? `all-optional ${via} via alias ${bag} — {} type-checks → AtLeastOne<${via}> inside ${bag} (P20)`
+                                : `all-optional ${bag} in the union — {} type-checks → AtLeastOne<${bag}> (P20)`,
                             lineOf(owner.src ?? src, at),
                         );
                     }

@@ -77,6 +77,44 @@ the transport sends, chosen by the stitch's
   sent. `signBody: true` with a multipart body **throws** — leave it unset to send
   `UNSIGNED-PAYLOAD`, or pass a pre-serialised string body to sign it.
 
+## Signing time
+
+`x-amz-date` is stamped from the stitch's [`clock`](/docs/guides/testing/mocking),
+the same injectable seam that drives retry backoff, throttle pacing, and OAuth2
+token freshness — not from `new Date()`. On the default `systemClock` that is
+wall-clock time, so nothing changes in production; injecting a `manualClock()`
+makes the signature's timestamp something a test can drive:
+
+```ts
+import { awsSigV4 } from '@stitchapi/aws-sigv4';
+import { stitch } from 'stitchapi';
+import { manualClock } from 'stitchapi/testing';
+
+const clock = manualClock(Date.UTC(2015, 7, 30, 12, 36, 0));
+const call = stitch({
+    baseUrl: 'https://my-bucket.s3.us-east-1.amazonaws.com',
+    path: '/objects',
+    clock,
+    auth: awsSigV4({
+        region: 'us-east-1',
+        service: 's3',
+        accessKeyId: 'AKID…',
+        secretAccessKey: '…',
+    }),
+});
+
+await call(); // signs x-amz-date: 20150830T123600Z
+await clock.advance(600_000); // ten virtual minutes
+await call(); // signs x-amz-date: 20150830T124600Z
+```
+
+<Callout type="warn">
+    `manualClock()` starts at epoch `0`, which stamps `19700101T000000Z` — about
+    twenty thousand days of apparent skew, and a real AWS endpoint answers it
+    with `RequestTimeTooSkewed`. Seed the clock when the signature has to be
+    plausible: `manualClock(Date.now())`.
+</Callout>
+
 ## Low-level signer
 
 `signRequestV4(params)` is the pure signing function the strategy wraps — exported

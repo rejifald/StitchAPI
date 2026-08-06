@@ -383,21 +383,21 @@ bookkeeping. That boundary is deliberate, and knowing where it falls is the
 difference between a test that asserts something and one that only looks like it
 does:
 
-| Feature                | Under `manualClock`                                  |
-| ---------------------- | ---------------------------------------------------- |
-| `retry` backoff        | **virtual** — `advance` fires each backoff           |
-| `retry.respect` delays | **virtual** — a parsed `Retry-After` is a wait       |
-| `throttle` rate        | **virtual** — spacing is exact, `waited` reports it  |
-| `throttle` concurrency | **virtual** — a holder releases on virtual time      |
-| `circuit.cooldown`     | **virtual** — `advance` past it opens the probe      |
-| `timeout.each`         | **virtual** — the per-attempt clamp fires on it      |
-| OAuth2 token expiry    | **virtual** — `expires_in` minus `refresh.skew`      |
-| `timeout.total`        | wall-clock — the budget deadline is wall-anchored    |
-| `cache.ttl`            | wall-clock — cache expiry is a store concern         |
-| `memoryStore` TTL      | wall-clock — same                                    |
-| Event `at` / `done.ms` | wall-clock — timestamps are cosmetic                 |
-| AWS SigV4 signing date | wall-clock — `new Date()`, in `@stitchapi/aws-sigv4` |
-| `paginate`             | no time to drive                                     |
+| Feature                | Under `manualClock`                                 |
+| ---------------------- | --------------------------------------------------- |
+| `retry` backoff        | **virtual** — `advance` fires each backoff          |
+| `retry.respect` delays | **virtual** — a parsed `Retry-After` is a wait      |
+| `throttle` rate        | **virtual** — spacing is exact, `waited` reports it |
+| `throttle` concurrency | **virtual** — a holder releases on virtual time     |
+| `circuit.cooldown`     | **virtual** — `advance` past it opens the probe     |
+| `timeout.each`         | **virtual** — the per-attempt clamp fires on it     |
+| OAuth2 token expiry    | **virtual** — `expires_in` minus `refresh.skew`     |
+| AWS SigV4 signing date | **virtual** — `x-amz-date` (`@stitchapi/aws-sigv4`) |
+| `timeout.total`        | wall-clock — the budget deadline is wall-anchored   |
+| `cache.ttl`            | wall-clock — cache expiry is a store concern        |
+| `memoryStore` TTL      | wall-clock — same                                   |
+| Event `at` / `done.ms` | wall-clock — timestamps are cosmetic                |
+| `paginate`             | no time to drive                                    |
 
 <Callout type="info">
     The four core wall-clock rows are **decisions, not gaps** — ADR 0010 scoped
@@ -415,7 +415,9 @@ does:
     real date resolves to a wait of roughly twenty thousand days — which
     presents as a hang, not a failure. Use `retryAfterSeconds` with a **number**
     in fixtures, or seed the clock with a realistic epoch:
-    `manualClock(Date.now())`.
+    `manualClock(Date.now())`. The same seeding applies to SigV4 — an epoch-`0`
+    clock stamps `x-amz-date` as `19700101T000000Z`, which a real AWS endpoint
+    answers with `RequestTimeTooSkewed`.
 </Callout>
 
 ## See also
