@@ -1,12 +1,14 @@
-// Generator for the two DOU illustrations of the missing-layer article:
-// the before → after code transformation, and the stitched seam between
-// your repository and someone else's.
+// Generator for the DOU illustration of the missing-layer article: the
+// before → after transformation, code to code, highlighted with the same
+// Shiki theme the docs site uses (github-light — see source.config.ts,
+// which spreads rehypeCodeDefaultOptions).
 // Run from apps/docs:  node --import tsx/esm scripts/gen-dou-illus.mjs
 // Light theme (DOU pages are white), Ukrainian labels, no product logo (DOU rule).
 import { ImageResponse } from 'next/og';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { codeToTokens } from 'shiki';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = resolve(HERE, '..', 'content', 'drafts');
@@ -18,13 +20,25 @@ for (const file of ['Arial.ttf', 'Arial Bold.ttf', 'Courier New.ttf']) {
         process.exit(1);
     }
 }
-const arial = readFileSync(resolve(FDIR, 'Arial.ttf'));
-const arialBold = readFileSync(resolve(FDIR, 'Arial Bold.ttf'));
-const courier = readFileSync(resolve(FDIR, 'Courier New.ttf'));
 const FONTS = [
-    { name: 'Arial', data: arial, weight: 400, style: 'normal' },
-    { name: 'Arial', data: arialBold, weight: 700, style: 'normal' },
-    { name: 'Mono', data: courier, weight: 400, style: 'normal' },
+    {
+        name: 'Arial',
+        data: readFileSync(resolve(FDIR, 'Arial.ttf')),
+        weight: 400,
+        style: 'normal',
+    },
+    {
+        name: 'Arial',
+        data: readFileSync(resolve(FDIR, 'Arial Bold.ttf')),
+        weight: 700,
+        style: 'normal',
+    },
+    {
+        name: 'Mono',
+        data: readFileSync(resolve(FDIR, 'Courier New.ttf')),
+        weight: 400,
+        style: 'normal',
+    },
 ];
 
 // Signal palette, light theme (mirrors apps/docs/app/tokens.css)
@@ -33,7 +47,6 @@ const P = {
     text: '#0c1019',
     muted: '#58616f',
     brand: '#1d4fd0',
-    brandBg: '#eef2fb',
     warn: '#b4690a',
     line: '#e3e7ef',
 };
@@ -44,76 +57,90 @@ const div = (style, children) => ({
 });
 const txt = (style, s) => div({ ...style }, s);
 
-// The article's own transformation, code to code: the full hand-rolled
-// listUsers on the left, the stitch declaration on the right. 2-space indent
-// so the longest line fits the panel.
-const LEFT_CODE = [
-    'export async function listUsers() {',
-    '  const ctl = new AbortController();',
-    '  const timer = setTimeout(() => ctl.abort(), 10_000);',
-    '  try {',
-    '    const res = await withRetry(() =>',
-    "      fetch('https://api.example.com/users', {",
-    '        headers: {',
-    '          Authorization: `Bearer ${await getToken()}`,',
-    '        },',
-    '        signal: ctl.signal,',
-    '      }),',
-    '    );',
-    '    if (!res.ok) throw new Error(`HTTP ${res.status}`);',
-    '    return (await res.json()) as User[];',
-    '  } finally {',
-    '    clearTimeout(timer);',
-    '  }',
-    '}',
-];
-const RIGHT_CODE = [
-    'const listUsers = stitch({',
-    "  baseUrl: 'https://api.example.com',",
-    "  path: '/users',",
-    "  auth: bearer(env('API_TOKEN')),",
-    '  output: drift(z.array(User)),',
-    '  retry: 3,',
-    "  throttle: '10/s',",
-    "  timeout: '10s',",
-    '});',
-];
+// The article's own snippets, verbatim (minus the narrative lead comment).
+const LEFT_CODE = `import { getToken } from './auth/token';
+import { withRetry } from './utils/retry';
 
-const codeLine = (s, color) =>
-    txt(
-        {
-            fontSize: 19,
-            fontFamily: 'Mono',
-            color,
-            marginTop: 3,
-            whiteSpace: 'pre',
-        },
-        s || ' ',
-    );
+export async function listUsers(): Promise<User[]> {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 10_000);
+    try {
+        const res = await withRetry(() =>
+            fetch('https://api.example.com/users', {
+                headers: { Authorization: \`Bearer \${await getToken()}\` },
+                signal: ctl.signal,
+            }),
+        );
+        if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+        return (await res.json()) as User[]; // заявка, а не перевірка
+    } finally {
+        clearTimeout(timer);
+    }
+}`;
+const RIGHT_CODE = `const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    auth: bearer(env('API_TOKEN')),
+    output: drift(z.array(User)),
+    retry: 3,
+    throttle: '10/s',
+    timeout: '10s',
+});`;
 
-const panel = (headline, subnote, lines, color, borderColor, caption) =>
+const tokenize = async (code) =>
+    (await codeToTokens(code, { lang: 'ts', theme: 'github-light' })).tokens;
+
+const codeBlock = (tokenLines, fontSize) =>
     div(
         {
             flexDirection: 'column',
-            border: `2px solid ${borderColor}`,
-            borderRadius: 18,
-            padding: 24,
             backgroundColor: '#ffffff',
+            border: `1px solid ${P.line}`,
+            borderRadius: 14,
+            padding: `${Math.round(fontSize * 0.9)}px ${Math.round(fontSize * 1.1)}px`,
         },
-        [
-            txt({ fontSize: 26, color: P.muted }, headline),
-            subnote
-                ? txt({ fontSize: 21, color: P.warn, marginTop: 4 }, subnote)
-                : div({ height: 0 }, []),
+        tokenLines.map((line) =>
             div(
-                { flexDirection: 'column', marginTop: 14 },
-                lines.map((l) => codeLine(l, color)),
+                { marginTop: Math.max(2, Math.round(fontSize * 0.16)) },
+                line.length
+                    ? line.map((t) =>
+                          txt(
+                              {
+                                  fontSize,
+                                  fontFamily: 'Mono',
+                                  color: t.color || P.text,
+                                  whiteSpace: 'pre',
+                              },
+                              t.content,
+                          ),
+                      )
+                    : [
+                          txt(
+                              {
+                                  fontSize,
+                                  fontFamily: 'Mono',
+                                  whiteSpace: 'pre',
+                              },
+                              ' ',
+                          ),
+                      ],
             ),
-            caption
-                ? txt({ fontSize: 21, color: P.brand, marginTop: 14 }, caption)
-                : div({ height: 0 }, []),
-        ],
+        ),
     );
+
+const leftTokens = await tokenize(LEFT_CODE);
+const rightTokens = await tokenize(RIGHT_CODE);
+const leftCount = LEFT_CODE.split('\n').length;
+const rightCount = RIGHT_CODE.split('\n').length;
+
+const header = (label, counter) =>
+    div({ alignItems: 'baseline', marginBottom: 10 }, [
+        txt({ fontSize: 26, color: P.muted }, label),
+        txt(
+            { fontSize: 22, color: P.text, fontWeight: 700, marginLeft: 12 },
+            counter,
+        ),
+    ]);
 
 const el = div(
     {
@@ -129,15 +156,13 @@ const el = div(
             { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 26 },
             'Той самий шар: писаний руками → оголошений',
         ),
-        div({ alignItems: 'flex-start', gap: 20 }, [
-            div({ flex: 1.28, flexDirection: 'column' }, [
-                panel(
-                    'у кожному проєкті, руками',
-                    'плюс utils/retry.ts і auth/token.ts — теж ваші',
-                    LEFT_CODE,
-                    P.text,
-                    P.line,
-                    null,
+        div({ alignItems: 'flex-start', gap: 18 }, [
+            div({ flexDirection: 'column', flexShrink: 0 }, [
+                header('у кожному проєкті, руками', `${leftCount} рядків`),
+                codeBlock(leftTokens, 14),
+                txt(
+                    { fontSize: 21, color: P.warn, marginTop: 10 },
+                    'і utils/retry.ts з auth/token.ts теж підтримуєте ви',
                 ),
             ]),
             div(
@@ -145,19 +170,19 @@ const el = div(
                     alignItems: 'center',
                     justifyContent: 'center',
                     alignSelf: 'center',
-                    width: 84,
+                    width: 64,
+                    flexShrink: 0,
                 },
-                [txt({ fontSize: 56, color: P.muted }, '→')],
+                [txt({ fontSize: 52, color: P.muted }, '→')],
             ),
-            div({ flex: 1, flexDirection: 'column' }, [
-                panel(
-                    'один раз, декларацією',
-                    null,
-                    RIGHT_CODE,
-                    P.brand,
-                    P.brand,
-                    'і це вже з бекофом, тротлінгом і валідацією форми — яких зліва нема',
+            div({ flexDirection: 'column', flex: 1 }, [
+                header('один раз, декларацією', `${rightCount} рядків`),
+                codeBlock(rightTokens, 21),
+                txt(
+                    { fontSize: 21, color: P.brand, marginTop: 10 },
+                    'і це вже з бекофом, тротлінгом і валідацією форми —',
                 ),
+                txt({ fontSize: 21, color: P.brand }, 'яких зліва нема'),
             ]),
         ]),
         div({ marginTop: 26, justifyContent: 'center' }, [
@@ -169,151 +194,10 @@ const el = div(
     ],
 );
 
-const res = new ImageResponse(el, { width: 1400, height: 800, fonts: FONTS });
+const res = new ImageResponse(el, { width: 1400, height: 700, fonts: FONTS });
 const out = resolve(
     OUT_DIR,
     'the-web-ecosystem-is-missing-a-layer.uk.illus-declaration.png',
 );
 writeFileSync(out, Buffer.from(await res.arrayBuffer()));
 console.log(`WROTE ${out}`);
-
-// ---- Illustration 2: the stitched seam between two repositories ---------------
-const STITCH_Y = [90, 280, 470];
-const MINOR_Y = [185, 375];
-const seamSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 560">
-  <line x1="120" y1="0" x2="120" y2="560" stroke="#98a2b3" stroke-width="3" stroke-dasharray="10 10"/>
-  ${STITCH_Y.map(
-      (y) => `
-  <line x1="66" y1="${y + 24}" x2="174" y2="${y - 24}" stroke="#1d4fd0" stroke-width="8" stroke-linecap="round"/>
-  <line x1="66" y1="${y + 44}" x2="174" y2="${y - 4}" stroke="#1d4fd0" stroke-width="8" stroke-linecap="round" stroke-opacity="0.55"/>`,
-  ).join('')}
-  ${MINOR_Y.map(
-      (y) => `
-  <line x1="90" y1="${y + 16}" x2="150" y2="${y - 16}" stroke="#1d4fd0" stroke-width="5" stroke-linecap="round" stroke-opacity="0.35"/>`,
-  ).join('')}
-</svg>`;
-const seam = `data:image/svg+xml;base64,${Buffer.from(seamSvg).toString('base64')}`;
-
-const endpointChip = (s) =>
-    txt(
-        {
-            fontSize: 22,
-            fontFamily: 'Mono',
-            color: P.brand,
-            backgroundColor: '#ffffff',
-            border: `2px solid ${P.brand}`,
-            borderRadius: 10,
-            padding: '8px 14px',
-        },
-        s,
-    );
-
-const seamCard = (header, children) =>
-    div(
-        {
-            flex: 1,
-            flexDirection: 'column',
-            border: `2px solid ${P.line}`,
-            borderRadius: 18,
-            padding: 28,
-            backgroundColor: '#ffffff',
-            height: 560,
-        },
-        [
-            txt({ fontSize: 27, color: P.muted, marginBottom: 18 }, header),
-            ...children,
-        ],
-    );
-
-const seamItem = (s, color = P.text, mt = 10) =>
-    txt({ fontSize: 26, color, marginTop: mt }, s);
-
-const seamEl = div(
-    {
-        width: '100%',
-        height: '100%',
-        flexDirection: 'column',
-        backgroundColor: P.bg,
-        padding: '52px 56px',
-        fontFamily: 'Arial',
-    },
-    [
-        txt(
-            { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 26 },
-            'Єдина межа, де інший бік — не ваш',
-        ),
-        div({ alignItems: 'flex-start' }, [
-            seamCard('ваш репозиторій', [
-                seamItem('компоненти'),
-                seamItem('роути'),
-                seamItem('схема бази даних'),
-                seamItem('міграції'),
-                seamItem('тести'),
-                seamItem(
-                    'перейменували колонку — збірка впала, фікс у тому ж коміті',
-                    P.brand,
-                    24,
-                ),
-                seamItem('компілятор бачить усе. Але тільки тут.', P.muted, 24),
-            ]),
-            div({ width: 240, height: 560, position: 'relative' }, [
-                {
-                    type: 'img',
-                    props: {
-                        src: seam,
-                        width: 240,
-                        height: 560,
-                        style: { position: 'absolute', top: 0, left: 0 },
-                    },
-                },
-                ...STITCH_Y.map((y, i) =>
-                    div(
-                        {
-                            position: 'absolute',
-                            top: y + 56,
-                            left: 0,
-                            width: 240,
-                            justifyContent: 'center',
-                        },
-                        [
-                            endpointChip(
-                                ['GET /users', 'POST /orders', 'GET /invoices'][
-                                    i
-                                ],
-                            ),
-                        ],
-                    ),
-                ),
-            ]),
-            seamCard('чужий репозиторій', [
-                seamItem('API, який ви викликаєте'),
-                seamItem('релізиться за своїм графіком', P.warn, 24),
-                seamItem('форма відповіді змінюється мовчки', P.warn),
-                seamItem('специфікації може й не бути', P.warn),
-                seamItem('жодного обовʼязку вас попередити', P.warn),
-            ]),
-        ]),
-        div({ marginTop: 28, flexDirection: 'column', alignItems: 'center' }, [
-            txt(
-                { fontSize: 27, color: P.text },
-                'Контракт через цей шов не перевірить компілятор — його перевіряє стібок: у рантаймі, на кожній відповіді.',
-            ),
-            txt(
-                { fontSize: 24, color: P.brand, marginTop: 8 },
-                'Зшивання: один стібок = один ендпоінт.',
-            ),
-        ]),
-    ],
-);
-
-const seamRes = new ImageResponse(seamEl, {
-    width: 1400,
-    height: 830,
-    fonts: FONTS,
-});
-const seamOut = resolve(
-    OUT_DIR,
-    'the-web-ecosystem-is-missing-a-layer.uk.illus-seam.png',
-);
-writeFileSync(seamOut, Buffer.from(await seamRes.arrayBuffer()));
-console.log(`WROTE ${seamOut}`);
