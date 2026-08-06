@@ -4,10 +4,10 @@ published: false
 description: Screens, routes, databases, untrusted input — every boundary in a web app has a library that owns it, except outbound calls to other people's APIs. Why every project still hand-builds that layer, and what changes when you declare it instead.
 tags: typescript, webdev, api, showdev
 canonical_url: https://stitchapi.dev/blog/the-web-ecosystem-is-missing-a-layer
-cover_image: https://stitchapi.dev/og/blog/the-web-ecosystem-is-missing-a-layer
+cover_image: https://raw.githubusercontent.com/rejifald/StitchAPI/main/docs/crossposts/the-web-ecosystem-is-missing-a-layer.cover-1000x420.png
 ---
 
-_I maintain [StitchAPI](https://github.com/rejifald/StitchAPI) — this essay is the argument for why it exists. Originally published on the [StitchAPI blog](https://stitchapi.dev/blog/the-web-ecosystem-is-missing-a-layer); drafted with AI assistance from my own argument and notes._
+_I maintain [StitchAPI](https://github.com/rejifald/StitchAPI) — this essay is the argument for why it exists. The idea, argument, and narrative are mine; AI assisted with the drafting and mechanical polish. Originally published on the [StitchAPI blog](https://stitchapi.dev/blog/the-web-ecosystem-is-missing-a-layer)._
 
 Every project that calls other people's APIs ends up hand-building the same layer — typed wrappers around endpoints, validation, retries, timeouts, auth — because this is the one boundary of the web stack the ecosystem never claimed. The layer has no name, no shared implementation, and no finished state; it gets rewritten, project after project, team after team. This post is about why the gap exists, why the usual tools don't close it, and what the layer looks like when you stop implementing it and start declaring it.
 
@@ -132,15 +132,20 @@ PUBLISHING CHECKLIST (invisible if pasted; delete freely)
   salesy — the essay qualifies.
 - canonical_url points at the stitchapi.dev original — dev.to officially
   encourages this so search engines credit your domain.
-- cover_image reuses the site's generated OG image (1200×630). dev.to's
-  stated best size is 1000×420, so it will crop; generate a dedicated
-  1000×420 if the crop looks bad in preview.
+- cover_image points at the committed 1000×420 cover (dev.to's exact
+  best size, generated with `pnpm gen:cover --tagline "zero
+  dependencies"`). The raw.githubusercontent URL resolves once this
+  branch merges to main; before that, upload the PNG from
+  docs/crossposts/ directly in the editor. The 1200×630 sibling file is
+  the 1.91:1 variant for other platforms (Twitter/LinkedIn/OG).
 - description: works in practice but is undocumented in the editor guide —
   harmless to keep, don't rely on it rendering everywhere.
 - The italic line up top carries two disclosures dev.to expects: that you
   are the library's author (ownership transparency per #showdev norms)
   and AI assistance (Code of Conduct: "disclose AI assistance in content
-  creation"). Reword as you like, but keep both.
+  creation"). The wording claims the substance — idea, argument,
+  narrative — as yours and credits AI with drafting assistance and
+  polish. Reword as you like, but keep both disclosures.
 - Snippets were verified against stitchapi main as of 2026-08-06; the
   twoslash annotations were stripped because dev.to's highlighter
   (Rouge) doesn't run them.
