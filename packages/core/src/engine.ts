@@ -40,6 +40,7 @@ import type {
 } from './types';
 import { StitchError } from './types';
 import {
+    abortReason,
     appendQueryString,
     buildQuery,
     expandPath,
@@ -565,15 +566,6 @@ async function acquireWithin(
     }
 }
 
-// The Error to reject with when a caller's signal is already/just aborted — its own `reason` when
-// that is an Error (the default AbortError, or a caller-supplied one), else a generic abort Error.
-function abortReason(signal: AbortSignal): Error {
-    const reason: unknown = signal.reason;
-    return reason instanceof Error
-        ? reason
-        : new Error('the operation was aborted');
-}
-
 // Materialize a streaming-path error body for StitchError.body. A streaming adapter hands back the
 // live `ReadableStream` unparsed (so it can be decoded into deltas); on the error branch the stream
 // is never decoded, so read it to text and best-effort JSON-parse it — the same shape the buffered
@@ -701,6 +693,9 @@ async function* attemptLoop(
                     attempt,
                     error: err,
                 });
+                // A caller's abort is a deliberate cancel, not a failed attempt to try again: no
+                // `retry` event, no onRetry, no backoff — the run ends here with the abort error.
+                if (baseReq.signal?.aborted) throw err;
                 if (attempt < max) {
                     yield {
                         type: 'progress',

@@ -11,7 +11,7 @@ import type {
     AdapterResponse,
     AtLeastOne,
 } from './types';
-import { parseDuration } from './util';
+import { abortReason, parseDuration } from './util';
 
 /** One canned response. Omitted fields default sensibly (`status` 200, empty headers). */
 export interface MockResponse {
@@ -105,11 +105,12 @@ const matches = (req: AdapterRequest, m: MockMatch | undefined): boolean => {
 const at = <T>(arr: T[], i: number): T => arr[Math.min(i, arr.length - 1)] as T;
 
 // An abortable delay: rejects the moment `signal` aborts, so a stitch `timeout` (which aborts the
-// per-attempt signal) cancels a slow mock response exactly as it would a real socket.
+// per-attempt signal) cancels a slow mock response exactly as it would a real socket. Rejects with
+// the signal's reason — real `fetch` surfaces `signal.reason`, so a caller's custom abort must too.
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     new Promise((resolve, reject) => {
         if (signal?.aborted) {
-            reject(new Error('aborted'));
+            reject(abortReason(signal));
             return;
         }
         const t = setTimeout(resolve, ms);
@@ -117,7 +118,7 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
             'abort',
             () => {
                 clearTimeout(t);
-                reject(new Error('aborted'));
+                reject(abortReason(signal));
             },
             { once: true },
         );
@@ -166,7 +167,7 @@ export function mockAdapter(
         // request — every real transport refuses it, and a cancellation test written against a
         // mock that answered was asserting the opposite of production. Nothing was sent, so the
         // spy records no call and the route's response sequence keeps its place.
-        if (req.signal?.aborted) throw new Error('aborted');
+        if (req.signal?.aborted) throw abortReason(req.signal);
         log.push(req);
         const idx = list.findIndex(
             (r) =>

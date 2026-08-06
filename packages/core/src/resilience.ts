@@ -16,7 +16,7 @@ import type {
 // extends `StitchError` per CONTRACT.md P10. `types.ts` imports nothing at runtime — its own
 // imports are all type-only — so this edge adds no cycle.
 import { StitchError } from './types';
-import { parseDuration, parseRate, systemClock } from './util';
+import { abortReason, parseDuration, parseRate, systemClock } from './util';
 
 export class TimeoutError extends Error {}
 
@@ -193,15 +193,6 @@ export function createThrottle(
 /** Internal: keys the non-enumerable per-key state Map probe used by the resource-leak suite. */
 export const THROTTLE_STATES = Symbol('stitch.throttle.states');
 
-// The Error to reject with when a linked signal is already aborted — its own `reason` when that is
-// an Error (the default AbortError, or a caller-supplied one), else a generic abort Error.
-function abortError(signal: AbortSignal): Error {
-    const reason: unknown = signal.reason;
-    return reason instanceof Error
-        ? reason
-        : new Error('the operation was aborted');
-}
-
 /**
  * Run `fn` with an AbortSignal that aborts after `ms`. On timeout, reject with TimeoutError and
  * ensure the signal is aborted. If `ms` is undefined, just run `fn` with a non-aborting signal.
@@ -218,7 +209,7 @@ export function withTimeout<T>(
     const controller = new AbortController();
     let unlink: (() => void) | undefined;
     if (linkSignal) {
-        if (linkSignal.aborted) return Promise.reject(abortError(linkSignal));
+        if (linkSignal.aborted) return Promise.reject(abortReason(linkSignal));
         const onAbort = () => {
             controller.abort(linkSignal.reason);
         };

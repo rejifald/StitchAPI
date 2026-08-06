@@ -3,6 +3,7 @@
 // resolve with zero real waiting — drive them with `advance(ms)`. (Per ADR 0010, `timeout.total`
 // and event `at`/`ms` timestamps stay on wall-clock.) Browser-safe: no `node:*`.
 import type { Clock, TimerHandle } from './types';
+import { abortReason } from './util';
 
 /** A {@link Clock} whose time only moves when you call {@link ManualClock.advance}. */
 export interface ManualClock extends Clock {
@@ -63,19 +64,25 @@ export function manualClock(start = 0): ManualClock {
         clearTimer: cancel,
         sleep: (ms, signal) =>
             new Promise<void>((resolve, reject) => {
+                // Reject with the signal's reason, exactly as `systemClock.sleep` does — a test
+                // that aborts with a custom reason must see it through the injected clock too.
                 if (signal?.aborted) {
-                    reject(new Error('aborted'));
+                    reject(abortReason(signal));
+                    return;
+                }
+                if (!signal) {
+                    schedule(resolve, ms);
                     return;
                 }
                 const onAbort = () => {
                     cancel(handle);
-                    reject(new Error('aborted'));
+                    reject(abortReason(signal));
                 };
                 const handle = schedule(() => {
-                    signal?.removeEventListener('abort', onAbort);
+                    signal.removeEventListener('abort', onAbort);
                     resolve();
                 }, ms);
-                signal?.addEventListener('abort', onAbort, { once: true });
+                signal.addEventListener('abort', onAbort, { once: true });
             }),
         async advance(ms: number): Promise<void> {
             const target = current + Math.max(0, ms);
