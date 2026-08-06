@@ -1,5 +1,5 @@
 // Pins THE FINDING core's download-slow-vs-stall.spec surfaced (no idle/forward-progress timeout in the
-// engine — TimeoutOptions is all wall-clock) + P9, at the batch layer. `idleTimeout` resets on every
+// engine — TimeoutOptions is all wall-clock) + P9, at the batch layer. `idle` resets on every
 // onProgress chunk, so a DEAD stall is aborted (retryable IDLE_TIMEOUT) while a slow-but-progressing
 // sibling SURVIVES — the distinction the wall-clock timeout cannot make. And a stalled item under
 // concurrency times out ALONE: siblings finish with intact blobs.
@@ -73,7 +73,7 @@ test('a dead stall trips the idle timeout and is cut ALONE — siblings finish w
         ],
         {
             concurrency: 2,
-            idleTimeout: 200,
+            idle: 200,
             defaults: { baseUrl: server.url, retry: { attempts: 1 } },
         },
     );
@@ -115,7 +115,7 @@ test('a slow-but-alive stream SURVIVES an idle timeout that a dead stall trips',
 
     const results = await downloadAll([{ path: '/slow' }, { path: '/stall' }], {
         concurrency: 2,
-        idleTimeout: 120,
+        idle: '120ms', // P17: the window takes a duration STRING as well as raw ms
         defaults: { baseUrl: server.url, retry: { attempts: 1 } },
     });
 

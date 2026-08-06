@@ -76,19 +76,22 @@ const mgr = new DownloadManager({
 const handle = mgr.add('https://cdn.example.com/late.bin');
 handle.cancel();
 const result = await handle.done; // this item's ItemResult
-await mgr.idle(); // resolves when the whole queue drains
+await mgr.drained(); // resolves when the whole queue drains
 ```
 
-## Forward-progress idle timeout
+## Forward progress: `idle`
 
 `download()`'s `timeout` is wall-clock — it fires on total elapsed time whether or not bytes are
-arriving, so a healthy-but-slow download dies by the same clock as a dead stall. `idleTimeout` is
-different: it resets on **every** progress chunk, so a slow stream survives while a genuinely stalled
-one is aborted (surfacing as a retryable `IDLE_TIMEOUT`).
+arriving, so a healthy-but-slow download dies by the same clock as a dead stall. `idle` is a
+different clock: it resets on **every** progress chunk, so a slow stream survives while a genuinely
+stalled one is aborted (surfacing as a retryable `IDLE_TIMEOUT`).
 
 ```ts
-downloadAll(urls, { idleTimeout: 10_000 }); // abort an item after 10s of NO new bytes
+downloadAll(urls, { idle: '10s' }); // abort an item after 10s of NO new bytes
 ```
+
+Two clocks, two words — the batch's `idle` and the stitch's wall-clock `timeout` (set per item, or
+under `defaults`) never share a name, and both take `number | string`.
 
 ## Error classification
 

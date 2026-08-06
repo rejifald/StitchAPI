@@ -12,7 +12,7 @@ import type {
     ItemResult,
 } from './types';
 
-import { systemClock } from 'stitchapi';
+import { parseDuration, systemClock } from 'stitchapi';
 import type {
     AdapterProgress,
     Clock,
@@ -31,7 +31,8 @@ interface QueueItem {
 
 interface Active {
     ctrl: AbortController;
-    idleTimer: unknown;
+    /** The live forward-progress timer handle, re-armed on every chunk; `undefined` when unarmed. */
+    timer: unknown;
     /** The latest RAW transport error captured via `hooks.onError` — for classification. */
     raw: unknown;
 }
@@ -51,7 +52,7 @@ interface InternalHandle {
 export class DownloadManager {
     readonly #concurrency: number;
     readonly #defaults: Partial<StitchConfig>;
-    readonly #idleTimeout: number | undefined;
+    readonly #idle: number | undefined;
     readonly #dedupe: boolean;
     readonly #clock: Clock;
     readonly #opts: BatchOptions;
@@ -66,14 +67,14 @@ export class DownloadManager {
     readonly #lastTotal = new Map<DownloadId, number>();
     readonly #dedupeInflight = new Map<string, Promise<DownloadResult>>();
     readonly #cancelled = new Set<DownloadId>();
-    readonly #idledOut = new Set<DownloadId>();
-    #idleWaiters: Array<() => void> = [];
+    readonly #stalled = new Set<DownloadId>();
+    #drainWaiters: Array<() => void> = [];
     #signalAborted = false;
 
     constructor(opts: BatchOptions = {}) {
         this.#concurrency = Math.max(1, opts.concurrency ?? 4);
         this.#defaults = opts.defaults ?? {};
-        this.#idleTimeout = opts.idleTimeout;
+        this.#idle = parseDuration(opts.idle);
         this.#dedupe = opts.dedupe ?? false;
         this.#clock = opts.clock ?? systemClock;
         this.#opts = opts;
@@ -160,18 +161,24 @@ export class DownloadManager {
         }
     }
 
-    /** Resolves when the queue is fully drained (all added items settled). */
-    idle(): Promise<void> {
+    /**
+     * Resolves when the queue is fully drained (all added items settled).
+     *
+     * Named for the QUEUE, not for idleness: {@link BatchOptions.idle} is a per-item
+     * forward-progress window, a different clock over a different subject, and one word may not
+     * carry both concepts (CONTRACT.md P2).
+     */
+    drained(): Promise<void> {
         if (this.#queue.length === 0 && this.#active.size === 0)
             return Promise.resolve();
         return new Promise<void>((resolve) => {
-            this.#idleWaiters.push(resolve);
+            this.#drainWaiters.push(resolve);
         });
     }
 
-    /** The per-item results so far, in enqueue order. Awaits {@link idle} first. */
+    /** The per-item results so far, in enqueue order. Awaits {@link drained} first. */
     async results(): Promise<ItemResult[]> {
-        await this.idle();
+        await this.drained();
         return this.#order.map(
             (id) => this.#results.get(id) ?? { id, status: 'cancelled' },
         );
@@ -244,7 +251,7 @@ export class DownloadManager {
             if (this.#phase.get(item.id) !== 'queued') continue; // cancelled while queued
             this.#start(item);
         }
-        this.#maybeIdle();
+        this.#maybeDrained();
     }
 
     #start(item: QueueItem): void {
@@ -252,7 +259,7 @@ export class DownloadManager {
         this.#opts.onItemStart?.(item.id);
 
         const ctrl = new AbortController();
-        const active: Active = { ctrl, idleTimer: undefined, raw: undefined };
+        const active: Active = { ctrl, timer: undefined, raw: undefined };
         this.#active.set(item.id, active);
 
         let result: Promise<DownloadResult>;
@@ -330,36 +337,30 @@ export class DownloadManager {
     }
 
     #armIdle(id: DownloadId, active: Active): void {
-        if (this.#idleTimeout === undefined) return;
-        active.idleTimer = this.#clock.setTimer(
-            () => this.#onIdle(id),
-            this.#idleTimeout,
-        );
+        if (this.#idle === undefined) return;
+        active.timer = this.#clock.setTimer(() => this.#onIdle(id), this.#idle);
     }
 
     #resetIdle(id: DownloadId): void {
-        if (this.#idleTimeout === undefined) return;
+        if (this.#idle === undefined) return;
         const active = this.#active.get(id);
         if (active === undefined) return;
         this.#clearIdle(active);
-        active.idleTimer = this.#clock.setTimer(
-            () => this.#onIdle(id),
-            this.#idleTimeout,
-        );
+        active.timer = this.#clock.setTimer(() => this.#onIdle(id), this.#idle);
     }
 
     #clearIdle(active: Active): void {
-        if (active.idleTimer !== undefined) {
-            this.#clock.clearTimer(active.idleTimer);
-            active.idleTimer = undefined;
+        if (active.timer !== undefined) {
+            this.#clock.clearTimer(active.timer);
+            active.timer = undefined;
         }
     }
 
     #onIdle(id: DownloadId): void {
         const active = this.#active.get(id);
         if (active === undefined) return;
-        this.#idledOut.add(id);
-        active.ctrl.abort(new DownloadIdleTimeoutError(this.#idleTimeout ?? 0));
+        this.#stalled.add(id);
+        active.ctrl.abort(new DownloadIdleTimeoutError(this.#idle ?? 0));
     }
 
     #onReject(id: DownloadId, err: unknown, active: Active): void {
@@ -368,7 +369,7 @@ export class DownloadManager {
             return;
         }
         const reason = toStitchError(err);
-        if (this.#idledOut.has(id)) {
+        if (this.#stalled.has(id)) {
             this.#settle(id, {
                 id,
                 status: 'rejected',
@@ -414,10 +415,10 @@ export class DownloadManager {
         this.#opts.onProgress?.(this.#progress.snapshot(this.#order.length));
     }
 
-    #maybeIdle(): void {
+    #maybeDrained(): void {
         if (this.#queue.length > 0 || this.#active.size > 0) return;
-        const waiters = this.#idleWaiters;
-        this.#idleWaiters = [];
+        const waiters = this.#drainWaiters;
+        this.#drainWaiters = [];
         for (const resolve of waiters) resolve();
     }
 }

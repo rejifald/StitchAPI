@@ -75,12 +75,18 @@ export interface BatchOptions {
     /** Config merged UNDER every item (the item's own fields win). e.g. `{ baseUrl, retry, throttle }`. */
     defaults?: Partial<StitchConfig>;
     /**
-     * Forward-progress timeout in ms: abort an item if no `onProgress` byte-chunk arrives within this
-     * window. Resets on every chunk, so a slow-but-alive stream survives while a dead stall is cut.
-     * Distinct from `download()`'s wall-clock `timeout` (which fires on total elapsed regardless of
-     * progress). Off when unset.
+     * Forward-progress window — `10_000`, `'10s'`: abort an item if no `onProgress` byte-chunk
+     * arrives within it. Resets on every chunk, so a slow-but-alive stream survives while a dead
+     * stall is cut. Off when unset.
+     *
+     * One word, and deliberately not spelled `timeout` (CONTRACT.md P1/P2): a stitch's `timeout` is
+     * WALL-CLOCK — `{ total, perAttempt }` fire on elapsed time regardless of progress — and it is
+     * configurable right here, under `defaults`. Two different clocks must not share one word, so
+     * this one is named for what it measures (a stream that has gone idle), not for what it does.
+     * `number | string`, parsed by core's shared `parseDuration` like every other authored duration
+     * (P17).
      */
-    idleTimeout?: number;
+    idle?: number | string;
     /**
      * Reuse a single in-flight download for items that share a key (their `id`, else URL) instead of
      * fetching independently. Default `false` — every item is its own request (predictable, no
