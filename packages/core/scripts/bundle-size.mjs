@@ -300,13 +300,36 @@ const KB = 1024;
 // home-page metrics component, and the docs' source blurb — propagated by hand and verified with
 // the tether. (The core README's "~21 kB brotli" moves with them and is more accurate for it: the
 // whole entry's brotli is 21.6 KB, which rounds to 22, not 21.)
+// `stitchapi — whole entry` raised for the abort-reason fix — #674 (24.10→24.15 KB; measured
+// 24.10 = 24681 B against a `main` at 24677 B, so the fix is +4 B). A caller's `abort(reason)`
+// came back as a minted `Error('aborted')` whenever the abort landed in a retry-backoff sleep,
+// and a mid-flight abort still emitted a `retry` progress event (and fired onRetry) before dying
+// there — a phantom retry for a deliberately cancelled call. The bytes are the attempt-loop
+// guard that rethrows on an aborted caller signal instead of entering the retry path.
+//
+// The reason-preserving rejection itself is minified-SMALLER (−102 B on the entry, −98 B on
+// `import { stitch }`): `sleep`, the engine's abort paths and `withTimeout`'s link now share one
+// `abortReason` where each carried a private copy. gzip still charges for the dedup (+14 B on
+// `import { stitch }`) — the deleted copies were near-free backreferences — but collapsing three
+// hand-copies, one of which had already drifted, IS the fix, so the dedup stays.
+//
+// It cannot move behind a subpath: this is `sleep` and the attempt loop — the resilience chain
+// `stitch()` IS — on the core path by construction.
+//
+// A MINIMUM step again, the #676 shape (matching #477/#524/#485): a fix squeezing past a ceiling
+// `main` had run down to 1.4 B of, not a new capability. Headroom lands at 49 B. `import
+// { stitch }` is NOT raised — it measures 22053 B against its 22067 B budget and still fits, with
+// 14 B to spare, so the next core-path byte trips that one and sizing its step stays the
+// maintainer's call. The advertised rounded kB are UNCHANGED (24 / 22, and the entry's 21.64 KB
+// brotli still rounds to the ~22 the core README quotes), verified with the
+// `bundle-advertised-size` tether rather than assumed.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.1 * KB,
+        budget: 24.15 * KB,
         advertised: true,
     },
     {
