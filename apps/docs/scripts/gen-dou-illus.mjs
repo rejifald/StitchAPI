@@ -1,6 +1,7 @@
-// Generator for the DOU illustration of the missing-layer article: the
-// before → after mapping (hand-rolled artifact → the declaration field it
-// collapses into). Run from apps/docs:  node --import tsx/esm scripts/gen-dou-illus.mjs
+// Generator for the two DOU illustrations of the missing-layer article:
+// the before → after code transformation, and the stitched seam between
+// your repository and someone else's.
+// Run from apps/docs:  node --import tsx/esm scripts/gen-dou-illus.mjs
 // Light theme (DOU pages are white), Ukrainian labels, no product logo (DOU rule).
 import { ImageResponse } from 'next/og';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -175,3 +176,144 @@ const out = resolve(
 );
 writeFileSync(out, Buffer.from(await res.arrayBuffer()));
 console.log(`WROTE ${out}`);
+
+// ---- Illustration 2: the stitched seam between two repositories ---------------
+const STITCH_Y = [90, 280, 470];
+const MINOR_Y = [185, 375];
+const seamSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 560">
+  <line x1="120" y1="0" x2="120" y2="560" stroke="#98a2b3" stroke-width="3" stroke-dasharray="10 10"/>
+  ${STITCH_Y.map(
+      (y) => `
+  <line x1="66" y1="${y + 24}" x2="174" y2="${y - 24}" stroke="#1d4fd0" stroke-width="8" stroke-linecap="round"/>
+  <line x1="66" y1="${y + 44}" x2="174" y2="${y - 4}" stroke="#1d4fd0" stroke-width="8" stroke-linecap="round" stroke-opacity="0.55"/>`,
+  ).join('')}
+  ${MINOR_Y.map(
+      (y) => `
+  <line x1="90" y1="${y + 16}" x2="150" y2="${y - 16}" stroke="#1d4fd0" stroke-width="5" stroke-linecap="round" stroke-opacity="0.35"/>`,
+  ).join('')}
+</svg>`;
+const seam = `data:image/svg+xml;base64,${Buffer.from(seamSvg).toString('base64')}`;
+
+const endpointChip = (s) =>
+    txt(
+        {
+            fontSize: 22,
+            fontFamily: 'Mono',
+            color: P.brand,
+            backgroundColor: '#ffffff',
+            border: `2px solid ${P.brand}`,
+            borderRadius: 10,
+            padding: '8px 14px',
+        },
+        s,
+    );
+
+const seamCard = (header, children) =>
+    div(
+        {
+            flex: 1,
+            flexDirection: 'column',
+            border: `2px solid ${P.line}`,
+            borderRadius: 18,
+            padding: 28,
+            backgroundColor: '#ffffff',
+            height: 560,
+        },
+        [
+            txt({ fontSize: 27, color: P.muted, marginBottom: 18 }, header),
+            ...children,
+        ],
+    );
+
+const seamItem = (s, color = P.text, mt = 10) =>
+    txt({ fontSize: 26, color, marginTop: mt }, s);
+
+const seamEl = div(
+    {
+        width: '100%',
+        height: '100%',
+        flexDirection: 'column',
+        backgroundColor: P.bg,
+        padding: '52px 56px',
+        fontFamily: 'Arial',
+    },
+    [
+        txt(
+            { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 26 },
+            'Єдина межа, де інший бік — не ваш',
+        ),
+        div({ alignItems: 'flex-start' }, [
+            seamCard('ваш репозиторій', [
+                seamItem('компоненти'),
+                seamItem('роути'),
+                seamItem('схема бази даних'),
+                seamItem('міграції'),
+                seamItem('тести'),
+                seamItem(
+                    'перейменували колонку — збірка впала, фікс у тому ж коміті',
+                    P.brand,
+                    24,
+                ),
+                seamItem('компілятор бачить усе. Але тільки тут.', P.muted, 24),
+            ]),
+            div({ width: 240, height: 560, position: 'relative' }, [
+                {
+                    type: 'img',
+                    props: {
+                        src: seam,
+                        width: 240,
+                        height: 560,
+                        style: { position: 'absolute', top: 0, left: 0 },
+                    },
+                },
+                ...STITCH_Y.map((y, i) =>
+                    div(
+                        {
+                            position: 'absolute',
+                            top: y + 56,
+                            left: 0,
+                            width: 240,
+                            justifyContent: 'center',
+                        },
+                        [
+                            endpointChip(
+                                ['GET /users', 'POST /orders', 'GET /invoices'][
+                                    i
+                                ],
+                            ),
+                        ],
+                    ),
+                ),
+            ]),
+            seamCard('чужий репозиторій', [
+                seamItem('API, який ви викликаєте'),
+                seamItem('релізиться за своїм графіком', P.warn, 24),
+                seamItem('форма відповіді змінюється мовчки', P.warn),
+                seamItem('специфікації може й не бути', P.warn),
+                seamItem('жодного обовʼязку вас попередити', P.warn),
+            ]),
+        ]),
+        div({ marginTop: 28, flexDirection: 'column', alignItems: 'center' }, [
+            txt(
+                { fontSize: 27, color: P.text },
+                'Контракт через цей шов не перевірить компілятор — його перевіряє стібок: у рантаймі, на кожній відповіді.',
+            ),
+            txt(
+                { fontSize: 24, color: P.brand, marginTop: 8 },
+                'Зшивання: один стібок = один ендпоінт.',
+            ),
+        ]),
+    ],
+);
+
+const seamRes = new ImageResponse(seamEl, {
+    width: 1400,
+    height: 830,
+    fonts: FONTS,
+});
+const seamOut = resolve(
+    OUT_DIR,
+    'the-web-ecosystem-is-missing-a-layer.uk.illus-seam.png',
+);
+writeFileSync(seamOut, Buffer.from(await seamRes.arrayBuffer()));
+console.log(`WROTE ${seamOut}`);
