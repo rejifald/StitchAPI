@@ -193,12 +193,16 @@ export interface CoalesceJoinOptions {
     onCancel?: () => void;
 }
 
+/** The WRITE end of a shared run: the leader runs the chain and reports the real error to its own
+ *  caller. `promise` is here for symmetry only — a leader must never await it (doing so before
+ *  `settle`/`fail` deadlocks on itself), which is why rejecting it must be safe with no audience. */
 export interface LeaderClaim<T> {
     leader: true;
     promise: Promise<T>;
     settle: (value: T) => void;
     fail: (err: unknown) => void;
 }
+/** The READ end: a follower has nothing to run, only the leader's one result to await. */
 export interface FollowerClaim<T> {
     leader: false;
     promise: Promise<T>;
@@ -226,6 +230,17 @@ export class InflightCoalescer<T> {
             const promise = new Promise<T>((res, rej) => {
                 resolve = res;
                 reject = rej;
+            });
+            // The shared promise is an OFFER a follower may take up, not a result anyone is
+            // obliged to consume: the leader never awaits it (it owns and throws the real
+            // error itself), so with no follower a `fail()` rejects a promise nobody observes
+            // — an unhandled rejection that kills the process under Node's default
+            // `--unhandled-rejections=throw` (#670). Marking it handled in the same breath as
+            // creating it makes that structural rather than dependent on who happens to join.
+            // This attaches to a DERIVED promise and discards it; `promise` is untouched, so a
+            // follower's `await` still sees the same rejection, same tick, same error identity.
+            promise.catch(() => {
+                /* an audience of nobody is not an error */
             });
             entry = { promise, resolve, reject, refs: 0 };
             if (opts?.onCancel) entry.onCancel = opts.onCancel;

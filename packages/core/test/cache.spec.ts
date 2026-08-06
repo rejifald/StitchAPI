@@ -9,6 +9,12 @@ import { clearFingerprinters, registerFingerprinter } from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
 
+import { spawn } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 const sleep = (ms: number): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -186,6 +192,39 @@ describe('cache — in-process coalescing', () => {
         expect(calls()).toBe(3); // leader + two independent re-runs
     });
 
+    test('a LONE failing leader leaves no unhandled rejection (#670)', async () => {
+        // The leader rejects the coalescer's shared promise to release its waiters — but with no
+        // concurrent caller there ARE no waiters, so nothing attaches a handler and the rejection
+        // goes unobserved → Node's default `--unhandled-rejections=throw` kills the process, on a
+        // failure the caller HANDLED. This must be a single sequential call: a burst (the shape
+        // every other test in this block uses) has a follower whose `await` catches the rejection
+        // and hides the bug, which is why the leader-failure test above never caught it.
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown): void => {
+            unhandled.push(reason);
+        };
+        process.on('unhandledRejection', onUnhandled);
+        let ok: boolean;
+        try {
+            const { adapter, calls } = counting({ failCall: 1 });
+            const s = stitch({
+                url: URL,
+                adapter,
+                trace: false,
+                cache: { ttl: '60s', tenancy: 'app' },
+            });
+            ok = (await s.safe()).ok;
+            expect(calls()).toBe(1);
+            // Let the leader's rejected shared promise reach the end of a turn, which is where an
+            // unobserved rejection is reported.
+            await sleep(0);
+        } finally {
+            process.off('unhandledRejection', onUnhandled);
+        }
+        expect(ok).toBe(false); // the caller handled it, honestly
+        expect(unhandled).toEqual([]); // …and paid nothing for having handled it
+    });
+
     test('coalesce:false disables collapsing (still caches)', async () => {
         const { adapter, calls } = counting({ delay: 40 });
         const s = stitch({
@@ -199,6 +238,78 @@ describe('cache — in-process coalescing', () => {
         await s(); // but the cache is warm now
         expect(calls()).toBe(3);
     });
+});
+
+describe('cache — a handled failure does not kill the process (#670)', () => {
+    // The in-process guard above asserts that no `unhandledRejection` EVENT fires. What a caller
+    // actually experiences is the exit code — and a test runner installs handlers of its own, so
+    // an in-process assertion can pass while the same code would still terminate a real program.
+    // This settles the claim where it is made: a bare `node`, no flags, so the default
+    // `--unhandled-rejections=throw` is in force, running the issue's reproduction verbatim.
+    //
+    // The library is bundled from `src/` with esbuild — already a devDependency, and already how
+    // `scripts/bundle-size.mjs` measures — so the child runs the WORKING TREE and the test needs
+    // no `pnpm build` to have happened first.
+    test('the issue’s reproduction exits 0 and reaches the line after the call', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'stitch-cache-670-'));
+        try {
+            const esbuild = createRequire(import.meta.url)(
+                'esbuild',
+            ) as typeof import('esbuild');
+            esbuild.buildSync({
+                entryPoints: [
+                    join(import.meta.dirname, '..', 'src', 'index.ts'),
+                ],
+                outfile: join(dir, 'stitchapi.mjs'),
+                bundle: true,
+                format: 'esm',
+                platform: 'node',
+                external: ['node:*'],
+                define: { __PKG_VERSION__: '"0.0.0-test"' },
+                logLevel: 'silent',
+            });
+            await writeFile(
+                join(dir, 'repro.mjs'),
+                `import { stitch } from './stitchapi.mjs';\n` +
+                    `const failing = async () => ({ status: 503, headers: {}, body: {} });\n` +
+                    `const getThing = stitch({\n` +
+                    `    url: 'https://api.vendor.test/v1/things/1',\n` +
+                    `    adapter: failing,\n` +
+                    `    trace: false,\n` +
+                    `    cache: { ttl: '60s' },\n` +
+                    `});\n` +
+                    `const r = await getThing.safe();\n` +
+                    `console.log('handled: ok=' + r.ok);\n` +
+                    `await new Promise((res) => setTimeout(res, 50));\n` +
+                    `console.log('STILL ALIVE');\n`,
+                'utf8',
+            );
+
+            // Hermetic: a NODE_OPTIONS inherited from the runner could set
+            // `--unhandled-rejections=warn` and make this pass for the wrong reason.
+            const env = { ...process.env };
+            delete env['NODE_OPTIONS'];
+
+            const child = spawn(process.execPath, [join(dir, 'repro.mjs')], {
+                stdio: ['ignore', 'pipe', 'pipe'],
+                env,
+            });
+            let stdout = '';
+            let stderr = '';
+            child.stdout.on('data', (c: Buffer) => (stdout += c.toString()));
+            child.stderr.on('data', (c: Buffer) => (stderr += c.toString()));
+            const code = await new Promise<number | null>((resolve) =>
+                child.on('close', resolve),
+            );
+
+            expect(stdout).toContain('handled: ok=false'); // `.safe()` was honest…
+            expect(stdout).toContain('STILL ALIVE'); // …and the program outlived it
+            expect(stderr).not.toContain('cache: leader run failed');
+            expect(code).toBe(0);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
 });
 
 describe('cache — invalidation', () => {
