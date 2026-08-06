@@ -121,19 +121,31 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> & {
     interpret: (res, cfg): SurfaceOutcome<DownloadResult> => {
         const failure = verdictOf(res, cfg);
         if (failure) return failure;
-        // Past the declarative verdict comes the surface's OWN rule, which the composed
-        // `verdictOf` cannot express: a buffered download resolves to a WHOLE Blob, so only a
-        // complete-body status is a success — `200 OK`, or `204 No Content` (a legitimately empty
-        // body). `verdictOf` rules on `>= 400`, so every other sub-400 status — most importantly
-        // `206 Partial Content` — arrives here already deemed acceptable. `download` never sends a
-        // `Range`, so a `206` is a partial body the server volunteered (a range-serving proxy/CDN,
-        // a resumed-and-mismatched cache); accepting it would hand the caller a truncated file as
-        // if it were the whole thing.
+        // Past the declarative verdict comes the surface's OWN rule, which the composed `verdictOf`
+        // cannot express: a buffered download resolves to a WHOLE Blob, so a success must be a
+        // status that DEFINITIONALLY carries the whole entity — `200 OK`, or `204 No Content` (a
+        // legitimately empty body). `verdictOf` rules on `>= 400`, so every other sub-400 status
+        // arrives here already deemed acceptable, and two of them would otherwise be handed back as
+        // a downloaded file:
+        //   • `206 Partial Content` — `download` never sends a `Range`, so a 206 is a partial body
+        //     the server volunteered (a range-serving proxy/CDN, a resumed-and-mismatched cache);
+        //     accepting it hands the caller a truncated file as if it were the whole thing.
+        //   • a `3xx` the adapter could not resolve — a chain that hit the hop cap, or one with no
+        //     `Location` (http-adapter.ts `followRedirects` hands the last 3xx back rather than
+        //     throwing). There is no entity at all behind it. A narrower `status === 206` rule would
+        //     let that through as an empty Blob; test/gaps/download-redirect-loop.spec.ts pins it.
+        // Knowingly OUTSIDE the allow-list: `203 Non-Authoritative Information` and `226 IM Used`
+        // do carry a complete body, and are rejected anyway — rare enough, and not distinguishable
+        // from a partial without trusting the transforming intermediary, that the strict reading
+        // wins with `accept` as the documented way back in.
         //
-        // `verdict.accept` is the opt-out, and consulting it HERE is what keeps this honest under
+        // `verdict.accept` is that opt-out, and reading it HERE is what keeps the rule honest under
         // ADR 0022: `classifyStatus` asks `accept` only at `>= 400`, so without this line a caller
-        // who declared `206` NORMAL would still be rejected — the surface would be overriding an
-        // explicit declaration rather than ruling where the caller made none.
+        // who declared `206` NORMAL would still be rejected — the surface overriding an explicit
+        // declaration rather than ruling where the caller made none. It cannot contradict the two
+        // statuses ahead of it either way: `accept` only ever WIDENS (surface.ts), so a match makes
+        // the whole conjunction false wherever it sits. The order below is evaluation COST — no
+        // predicate is allocated on the hot `200` path — not semantics.
         if (
             res.status !== 200 &&
             res.status !== 204 &&
