@@ -1,5 +1,6 @@
-// One-off generator for the two DOU illustrations of the missing-layer article.
-// Run from apps/docs:  node --import tsx/esm scripts/gen-dou-illus.mjs
+// Generator for the DOU illustration of the missing-layer article: the
+// before → after mapping (hand-rolled artifact → the declaration field it
+// collapses into). Run from apps/docs:  node --import tsx/esm scripts/gen-dou-illus.mjs
 // Light theme (DOU pages are white), Ukrainian labels, no product logo (DOU rule).
 import { ImageResponse } from 'next/og';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -33,7 +34,6 @@ const P = {
     brand: '#1d4fd0',
     brandBg: '#eef2fb',
     warn: '#b4690a',
-    warnBg: '#fdf4e3',
     line: '#e3e7ef',
 };
 
@@ -43,231 +43,104 @@ const div = (style, children) => ({
 });
 const txt = (style, s) => div({ ...style }, s);
 
-// ---- Illustration 1: the layer map with one empty cell ------------------------
-const ROWS = [
-    ['Застосунок ↔ екран', 'React · Vue · Svelte'],
-    ['Застосунок ↔ вхідні запити', 'Fastify · Hono · Nest'],
-    ['Застосунок ↔ база даних', 'Prisma · Drizzle · Kysely'],
-    ['Застосунок ↔ недовірені дані', 'Zod · Valibot · ArkType'],
-    ['Застосунок ↔ серверний стан в UI', 'TanStack Query · SWR'],
+// Each hand-rolled artifact and the declaration field it collapses into.
+// The last row is the punchline: the TODO maps to nothing.
+const PAIRS = [
+    ['utils/retry.ts', 'retry: 3'],
+    ['sleep(200)', "throttle: '10/s'"],
+    ['new AbortController()', "timeout: '10s'"],
+    ['as User[]', 'output: drift(User)'],
+    ['auth/refreshToken.ts', 'auth: bearer(env(…))'],
+    ['// TODO: причесати', null],
 ];
 
-const rowEl = (label, owner) =>
-    div(
-        {
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '18px 28px',
-            borderBottom: `2px solid ${P.line}`,
-        },
-        [
-            txt({ fontSize: 30, color: P.text }, label),
-            txt(
-                {
-                    fontSize: 28,
-                    fontWeight: 700,
-                    color: P.brand,
-                    backgroundColor: P.brandBg,
-                    padding: '10px 22px',
-                    borderRadius: 999,
-                },
-                owner,
-            ),
-        ],
-    );
-
-const mapEl = div(
-    {
-        width: '100%',
-        height: '100%',
-        flexDirection: 'column',
-        backgroundColor: P.bg,
-        padding: '56px 64px',
-        fontFamily: 'Arial',
-    },
-    [
-        txt(
-            { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 8 },
-            'Кожна межа вебзастосунку має свій шар',
-        ),
-        txt(
-            { fontSize: 30, color: P.muted, marginBottom: 30 },
-            'шар = те, що ви оголошуєте, замість того, що імплементуєте',
-        ),
-        div(
-            {
-                flexDirection: 'column',
-                border: `2px solid ${P.line}`,
-                borderRadius: 18,
-                backgroundColor: '#ffffff',
-                overflow: 'hidden',
-            },
-            [
-                ...ROWS.map(([l, o]) => rowEl(l, o)),
-                div(
-                    {
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '18px 28px',
-                        backgroundColor: P.warnBg,
-                    },
-                    [
-                        txt(
-                            { fontSize: 30, fontWeight: 700, color: P.text },
-                            'Застосунок ↔ чужий API',
-                        ),
-                        div({ alignItems: 'center', gap: 18 }, [
-                            txt(
-                                {
-                                    fontSize: 28,
-                                    fontWeight: 700,
-                                    color: P.warn,
-                                    border: `3px dashed ${P.warn}`,
-                                    padding: '8px 22px',
-                                    borderRadius: 999,
-                                    fontFamily: 'Mono',
-                                },
-                                'fetch',
-                            ),
-                            txt(
-                                { fontSize: 26, color: P.warn },
-                                'транспорт, а не шар',
-                            ),
-                        ]),
-                    ],
-                ),
-            ],
-        ),
-        txt(
-            { fontSize: 26, color: P.muted, marginTop: 26 },
-            'Усе, що над транспортом, — типи, повтори, ліміти, авторизація, валідація — досі пишеться руками.',
-        ),
-    ],
-);
-
-// ---- Illustration 2: hand-written helpers collapse into one declaration -------
-const CHIPS = [
-    'utils/retry.ts',
-    'as User[]',
-    'sleep(200)',
-    'auth/refreshToken.ts',
-    'new AbortController()',
-    'try { … } finally { … }',
-    '// TODO: причесати',
-];
-
-const chip = (s) =>
+const leftChip = (s) =>
     txt(
         {
-            fontSize: 25,
+            fontSize: 26,
             fontFamily: 'Mono',
             color: P.text,
             backgroundColor: '#ffffff',
             border: `2px solid ${P.line}`,
             borderRadius: 12,
-            padding: '10px 16px',
-            margin: 7,
+            padding: '12px 20px',
         },
         s,
     );
 
-const codeLine = (s, indent = 0, color = P.text) =>
+const rightChip = (s) =>
     txt(
         {
             fontSize: 26,
             fontFamily: 'Mono',
-            color,
-            marginLeft: indent * 26,
-            marginTop: 4,
+            color: P.brand,
+            backgroundColor: P.brandBg,
+            borderRadius: 12,
+            padding: '12px 20px',
         },
         s,
     );
 
-const panelHeader = (s) =>
-    txt({ fontSize: 27, color: P.muted, marginBottom: 16 }, s);
+const row = ([from, to]) =>
+    div({ alignItems: 'center', marginTop: 14 }, [
+        div({ flex: 1, justifyContent: 'flex-end' }, [leftChip(from)]),
+        txt(
+            {
+                fontSize: 34,
+                color: P.muted,
+                width: 110,
+                justifyContent: 'center',
+            },
+            '→',
+        ),
+        div({ flex: 1 }, [
+            to === null
+                ? txt(
+                      { fontSize: 26, color: P.muted, padding: '12px 0' },
+                      'вже не потрібен',
+                  )
+                : rightChip(to),
+        ]),
+    ]);
 
-const collapseEl = div(
+const colHead = (s, right) =>
+    div({ flex: 1, justifyContent: right ? 'flex-start' : 'flex-end' }, [
+        txt({ fontSize: 26, color: P.muted }, s),
+    ]);
+
+const el = div(
     {
         width: '100%',
         height: '100%',
         flexDirection: 'column',
         backgroundColor: P.bg,
-        padding: '56px 64px',
+        padding: '56px 72px',
         fontFamily: 'Arial',
     },
     [
         txt(
-            { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 30 },
+            { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 28 },
             'Той самий шар: писаний руками → оголошений',
         ),
-        div({ alignItems: 'stretch', gap: 26 }, [
-            div(
-                {
-                    flexDirection: 'column',
-                    flex: 1,
-                    border: `2px solid ${P.line}`,
-                    borderRadius: 18,
-                    padding: 26,
-                },
-                [
-                    panelHeader('у кожному проєкті, по інциденту за раз'),
-                    div({ flexWrap: 'wrap' }, CHIPS.map(chip)),
-                    txt(
-                        { fontSize: 25, color: P.warn, marginTop: 18 },
-                        'ніколи не завершений · не переноситься між проєктами',
-                    ),
-                ],
-            ),
-            div({ alignItems: 'center', justifyContent: 'center' }, [
-                txt({ fontSize: 64, color: P.muted }, '→'),
-            ]),
-            div(
-                {
-                    flexDirection: 'column',
-                    flex: 1,
-                    border: `2px solid ${P.brand}`,
-                    borderRadius: 18,
-                    padding: 26,
-                    backgroundColor: '#ffffff',
-                },
-                [
-                    panelHeader('один раз, декларацією'),
-                    div({ flexDirection: 'column' }, [
-                        codeLine('const listUsers = stitch({', 0, P.brand),
-                        codeLine("path: '/users',", 1),
-                        codeLine('auth: bearer(env(…)),', 1),
-                        codeLine('output: drift(User),', 1),
-                        codeLine('retry: 3,', 1),
-                        codeLine("throttle: '10/s',", 1),
-                        codeLine("timeout: '10s',", 1),
-                        codeLine('});', 0, P.brand),
-                    ]),
-                    txt(
-                        { fontSize: 25, color: P.brand, marginTop: 18 },
-                        'імплементація — в бібліотеці, конфігурація — ваша',
-                    ),
-                ],
+        div({ alignItems: 'center' }, [
+            colHead('у кожному проєкті, руками', false),
+            div({ width: 110 }, []),
+            colHead('один раз, декларацією', true),
+        ]),
+        ...PAIRS.map(row),
+        div({ marginTop: 30, justifyContent: 'center' }, [
+            txt(
+                { fontSize: 27, color: P.brand },
+                'Імплементація переїжджає в бібліотеку. Вам лишається конфігурація.',
             ),
         ]),
     ],
 );
 
-const render = async (el, w, h, name) => {
-    const res = new ImageResponse(el, { width: w, height: h, fonts: FONTS });
-    const out = resolve(OUT_DIR, name);
-    writeFileSync(out, Buffer.from(await res.arrayBuffer()));
-    console.log(`WROTE ${out}`);
-};
-
-await render(
-    mapEl,
-    1400,
-    860,
-    'the-web-ecosystem-is-missing-a-layer.uk.illus-layer-map.png',
-);
-await render(
-    collapseEl,
-    1400,
-    840,
+const res = new ImageResponse(el, { width: 1400, height: 780, fonts: FONTS });
+const out = resolve(
+    OUT_DIR,
     'the-web-ecosystem-is-missing-a-layer.uk.illus-declaration.png',
 );
+writeFileSync(out, Buffer.from(await res.arrayBuffer()));
+console.log(`WROTE ${out}`);
