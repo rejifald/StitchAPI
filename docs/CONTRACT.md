@@ -171,6 +171,21 @@ policy in `engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThresho
 in `resilience.ts` — which name a computed value, never a field a consumer writes. That
 split is the rule's boundary: P4 governs the **authoring** surface.
 
+Enforced by lint **R10** (§7), and that same split is what makes the check high-precision
+without type info: it scans the consumer-input envelope family only (`*Options` plus the
+blessed `*Config` types — R6's filter), so the blessed resolved internals sit outside it **by
+name** rather than on a hand-kept skip list. `*Threshold` is flagged outright, having no
+carve-out to check against. A `max` cap — bare or prefixed, since the sweep record above fixed
+both — is flagged unless it is on the rule's allow-list of **verified magnitude ceilings**,
+which is three entries today: `BackoffOptions.max` (a delay), `ServeBodyOptions.max` and
+`ShellBufferOptions.max` (byte caps). Each carries its one-line reason, so a new `max` forces a
+written magnitude-or-count judgement rather than passing by resemblance to those three.
+
+Note what the allow-list does **not** contain: the `chars` caps. A count of UTF-16 code units
+is a **count**, so `trace.body.chars` and `stream.buffer.chars` are bare nouns and never a
+`max` — the same reading that makes them the marked, string-free side of
+[P25](#p25--one-canonical-size-form). Only the **byte** caps are magnitudes.
+
 ---
 
 ## 3. Typing — predictable and consistent
@@ -1146,9 +1161,10 @@ shape, not as today's surface: nothing on the surface carries an alias.
   pre-existing real match it had not yet fixed, since converted; the 2026-08-04 **R9**
   addition found one more (`Surface.resumeRetry`) and fixed it at the source rather than
   baselining it — the baseline is **zero again**, and the lint fails on **any** new
-  violation. Two rule additions, two pre-existing matches: a new rule landing green is
-  the surprise, not the norm, which is the argument for writing the gate with the rule
-  rather than after it. The ratchet mechanics
+  violation. Two of the first three rule additions turned up a pre-existing match, which is
+  the argument for writing the gate with the rule rather than after it; the third,
+  **R10** (2026-08-06), landed **green** — the P4 sweep it gates had already been done by
+  hand, so it is a regression guard, not a fix. The ratchet mechanics
   stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
   guarantee: the surface can only get more consistent, never less.
 - Rules implemented (high-precision, source-text level): **R1** banned type-name
@@ -1192,16 +1208,38 @@ shape, not as today's surface: nothing on the surface carries an alias.
   **return** rather than a field — the position the 2026-07 sweep's end-user-config
   checklist missed. Adding a name to the vocabulary is a contract decision; the added
   entry is reviewed like an allow-list entry, in the other direction.
+  **R10** the cap vocabulary (P4/D2) — a `max` cap, bare or prefixed, on a consumer-input
+  envelope, unless it is on a curated allow-list of **verified magnitude ceilings**
+  (`BackoffOptions.max`, `ServeBodyOptions.max`, `ShellBufferOptions.max`, one reason each);
+  plus any `*Threshold`, which P4 grants no carve-out. It reuses R6's container filter — the
+  same `*Options` + blessed `*Config` family, `*Like` excluded — and that reuse **is** the
+  precision guarantee rather than a convenience: P4 itself blesses `max*` on the resolved
+  internals, and those sit outside the envelope family by name. Inherited members are scanned
+  like R6's, reported once at the declaration site. This is the rule the 2026-07-31 sweep
+  wanted and did by hand; measured against history it reproduces that sweep's own list
+  (`CacheOptions.maxEntries`, `ReconnectOptions.maxAttempts`, `CircuitOptions.failureThreshold`,
+  `DenoKvStoreOptions.maxIncrRetries`, `RetryOptions.maxMs`/`maxDelay`) on the trees that
+  carried them, and finds nothing on today's surface.
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
   same-name-different-**shape** detection, default-value inversion (P8), and the
   **parse half** of P17/P25 — R9 pins the type, but whether the widened value actually
   reaches `parseDuration`/`parseBytes` before a sleep or comparison is dataflow, and a
   widened type over an unparsed read site is the silent-collapse bug (#609); the parse
-  is pinned behaviourally by test instead. Tracked as comments in the lint. R8 and R9
+  is pinned behaviourally by test instead. Tracked as comments in the lint. R8, R9 and R10
   are also source-text-only in a second sense — they scan exported `interface` bodies,
   not `type`-literal object shapes or class fields, which is why `SurfaceOutcome.after`
   (a union member) sits outside R9's reach; no R8 group was found in either at the
   2026-07-08 audit, but a future one wouldn't be caught until it grows an `interface`.
+- **R10 would not have caught its own motivating case, and that is worth writing down.**
+  The 2026-07-31 sweep found `LlmOptions.maxTokens` / `LlmRequest.maxTokens` by hand; replayed
+  against the trees that carried them, R10 reports neither, for two separate reasons already
+  listed above. `LlmOptions` was `type LlmOptions = Partial<Omit<StitchConfig,'kind'>> & { … }`
+  — a **`type`-literal**, not an `interface`, so no member rule sees it. `LlmRequest` **is** an
+  exported interface but is not `*Options`, so the container filter rejects the container —
+  the same blind spot as `MockRoute.respond` (#564 item 2). R10 is therefore a real guard over
+  the `interface`-shaped `*Options` surface, which is where P4's whole resolved list lived, and
+  **not** a claim that the 2026-07-31 class is now mechanically covered. Closing either half
+  is the same decision deferred elsewhere on this page, not an R10 tweak.
 - **R8's known gap: the shared subject must lead.** R8 buckets by **leading** word, so a pair that
   names its subject in the **trailing** position never groups. `CacheOptions.transformVersion` +
   `trustTransform` — one capability by any reading, folded 2026-08-04 (§6) — bucketed under
