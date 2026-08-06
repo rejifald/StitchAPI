@@ -136,6 +136,14 @@ request, so it cannot drift from what it names.
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="CacheOptions" />
 
+`methods` defaults to `['GET','HEAD']`. Two body-carrying reads opt in by naming
+their method: a GraphQL **query** (`methods: 'POST'`) and
+[`QUERY`](/docs/guides/authoring/stitch#the-query-method)
+(`methods: 'QUERY'`), whose responses are cacheable by spec. Neither is a default —
+a `POST`'s read-vs-mutate intent cannot be inferred, and caching a body-carrying
+request is a decision worth writing down. The key already folds the request body in,
+so two different `QUERY` bodies to the same URL get two entries and cannot collide.
+
 #### CacheFingerprintOptions
 
 The shape behind `cache.fingerprint` — how a stored value is detected as stale against

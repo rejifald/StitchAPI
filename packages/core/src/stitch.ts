@@ -72,6 +72,7 @@ import {
 import {
     deepMerge,
     envelope,
+    isSafeMethod,
     newRunContext,
     readEnv,
     redactSecretsDeep,
@@ -382,8 +383,12 @@ export function compose(config: Fragment): ResolvedStitchConfig {
 // both silenced by `idempotency.warn = false` and both scoped to the **default HTTP surface**: a
 // surface (graphql → POST) can force the method after construction, so its writes aren't knowable
 // here, and we don't guess.
-//   1. On a read (GET/HEAD) the engine drops the key (writes only) — almost always a missing
-//      `method`, so the write protection the author expects silently isn't there.
+//   1. On a read (any SAFE method — GET/HEAD, and QUERY, which is a read that carries a body)
+//      the engine drops the key (writes only) — almost always a missing `method`, so the write
+//      protection the author expects silently isn't there. This shares `isSafeMethod` with
+//      `applyIdempotency` rather than restating GET/HEAD, so the nudge cannot drift out of step
+//      with the drop it is warning about: a method the engine silently skips is a method this
+//      says so about.
 //   2. The *random* default key only dedupes a replay of the same request, and `retry` is what
 //      replays it; with no `retry` it usually has nothing to collapse. (Not useless in every case —
 //      a proxy/transport resending the request below the stitch carries the same key for a server
@@ -424,7 +429,7 @@ function warnConstruction(cfg: ResolvedStitchConfig): void {
     // method semantics" skip has to ask which surface — not whether there is one.
     if (!idem || idem.warn === false || cfg.kind.id !== 'http') return;
     const method = (cfg.method ?? 'GET').toUpperCase();
-    if (method === 'GET' || method === 'HEAD') {
+    if (isSafeMethod(method)) {
         console.warn(
             `stitchapi: \`${name}\` sets \`idempotency\` on a ${method}, but the key is sent on ` +
                 `writes only — set \`method: 'POST'\`, or drop \`idempotency\`.`,

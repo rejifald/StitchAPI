@@ -38,7 +38,8 @@ The handful of fields that shape every stitch:
 
 - **`baseUrl`** + **`path`** — the request target. `path` may contain `{param}`
   slots and a `?query` string; in string form the whole string becomes `path`.
-- **`method`** — the HTTP verb. Defaults to `GET`.
+- **`method`** — the HTTP verb. Defaults to `GET`. Any verb your transport
+  accepts, including [`QUERY`](#the-query-method).
 - **The input object** — `params`, `query`, `headers`, and `body` all travel in
   one `StitchInput` you pass at call time: `await createUser({ params: { id: 1 } })`.
 - **The generic** — `stitch<T>(...)` types the awaited value `T`.
@@ -47,6 +48,52 @@ The handful of fields that shape every stitch:
     Auth, retry, and validation are configured on the same config object but
     documented in their own guides — see below — so there is one source of truth
     per feature.
+</Callout>
+
+## The QUERY method
+
+Some reads don't fit in a URL. A faceted search, a big list of ids, a nested
+filter — encode it as a query string and you hit length limits, proxies that
+truncate, and logs that now hold your filter. The usual workaround is to `POST`
+the filter and give up everything a read gets: no caching, and a client that
+can't tell the call apart from a write.
+
+`QUERY` ([`draft-ietf-httpbis-safe-method-w-body`](https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/))
+is the method for exactly that — **safe**, **idempotent**, and **cacheable**,
+with a request body. Set it like any other verb:
+
+```ts
+const search = stitch({
+    method: 'QUERY',
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    // Responses are spec-cacheable, but opt in — the key folds in the body, so two
+    // different filters get two entries and cannot collide.
+    cache: { ttl: '1m', methods: 'QUERY' },
+});
+
+await search({ body: { status: ['open', 'held'], region: 'eu', limit: 200 } });
+```
+
+StitchAPI treats it as the read it is:
+
+- **The body is sent.** `GET`/`HEAD` have theirs dropped — the transport forbids
+  one — but `QUERY` keeps it, JSON-encoded like any other body.
+- **No idempotency key.** With `idempotency` configured, a `QUERY` is not
+  stamped with an `Idempotency-Key`; there is no side effect to dedupe. Setting
+  `idempotency` on one logs the same construction nudge a `GET` gets.
+- **A 301/302 stays a `QUERY`.** The downgrade-to-`GET` on a permanent or
+  temporary redirect is a historical exception granted to `POST`, and the draft
+  says it does not apply here — downgrading would drop the body, turning a
+  filtered read into an unfiltered one. A `303` still means "GET the result at
+  the `Location`", for a `QUERY` as for anything else.
+- **`cache.methods` accepts it.** Not in the default `['GET','HEAD']`: like a
+  GraphQL `POST`, caching a body-carrying request is explicit.
+
+<Callout type="warn">
+    `QUERY` is a young method. Check that your server — **and every proxy, CDN,
+    and WAF between you and it** — actually routes it before reaching for it;
+    intermediaries have been known to reject or mangle an unfamiliar verb.
 </Callout>
 
 For every field and its default, see

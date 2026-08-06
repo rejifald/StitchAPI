@@ -13,6 +13,37 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Added
 
+- **`QUERY` is a first-class method — a read that carries a request body.**
+  ([draft-ietf-httpbis-safe-method-w-body](https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/))
+  `method: 'QUERY'` already sent its body and already cached correctly under
+  `cache: { methods: 'QUERY' }`, because the cache key folds the body in. What it did **not** have
+  was the engine's agreement that it is a read: "safe method" was spelled `=== 'GET' || === 'HEAD'`
+  inline, so everything else was a write by default.
+
+    One `isSafeMethod` predicate now answers that question in the two places that ask it — RFC 9110
+    §9.2.1's safe set (`GET`, `HEAD`, `OPTIONS`, `TRACE`) plus `QUERY`:
+
+    - **No `Idempotency-Key` on a safe method.** A stitch with `idempotency` configured no longer
+      stamps a dedupe token on a `QUERY` — there is no side effect to collapse, and the header would
+      have varied the cache key on every send. `OPTIONS`/`TRACE` stop being stamped too; they were
+      only ever getting a key because they were not `GET` or `HEAD`.
+    - **The construction nudge follows.** Declaring `idempotency` on a `QUERY` now logs the same
+      "the key is sent on writes only" hint a `GET` gets, so the drop is never silent. Silenced by
+      `idempotency.warn = false` as before.
+
+    **A 301/302 no longer downgrades a `QUERY` to a bodyless `GET`** (default `fetch` transport).
+    That downgrade is a historical exception granted to `POST`, and the draft rules it out by name
+    for `QUERY`; applying it dropped the body, which silently turned a filtered read into an
+    unfiltered one. `303` still redirects to a `GET` — for a `QUERY` that is what it means. `POST`,
+    `PUT`, `PATCH` and `DELETE` redirect exactly as before.
+
+    **Three method tests, not one.** `encodeRequestBody` still drops a body on `GET`/`HEAD` **only**
+    and is deliberately not routed through the safety predicate: that branch enforces a transport
+    constraint (`fetch` throws on a `GET` with a body), and widening it to "safe" would have deleted
+    the payload of every `QUERY` — the one thing that already worked. The cacheable-method default
+    is likewise untouched at `['GET','HEAD']`; `QUERY` is now documented as a valid `cache.methods`
+    entry, opt-in like a GraphQL `POST`.
+
 - **`makeLlmSurface` is exported from `stitchapi/llm`**, with its `LlmDefaults` argument. ([#699](https://github.com/rejifald/StitchAPI/issues/699))
   The exported `llmSurface` is only the `{ id: 'llm' }` identity — nothing to wrap — and the real
   factory, which closes over the provider and defaults, had no `export`, so layering behaviour over

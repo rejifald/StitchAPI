@@ -45,6 +45,7 @@ import {
     buildQuery,
     expandPath,
     getPath,
+    isSafeMethod,
     newRunContext,
     now,
     parseDuration,
@@ -157,7 +158,10 @@ function joinUrl(base: string, path: string): string {
 
 // Inject a stable Idempotency-Key on writes. The key is computed once per logical call (here,
 // in buildRequest) and the attempt loop reuses the same request, so it stays constant across
-// retries. GET/HEAD are skipped, and a caller-provided header (case-insensitive) wins.
+// retries. SAFE methods are skipped, and a caller-provided header (case-insensitive) wins.
+// "Safe" rather than "GET/HEAD" because QUERY is a read that carries a body: stamping a
+// dedupe token on a request that changes nothing is a category error, and the header would
+// vary the cache key on every send.
 function applyIdempotency(
     cfg: ResolvedStitchConfig,
     input: StitchInput,
@@ -165,7 +169,7 @@ function applyIdempotency(
     headers: Record<string, string>,
 ): void {
     if (!cfg.idempotency) return;
-    if (method === 'GET' || method === 'HEAD') return; // writes only
+    if (isSafeMethod(method)) return; // writes only
     const header = cfg.idempotency.header ?? 'Idempotency-Key';
     if (
         Object.keys(headers).some(

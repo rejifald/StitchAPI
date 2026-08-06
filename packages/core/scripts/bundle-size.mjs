@@ -323,19 +323,44 @@ const KB = 1024;
 // maintainer's call. The advertised rounded kB are UNCHANGED (24 / 22, and the entry's 21.64 KB
 // brotli still rounds to the ~22 the core README quotes), verified with the
 // `bundle-advertised-size` tether rather than assumed.
+// Budgets raised for the first-class QUERY method — issue #462 part 1 (24.15→24.25 /
+// 21.55→21.70 KB; measured 24720 / 22115 B against a `main` at 24681 / 22053 B, so the whole
+// change is +39 / +62 BYTES). After #674 `main` held 49 B on the entry and 14 B on
+// `import { stitch }`, so both ceilings were full in the literal sense and the next core-path
+// change of any size was going to pay for the raise. This is that change.
+//
+// What the bytes buy: one named `isSafeMethod` predicate (RFC 9110 §9.2.1's safe set plus QUERY)
+// replacing the inline `=== 'GET' || === 'HEAD'` in `applyIdempotency` and in the construction
+// nudge that mirrors it, so a QUERY — a READ that carries a request body — stops being stamped
+// with an `Idempotency-Key`; plus the QUERY exemption from the 301/302 downgrade-to-GET, which
+// draft-ietf-httpbis-safe-method-w-body requires by name. None of it can move behind a subpath:
+// `applyIdempotency` is in `buildRequest`, the nudge is in `makeStitch`, and `fetchAdapter` is the
+// default transport, so all three run for every stitch.
+//
+// A MINIMUM step — ~0.11 KB of headroom each (112 B / 106 B), not the ~0.2 KB this gate usually
+// restores for a capability. The change is 62 bytes and both ceilings were full; keeping them
+// tight keeps the signal, exactly as #477/#524/#485 did. The entry is raised despite not being
+// over (it measured 9.6 B under 24.15): a ceiling with ten bytes of room is a tripwire rather than
+// a gate, and this restores it to one meaningful step of room.
+//
+// The ADVERTISED figures do NOT move: 22115 B is 21.60 KB and 24720 B is 24.14 KB, so the rounded
+// pair stays 22 / 24. `import { stitch }` crossed its ~21 → ~22 boundary earlier, with #676, and
+// this change lands on the far side of it — the eight-site propagation the first revision of this
+// PR proposed had already happened by the time it landed. Verified with the
+// `bundle-advertised-size` tether, not assumed.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.15 * KB,
+        budget: 24.25 * KB,
         advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 21.55 * KB,
+        budget: 21.7 * KB,
         advertised: true,
     },
     {
