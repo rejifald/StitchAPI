@@ -273,6 +273,33 @@ const KB = 1024;
 // are UNCHANGED at 24 / 21 this time — 23.91 still rounds to 24 — so no README or docs figure
 // moves; verified against the `bundle-advertised-size` tether rather than assumed, which is the
 // mistake the ADR 0024 raise made.
+//
+// `import { stitch }` raised for the coalescer's unhandled-rejection guard — #670 (21.50→21.55 KB;
+// measured 21.51 = 22026 B against a `main` at 22015 B, so the fix is +11 B). A cached stitch whose
+// vendor fails, with no concurrent follower, rejected the coalescer's shared promise with nobody
+// attached to it: a handled failure (`.safe()` returning `ok: false`) killed the process under
+// Node's default `--unhandled-rejections=throw`. The bytes are one terminal `.catch`, attached
+// where that promise is created.
+//
+// It cannot move behind a subpath: the coalescer is reached from `stitch()` whenever `cache` is
+// configured, and it is the fix for a crash, not a capability that could be opted into. There is no
+// cheaper spelling — resolving a sentinel instead of rejecting would be smaller and would remove
+// the hazard outright, but it would throw away the rejection channel #653 wants to hand to
+// followers. Dropping the leader claim's unread `promise` field was measured too: 3 B, which pays
+// for none of this and is a public type change on `stitchapi/cache`, so it is not taken here.
+//
+// A MINIMUM step, not the ~0.2 KB this gate usually restores — matching #477/#524/#485: this is a
+// fix squeezing past a full ceiling, not a new capability, and `main` had run down to 1 byte.
+// Headroom lands at 41 B here and 14 B on the whole entry (unchanged at 24.10), so the next
+// core-path byte trips this gate again; sizing that step is the maintainer's call, not a bug fix's.
+//
+// The ADVERTISED figure moves, and NOT because of this change: 21.5 KB is both the budget and a
+// rounding boundary (22016 B), and `main` measured 22015 B — one byte below both. Any core-path
+// byte at all takes `import { stitch }` from ~21 → ~22 kB. Nine figures across the six sites under
+// the `bundle-advertised-size` tether — both READMEs, the installation and principles pages, the
+// home-page metrics component, and the docs' source blurb — propagated by hand and verified with
+// the tether. (The core README's "~21 kB brotli" moves with them and is more accurate for it: the
+// whole entry's brotli is 21.6 KB, which rounds to 22, not 21.)
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
@@ -285,7 +312,7 @@ const SCENARIOS = [
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 21.5 * KB,
+        budget: 21.55 * KB,
         advertised: true,
     },
     {

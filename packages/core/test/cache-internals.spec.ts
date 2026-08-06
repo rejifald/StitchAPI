@@ -229,6 +229,28 @@ describe('InflightCoalescer', () => {
         expect(c.size).toBe(0);
     });
 
+    test('a LONE leader failure is not an unhandled rejection (#670)', async () => {
+        // The coalescer's own half of the engine-level guard in cache.spec.ts: with no follower,
+        // nothing awaits the shared promise, so rejecting it would go unobserved and terminate the
+        // process under Node's default `--unhandled-rejections=throw`. The promise carries a
+        // terminal handler from construction, so `fail()` stays safe with an audience of nobody.
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown): void => {
+            unhandled.push(reason);
+        };
+        process.on('unhandledRejection', onUnhandled);
+        try {
+            const c = new InflightCoalescer<number>();
+            const a = c.join('k');
+            if (a.leader) a.fail(new Error('boom'));
+            expect(c.size).toBe(0);
+            await new Promise((r) => setTimeout(r, 0));
+        } finally {
+            process.off('unhandledRejection', onUnhandled);
+        }
+        expect(unhandled).toEqual([]);
+    });
+
     test('distinct keys do not coalesce', () => {
         const c = new InflightCoalescer<number>();
         expect(c.join('a').leader).toBe(true);

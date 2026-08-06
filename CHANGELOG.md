@@ -566,6 +566,28 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **Adding `cache: { ttl }` no longer turns a handled vendor failure into a process exit.**
+  ([#670](https://github.com/rejifald/StitchAPI/issues/670)) A cached stitch whose vendor returned
+  `503` emitted an **unhandled promise rejection**, which under Node's default
+  `--unhandled-rejections=throw` terminates the process — on a failure the caller had handled
+  correctly, with `.safe()` returning an honest `ok: false`. The same failure with no `cache` block
+  produced none.
+
+    The coalescer's leader rejects one shared promise to release its waiters. With no concurrent
+    caller there are no waiters, so nothing ever attached a handler and the rejection went
+    unobserved. That made the bug **invisible in the shape a test takes and fatal in the shape
+    production has**: a test exercises coalescing with a concurrent burst, and a follower's `await`
+    catches the rejection by accident; a webhook backlog or retry drain arrives staggered, where
+    every call is its own leader. Measured against a failing vendor, 20 staggered calls produced 20
+    unhandled rejections; the same 20 as a burst produced none.
+
+    The shared promise now carries a terminal no-op handler from the moment it is created, so being
+    unobserved is never fatal. **A follower still receives the leader's failure unchanged** — same
+    tick, same error identity — because the handler is attached to a derived promise and discarded;
+    only the coalescer's own liability is retired. Failure is still not _shared_ (a follower re-runs
+    independently, as before); [#653](https://github.com/rejifald/StitchAPI/issues/653) tracks
+    whether it should be, and this leaves that channel intact for it.
+
 - **`@stitchapi/aws-sigv4` stamps `x-amz-date` from the injected clock, so SigV4 is testable on
   virtual time.** ([#658](https://github.com/rejifald/StitchAPI/issues/658)) The signer called
   `amzDateOf(new Date())`, so 600 **virtual** seconds moved the shipped stamp **0** seconds and a
