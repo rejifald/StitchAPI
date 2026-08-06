@@ -1,10 +1,13 @@
 ---
 title: The Web Ecosystem Is Missing a Layer
+published: false
 description: Screens, routes, databases, untrusted input — every boundary in a web app has a library that owns it, except outbound calls to other people's APIs. Why every project still hand-builds that layer, and what changes when you declare it instead.
-author: Oleksandr Zhuravlov
-date: '2026-08-05'
-tags: [architecture, fetch, http, typescript, resilience]
+tags: typescript, webdev, api, showdev
+canonical_url: https://stitchapi.dev/blog/the-web-ecosystem-is-missing-a-layer
+cover_image: https://stitchapi.dev/og/blog/the-web-ecosystem-is-missing-a-layer
 ---
+
+_I maintain [StitchAPI](https://github.com/rejifald/StitchAPI) — this essay is the argument for why it exists. Originally published on the [StitchAPI blog](https://stitchapi.dev/blog/the-web-ecosystem-is-missing-a-layer); drafted with AI assistance from my own argument and notes._
 
 Every project that calls other people's APIs ends up hand-building the same layer — typed wrappers around endpoints, validation, retries, timeouts, auth — because this is the one boundary of the web stack the ecosystem never claimed. The layer has no name, no shared implementation, and no finished state; it gets rewritten, project after project, team after team. This post is about why the gap exists, why the usual tools don't close it, and what the layer looks like when you stop implementing it and start declaring it.
 
@@ -12,8 +15,7 @@ Every project that calls other people's APIs ends up hand-building the same laye
 
 It starts the same way every time. A feature needs data from another service, so you write `listUsers` — a dozen lines around `fetch` that hit `/users` and parse the JSON. Then the layer grows, one incident at a time. The response needs a type, so you cast it. The provider has a bad week, so you write `withRetry` and wrap the call. A request hangs in production, so you add an `AbortController` and a timeout. The token expires mid-request, so refresh logic moves into a helper. A few months of this, and the function looks like:
 
-```ts twoslash
-// @noErrors
+```ts
 // Grown, not designed: each piece arrived the week something broke.
 import { getToken } from './auth/token';
 import { withRetry } from './utils/retry';
@@ -61,17 +63,17 @@ Except the last row. `fetch` is a transport. It moves bytes well, and that is th
 
 The gap isn't an oversight. This is the one boundary in the stack where the other side doesn't live in your repository, and that breaks the two tricks every other layer relies on.
 
-Your components, routes, and database schema ship together with the code that uses them, so their layers can enforce contracts ahead of time — rename a column, and the migration and the query break in the same commit. The API you call ships from someone else's repository, on someone else's schedule, with no duty to tell you. When its response shape changes, nothing on your side moves: nothing recompiles, no type goes red, and the first environment to notice is production ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)). A contract with code you don't own can't be enforced at compile time. It can only be checked at runtime, against the bytes that arrive.
+Your components, routes, and database schema ship together with the code that uses them, so their layers can enforce contracts ahead of time — rename a column, and the migration and the query break in the same commit. The API you call ships from someone else's repository, on someone else's schedule, with no duty to tell you. When its response shape changes, nothing on your side moves: nothing recompiles, no type goes red, and the first environment to notice is production ([schema drift is a production bug](https://stitchapi.dev/blog/schema-drift-is-a-production-bug)). A contract with code you don't own can't be enforced at compile time. It can only be checked at runtime, against the bytes that arrive.
 
-That single fact is why the tools closest to this space stop short of it. HTTP clients — axios, ky, got — improve the transport and stop where the transport stops: the body is still untyped, and the retry, auth, and validation glue around the call is still yours to write ([the glue, not the wrapper, was always the hard part](/blog/axios-alternatives)). Codegen — openapi-typescript, Orval, Kubb — aims at the right layer and reaches it when a spec exists, is current, and is truthful, which holds for large public APIs and fails for the internal service whose documentation is a README ([what codegen buys, and where it runs out](/blog/stitch-vs-codegen-api-clients)). One family stops below the layer; the other depends on a spec the long tail of APIs never publishes. Between them, the layer stayed yours.
+That single fact is why the tools closest to this space stop short of it. HTTP clients — axios, ky, got — improve the transport and stop where the transport stops: the body is still untyped, and the retry, auth, and validation glue around the call is still yours to write ([the glue, not the wrapper, was always the hard part](https://stitchapi.dev/blog/axios-alternatives)). Codegen — openapi-typescript, Orval, Kubb — aims at the right layer and reaches it when a spec exists, is current, and is truthful, which holds for large public APIs and fails for the internal service whose documentation is a README ([what codegen buys, and where it runs out](https://stitchapi.dev/blog/stitch-vs-codegen-api-clients)). One family stops below the layer; the other depends on a spec the long tail of APIs never publishes. Between them, the layer stayed yours.
 
 ## The same layer, declared
 
 A layer this common should have a name, and the right one comes from what the layer does. A stitch is how you join two pieces of fabric that were made separately. That is the work at this boundary — joining your app to software made in someone else's repository — so call the layer **stitching**: one stitch per endpoint you depend on.
 
-StitchAPI is that layer as a library, and its design follows one rule: at this boundary, nothing should be implemented — only declared. It's in-process TypeScript with zero runtime dependencies, built around one unit, [the stitch](/docs/concepts/the-stitch): you declare an endpoint — where it lives, what shape it returns, how it authenticates, how it's allowed to fail — and get back a typed function.
+StitchAPI is that layer as a library, and its design follows one rule: at this boundary, nothing should be implemented — only declared. It's in-process TypeScript with zero runtime dependencies, built around one unit, [the stitch](https://stitchapi.dev/docs/concepts/the-stitch): you declare an endpoint — where it lives, what shape it returns, how it authenticates, how it's allowed to fail — and get back a typed function.
 
-```ts twoslash
+```ts
 import { drift, stitch } from 'stitchapi';
 import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
@@ -90,12 +92,12 @@ const listUsers = stitch({
 });
 
 const users = await listUsers();
-//    ^?
+// users: { id: number; name: string }[]
 ```
 
 That declaration is `listUsers` again — same endpoint, same concerns — but every line is now configuration, and the implementation behind each line ships with the library instead of growing in your `utils` folder. The bare values carry full policies: `retry: 3` is exponential backoff with jitter that honors `Retry-After` when a server sends one; `timeout: '10s'` bounds the whole call, retries and backoff waits included; `throttle: '10/s'` paces every call through this stitch. And each shorthand grows into an envelope the day the endpoint needs more — `pool: 'host'` on the throttle shares one limiter across every stitch hitting that host, the thing no hand-rolled helper can do, because each call site only knows about itself.
 
-`drift` is the part that takes the boundary seriously. Because the other end can change without telling you, the stitch validates every live response against the declared schema and reports differences as [a leveled drift signal](/docs/guides/validation/drift) at the boundary — an undeclared new field as information, a broken shape as a typed error — instead of an `undefined` surfacing three layers into your app. The static type on `users` is inferred from the same schema that runs at runtime, so the type you program against and the check that guards it can't fall out of sync.
+`drift` is the part that takes the boundary seriously. Because the other end can change without telling you, the stitch validates every live response against the declared schema and reports differences as [a leveled drift signal](https://stitchapi.dev/docs/guides/validation/drift) at the boundary — an undeclared new field as information, a broken shape as a typed error — instead of an `undefined` surfacing three layers into your app. The static type on `users` is inferred from the same schema that runs at runtime, so the type you program against and the check that guards it can't fall out of sync.
 
 And declaring is what ends the side-project problem: extending this layer is no longer engineering work. When an endpoint starts failing in bursts next quarter, the fix is one more field on the declaration — `circuit: [5, '30s']`, a circuit breaker — not a helper to design, implement, test, and maintain. The layer stops being under-implemented because there is nothing left for you to implement.
 
@@ -103,12 +105,45 @@ And declaring is what ends the side-project problem: extending this layer is no 
 
 Three familiar tools sit near this space, and none of them is this layer:
 
-- **TanStack Query manages server state in your UI; a stitch is the call itself.** Query owns caching, invalidation, and refetching inside a component tree, and takes any promise-returning function as its `queryFn` — what happens inside that function is out of its scope on purpose. A stitch is that function, typed and validated and resilient, and it runs the same outside the UI — in a cron job, a queue worker, an agent ([a stitch as your `queryFn`](/blog/stitch-as-react-query-queryfn)).
-- **Workflow platforms orchestrate processes; a stitch is one function.** Temporal, n8n, and Zapier run multi-step flows on their own runtime, with infrastructure to deploy and operate. A stitch is in-process — composing two calls is plain TypeScript, and there is nothing to host ([runtime stitching vs workflow platforms](/blog/runtime-stitching-vs-workflow-platforms)).
+- **TanStack Query manages server state in your UI; a stitch is the call itself.** Query owns caching, invalidation, and refetching inside a component tree, and takes any promise-returning function as its `queryFn` — what happens inside that function is out of its scope on purpose. A stitch is that function, typed and validated and resilient, and it runs the same outside the UI — in a cron job, a queue worker, an agent ([a stitch as your `queryFn`](https://stitchapi.dev/blog/stitch-as-react-query-queryfn)).
+- **Workflow platforms orchestrate processes; a stitch is one function.** Temporal, n8n, and Zapier run multi-step flows on their own runtime, with infrastructure to deploy and operate. A stitch is in-process — composing two calls is plain TypeScript, and there is nothing to host ([runtime stitching vs workflow platforms](https://stitchapi.dev/blog/runtime-stitching-vs-workflow-platforms)).
 - **It's not a new HTTP client, and not a generator.** The transport stays whatever you use today — `fetch`, axios, anything behind an adapter — and there is no generated code to commit: the declaration is the runtime, which is why it works for APIs that never published a spec.
 
 ## Start with one endpoint
 
-You already maintain this layer. The only question is its form: implemented by hand in each project, or declared per endpoint on top of a shared implementation. Moving isn't a migration — pick the endpoint that costs you the most, the flaky one or the rate-limited one or the one whose shape changed under you last quarter, and declare it next to the code it replaces ([adopt StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite)). Every other call site keeps working, and the layer converges one endpoint at a time. What disappears isn't the layer — you always needed it — but the routine of building it: the next thing this boundary demands from you is a field on a declaration, not another helper in `utils`.
+You already maintain this layer. The only question is its form: implemented by hand in each project, or declared per endpoint on top of a shared implementation. Moving isn't a migration — pick the endpoint that costs you the most, the flaky one or the rate-limited one or the one whose shape changed under you last quarter, and declare it next to the code it replaces ([adopt StitchAPI without a rewrite](https://stitchapi.dev/blog/adopt-stitchapi-without-a-rewrite)). Every other call site keeps working, and the layer converges one endpoint at a time. What disappears isn't the layer — you always needed it — but the routine of building it: the next thing this boundary demands from you is a field on a declaration, not another helper in `utils`.
 
-If the argument holds for your codebase, [the playground](/playground) tests it in two minutes — declare a stitch against a live API in the browser, nothing to install. The library ships as [`stitchapi` on npm](https://www.npmjs.com/package/stitchapi) and lives at [rejifald/StitchAPI](https://github.com/rejifald/StitchAPI) on GitHub — star it and watch releases to keep the trade running in your favor: every capability that lands in the library is one more thing you never implement at this boundary.
+If the argument holds for your codebase, [the playground](https://stitchapi.dev/playground) tests it in two minutes — declare a stitch against a live API in the browser, nothing to install. The library ships as [`stitchapi` on npm](https://www.npmjs.com/package/stitchapi) — star the repo and watch releases to keep the trade running in your favor: every capability that lands in the library is one more thing you never implement at this boundary.
+
+{% github rejifald/StitchAPI %}
+
+Follow me here on DEV for more on stitching — and the [original post](https://stitchapi.dev/blog/the-web-ecosystem-is-missing-a-layer) has the type-checked, hoverable versions of every snippet above.
+
+<!--
+PUBLISHING CHECKLIST (invisible if pasted; delete freely)
+
+- Paste this whole file into dev.to's *basic markdown* editor. The front
+  matter block must stay at line 1 for dev.to to parse it.
+- published: false — flip to true (or use the editor's schedule control)
+  after previewing.
+- tags: hard cap of 4 (editor guide). Chosen: typescript, webdev, api,
+  showdev. Alternates if you'd rather swap: opensource, architecture,
+  javascript, node. #showdev's own guidelines: community-driven, not
+  salesy — the essay qualifies.
+- canonical_url points at the stitchapi.dev original — dev.to officially
+  encourages this so search engines credit your domain.
+- cover_image reuses the site's generated OG image (1200×630). dev.to's
+  stated best size is 1000×420, so it will crop; generate a dedicated
+  1000×420 if the crop looks bad in preview.
+- description: works in practice but is undocumented in the editor guide —
+  harmless to keep, don't rely on it rendering everywhere.
+- The italic line up top carries two disclosures dev.to expects: that you
+  are the library's author (ownership transparency per #showdev norms)
+  and AI assistance (Code of Conduct: "disclose AI assistance in content
+  creation"). Reword as you like, but keep both.
+- Snippets were verified against stitchapi main as of 2026-08-06; the
+  twoslash annotations were stripped because dev.to's highlighter
+  (Rouge) doesn't run them.
+- Don't shorten the post into a teaser linking home — dev.to's terms
+  require cross-posts to contain the full content.
+-->
