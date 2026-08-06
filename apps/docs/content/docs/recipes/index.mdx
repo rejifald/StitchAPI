@@ -40,6 +40,11 @@ a guide when you want to understand a feature on its own.
         description="Compose timeout, retry, and a circuit breaker so a degraded upstream fails fast instead of hanging."
     />
     <Card
+        title="Cancel an in-flight call"
+        href="/docs/recipes/cancel-an-in-flight-call"
+        description="Pass an AbortSignal in the call input — aborting severs the request and stops retries, waits, and pagination with it."
+    />
+    <Card
         title="Retry a write without double-charging"
         href="/docs/recipes/idempotent-writes"
         description="Attach an idempotency key so a retried POST settles once, not twice."
