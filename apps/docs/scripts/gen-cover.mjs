@@ -9,6 +9,7 @@
 // Usage (from apps/docs):
 //   pnpm gen:cover -- --out <file.png> [--theme dark|light]
 //                     [--kicker "<blue hook line>"] [--headline "<main message>"]
+//                     [--tagline "<last footer token>"]
 // Fonts default to the macOS system Arial; override the folder with COVER_FONT_DIR
 // (it must contain "Arial.ttf" + "Arial Bold.ttf", or any Cyrillic-capable pair
 // renamed to those — Satori needs .ttf/.otf, not .ttc).
@@ -29,9 +30,10 @@ const out = arg('out', null);
 const theme = arg('theme', 'dark') === 'light' ? 'light' : 'dark';
 const kicker = arg('kicker', 'На пенсію api.ts');
 const headline = arg('headline', 'Викликай будь-який API як локальну функцію');
+const tagline = arg('tagline', 'нуль залежностей');
 if (!out) {
     console.error(
-        'usage: pnpm gen:cover -- --out <file.png> [--theme dark|light] [--kicker "…"] [--headline "…"]',
+        'usage: pnpm gen:cover -- --out <file.png> [--theme dark|light] [--kicker "…"] [--headline "…"] [--tagline "…"]',
     );
     process.exit(1);
 }
@@ -210,7 +212,7 @@ const el = div(
             div({ color: P.faint, marginLeft: 12 }, '·'),
             div({ color: P.faint, marginLeft: 12 }, 'Apache-2.0'),
             div({ color: P.faint, marginLeft: 12 }, '·'),
-            div({ color: P.faint, marginLeft: 12 }, 'нуль залежностей'),
+            div({ color: P.faint, marginLeft: 12 }, tagline),
         ]),
     ],
 );
