@@ -42,6 +42,23 @@
 // construction. Generic aliases (`type X<T> = …`) are skipped: whether they admit `{}` depends
 // on the argument, which is the type-aware phase's problem.
 //
+// R10 covers the cap vocabulary (P4/D2). A count cap is a bare plural noun, so a `max` cap —
+// bare or prefixed, since the P4 sweep record fixed both — on a consumer-input envelope is a
+// violation unless it is a verified continuous MAGNITUDE ceiling on MAX_CAP_ALLOW; `*Threshold`
+// gets no carve-out at all. It shares R6's container filter (now `isConsumerEnvelope()`,
+// extracted so the two cannot drift), which is also the precision guarantee: P4 blesses `max*`
+// on RESOLVED INTERNALS, and those live outside `*Options` by construction rather than on a
+// skip list. Replayed over history it reproduces the 2026-07 sweep's own P4 list —
+// CacheOptions.maxEntries, ReconnectOptions.maxAttempts, CircuitOptions.failureThreshold,
+// DenoKvStoreOptions.maxIncrRetries, RetryOptions.maxMs/maxDelay.
+//
+// What it does NOT catch, stated here because it is the case that motivated the rule: the
+// 2026-07-31 sweep's `LlmOptions.maxTokens` / `LlmRequest.maxTokens`. `LlmOptions` was a
+// `type X = … & { … }` LITERAL, which no member rule scans (the same limit R8/R9 carry), and
+// `LlmRequest` is an exported interface that is not `*Options`, so the container filter rejects
+// it — the `MockRoute` blind spot of #564 item 2. R10 guards the interface-shaped `*Options`
+// surface, where P4's whole resolved list lived; it is not a claim that class is now covered.
+//
 // Still deferred to a type-aware phase (needs the TS checker): shape-diffing (full P9 —
 // R5's watch list is the by-name proxy), default-value inversion (P8), cross-PACKAGE parity
 // of the same capability (P16), and the CONTAINER half of the alias gap — R6 scans only the
@@ -293,6 +310,15 @@ const SUFFIX_CARVEOUT = new Set([
 ]);
 const isLike = (n) => /Like/.test(n);
 
+// The CONSUMER-INPUT envelope family — P3's own line between what a caller AUTHORS and what the
+// engine hands back: `*Options`, plus the blessed `*Config` authoring types, minus any `*Like`
+// foreign duck-type (P18). Shared by R6 and R10 so the two can never drift, the same reason
+// `unionArms()` was extracted. Scanning every exported interface instead floods both rules with
+// resolved views (`ResolvedNormalizations`), spec mirrors (`OpenApiDocument`, JSON Schema's
+// `SchemaNode`) and duck-types (`PinoLoggerLike`) — none of which a consumer ever writes.
+const isConsumerEnvelope = (name) =>
+    (/Options$/.test(name) || SUFFIX_CARVEOUT.has(name)) && !isLike(name);
+
 // P9/P16 — identifiers that MUST be unique-by-shape across packages (a curated watch list;
 // full shape-diff is the deferred type-aware phase). Flagged when ≥2 packages export one.
 const UNIQUE_WATCH = new Set([
@@ -415,6 +441,44 @@ const PREFIX_GROUP_ALLOW = new Map([
         'login (the required, dominant login Stitch) and loginInput (an unrelated input-resolver callback) are different value-kinds, not two knobs of one capability',
     ],
 ]);
+
+// P4/D2 — the ONE cap vocabulary. A **count** upper bound is a bare plural noun (`attempts`,
+// `entries`, `pages`, `failures`, `concurrency`, `tokens`) — never `max`-prefixed, never a bare
+// `max`, never `*Threshold`. `max` survives only where it bounds a continuous **magnitude** and a
+// bare noun would be ambiguous, so every `max` cap on a consumer-input envelope has to be a
+// VERIFIED magnitude. That verification is what this allow-list records — keyed
+// `Interface.member`, one rationale per entry, the same idiom as R5's de-listed UNIQUE_WATCH names
+// and R8's PREFIX_GROUP_ALLOW. A new `max` cap therefore forces a written judgement (magnitude or
+// count?) instead of passing by resemblance to the three below.
+//
+// Keyed on the DECLARING interface, which is where the rename would go — not on the exported
+// envelope a member may be reached through by `extends`.
+const MAX_CAP_ALLOW = new Map([
+    [
+        'BackoffOptions.max',
+        'the retry delay ceiling — a DURATION, the continuous magnitude D2 explicitly leaves `max`; it sits beside `base` (the first-step delay), where a bare noun would name neither end',
+    ],
+    [
+        'ServeBodyOptions.max',
+        'ceiling on the buffered request body in BYTES — a magnitude, not a count of units; unsuffixed because bytes are the house size unit (P25) and a body off the socket is natively bytes, unlike the `chars` caps (trace.body.chars, stream.buffer.chars) which ARE counts and are spelled as such',
+    ],
+    [
+        'ShellBufferOptions.max',
+        "ceiling on the buffered subprocess stdout/stderr in BYTES — the size analogue of BackoffOptions.max, one thing to measure (P1) and a magnitude; the dimension execFile's own `maxBuffer` bounds",
+    ],
+]);
+
+// A `max` cap: bare `max`, or `max`-prefixed. Both are P4's target — the sweep record fixed
+// `ReconnectOptions.maxAttempts`/`CacheOptions.maxEntries`/`LlmOptions.maxTokens` (prefixed) AND
+// `paginate.max` (bare) to plural nouns, so a rule that read only `/max[A-Z]/` would miss the
+// second half of the vocabulary and, worse, would give the allow-list nothing to verify: every
+// legitimate magnitude ceiling on today's surface is a BARE `max`. `maximum` does not match —
+// the prefix must end a camel word.
+const isMaxCap = (name) => /^max(?:$|[A-Z0-9])/.test(name);
+// `*Threshold` gets no allow-list because P4 grants it no carve-out: it is a count word by
+// construction, whatever it counts. `CircuitOptions.failureThreshold` → `failures` was the real
+// instance, fixed in the 2026-07 sweep.
+const isThresholdCap = (name) => /Threshold$/.test(name);
 
 // P17/P25 — the house duration + byte-size member vocabulary. A value a consumer AUTHORS in one
 // of these positions must take `number | string` ("if it accepts a duration/size at all, it also
@@ -548,6 +612,7 @@ function collect() {
     const packages = publishedPackages();
     const exportsByName = new Map(); // identifier -> Set(dir)
     const seenR6 = new Set(); // declaration sites already reported (see R6)
+    const seenR10 = new Set(); // ditto for R10 — a separate set, so neither rule mutes the other
 
     // PRE-PASS — every all-optional interface name, per package. R6 used to resolve only
     // against declarations in the SAME file, so an envelope imported from a sibling module
@@ -799,17 +864,9 @@ function collect() {
             for (const blk of blocks) {
                 // Only CONSUMER-INPUT envelopes — P20 governs what a caller authors, not what
                 // the engine hands back. P3 already draws that line, so reuse it: `*Options`
-                // plus the blessed `*Config` authoring family. Scanning every exported
-                // interface instead floods the rule with resolved views
-                // (`ResolvedNormalizations`), spec mirrors (`OpenApiDocument`, JSON Schema's
-                // `SchemaNode`) and `*Like` duck-types (`PinoLoggerLike`) — none of which a
-                // consumer ever writes, all of which legitimately allow `{}`.
-                if (
-                    !/Options$/.test(blk.name) &&
-                    !SUFFIX_CARVEOUT.has(blk.name)
-                )
-                    continue;
-                if (isLike(blk.name)) continue; // P18 foreign duck-type
+                // plus the blessed `*Config` authoring family, minus `*Like` duck-types. See
+                // isConsumerEnvelope() for why a wider net floods the rule.
+                if (!isConsumerEnvelope(blk.name)) continue;
                 for (const owner of withBases(blk)) {
                     const mre =
                         /(?:^|\n)\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??:\s*([^;\n]+);/g;
@@ -842,6 +899,53 @@ function collect() {
                                 ? `all-optional ${via} via alias ${bag} — {} type-checks → AtLeastOne<${via}> inside ${bag} (P20)`
                                 : `all-optional ${bag} in the union — {} type-checks → AtLeastOne<${bag}> (P20)`,
                             lineOf(owner.src ?? src, at),
+                        );
+                    }
+                }
+            }
+
+            // R10 — the cap vocabulary on a consumer-input envelope (P4/D2). A COUNT upper
+            // bound is a bare plural noun; `max` is reserved for a continuous MAGNITUDE
+            // ceiling and must be verified on MAX_CAP_ALLOW; `*Threshold` is banned outright.
+            //
+            // The container filter is R6's, and it is what makes the rule high-precision:
+            // P4 governs the AUTHORING surface, and P4 itself blesses `max*` on the resolved
+            // internals — engine.ts's reconnect policy, shell's `ShellDefaults.maxBuffer`,
+            // the `maxBufferChars` parameters — which name a computed value no consumer
+            // writes. Those are outside `*Options` by construction, so they are excluded by
+            // name rather than by a hand-kept skip list.
+            //
+            // Inherited members count: a base's member is as writable at the slot as a
+            // declared one (R6's reason for walking `extends`), so the scan walks bases and
+            // reports the DECLARATION site once, deduped — one rename, one finding.
+            for (const blk of blocks) {
+                if (!isConsumerEnvelope(blk.name)) continue;
+                for (const owner of withBases(blk)) {
+                    // A `*Like` BASE keeps its upstream spelling too (P18) — the same
+                    // exclusion the top-level filter applies, applied down the chain.
+                    if (isLike(owner.name)) continue;
+                    for (const { name, index } of topLevelMembersTyped(
+                        owner.body,
+                    )) {
+                        const max = isMaxCap(name);
+                        const threshold = isThresholdCap(name);
+                        if (!max && !threshold) continue;
+                        if (max && MAX_CAP_ALLOW.has(`${owner.name}.${name}`))
+                            continue;
+                        const at = owner.bodyStart + index;
+                        const osrc = owner.src ?? src;
+                        if (deprecatedBefore(osrc, at)) continue;
+                        const site = `${owner.file ?? file}|${at}`;
+                        if (seenR10.has(site)) continue;
+                        seenR10.add(site);
+                        add(
+                            'R10',
+                            owner.file ?? file,
+                            `${owner.name}.${name}`,
+                            threshold
+                                ? `*Threshold names a count cap → a bare plural noun (failureThreshold → failures); P4 leaves it no carve-out (P4/D2)`
+                                : `\`${name}\` caps a consumer-input envelope → if it counts, spell it a bare plural (attempts/entries/pages/tokens); if it is a verified MAGNITUDE ceiling, add it to MAX_CAP_ALLOW with the reason (P4/D2)`,
+                            lineOf(osrc, at),
                         );
                     }
                 }
