@@ -1,0 +1,76 @@
+---
+title: 'Cancel an in-flight call'
+description: 'Pass an AbortSignal in the call input — aborting severs the request and stops retries, waits, and pagination with it.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/getting-started/quickstart']
+---
+
+## Task
+
+The user typed a new search, closed the dialog, or navigated away — and the call
+you started for them is still running. You want the stale call actually
+cancelled: connection dropped, retries stopped, rate-limit slot released. Not
+ignored while it quietly burns all three.
+
+## Example
+
+One way: hand the call an `AbortController`'s signal, and abort the old call
+before starting the next one.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
+});
+
+let inFlight: AbortController | undefined;
+
+async function onKeystroke(q: string) {
+    inFlight?.abort(); // drop the stale call — request and retries both stop
+    const controller = new AbortController();
+    inFlight = controller;
+    try {
+        return await search({ query: { q }, signal: controller.signal });
+    } catch (err) {
+        if (controller.signal.aborted) return undefined; // cancelled on purpose — not a failure
+        throw err;
+    }
+}
+```
+
+## How it works
+
+There is no cancel callback to register — cancellation is the platform's own
+primitive, threaded through every layer you declared. `signal` rides the call
+input next to `params` and `body`, and the stitch mirrors it onto each attempt's
+transport, linked with the [per-attempt timeout](/docs/guides/resilience/timeout).
+`abort()` severs the in-flight request itself — the connection closes; the
+response is not silently discarded. The same abort cuts every wait around the
+request: a [retry](/docs/guides/resilience/retry)'s backoff sleep and a
+throttle's rate-spacing pause reject promptly, and on a
+[paginated call](/docs/recipes/paginate-into-one-array) the signal carries onto
+every follow-up page, so the loop stops wherever it is.
+
+The cancelled call settles with a rejection. To tell a deliberate cancel from a
+real failure, check your own `controller.signal.aborted` in the catch — it is
+unambiguous and does not depend on the error's shape. Keep the two tools
+distinct: a deadline you can declare (`timeout`) belongs on the stitch, so
+reach for `signal` only for caller-driven cancellation — a user gesture, a
+component unmounting, a shutdown. The framework hooks are built on this same
+signal: [React's](/docs/integrations/react) `useStitch` returns an imperative
+`cancel()`, and [Angular's](/docs/integrations/angular) `injectStitch` aborts
+the in-flight run on its own when the input changes.
+
+## See also
+
+<Cards>
+    <Card title="Timeout" href="/docs/guides/resilience/timeout" />
+    <Card
+        title="Loop a cursor API into one array"
+        href="/docs/recipes/paginate-into-one-array"
+    />
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="Angular" href="/docs/integrations/angular" />
+</Cards>

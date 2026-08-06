@@ -191,6 +191,13 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
+        path: 'recipes/cancel-an-in-flight-call',
+        title: 'Cancel an in-flight call',
+        description:
+            'Pass an AbortSignal in the call input — aborting severs the request and stops retries, waits, and pagination with it.',
+        kind: 'guide',
+    },
+    {
         path: 'recipes/idempotent-writes',
         title: 'Retry a write without double-charging',
         description:
