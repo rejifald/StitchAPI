@@ -43,70 +43,76 @@ const div = (style, children) => ({
 });
 const txt = (style, s) => div({ ...style }, s);
 
-// Each hand-rolled artifact and the declaration field it collapses into.
-// The last row is the punchline: the TODO maps to nothing.
-const PAIRS = [
-    ['utils/retry.ts', 'retry: 3'],
-    ['sleep(200)', "throttle: '10/s'"],
-    ['new AbortController()', "timeout: '10s'"],
-    ['as User[]', 'output: drift(User)'],
-    ['auth/refreshToken.ts', 'auth: bearer(env(…))'],
-    ['// TODO: причесати', null],
+// The article's own transformation, code to code: the full hand-rolled
+// listUsers on the left, the stitch declaration on the right. 2-space indent
+// so the longest line fits the panel.
+const LEFT_CODE = [
+    'export async function listUsers() {',
+    '  const ctl = new AbortController();',
+    '  const timer = setTimeout(() => ctl.abort(), 10_000);',
+    '  try {',
+    '    const res = await withRetry(() =>',
+    "      fetch('https://api.example.com/users', {",
+    '        headers: {',
+    '          Authorization: `Bearer ${await getToken()}`,',
+    '        },',
+    '        signal: ctl.signal,',
+    '      }),',
+    '    );',
+    '    if (!res.ok) throw new Error(`HTTP ${res.status}`);',
+    '    return (await res.json()) as User[];',
+    '  } finally {',
+    '    clearTimeout(timer);',
+    '  }',
+    '}',
+];
+const RIGHT_CODE = [
+    'const listUsers = stitch({',
+    "  baseUrl: 'https://api.example.com',",
+    "  path: '/users',",
+    "  auth: bearer(env('API_TOKEN')),",
+    '  output: drift(z.array(User)),',
+    '  retry: 3,',
+    "  throttle: '10/s',",
+    "  timeout: '10s',",
+    '});',
 ];
 
-const leftChip = (s) =>
+const codeLine = (s, color) =>
     txt(
         {
-            fontSize: 26,
+            fontSize: 19,
             fontFamily: 'Mono',
-            color: P.text,
+            color,
+            marginTop: 3,
+            whiteSpace: 'pre',
+        },
+        s || ' ',
+    );
+
+const panel = (headline, subnote, lines, color, borderColor, caption) =>
+    div(
+        {
+            flexDirection: 'column',
+            border: `2px solid ${borderColor}`,
+            borderRadius: 18,
+            padding: 24,
             backgroundColor: '#ffffff',
-            border: `2px solid ${P.line}`,
-            borderRadius: 12,
-            padding: '12px 20px',
         },
-        s,
+        [
+            txt({ fontSize: 26, color: P.muted }, headline),
+            subnote
+                ? txt({ fontSize: 21, color: P.warn, marginTop: 4 }, subnote)
+                : div({ height: 0 }, []),
+            div(
+                { flexDirection: 'column', marginTop: 14 },
+                lines.map((l) => codeLine(l, color)),
+            ),
+            caption
+                ? txt({ fontSize: 21, color: P.brand, marginTop: 14 }, caption)
+                : div({ height: 0 }, []),
+        ],
     );
-
-const rightChip = (s) =>
-    txt(
-        {
-            fontSize: 26,
-            fontFamily: 'Mono',
-            color: P.brand,
-            backgroundColor: P.brandBg,
-            borderRadius: 12,
-            padding: '12px 20px',
-        },
-        s,
-    );
-
-const row = ([from, to]) =>
-    div({ alignItems: 'center', marginTop: 14 }, [
-        div({ flex: 1, justifyContent: 'flex-end' }, [leftChip(from)]),
-        txt(
-            {
-                fontSize: 34,
-                color: P.muted,
-                width: 110,
-                justifyContent: 'center',
-            },
-            '→',
-        ),
-        div({ flex: 1 }, [
-            to === null
-                ? txt(
-                      { fontSize: 26, color: P.muted, padding: '12px 0' },
-                      'вже не потрібен',
-                  )
-                : rightChip(to),
-        ]),
-    ]);
-
-const colHead = (s, right) =>
-    div({ flex: 1, justifyContent: right ? 'flex-start' : 'flex-end' }, [
-        txt({ fontSize: 26, color: P.muted }, s),
-    ]);
 
 const el = div(
     {
@@ -114,30 +120,55 @@ const el = div(
         height: '100%',
         flexDirection: 'column',
         backgroundColor: P.bg,
-        padding: '56px 72px',
+        padding: '52px 56px',
         fontFamily: 'Arial',
     },
     [
         txt(
-            { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 28 },
+            { fontSize: 42, fontWeight: 700, color: P.text, marginBottom: 26 },
             'Той самий шар: писаний руками → оголошений',
         ),
-        div({ alignItems: 'center' }, [
-            colHead('у кожному проєкті, руками', false),
-            div({ width: 110 }, []),
-            colHead('один раз, декларацією', true),
+        div({ alignItems: 'flex-start', gap: 20 }, [
+            div({ flex: 1.28, flexDirection: 'column' }, [
+                panel(
+                    'у кожному проєкті, руками',
+                    'плюс utils/retry.ts і auth/token.ts — теж ваші',
+                    LEFT_CODE,
+                    P.text,
+                    P.line,
+                    null,
+                ),
+            ]),
+            div(
+                {
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    alignSelf: 'center',
+                    width: 84,
+                },
+                [txt({ fontSize: 56, color: P.muted }, '→')],
+            ),
+            div({ flex: 1, flexDirection: 'column' }, [
+                panel(
+                    'один раз, декларацією',
+                    null,
+                    RIGHT_CODE,
+                    P.brand,
+                    P.brand,
+                    'і це вже з бекофом, тротлінгом і валідацією форми — яких зліва нема',
+                ),
+            ]),
         ]),
-        ...PAIRS.map(row),
-        div({ marginTop: 30, justifyContent: 'center' }, [
+        div({ marginTop: 26, justifyContent: 'center' }, [
             txt(
-                { fontSize: 27, color: P.brand },
+                { fontSize: 27, color: P.text },
                 'Імплементація переїжджає в бібліотеку. Вам лишається конфігурація.',
             ),
         ]),
     ],
 );
 
-const res = new ImageResponse(el, { width: 1400, height: 780, fonts: FONTS });
+const res = new ImageResponse(el, { width: 1400, height: 800, fonts: FONTS });
 const out = resolve(
     OUT_DIR,
     'the-web-ecosystem-is-missing-a-layer.uk.illus-declaration.png',
