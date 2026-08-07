@@ -335,7 +335,23 @@ function measure(code) {
         format: 'esm',
         treeShaking: true,
         platform: 'neutral',
-        external: ['node:*'], // zero deps; the root entry is browser-safe
+        // Node builtins, in BOTH spellings — the package has zero deps, so builtins are
+        // the only thing that is ever external and the root entry stays browser-safe.
+        //
+        // The bare forms are not belt-and-braces: they are the ones that actually match.
+        // The source writes the prefix (`src/registry.ts` imports `node:fs`/`node:path`/
+        // `node:url`) but tsup STRIPS it, so `lib/` emits `from"fs"`, `require("path")`.
+        // Across the shipped files the only surviving `node:` string is inside
+        // `process?.getBuiltinModule?.("node:fs")` — a runtime lookup no bundler resolves.
+        // `node:*` alone therefore matched NOTHING here: measuring a builtin-using entry
+        // (`stitchapi/registry`) failed outright with `Could not resolve "fs"`, and a bare
+        // `fs` left non-external can be shadowed by a stray `node_modules/fs` and silently
+        // inlined into the measurement. The prefixed forms are kept so this keeps working
+        // if the build is ever changed to preserve `node:` (the better fix for shadowing).
+        //
+        // A builtin the list misses fails loudly rather than measuring something wrong —
+        // extend it when the artifacts start reaching for a new one.
+        external: ['node:*', 'fs', 'fs/promises', 'path', 'url', 'http'],
         write: false,
         logLevel: 'silent',
     });
