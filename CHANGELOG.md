@@ -566,6 +566,13 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`@stitchapi/openapi` refuses to overwrite a file it did not generate.**
+  ([#694](https://github.com/rejifald/StitchAPI/issues/694)) A re-run wrote every emitted file
+  unconditionally at exit `0`, so `--out <a directory you already own>` silently discarded
+  hand-written edits. It now reads back the previous run's `.stitch-gen.json` and refuses to touch
+  anything that manifest does not claim — naming the files, exiting non-zero — with `--force` to opt
+  in. That manifest also records the validator tier actually **emitted**, not the one requested.
+
 - **Adding `cache: { ttl }` no longer turns a handled vendor failure into a process exit.**
   ([#670](https://github.com/rejifald/StitchAPI/issues/670)) A cached stitch whose vendor returned
   `503` emitted an **unhandled promise rejection**, which under Node's default

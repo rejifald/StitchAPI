@@ -33,6 +33,7 @@ npx @stitchapi/openapi ./openapi.json --all --dry-run
 | `--grep <substr>`    | only operations whose path contains this substring                |
 | `--layout dir\|flat` | `dir` = one folder per operation (default); `flat` = one file     |
 | `--validator <t>`    | `types-only` (default). valibot/zod tiers are not implemented yet |
+| `--force`            | overwrite files it did not generate (it refuses by default)       |
 | `--dry-run`          | print the files to stdout instead of writing them                 |
 
 ## What it emits
@@ -42,7 +43,9 @@ one stitch per operation typed via `stitch<T>()`, and **atomic** component types
 placed by fan-in — a schema used by ≥2 operations goes to `_shared/`, one used by
 a single operation lives **inside that operation's directory** so deleting the
 operation deletes its private types too. A `.stitch-gen.json` manifest records the
-ownership graph.
+ownership graph and every path the run wrote — so a re-run replaces what it
+generated last time and **refuses to overwrite anything else**, naming the files
+and exiting non-zero unless you pass `--force`.
 
 ```
 src/pet-client/
