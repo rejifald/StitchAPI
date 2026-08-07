@@ -566,6 +566,11 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **Breaking out of a `.stream()` loop cancels the response body instead of leaking the socket.**
+  ([#686](https://github.com/rejifald/StitchAPI/issues/686)) The `'bytes'` (default) and `'json'`
+  decoders released the reader lock without cancelling, so an abandoned stream stayed open and the
+  vendor kept writing into it. Both now tear down on every exit path, as `'lines'`/`'ndjson'` did.
+
 - **Adding `cache: { ttl }` no longer turns a handled vendor failure into a process exit.**
   ([#670](https://github.com/rejifald/StitchAPI/issues/670)) A cached stitch whose vendor returned
   `503` emitted an **unhandled promise rejection**, which under Node's default

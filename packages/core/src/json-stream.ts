@@ -262,6 +262,10 @@ export async function* jsonStream(
             yield slice(valueStart, scan);
         }
     } finally {
+        // Cancel the body on any exit path (early `break` / error / normal end) so an abandoned
+        // consumer proactively closes the connection; then release the lock. `.catch` swallows a
+        // reject from a body already torn down by an abort.
+        await reader.cancel().catch(() => undefined);
         reader.releaseLock();
     }
 }
