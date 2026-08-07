@@ -13,6 +13,11 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Added
 
+- **`makeLlmSurface` is exported from `stitchapi/llm`**, with its `LlmDefaults` argument. ([#699](https://github.com/rejifald/StitchAPI/issues/699))
+  The exported `llmSurface` is only the `{ id: 'llm' }` identity — nothing to wrap — and the real
+  factory, which closes over the provider and defaults, had no `export`, so layering behaviour over
+  the llm surface ([P21](docs/CONTRACT.md#p21--every-contract-has-an-extension-seam)) meant forking core.
+
 - **`throttle.concurrency` goes fleet-wide too, by lease.** ([ADR 0025](docs/adr/0025-fleet-wide-concurrency-by-lease.md))
   [ADR 0024](docs/adr/0024-the-fleet-wide-pacing-cell.md) made the rate budget fleet-wide and left
   the concurrency cap per-process, so `concurrency: 10` across eight workers was really a fleet cap
@@ -565,6 +570,11 @@ npm release are grouped under the in-development version that introduced them.
     download. To actually get another surface, use a plain `stitch({ kind })`.
 
 ### Fixed
+
+- **A truncated LLM completion is no longer a silent success.** ([#699](https://github.com/rejifald/StitchAPI/issues/699))
+  `finishReason` was lifted by both provider mappings and read by nothing, so a completion cut short
+  at the token cap resolved `ok: true` with `findings: []`. It now sets a normalised `truncated` on
+  `LlmResult` and emits a `warn` drift finding — non-fatal; failing the call is a follow-up.
 
 - **Adding `cache: { ttl }` no longer turns a handled vendor failure into a process exit.**
   ([#670](https://github.com/rejifald/StitchAPI/issues/670)) A cached stitch whose vendor returned
