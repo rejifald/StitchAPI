@@ -566,6 +566,12 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`axiosAdapter(axios)` — the adapter's own documented snippet — now typechecks against real
+  axios.** ([#708](https://github.com/rejifald/StitchAPI/issues/708)) `AxiosLikeConfig.responseType`
+  was `string`, which axios types as its narrower `ResponseType` union, so passing `axios` (or
+  `axios.create()`) failed with `TS2345` under `exactOptionalPropertyTypes`. The type-level test
+  missed it by casting a client through `AxiosLike`; it now asserts against real `axios` types.
+
 - **Adding `cache: { ttl }` no longer turns a handled vendor failure into a process exit.**
   ([#670](https://github.com/rejifald/StitchAPI/issues/670)) A cached stitch whose vendor returned
   `503` emitted an **unhandled promise rejection**, which under Node's default

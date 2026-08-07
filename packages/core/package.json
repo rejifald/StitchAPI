@@ -328,6 +328,7 @@
         "@types/node": "^22.10.0",
         "@vitest/coverage-v8": "^4.1.10",
         "@vitest/eslint-plugin": "^1.6.24",
+        "axios": "^1.19.0",
         "esbuild": "^0.28.1",
         "eslint": "^9.39.4",
         "eslint-config-prettier": "^10.1.8",
