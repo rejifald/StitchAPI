@@ -384,20 +384,25 @@ export function decodeResponseBody(
 // A value that becomes a binary file part: a Blob, a raw byte view, or a
 // { value, filename?, type? } file wrapper. Anything else is a nested object/scalar.
 //
-// The wrapper is recognised ONLY when it is actually file-ish: `value` is binary (a Blob /
-// Uint8Array / ArrayBuffer), OR an explicit `filename`/`type` marks it a file part (so
-// `{ value: 'text', filename: 'note.txt' }` is still a named text part). A plain domain object that
-// merely HAPPENS to carry a `value` key — e.g. `{ value: 100, currency: 'USD' }` — is NOT a file:
-// treating it as one encoded `value` as a tiny Blob and silently DROPPED its siblings. Such an
-// object falls through here and recurses as a normal nested object instead.
+// The wrapper is recognised ONLY when it is actually file-ish: `value` is binary (a Blob/File, an
+// ArrayBuffer, or any view over one — TypedArray, Node `Buffer`, DataView), OR an explicit
+// `filename` names the part (so `{ value: 'text', filename: 'note.txt' }` is still a named text
+// part). A plain domain object that merely HAPPENS to carry a `value` key — e.g.
+// `{ value: 100, currency: 'USD' }` — is NOT a file: treating it as one encoded `value` as a tiny
+// Blob and silently DROPPED its siblings. Such an object falls through here and recurses as a
+// normal nested object instead.
+//
+// `type` is deliberately NOT a discriminator (#701 §2). It is a *modifier* — it sets an already-file
+// part's content type, and `appendFilePart` still honours it — but it is far too ordinary a domain
+// key to prove file-ness on its own: `{ value: 100, type: 'refund' }` is money, not an upload, and
+// admitting it here reintroduced exactly the sibling loss the paragraph above exists to prevent.
 function isFileWrapper(v: object): boolean {
-    const w = v as { value?: unknown; filename?: unknown; type?: unknown };
+    const w = v as { value?: unknown; filename?: unknown };
     return (
         w.value instanceof Blob ||
-        w.value instanceof Uint8Array ||
         w.value instanceof ArrayBuffer ||
-        w.filename !== undefined ||
-        w.type !== undefined
+        ArrayBuffer.isView(w.value) ||
+        w.filename !== undefined
     );
 }
 
