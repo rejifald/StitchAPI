@@ -93,6 +93,9 @@ const HTTP_METHODS = [
     'trace',
 ] as const;
 
+/** The ownership manifest, written into --out (ADR 0013 Decision 9). Read back by the CLI. */
+export const MANIFEST_FILE = '.stitch-gen.json';
+
 // ---- options & result -----------------------------------------------------
 
 export interface GenOptions {
@@ -408,12 +411,17 @@ function directRefs(schema: SchemaNode | undefined, acc: Set<string>): void {
 export function planGen(doc: OpenApiDoc, opts: GenOptions = {}): GenResult {
     const warnings: string[] = [];
     const notices: string[] = [];
-    const validator = opts.validator ?? 'types-only';
+    const requested = opts.validator ?? 'types-only';
+    // The tier actually EMITTED. v1 has no valibot/zod emitter, so it is always types-only — and
+    // the manifest, which is the durable artefact, records THIS rather than what was asked for.
+    // Recording the request left `"validator": "zod"` sitting over a tree with no validators in it,
+    // with only a build-time stderr line to contradict it (#694 §3).
+    const validator = 'types-only';
     const layout = opts.layout ?? 'dir';
 
-    if (validator !== 'types-only') {
+    if (requested !== validator) {
         warnings.push(
-            `validator "${validator}" is not implemented in v1; emitting types-only`,
+            `validator "${requested}" is not implemented in v1; emitting types-only`,
         );
     }
     notices.push(
@@ -629,6 +637,11 @@ export function planGen(doc: OpenApiDoc, opts: GenOptions = {}): GenResult {
         generator: 'stitch gen openapi',
         validator,
         layout,
+        // Every path this run writes, relative to --out, INCLUDING this manifest. It is the durable
+        // record of what the ejector OWNS: the CLI reads it back on the next run and refuses to
+        // overwrite anything absent from it (#694 §1). The ownership graph below records file names
+        // too, but only for operations and non-inlined schemas — this list is exact by construction.
+        files: [...files.map((f) => f.path), MANIFEST_FILE].sort(),
         operations: selected.map((o) => ({
             name: o.name,
             method: o.method,
@@ -643,7 +656,7 @@ export function planGen(doc: OpenApiDoc, opts: GenOptions = {}): GenResult {
         schemas: schemaManifest,
     };
     files.push({
-        path: '.stitch-gen.json',
+        path: MANIFEST_FILE,
         contents: `${JSON.stringify(manifest, null, 2)}\n`,
     });
 
@@ -966,6 +979,7 @@ function emptyManifest(validator: string, layout: string): unknown {
         generator: 'stitch gen openapi',
         validator,
         layout,
+        files: [],
         operations: [],
         schemas: [],
     };

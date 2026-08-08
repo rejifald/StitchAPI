@@ -571,6 +571,12 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`@stitchapi/openapi` refuses to overwrite a file it did not generate.**
+  ([#694](https://github.com/rejifald/StitchAPI/issues/694)) A re-run wrote every emitted file
+  unconditionally at exit `0`, so `--out <a directory you already own>` silently discarded
+  hand-written edits. It now reads back the previous run's `.stitch-gen.json` and refuses to touch
+  anything that manifest does not claim — naming the files, exiting non-zero — with `--force` to opt
+  in. That manifest also records the validator tier actually **emitted**, not the one requested.
 - **`axiosAdapter(axios)` — the adapter's own documented snippet — now typechecks against real
   axios.** ([#708](https://github.com/rejifald/StitchAPI/issues/708)) `AxiosLikeConfig.responseType`
   was `string`, which axios types as its narrower `ResponseType` union, so passing `axios` (or
