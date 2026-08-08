@@ -290,6 +290,28 @@ describe('planGen — naming, typing, auth, notice', () => {
             /runtime validation \+ drift are OFF/,
         );
     });
+
+    // #694 §3: the warning is a build-time stderr line, the manifest is the DURABLE artefact. It
+    // recorded the requested tier, so a tree with zero validators claimed `"validator": "zod"`.
+    test('a requested tier that falls back records the EMITTED tier in the manifest', () => {
+        const r = planGen(doc, { all: true, validator: 'zod' });
+        expect(r.warnings.join('\n')).toMatch(
+            /validator "zod" is not implemented in v1/,
+        );
+        expect((r.manifest as { validator: string }).validator).toBe(
+            'types-only',
+        );
+    });
+
+    // The manifest's `files` list is what the CLI reads back to decide what it owns (#694 §1), so
+    // it has to be exact — every emitted path, including the manifest itself.
+    test('the manifest lists every path the run writes, itself included', () => {
+        const r = planGen(doc, { all: true });
+        const listed = (r.manifest as { files: string[] }).files;
+        expect(listed).toEqual(r.files.map((f) => f.path).sort());
+        expect(listed).toContain('.stitch-gen.json');
+        expect(listed).toContain('client.ts');
+    });
 });
 
 // The codegen turns an UNTRUSTED OpenAPI document into TS source the developer compiles. Spec text

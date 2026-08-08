@@ -1231,7 +1231,17 @@ async function* runFrom(
     // It reads the RAW response body, not `value` — the flag indexes what the server sent, before
     // transform/pick reshaped it.
     const flagged = flagFinding(res, cfg);
-    const findings = flagged ? [flagged, ...outputFindings] : outputFindings;
+    // Three diagnostic sources, merged in PIPELINE order so a reader of `.inspect().findings` walks
+    // the call the way it ran: what the surface noticed while interpreting the response
+    // (`SurfaceOutcome.findings` — llm's truncated completion, issue #699), then the verdict
+    // config's inert flag, then the `output` contract's drift. None of the first two is levelled by
+    // `drift.severity`: that resolves inside the diff, over the kinds the diff produces, and these
+    // two are authored at a fixed level rather than derived from a comparison.
+    const findings = [
+        ...(outcome.findings ?? []),
+        ...(flagged ? [flagged] : []),
+        ...outputFindings,
+    ];
     let fatal = false;
     for (const finding of findings) {
         yield { type: 'drift', finding, at: now() };
@@ -1665,8 +1675,22 @@ async function* runCached(
     }
 
     yield cacheEvt('miss');
+    // What may be WRITTEN is a narrower question than what succeeded (issue #704 §1). `verdict.accept`
+    // makes a declared non-2xx a successful outcome, so gating on `out.ok` alone commits the ABSENCE
+    // behind a `404` to the store: a record created a second later stays masked for the whole TTL. And
+    // the hit path above replays an entry as `resultEvt(found.data, found.status, 0)` WITHOUT re-running
+    // `interpret`/`verdict`, so that stored `404` would also reach a reader whose own verdict rejects it
+    // — the entry's accept list belonging to its WRITER rather than its reader.
+    //
+    // `< 400` is `classifyStatus`'s own threshold minus the accept term: exactly the statuses every
+    // reader counts as a success on its own merits, so a stored entry is sound no matter who reads it
+    // back. Deliberately inline and accept-BLIND by construction rather than a `ctl.` predicate or a
+    // `bypass:` trace event: `runCached` is in the core entry, which sits under a full bundle budget
+    // (scripts/bundle-size.mjs), and neither spelling fits in the headroom. Comments are free at
+    // runtime, so the reasoning lives here instead — the skip is silent, but nothing unsound is kept.
     const store = async (out: RunOutcome): Promise<void> => {
-        if (out.ok) await op.set(out.value, out.status, out.vary);
+        if (out.ok && out.status < 400)
+            await op.set(out.value, out.status, out.vary);
     };
 
     // Coalescing disabled: run the chain, write the cache last.
@@ -1686,6 +1710,11 @@ async function* runCached(
             throw e;
         }
         if (out.ok) {
+            // `settle` stays ungated: coalescing is in-process and the coalescer belongs to THIS
+            // stitch, so every follower shares the leader's verdict and its accept list. Sharing one
+            // concurrent accepted `404` among identical callers is the live behaviour they'd each
+            // have got anyway — only the durable write, which outlives the burst and can be read
+            // back by a different reader, is the one the status gate holds back.
             await store(out);
             claim.settle({ data: out.value, status: out.status });
         } else {

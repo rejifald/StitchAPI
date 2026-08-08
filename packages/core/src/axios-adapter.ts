@@ -34,7 +34,11 @@ export interface AxiosLikeConfig {
     method: string;
     headers?: Record<string, string>;
     data?: unknown;
-    responseType?: string;
+    // Narrower than `string` on purpose: axios types this as its own `ResponseType` union, and a
+    // plain `string` makes `AxiosLikeConfig` unassignable to `AxiosRequestConfig` — which made
+    // `axiosAdapter(axios)` itself fail to typecheck against real axios (#708). The adapter only
+    // ever sends 'arraybuffer' (below), so narrowing to a subset of axios's union costs nothing.
+    responseType?: 'arraybuffer' | 'json' | 'text';
     signal?: AbortSignal;
     validateStatus?: ((status: number) => boolean) | null;
     onUploadProgress?: (e: AxiosLikeProgressEvent) => void;

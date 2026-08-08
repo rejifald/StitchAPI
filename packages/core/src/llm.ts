@@ -17,6 +17,7 @@ import { makeStitch } from './stitch';
 import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
+    type DriftFinding,
     type NoRequestShapeOnLlm,
     type NoUnknownKeys,
     type NoUnknownNestedKeys,
@@ -52,9 +53,59 @@ export interface LlmResult {
     text: string;
     model?: string;
     usage?: { inputTokens?: number; outputTokens?: number };
+    /** Why the provider stopped generating, in the PROVIDER's own vocabulary — anthropic's
+     *  `stop_reason` (`end_turn`, `max_tokens`, …), openai's `finish_reason` (`stop`, `length`, …).
+     *  The field name is normalised; the VALUE is not, because there is no cross-vendor standard to
+     *  normalise it to. {@link LlmResult.truncated} is the one question worth answering portably. */
     finishReason?: string;
+    /**
+     * Did the completion stop because it hit the token cap — i.e. is `text` a PARTIAL answer?
+     *
+     * The surface derives this from {@link LlmResult.finishReason} so a caller never has to know
+     * that anthropic spells it `max_tokens` and openai spells it `length`. Three-state on purpose:
+     * `true` truncated, `false` finished on its own terms, and **absent** = unknown, because a
+     * provider that lifted no `finishReason` gave no grounds for either answer. A confident `false`
+     * over silence would be the same failure this field exists to fix, one level up.
+     *
+     * A BYO provider whose stop vocabulary is neither vendor's may set this in its own `parse`; the
+     * surface defers to that rather than guessing (CONTRACT.md P21 — the seam is the provider).
+     */
+    truncated?: boolean;
     raw: unknown;
 }
+
+// The finish reasons that mean THE CAP STOPPED IT, across the two first-party mappings: anthropic's
+// `stop_reason: 'max_tokens'` and openai's `finish_reason: 'length'`. Compared lower-cased so a BYO
+// provider passing its vendor's string through verbatim is not defeated by case alone (Gemini-family
+// APIs shout `MAX_TOKENS`) — a cheap widening that can only ever recognise MORE truncation.
+const CAP_REASONS = new Set(['max_tokens', 'length']);
+
+// Read truncation off the NORMALISED finish reason. `undefined` in ⇒ `undefined` out: no reason
+// lifted is UNKNOWN, never "fine" (see LlmResult.truncated).
+const truncatedBy = (finishReason?: string): boolean | undefined =>
+    finishReason === undefined
+        ? undefined
+        : CAP_REASONS.has(finishReason.toLowerCase());
+
+// The `warn` finding for a completion the cap cut short (issue #699). Non-fatal by construction —
+// only `level: 'error'` fails a call — because whether a partial answer is acceptable is the
+// CALLER's call, not the surface's. The surface's whole job here is to make sure the caller is in a
+// position to make it, which it was not while a truncated completion resolved `ok: true` with an
+// empty `findings` array on all eight observers.
+//
+// It reuses the `coerced` change kind rather than minting one, following `flagFinding`'s precedent:
+// a new kind would widen `SoftDriftChange`, the per-kind severity map and its documented defaults
+// for a diagnostic that reads the same either way. `coerced` is the honest fit of the three soft
+// kinds — the value that reached you is not the value that was meant — and its default level is
+// already `warn`, so kind and severity agree instead of arguing.
+const truncationFinding = (reason: string | undefined): DriftFinding => ({
+    level: 'warn',
+    path: 'finishReason',
+    change: 'coerced',
+    detail:
+        `the completion stopped at the token cap (\`${reason}\`), so \`text\` is a PARTIAL answer, ` +
+        `not a short one. Raise \`tokens\`, or branch on \`truncated\` on the result.`,
+});
 
 /**
  * The provider-mapping CONTRACT (ADR 0008) — the contract-not-dependency primitive for LLMs, the
@@ -77,8 +128,10 @@ export interface LlmProvider {
     parse: (body: unknown) => LlmResult;
 }
 
-/** Per-stitch llm defaults baked into the surface (the call may override via `body`). */
-interface LlmDefaults {
+/** Per-stitch llm defaults baked into the surface (the call may override via `body`). Exported
+ *  alongside {@link makeLlmSurface}, whose argument it is — a public factory taking a private
+ *  parameter type is not actually constructible by a consumer. */
+export interface LlmDefaults {
     provider: LlmProvider;
     model?: string;
     system?: string;
@@ -116,9 +169,37 @@ function toRequest(d: LlmDefaults, input: StitchInput): LlmRequest {
  */
 export const llmSurface: Surface = { id: 'llm' };
 
-// The live llm surface for one provider + defaults: pack the request via `provider.buildBody` as a
-// JSON POST (provider headers under the user's), and `interpret` lifts the result via `provider.parse`.
-//
+/**
+ * The live llm surface for one provider + defaults: pack the request via `provider.buildBody` as a
+ * JSON POST (provider headers under the user's), and `interpret` lifts the result via
+ * `provider.parse`.
+ *
+ * EXPORTED (issue #699) because {@link llmSurface} — the identity — has nothing to wrap: it is a
+ * bare `{ id: 'llm' }`, so a caller who wanted to layer behaviour over the real llm surface had no
+ * object to layer it over and no way to build one, since this factory closes over the provider and
+ * defaults that `llm(config)` assembles internally. Wrapping a surface is the documented way to
+ * extend one (CONTRACT.md P21 — `Surface` is the seam), and that door was shut on this surface
+ * alone. With the factory public, composing over `interpret`/`buildRequest` is ordinary code:
+ *
+ * ```ts
+ * import { makeLlmSurface, anthropic } from 'stitchapi/llm';
+ * import { stitch } from 'stitchapi';
+ *
+ * const base = makeLlmSurface({ provider: anthropic, model: 'claude-opus-4-8' });
+ * const strict = {
+ *     ...base,
+ *     interpret: (res, cfg) => {
+ *         const out = base.interpret!(res, cfg);
+ *         return out.ok && out.data.truncated
+ *             ? { ok: false as const, message: 'llm: truncated at the token cap' }
+ *             : out;
+ *     },
+ * };
+ * ```
+ *
+ * That example is deliberate: making truncation FATAL is a caller-side policy this surface does not
+ * impose, and exporting the factory is what makes it a five-line wrapper instead of a fork.
+ */
 // `method` and the body encoding are the surface's, not the caller's — `NoRequestShapeOnLlm` makes
 // authoring `method` or `wire.body` a compile error so the override is never silent. `headers` and
 // `wire.response` are NOT overridden (base headers win over the provider's; the response decoding
@@ -127,7 +208,9 @@ export const llmSurface: Surface = { id: 'llm' };
 // The flat `bodyType: 'json'` below is the `AdapterRequest` spelling, one layer under the authoring
 // config: that transport contract keeps the flat wire-format fields (CONTRACT.md P22), and the
 // engine converts `wire` into them when it builds the request.
-function makeLlmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
+export function makeLlmSurface(
+    d: LlmDefaults,
+): Surface<StitchInput, LlmResult> {
     const { provider } = d;
     return {
         id: 'llm',
@@ -142,10 +225,35 @@ function makeLlmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
         // is what keeps `parse` seeing a successful body now that the engine no longer guarantees a
         // non-2xx never reaches here. A provider's "200 with an error envelope" is still `parse`'s
         // to handle.
+        //
+        // A completion that hit the token cap is then REPORTED, not thrown (issue #699). The
+        // provider mappings already lifted `finishReason`; until now nothing read it, so the one
+        // response shape a caller most needs to notice — "your answer is cut off" — arrived as
+        // `ok: true` with `findings: []`, indistinguishable from a model that simply finished. It
+        // resolves as a success because it IS one at every layer this surface owns (the transport
+        // succeeded, the body is well-formed, `text` holds real tokens); whether a partial answer
+        // is usable is the caller's question, and `truncated` + the `warn` finding are what let it
+        // be asked. Failing the call instead would be a policy — see {@link makeLlmSurface} for the
+        // wrapper that adopts it.
         interpret: (res, cfg): SurfaceOutcome<LlmResult> => {
             const failure = verdictOf(res, cfg);
             if (failure) return failure;
-            return { ok: true, data: provider.parse(res.body) };
+            const parsed = provider.parse(res.body);
+            // The provider's own answer wins: a BYO provider that already decided this in `parse`
+            // knows its vendor's stop vocabulary better than a two-entry set does.
+            const truncated =
+                parsed.truncated ?? truncatedBy(parsed.finishReason);
+            // Unknown stays ABSENT rather than being written as `false` — `compact`'s discipline,
+            // and the reason `truncated` is three-state at all.
+            const data =
+                truncated === undefined ? parsed : { ...parsed, truncated };
+            return truncated === true
+                ? {
+                      ok: true,
+                      data,
+                      findings: [truncationFinding(parsed.finishReason)],
+                  }
+                : { ok: true, data };
         },
     };
 }
