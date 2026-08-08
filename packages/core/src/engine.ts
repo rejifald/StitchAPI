@@ -1231,7 +1231,17 @@ async function* runFrom(
     // It reads the RAW response body, not `value` — the flag indexes what the server sent, before
     // transform/pick reshaped it.
     const flagged = flagFinding(res, cfg);
-    const findings = flagged ? [flagged, ...outputFindings] : outputFindings;
+    // Three diagnostic sources, merged in PIPELINE order so a reader of `.inspect().findings` walks
+    // the call the way it ran: what the surface noticed while interpreting the response
+    // (`SurfaceOutcome.findings` — llm's truncated completion, issue #699), then the verdict
+    // config's inert flag, then the `output` contract's drift. None of the first two is levelled by
+    // `drift.severity`: that resolves inside the diff, over the kinds the diff produces, and these
+    // two are authored at a fixed level rather than derived from a comparison.
+    const findings = [
+        ...(outcome.findings ?? []),
+        ...(flagged ? [flagged] : []),
+        ...outputFindings,
+    ];
     let fatal = false;
     for (const finding of findings) {
         yield { type: 'drift', finding, at: now() };
