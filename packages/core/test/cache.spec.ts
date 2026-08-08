@@ -4,7 +4,7 @@
 // eviction, the `sensitive` bypass, principal scope isolation, re-validate-on-hit + the
 // `version` fast path, and the cacheable-method gate (GraphQL opt-in).
 import { graphql, memoryStore, seam, stitch } from '../src';
-import type { Adapter, CacheOptions } from '../src';
+import type { Adapter, CacheOptions, StitchConfig } from '../src';
 import { clearFingerprinters, registerFingerprinter } from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
@@ -836,5 +836,92 @@ describe('cache — non-storable pass-through', () => {
         expect(bypass).toBe(true);
         await s();
         expect(calls()).toBe(2); // not cached
+    });
+});
+
+describe('cache — an accepted non-2xx is never stored (#704 §1)', () => {
+    // A resource that does not exist YET: the first call 404s, every call after it finds the
+    // record. With `verdict: { accept: [404] }` that 404 is a normal result, so it arrives at the
+    // cache's store gate looking exactly like a success — which is the whole trap.
+    function lateArrival(): { adapter: Adapter; calls: () => number } {
+        let calls = 0;
+        const adapter: Adapter = async () => {
+            const n = (calls += 1);
+            return n === 1
+                ? { status: 404, headers: {}, body: { error: 'not found' } }
+                : { status: 200, headers: {}, body: { id: 1 } };
+        };
+        return { adapter, calls: () => calls };
+    }
+
+    const accepting = (adapter: Adapter): Partial<StitchConfig> => ({
+        url: URL,
+        adapter,
+        trace: false,
+        verdict: { accept: [404] },
+        cache: { ttl: '60s', tenancy: 'app' },
+    });
+
+    test('the absence behind an accepted 404 does not mask the record created after it', async () => {
+        const { adapter, calls } = lateArrival();
+        const s = stitch(accepting(adapter));
+        // Accepted, so it resolves with the error body as the value — that part is unchanged.
+        expect(await s()).toEqual({ error: 'not found' });
+        // The record exists now. Before the fix the stored ABSENCE answered here instead, for the
+        // whole 60s TTL, and the origin was never asked a second time.
+        expect(await s()).toEqual({ id: 1 });
+        expect(calls()).toBe(2);
+    });
+
+    test('the cache is still consulted — the 404 is read past, not bypassed', async () => {
+        // The skip is on the WRITE only: the run still misses the cache and still runs the chain,
+        // so a later 200 on the same key caches normally. (The skip itself is deliberately silent
+        // — a `bypass:` event did not fit the core entry's bundle budget; see the note at the
+        // store gate in engine.ts.)
+        const { adapter, calls } = lateArrival();
+        const s = stitch(accepting(adapter));
+        expect(await cacheTrace(s.stream())).toContain('miss'); // 404 — consulted, not stored
+        expect(await s()).toEqual({ id: 1 }); // so this reaches the origin and finds the record
+        expect(await cacheTrace(s.stream())).toContain('hit'); // …and THAT is what caches
+        expect(calls()).toBe(2); // the 404 and the record; the hit cost nothing
+    });
+
+    test('an accepted 404 cannot be replayed to a reader whose own verdict rejects it', async () => {
+        // A hit replays as `resultEvt(found.data, found.status, 0)` WITHOUT re-running
+        // `interpret`/`verdict`, so a stored entry's accept list would govern whoever reads it
+        // next. Two stitches over one store landing on one derived key (same method + url, and
+        // both fall back to the same default cache id): the WRITER accepts 404, the READER does
+        // not. Before the fix the reader was handed the writer's 404 body as a success.
+        const store = memoryStore();
+        let calls = 0;
+        const adapter: Adapter = async () => {
+            calls += 1;
+            return { status: 404, headers: {}, body: { error: 'not found' } };
+        };
+        const base: Partial<StitchConfig> = {
+            url: URL,
+            adapter,
+            trace: false,
+            store,
+            cache: { ttl: '60s', tenancy: 'app' } satisfies CacheOptions,
+        };
+        const writer = stitch({ ...base, verdict: { accept: [404] } });
+        const reader = stitch(base); // no accept list — here a 404 is a failure
+
+        expect(await writer()).toEqual({ error: 'not found' });
+        await expect(reader()).rejects.toThrow(/404/);
+        expect(calls).toBe(2); // the reader reached the origin instead of inheriting the entry
+    });
+
+    test('a 200 still caches and replays exactly as it always has', async () => {
+        const { adapter, calls } = counting(); // always 200
+        // Same accept list — it simply never fires, so the healthy path must be byte-identical.
+        const s = stitch(accepting(adapter));
+        expect(await s()).toEqual({ n: 1 });
+        expect(await s()).toEqual({ n: 1 }); // served from cache, not the origin
+        expect(calls()).toBe(1);
+        const trace = await cacheTrace(s.stream());
+        expect(trace).toContain('hit');
+        expect(trace.some((d) => d.startsWith('bypass'))).toBe(false);
     });
 });

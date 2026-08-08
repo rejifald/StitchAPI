@@ -575,6 +575,12 @@ npm release are grouped under the in-development version that introduced them.
   `finishReason` was lifted by both provider mappings and read by nothing, so a completion cut short
   at the token cap resolved `ok: true` with `findings: []`. It now sets a normalised `truncated` on
   `LlmResult` and emits a `warn` drift finding — non-fatal; failing the call is a follow-up.
+- **An accepted non-2xx no longer becomes a cached absence.**
+  ([#704](https://github.com/rejifald/StitchAPI/issues/704)) The store gate was `out.ok` alone, so
+  `verdict: { accept: [404] }` cached the absence behind the `404` — masking a record created after
+  it for the whole TTL, and (a hit replays without re-running `interpret`/`verdict`) letting that
+  entry reach a reader whose own verdict rejects the status. The gate is now accept-blind (`< 400`),
+  so only a status every reader counts as a success on its own merits is stored.
 
 - **Adding `cache: { ttl }` no longer turns a handled vendor failure into a process exit.**
   ([#670](https://github.com/rejifald/StitchAPI/issues/670)) A cached stitch whose vendor returned
