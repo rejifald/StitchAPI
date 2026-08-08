@@ -21,6 +21,7 @@ import {
 import { z } from 'zod';
 
 const td = new TextDecoder();
+const enc = new TextEncoder();
 
 describe('stream surface identity (Decisions 5, 11)', () => {
     test('streamSurface has the stable id "stream" and a stream hook', () => {
@@ -120,6 +121,88 @@ describe('stream decoders (Decision 5)', () => {
         });
 
         expect(await s()).toEqual([{ s: 'a}b]c"d' }]);
+    });
+});
+
+describe('abandoned-stream teardown (issue #686 §2)', () => {
+    // `break`ing out of a `.stream()` loop `.return()`s the generator chain down to the decoder,
+    // whose `finally` must cancel() the body — releasing the lock alone leaves the response stream
+    // open, so the vendor keeps writing (and billing) into a connection nobody reads. `lines`/
+    // `ndjson` already got this from lineReader; these pin the other two decoders to the same
+    // behaviour. A cancel-recording endless body makes the client-side cancel observable, which a
+    // real HTTP body can't, and it is only ever torn down by the consumer.
+    function endlessBody(chunk: string): {
+        body: ReadableStream<Uint8Array>;
+        cancelled: () => boolean;
+    } {
+        let cancelled = false;
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                controller.enqueue(enc.encode(chunk));
+            },
+            cancel() {
+                cancelled = true;
+            },
+        });
+        return { body, cancelled: () => cancelled };
+    }
+
+    test('the default "bytes" decoder cancels the body on an early break', async () => {
+        const { body, cancelled } = endlessBody('chunk');
+        const s = stream({
+            url: 'https://x.test/breakable-bytes',
+            adapter: streamAdapter(body),
+        });
+
+        const deltas: unknown[] = [];
+        for await (const e of s.stream()) {
+            if (e.type === 'delta') {
+                deltas.push(e.chunk);
+                break; // abandon the rest of the stream
+            }
+        }
+        expect(deltas.map((c) => td.decode(c as Uint8Array))).toEqual([
+            'chunk',
+        ]);
+        expect(cancelled()).toBe(true); // cancelled, not merely unlocked
+    });
+
+    test('decode "json" cancels the body on an early break', async () => {
+        // Concatenated top-level objects with no separator → one delta each, so the consumer has a
+        // value to break on while the body is still open.
+        const { body, cancelled } = endlessBody('{"n":1}');
+        const s = stream({
+            url: 'https://x.test/breakable-json',
+            stream: { decode: 'json' },
+            adapter: streamAdapter(body),
+        });
+
+        const deltas: unknown[] = [];
+        for await (const e of s.stream()) {
+            if (e.type === 'delta') {
+                deltas.push(e.chunk);
+                break;
+            }
+        }
+        expect(deltas).toEqual([{ n: 1 }]);
+        expect(cancelled()).toBe(true);
+    });
+
+    test('a normal drain still cancels (a no-op on a closed stream) and loses no chunks', async () => {
+        // Cancelling unconditionally in `finally` is safe: cancel() on an already-closed stream is a
+        // spec no-op, so a fully-consumed stream still delivers everything, on both decoders.
+        const bytes = stream({
+            url: 'https://x.test/drained-bytes',
+            adapter: streamAdapter(streamOf(['ab', 'cd'])),
+        });
+        expect((await bytes()).map((c) => td.decode(c)).join('')).toBe('abcd');
+
+        const json = stream({
+            url: 'https://x.test/drained-json',
+            stream: { decode: 'json' },
+            adapter: streamAdapter(streamOf(['[{"a":1},{"a":2}]'])),
+        });
+        expect(await json()).toEqual([{ a: 1 }, { a: 2 }]);
     });
 });
 

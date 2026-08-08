@@ -243,3 +243,40 @@ describe('json-stream tokenizer: max-buffer guard + incomplete streams', () => {
         expect(await decode([])).toEqual([]);
     });
 });
+
+describe('json-stream tokenizer: teardown on abandon (issue #686 §2)', () => {
+    // The tokenizer owns its reader, so it owns the teardown: a consumer that `break`s triggers the
+    // generator `.return()`, and the `finally` must cancel() the body before releasing the lock —
+    // otherwise the response stream stays open and the socket leaks. Same guarantee lineReader
+    // gives the `'lines'`/`'ndjson'` decoders; asserted here at the plumbing level.
+
+    test('an early break cancels the underlying stream before releasing the lock', async () => {
+        // An endless body of concatenated top-level objects: only the consumer can end it, so a
+        // missing cancel() is a stream left open. The `cancel` hook records the client-side tear-down.
+        let cancelled = false;
+        const stream = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                controller.enqueue(enc.encode('{"n":1}'));
+            },
+            cancel() {
+                cancelled = true;
+            },
+        });
+        const seen: unknown[] = [];
+        for await (const v of jsonStream(stream)) {
+            seen.push(v);
+            break; // abandon after the first value
+        }
+        expect(seen).toEqual([{ n: 1 }]);
+        expect(cancelled).toBe(true);
+    });
+
+    test('a normal drain still cancels (a no-op on a closed stream) and yields every value', async () => {
+        // Cancelling unconditionally in `finally` is safe: cancel() on an already-closed stream is a
+        // spec no-op, so a fully-consumed stream still emits all of its values.
+        expect(await decodeText('[{"a":1},{"a":2}]')).toEqual([
+            { a: 1 },
+            { a: 2 },
+        ]);
+    });
+});

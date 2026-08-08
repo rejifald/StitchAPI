@@ -571,6 +571,10 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **Breaking out of a `.stream()` loop cancels the response body instead of leaking the socket.**
+  ([#686](https://github.com/rejifald/StitchAPI/issues/686)) The `'bytes'` (default) and `'json'`
+  decoders released the reader lock without cancelling, so an abandoned stream stayed open and the
+  vendor kept writing into it. Both now tear down on every exit path, as `'lines'`/`'ndjson'` did.
 - **`@stitchapi/openapi` refuses to overwrite a file it did not generate.**
   ([#694](https://github.com/rejifald/StitchAPI/issues/694)) A re-run wrote every emitted file
   unconditionally at exit `0`, so `--out <a directory you already own>` silently discarded
