@@ -1216,6 +1216,12 @@ npm release are grouped under the in-development version that introduced them.
   variable. See ADR 0005 Decision 1's addendum for why this was deferred and what implementing
   it would take; relaxing the guard later is non-breaking.
 
+- **The bundle-size gate's externals now match what the build actually emits.**
+  ([#709](https://github.com/rejifald/StitchAPI/issues/709)) `check:size` externalised `node:*`, but
+  `tsup` strips the prefix — `lib/` emits bare `from"fs"` — so the pattern matched nothing, and
+  measuring a builtin-using entry failed outright with `Could not resolve "fs"`. No measured or
+  advertised number moves; the fix is repo tooling only.
+
 ## [1.0.0-rc.7] — 2026-08-01
 
 ### Added
