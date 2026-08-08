@@ -571,6 +571,11 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`axiosAdapter(axios)` — the adapter's own documented snippet — now typechecks against real
+  axios.** ([#708](https://github.com/rejifald/StitchAPI/issues/708)) `AxiosLikeConfig.responseType`
+  was `string`, which axios types as its narrower `ResponseType` union, so passing `axios` (or
+  `axios.create()`) failed with `TS2345` under `exactOptionalPropertyTypes`. The type-level test
+  missed it by casting a client through `AxiosLike`; it now asserts against real `axios` types.
 - **A truncated LLM completion is no longer a silent success.** ([#699](https://github.com/rejifald/StitchAPI/issues/699))
   `finishReason` was lifted by both provider mappings and read by nothing, so a completion cut short
   at the token cap resolved `ok: true` with `findings: []`. It now sets a normalised `truncated` on
