@@ -21,7 +21,22 @@ import { getPath } from './util';
 
 /**
  * The result a surface's {@link Surface.interpret} produces from a buffered response. The success
- * arm carries `data` (CONTRACT.md P5).
+ * arm carries `data` (CONTRACT.md P5), plus optional `findings` — the DIAGNOSTIC channel for a
+ * surface that noticed something about a response it is nonetheless returning as a success.
+ *
+ * `findings` exists because the alternative is a false choice. A surface reading a body can meet a
+ * condition that is neither a failure nor a non-event — an LLM completion cut short at the token
+ * cap is the motivating case (issue #699): the call worked, the bytes are well-formed, and the
+ * `text` is still a partial answer. Without a diagnostic channel `interpret` must either fail the
+ * call (wrong — the caller may not care, and it is the caller's decision to make) or say nothing
+ * (wrong — the caller cannot make that decision if it never hears about it). The engine merges
+ * these into the same drift stream the `output` contract and {@link flagFinding} feed, so they
+ * reach `.inspect().findings`, the `drift` event, and the trace with no extra wiring.
+ *
+ * Findings are DIAGNOSTIC, never control flow (ADR 0015/0016) — with one edge the engine already
+ * owns: a `level: 'error'` finding fails the call. A surface reporting a non-fatal condition
+ * therefore uses `warn`/`info`/`verbose`, which is the whole point of reporting it here rather
+ * than in the failure arm.
  *
  * The middle arm is the BODY-AWARE RETRY (ADR 0022 Decision 5, issue #529): a surface that has read
  * the body can ask for another attempt — a `200` carrying `{ status: 'PENDING' }`, an in-payload
@@ -32,7 +47,7 @@ import { getPath } from './util';
  * author writes it. Exhausting the budget surfaces the outcome as an ordinary failure.
  */
 export type SurfaceOutcome<T = unknown> =
-    | { ok: true; data: T }
+    | { ok: true; data: T; findings?: DriftFinding[] }
     | { ok: false; retry: true; message: string; after?: number | string }
     | { ok: false; message: string; status?: number };
 
