@@ -170,6 +170,83 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
         expect(raw).not.toContain('filename=');
     });
 
+    // #701 §2: the same silent-sibling-loss bug, reached through `type` instead of `value`.
+    // `type` is a modifier on a file part (it sets the part's content type), never the thing that
+    // MAKES one — it is far too common a domain key (`{ value, type: 'refund' }`) to discriminate on.
+    test('a { value, type } domain object is a nested object, not a file (every sibling survives)', async () => {
+        server.route('POST', '/u', { body: { ok: true } });
+        const upload = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/u',
+            wire: { body: 'multipart' },
+        });
+
+        await upload({
+            body: { refund: { value: 100, type: 'refund', currency: 'USD' } },
+        });
+
+        const raw = rawOf('/u');
+        // All three fields survive as normal string parts…
+        expect(raw).toContain('name="refund[value]"');
+        expect(raw).toContain('100');
+        expect(raw).toContain('name="refund[type]"');
+        expect(raw).toContain('refund');
+        expect(raw).toContain('name="refund[currency]"');
+        expect(raw).toContain('USD');
+        // …and `refund` is NOT a file part (the bug encoded it as a 3-byte Blob typed `refund`,
+        // losing `type` and `currency` outright, and the call still returned 200).
+        expect(raw).not.toContain('name="refund"\r\n');
+        expect(raw).not.toContain('filename=');
+    });
+
+    test('a binary wrapper carrying only a `type` (no filename) is still a file part', async () => {
+        server.route('POST', '/u', { body: { ok: true } });
+        const upload = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/u',
+            wire: { body: 'multipart' },
+        });
+
+        await upload({
+            body: { doc: { value: bytes, type: 'application/x-custom' } },
+        });
+
+        const raw = rawOf('/u');
+        expect(raw).toContain('name="doc"');
+        // the `type` still reaches the wire as the part's content type…
+        expect(raw).toContain('application/x-custom');
+        // …and it did NOT recurse into value/type string fields
+        expect(raw).not.toContain('doc[value]');
+        expect(raw).not.toContain('doc[type]');
+    });
+
+    test("'json' nesting: an explicit { value, filename } still hoists to a file part", async () => {
+        server.route('POST', '/u', { body: { ok: true } });
+        const upload = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/u',
+            wire: { body: 'multipart', multipart: { nesting: 'json' } },
+        });
+
+        await upload({
+            body: {
+                amount: { value: 100, type: 'refund' },
+                note: { value: 'hello', filename: 'n.txt' },
+            },
+        });
+
+        const raw = rawOf('/u');
+        // the filename arm survives the narrowing — still hoisted out of the JSON part
+        expect(raw).toContain('name="note"');
+        expect(raw).toContain('filename="n.txt"');
+        // the domain object rides inside the JSON part, both keys intact
+        expect(raw).toContain('name="payload"');
+        expect(raw).toContain('"amount":{"value":100,"type":"refund"}');
+    });
+
     test('a real { value: <Uint8Array>, filename } wrapper is still a file part', async () => {
         server.route('POST', '/u', { body: { ok: true } });
         const upload = stitch({

@@ -569,6 +569,15 @@ npm release are grouped under the in-development version that introduced them.
     **Migration:** delete the field. No runtime behaviour changed — the stitch was already a
     download. To actually get another surface, use a plain `stitch({ kind })`.
 
+- **BREAKING CHANGE: a multipart `type` no longer makes a value a file part.**
+  ([#701](https://github.com/rejifald/StitchAPI/issues/701)) `isFileWrapper` accepted any object
+  carrying a `type` key, so a domain object like `{ value: 100, type: 'refund' }` was encoded as a
+  tiny Blob and its **siblings silently dropped** — a `200` with the money fields gone. A wrapper is
+  now a file only when `value` is binary (Blob/File/Uint8Array/Buffer/ArrayBuffer) or an explicit
+  `filename` names the part; `type` still sets a file part's content type, it just no longer creates
+  one. **Migration:** a `{ value, type }` part whose `value` is not one of those binary types needs a
+  `filename`, or pass `new Blob([value], { type })`.
+
 ### Fixed
 
 - **Breaking out of a `.stream()` loop cancels the response body instead of leaking the socket.**
