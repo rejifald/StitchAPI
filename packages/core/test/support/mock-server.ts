@@ -105,6 +105,17 @@ export interface RouteBehavior {
      */
     chunkDelay?: number;
     /**
+     * Never finish the chunked body: once the last slice of `rawBody` is written, wrap back to byte 0
+     * and keep trickling instead of `end()`ing — an ENDLESS steady transfer that only the CLIENT can
+     * end (abort / timeout), modelling a body larger than the caller's budget. Distinct from
+     * `stallAfterBytes`, whose held socket goes idle: here bytes are still arriving at the moment the
+     * caller cuts the call, which is what makes the transfer *healthy-but-slow* rather than stalled.
+     * It also removes a race a finite trickle can't: the body can never complete out from under a test
+     * that is waiting to observe progress first. The socket is tracked (teardown destroys it) and the
+     * write loop bails as soon as the client goes away. Only honoured on the `rawBody` chunked path.
+     */
+    chunkForever?: boolean;
+    /**
      * Answer with an HTTP redirect to `redirectTo` (M3 redirect-fault rig). The response is the
      * route's status (drawn from the `statuses` array so 301/302/303/307/308 can be scripted per
      * call; **defaults to 302** when the resolved status isn't itself a 3xx redirect code) plus a
@@ -480,10 +491,15 @@ export function startMockServer(): Promise<MockServer> {
                 buildHeaders('application/octet-stream', extra),
             );
             const size = extra.chunkBytes ?? bytes.length;
-            for (let off = 0; off < bytes.length; off += size) {
+            let off = 0;
+            while (off < bytes.length) {
                 if (extra.chunkDelay) await sleep(extra.chunkDelay);
-                if (res.writableEnded || res.destroyed) break;
+                if (res.writableEnded || res.destroyed) return;
                 res.write(bytes.subarray(off, off + size));
+                off += size;
+                // `chunkForever`: wrap instead of finishing, so the trickle never ends and the only
+                // way out of this loop is the client going away (the `return` above).
+                if (off >= bytes.length && extra.chunkForever) off = 0;
             }
             if (!res.writableEnded && !res.destroyed) res.end();
         };
