@@ -18,12 +18,7 @@
         "noUnusedLocals": true,
         "noUnusedParameters": true,
         "verbatimModuleSyntax": true,
-        "isolatedModules": true,
-
-        "baseUrl": "./",
-        "paths": {
-            "@/*": ["src/*"]
-        }
+        "isolatedModules": true
     },
     "include": ["src/**/*.ts"],
     "exclude": ["lib", "node_modules"]

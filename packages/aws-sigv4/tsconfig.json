@@ -21,7 +21,6 @@
 
         "types": ["node", "vitest/globals"],
 
-        "baseUrl": ".",
         "paths": {
             "stitchapi/auth": ["../core/src/auth.ts"],
             "stitchapi/testing": ["../core/src/testing.ts"],

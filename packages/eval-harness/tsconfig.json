@@ -14,7 +14,6 @@
         // Resolve the workspace `stitchapi` import to its SOURCE so typecheck
         // doesn't depend on core being built first (the published `exports` map
         // still points at `lib/`). Mirrors the sibling integration packages.
-        "baseUrl": ".",
         "paths": {
             "stitchapi/auth": ["../core/src/auth.ts"],
             "stitchapi": ["../core/src/index.ts"]

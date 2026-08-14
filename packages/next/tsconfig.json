@@ -21,7 +21,6 @@
 
         "types": ["node", "vitest/globals"],
 
-        "baseUrl": ".",
         "paths": {
             "stitchapi/testing": ["../core/src/testing.ts"],
             "stitchapi/sse-emit": ["../core/src/sse-emit.ts"],
