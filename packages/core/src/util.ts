@@ -39,7 +39,7 @@ export function newRunContext(parent?: {
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
         if (signal?.aborted) {
-            reject(new Error('aborted'));
+            reject(abortReason(signal));
             return;
         }
         const t = setTimeout(resolve, ms);
@@ -47,11 +47,25 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
             'abort',
             () => {
                 clearTimeout(t);
-                reject(new Error('aborted'));
+                reject(abortReason(signal));
             },
             { once: true },
         );
     });
+}
+
+/**
+ * The Error an aborted wait rejects with: the signal's own `reason` when that is an Error (the
+ * default AbortError, or a caller-supplied `abort(reason)`), else a generic abort Error. The one
+ * spelling of "which error does an abort surface?" — shared by {@link sleep}, the engine's abort
+ * paths, and `withTimeout`'s signal link, so a caller's custom reason survives no matter where in
+ * the resilience chain the abort lands.
+ */
+export function abortReason(signal: AbortSignal): Error {
+    const reason: unknown = signal.reason;
+    return reason instanceof Error
+        ? reason
+        : new Error('the operation was aborted');
 }
 
 /**

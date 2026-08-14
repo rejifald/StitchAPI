@@ -106,4 +106,14 @@ describe('manualClock: sleep', () => {
         await expect(p).rejects.toThrow('aborted');
         expect(c.pending()).toBe(0);
     });
+
+    test('sleep rejects with the caller-supplied abort reason (mirrors systemClock)', async () => {
+        const c = manualClock();
+        const ac = new AbortController();
+        const reason = new Error('deliberate cancel');
+        const p = c.sleep(100, ac.signal);
+        ac.abort(reason);
+        await expect(p).rejects.toBe(reason); // the same instance, not a re-minted Error
+        expect(c.pending()).toBe(0);
+    });
 });
