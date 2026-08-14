@@ -10,14 +10,30 @@
 //      `checkDiscloses`, asserts a substring IS present — `describe_stitch` handing the model the
 //      internal URL is a real disclosure and has to be recorded as loudly as a clean scan.
 //   2. WHAT REACHED THE WIRE. `checkWire` prints a request field the fake adapter recorded, so
-//      "the `authorization` header the vendor saw was `Bearer sk_live_…`, not the model's
-//      `Bearer attacker`" is the exact bytes and not a paraphrase.
+//      "the `authorization` header the vendor saw was `Bearer <bearer>`, not the model's
+//      `Bearer attacker`" is a wire observation and not a paraphrase.
 //
 // `check` / `checkSeq` / `note` / `heading` / `finish` follow `deprecation-headers/harness.ts`
-// unchanged, so a reader who has seen one proof directory has seen this one.
+// with one addition: every printed line passes through `redact` first. Assertions compare the
+// raw bytes, but stdout only ever sees `<label>` where a credential value would be — the same
+// rule `checkClean` already applies to leak context, promoted to every printer, because a proof
+// script's output ends up in terminal scrollback and PR comments (CodeQL js/clear-text-logging).
+import { SECRETS } from './vendor';
 
 let failures = 0;
 let checks = 0;
+
+/** Swap each known secret VALUE for its `<label>` in anything headed for stdout. */
+function redact(line: string): string {
+    let out = line;
+    for (const [label, value] of Object.entries(SECRETS))
+        out = out.replaceAll(value, `<${label}>`);
+    return out;
+}
+
+function print(line: string): void {
+    console.log(redact(line));
+}
 
 /** Render a measured value unambiguously — `undefined` vs `'undefined'` decides several rows. */
 function show(v: unknown): string {
@@ -32,7 +48,7 @@ export function check(label: string, actual: unknown, expected: unknown): void {
     checks++;
     const ok = Object.is(actual, expected);
     if (!ok) failures++;
-    console.log(
+    print(
         `  ${ok ? 'ok  ' : 'FAIL'}  ${label}: measured ${show(actual)}${ok ? '' : ` (expected ${show(expected)})`}`,
     );
 }
@@ -40,7 +56,7 @@ export function check(label: string, actual: unknown, expected: unknown): void {
 /**
  * Assert a measured SEQUENCE matches, comparing element-wise via `JSON.stringify`. The measured
  * sequence is printed in full whether it passes or fails — the wire spine
- * (`["Bearer sk_live_…","Bearer sk_live_…"]`) and the tool list (`["run_stitch","list_stitches",
+ * (`["Bearer <bearer>","Bearer <bearer>"]`) and the tool list (`["run_stitch","list_stitches",
  * "describe_stitch"]`) ARE the evidence.
  */
 export function checkSeq(
@@ -53,7 +69,7 @@ export function checkSeq(
     const e = JSON.stringify(expected);
     const ok = a === e;
     if (!ok) failures++;
-    console.log(
+    print(
         `  ${ok ? 'ok  ' : 'FAIL'}  ${label}: measured ${a}${ok ? '' : ` (expected ${e})`}`,
     );
 }
@@ -80,7 +96,7 @@ export function checkClean(
     );
     if (hits.length > 0) failures++;
     if (hits.length === 0) {
-        console.log(
+        print(
             `  ok    ${where.padEnd(34)} -> CLEAN (${String(Object.keys(secrets).length)} secrets scanned, ${String(payload.length)} bytes)`,
         );
         return;
@@ -90,7 +106,7 @@ export function checkClean(
     const context = payload
         .slice(Math.max(0, at - 30), at + first[1].length + 30)
         .replaceAll(first[1], `<${first[0]}>`);
-    console.log(
+    print(
         `  FAIL  ${where.padEnd(34)} -> LEAKED ${hits.map(([k]) => k).join(', ')} in ${String(payload.length)} bytes … ${context} …`,
     );
 }
@@ -108,15 +124,15 @@ export function checkDiscloses(
     checks++;
     const ok = payload.includes(needle);
     if (!ok) failures++;
-    console.log(
+    print(
         `  ${ok ? 'ok  ' : 'FAIL'}  ${where.padEnd(34)} -> ${ok ? 'DISCLOSES' : 'absent'} ${show(needle)}`,
     );
 }
 
 /**
  * Assert on a field of a request the fake adapter recorded. Separate from `check` only so the
- * output reads as a wire observation — `wire[0].headers.authorization` on the left, the exact
- * bytes the vendor would have seen on the right.
+ * output reads as a wire observation — `wire[0].headers.authorization` on the left, what the
+ * vendor saw (secrets redacted to their labels) on the right.
  */
 export function checkWire(
     field: string,
@@ -126,7 +142,7 @@ export function checkWire(
     checks++;
     const ok = JSON.stringify(actual) === JSON.stringify(expected);
     if (!ok) failures++;
-    console.log(
+    print(
         `  ${ok ? 'ok  ' : 'FAIL'}  wire ${field.padEnd(29)} = ${show(actual)}${ok ? '' : ` (expected ${show(expected)})`}`,
     );
 }
@@ -140,7 +156,7 @@ export function checkAtMost(
     checks++;
     const ok = actual <= bound;
     if (!ok) failures++;
-    console.log(
+    print(
         `  ${ok ? 'ok  ' : 'FAIL'}  ${label}: measured ${String(actual)}${ok ? ` (<= ${String(bound)})` : ` (expected <= ${String(bound)})`}`,
     );
 }
@@ -148,11 +164,11 @@ export function checkAtMost(
 /** Record a measurement that is reported but not asserted (context for the verdict). */
 export function note(label: string, value: unknown = ''): void {
     const v = value === '' ? '' : `: ${show(value)}`;
-    console.log(`  note  ${label}${v}`);
+    print(`  note  ${label}${v}`);
 }
 
 export function heading(text: string): void {
-    console.log(`\n${text}`);
+    print(`\n${text}`);
 }
 
 /**
@@ -165,7 +181,7 @@ export function heading(text: string): void {
  */
 export function finish(claim: string, statement: string): never {
     const pass = failures === 0;
-    console.log(
+    print(
         `\n${pass ? 'PASS' : 'FAIL'} ${claim} — ${statement} (${checks - failures}/${checks} checks)`,
     );
     process.exit(pass ? 0 : 1);

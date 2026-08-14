@@ -20,6 +20,13 @@ import type {
 } from '../../../../packages/core/src/types';
 import { type ProviderPair, providerPair } from './fake-provider';
 
+// The two configured credentials, exported by LABEL so the harness can redact the values from
+// everything it prints — assertions compare the raw bytes, stdout only ever sees `<label>`.
+export const CREDENTIALS = {
+    'primary-key': 'pk-primary',
+    'backup-key': 'sk-backup',
+} as const;
+
 export interface Rig {
     clock: ManualClock;
     p: ProviderPair;
@@ -51,7 +58,7 @@ export function rig(opts: RigOptions = {}): Rig {
         name: 'primary',
         url: `${p.primary.origin}${p.primary.path}`,
         adapter: p.primary.adapter(),
-        auth: bearer('pk-primary'),
+        auth: bearer(CREDENTIALS['primary-key']),
         ...common,
         ...opts.onPrimary,
     });
@@ -59,7 +66,11 @@ export function rig(opts: RigOptions = {}): Rig {
         name: 'backup',
         url: `${p.backup.origin}${p.backup.path}`,
         adapter: p.backup.adapter(),
-        auth: apiKey({ in: 'header', name: 'x-api-key', secret: 'sk-backup' }),
+        auth: apiKey({
+            in: 'header',
+            name: 'x-api-key',
+            secret: CREDENTIALS['backup-key'],
+        }),
         ...common,
         ...opts.onBackup,
     });

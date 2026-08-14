@@ -5,16 +5,33 @@
 // successful primary" is the whole question, and its answer is an integer, so both assertions
 // print the measured value whether they pass or fail: `backup requests on 10 happy calls: 10` has
 // to be readable out of context, because it IS the finding.
+import { CREDENTIALS } from './providers';
 
 let failures = 0;
 let checks = 0;
+
+// Assertions compare raw bytes, but no credential VALUE may reach stdout: every printed line
+// passes through `redact`, which swaps each configured secret for its `<label>`. The evidence
+// survives — `x-api-key = <backup-key>` still says which credential went where — the bytes
+// don't, because a proof script's output ends up in terminal scrollback and PR comments
+// (CodeQL js/clear-text-logging).
+function redact(line: string): string {
+    let out = line;
+    for (const [label, value] of Object.entries(CREDENTIALS))
+        out = out.replaceAll(value, `<${label}>`);
+    return out;
+}
+
+function print(line: string): void {
+    console.log(redact(line));
+}
 
 /** Assert an observed value equals what the claim predicts. Prints the MEASURED value either way. */
 export function check(label: string, actual: unknown, expected: unknown): void {
     checks++;
     const ok = Object.is(actual, expected);
     if (!ok) failures++;
-    console.log(
+    print(
         `  ${ok ? 'ok  ' : 'FAIL'}  ${label}: measured ${String(actual)}${ok ? '' : ` (expected ${String(expected)})`}`,
     );
 }
@@ -34,18 +51,18 @@ export function checkSeq(
     const e = JSON.stringify(expected);
     const ok = a === e;
     if (!ok) failures++;
-    console.log(
+    print(
         `  ${ok ? 'ok  ' : 'FAIL'}  ${label}: measured ${a}${ok ? '' : ` (expected ${e})`}`,
     );
 }
 
 /** Record a measurement that is reported but not asserted (context for the verdict). */
 export function note(label: string, value: unknown): void {
-    console.log(`  note  ${label}: ${String(value)}`);
+    print(`  note  ${label}: ${String(value)}`);
 }
 
 export function heading(text: string): void {
-    console.log(`\n${text}`);
+    print(`\n${text}`);
 }
 
 /**
@@ -58,7 +75,7 @@ export function heading(text: string): void {
  */
 export function finish(claim: string, statement: string): never {
     const pass = failures === 0;
-    console.log(
+    print(
         `\n${pass ? 'PASS' : 'FAIL'} ${claim} — ${statement} (${checks - failures}/${checks} checks)`,
     );
     process.exit(pass ? 0 : 1);
