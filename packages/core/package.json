@@ -327,7 +327,7 @@
         "@eslint/js": "^9.39.5",
         "@types/node": "^22.10.0",
         "@vitest/coverage-v8": "^4.1.10",
-        "@vitest/eslint-plugin": "^1.6.24",
+        "@vitest/eslint-plugin": "^1.6.26",
         "axios": "^1.19.0",
         "esbuild": "^0.28.1",
         "eslint": "^9.39.4",
@@ -336,7 +336,7 @@
         "tsd": "^0.33.0",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "typescript-eslint": "^8.65.0",
+        "typescript-eslint": "^8.66.0",
         "vitest": "^4.1.10",
         "zod": "^4.4.3"
     },
