@@ -1,0 +1,76 @@
+{
+    "name": "@stitchapi/download",
+    "version": "1.0.0-rc.7",
+    "type": "commonjs",
+    "description": "Batch downloader / manager for StitchAPI — FIFO concurrency, per-item settling, cancel, aggregate progress + ETA, idle-timeout, and same-URL dedupe on top of the resilient `download()` surface. Zero runtime deps, browser-first.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "browser": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "check:size": "node scripts/bundle-size.mjs",
+        "size": "tsup --silent && node scripts/bundle-size.mjs",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/download"
+    },
+    "keywords": [
+        "stitchapi",
+        "download",
+        "batch",
+        "concurrency",
+        "queue",
+        "progress",
+        "eta",
+        "cancel",
+        "blob",
+        "resilient",
+        "typescript"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "stitchapi": "^1.0.0-rc.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "esbuild": "^0.28.1",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.10"
+    }
+}

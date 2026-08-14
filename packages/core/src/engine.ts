@@ -289,6 +289,32 @@ const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
 // skip it), so the full `response` can't leak into a JSONL/console log. See `drain` in stitch.ts.
 export const ERROR_SOURCE = Symbol('stitch.errorSource');
 
+// The single writer of that channel: pin the live error behind an event so the awaited / `.safe()`
+// path can recover it. `defineProperty` defaults to non-configurable, so a second pin on the same
+// event throws — routing every producer through one helper is what makes "written once" structural,
+// rather than an accident of mutually-exclusive branches at the call sites.
+const pinSource = <E extends object>(evt: E, err: unknown): E => {
+    Object.defineProperty(evt, ERROR_SOURCE, { value: err, enumerable: false });
+    return evt;
+};
+
+// Must the live error ride that channel to the caller, or can the awaited path rebuild it from the
+// event alone? One question, asked once — the mirror of `rebuildError`'s `isOurs` in stitch.ts,
+// which decides what to do with whatever arrives. Three kinds ride:
+//   • an error carrying `.response` (issue #155) — the full error response (body + url) for
+//     `StitchError.body`/`.url`. Tested FIRST and untyped, because a BYO adapter may throw a
+//     non-Error bag that carries one.
+//   • a delegate-backoff RateLimitError (issue #145) — re-thrown as THAT instance, class identity
+//     and `retryAfter` intact. (#662 folds this arm into the next by making it a StitchError.)
+//   • any other foreign Error — a bare transport/internal failure (undici UND_ERR_SOCKET /
+//     ECONNRESET / DNS, an AbortError, …) whose `.cause` becomes `StitchError.cause`, so a caller
+//     can tell a socket reset from a generic "fetch failed". A StitchError the engine minted itself
+//     is excluded: it keeps being rebuilt from the event (unchanged behaviour).
+const ridesThrough = (err: unknown): boolean =>
+    (err as { response?: AdapterResponse }).response !== undefined ||
+    err instanceof RateLimitError ||
+    (err instanceof Error && !(err instanceof StitchError));
+
 // A non-enumerable channel for the retained pre-validation body (`.inspect()`, ADR 0016). Like
 // ERROR_SOURCE, non-enumerable means a trace sink (Object.entries / JSON.stringify) never sees it, so
 // the unredacted body can't leak into a JSONL/console log. Rides the `result` event on the success
@@ -344,10 +370,7 @@ function contractViolationEvt(
             attempts: state.attempts,
         });
         Object.defineProperty(err, RAW_BODY, { value: raw, enumerable: false });
-        Object.defineProperty(evt, ERROR_SOURCE, {
-            value: err,
-            enumerable: false,
-        });
+        pinSource(evt, err);
     }
     return evt;
 }
@@ -362,27 +385,13 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
         at: now(),
     };
     if (e.status !== undefined) evt.status = e.status;
-    // Delegate-backoff signal: stamp the structured `retryAfter` onto the event (so `.stream()`
-    // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
-    // ORDER IS LOAD-BEARING: a RateLimitError also carries `.response`, so the generic arm below
-    // would swallow it (and drop `retryAfter`) if this subclass test did not come first.
-    if (err instanceof RateLimitError) {
-        if (err.retryAfter !== undefined) evt.retryAfter = err.retryAfter;
-        Object.defineProperty(evt, ERROR_SOURCE, {
-            value: err,
-            enumerable: false,
-        });
-    } else if ((err as { response?: AdapterResponse }).response !== undefined) {
-        // HTTP failure (issue #155): the thrown error carries the full `.response` (body + url).
-        // Pin it on the SAME non-enumerable channel so `drain`/`asStitchError` can populate
-        // `StitchError.body`/`.url`. Non-enumerable ⇒ the body never serialises into a trace sink
-        // (privacy preserved); the enumerable `status`/`message` are all a sink sees.
-        Object.defineProperty(evt, ERROR_SOURCE, {
-            value: err,
-            enumerable: false,
-        });
-    }
-    return evt;
+    // Delegate-backoff signal: the structured `retryAfter` is stamped onto the EVENT so `.stream()`
+    // consumers see it; the live instance itself rides ERROR_SOURCE below for the awaited path.
+    if (err instanceof RateLimitError && err.retryAfter !== undefined)
+        evt.retryAfter = err.retryAfter;
+    // Non-enumerable ⇒ nothing pinned here ever serialises into a trace sink (privacy preserved);
+    // the enumerable `status`/`message` are all a sink sees.
+    return ridesThrough(err) ? pinSource(evt, err) : evt;
 }
 const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
     type: 'done',

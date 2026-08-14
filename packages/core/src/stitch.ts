@@ -558,12 +558,17 @@ function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
             cause: source,
         });
     }
-    return (
-        source ??
-        new StitchError(ev.message, {
-            status: ev.status,
-            attempts: ev.attempts,
-        })
+    // A pass-through terminal — a delegate-backoff RateLimitError or a contract-violation StitchError
+    // (`.inspect()` retain path) — is re-surfaced UNCHANGED.
+    if (source instanceof StitchError) return source;
+    // Otherwise a StitchError from the event, carrying any bare transport/internal `source` the engine
+    // pinned (an undici UND_ERR_SOCKET / ECONNRESET, a DNS failure, an AbortError, …) as `cause` — so
+    // callers can read `err.cause` (and its `.code`) to tell a socket reset from a generic "fetch
+    // failed". Absent a source, no cause (unchanged). `cause` is non-enumerable, so it never leaks into
+    // a trace sink.
+    return new StitchError(
+        ev.message,
+        compact({ status: ev.status, attempts: ev.attempts, cause: source }),
     );
 }
 
