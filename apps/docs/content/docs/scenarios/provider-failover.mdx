@@ -92,7 +92,7 @@ body intact. A `503` retried the primary twice, then failed over — `[2, 1]` �
 tree** with the spine `primary ← root, backup ← primary`. With both providers down the caller
 got the **last real error**, not an aggregate.
 
-**30 lines against 104** hand-rolled for the same feature set: the library carries ~74%, all of
+**30 lines against 104** hand-rolled for the same feature set: the library carries ~71%, all of
 it per-member, and **zero** of the routing.
 
 <Callout type="warn">

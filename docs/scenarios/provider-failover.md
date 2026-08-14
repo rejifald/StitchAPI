@@ -29,7 +29,7 @@ Escalated: [`issue-drafts/any-is-priced-as-a-hedge.md`](issue-drafts/any-is-pric
 - The `AggregateError` guess was right about the loss and wrong about the scale: it drops
   `body` too, so _nothing_ a catch block routes on survives.
 
-**The framing worth keeping:** the library carries ~74% of this scenario and **all of it is per
+**The framing worth keeping:** the library carries ~71% of this scenario and **all of it is per
 member** — auth, retry, breaker, timeout, normalisation, trace identity. Its contribution to the
 routing _between_ members is zero, and the 30 lines that fill the gap cannot be given back:
 `Composable` is not user-authorable, so a hand-branded node compiles and then throws.
