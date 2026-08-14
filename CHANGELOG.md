@@ -580,6 +580,31 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **A cancelled call surfaces the caller's own abort reason, and is never reported as a retry.**
+  ([#705](https://github.com/rejifald/StitchAPI/issues/705)) With a `retry` block configured, an
+  abort that landed while the call was parked in a backoff sleep came back as a generic
+  `Error('aborted')`: the same stitch, cancelled the same way, answered `user navigated away`
+  without `retry` and `aborted` with it. The backoff `sleep` minted its own error rather than
+  preferring the signal's `reason`.
+
+    The same cancellation also read as a **retry**. The attempt-loop catch emitted a
+    `progress: 'retry'` event and fired the `onRetry` hook before dying in the backoff — a phantom
+    attempt, reported to every trace consumer, for a call the user deliberately cancelled. The catch
+    now rethrows as soon as the caller's signal is aborted: no `retry` event, no `onRetry`, no
+    backoff. `onError` still fires, because that attempt did end.
+
+    "Which error does an abort surface?" now has one spelling — `abortReason` in `util.ts`, shared
+    by `sleep`, the engine's abort paths and `withTimeout`'s signal link, replacing three hand-copies
+    of which one had already drifted. The mocking kit follows the same rule, so the behaviour is
+    observable under injected clocks: `manualClock.sleep` and `mockAdapter` reject with the signal's
+    reason exactly as `systemClock.sleep` and real `fetch` do.
+
+    **Timeouts are untouched** — the guard keys on the caller's own signal, so a per-attempt or
+    total timeout still retries as before. The other two findings in
+    [#705](https://github.com/rejifald/StitchAPI/issues/705) — an abort counting as a circuit
+    failure even when it sent no request, and the coalescer's unreachable cancel path — are
+    unchanged and remain open.
+
 - **Breaking out of a `.stream()` loop cancels the response body instead of leaking the socket.**
   ([#686](https://github.com/rejifald/StitchAPI/issues/686)) The `'bytes'` (default) and `'json'`
   decoders released the reader lock without cancelling, so an abandoned stream stayed open and the
