@@ -84,6 +84,17 @@ to silence it when the keyless-retry case (a proxy dedupe, say) is deliberate.
 See [Reference → Config types](/docs/reference/config-types) for the full
 `IdempotencyOptions` shape.
 
+## Reads never get a key
+
+The key rides on **writes only**. Declare `idempotency` on a read and the engine
+drops it and logs the same kind of nudge — almost always a missing
+`method: 'POST'`. "A read" means every method
+[RFC 9110 §9.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-9.2.1) calls
+_safe_ — `GET`, `HEAD`, `OPTIONS`, `TRACE` — plus
+[`QUERY`](/docs/guides/authoring/stitch#the-query-method), which is safe **and
+carries a request body**. Carrying a body is not what makes a call a write, so a
+`QUERY` is not stamped: there is no side effect for the server to collapse.
+
 ## See also
 
 <Cards>

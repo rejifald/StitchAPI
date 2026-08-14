@@ -239,9 +239,23 @@ async function followRedirects(
         // Fetch redirect model: 303 (and 301/302 on a non-GET/HEAD) become a bodyless GET; 307/308
         // keep method and body. Rebuild headers without content-type when the body is dropped —
         // and always via a fresh object, since a same-origin headersForRedirect aliased the input.
+        //
+        // QUERY is exempt from the 301/302 arm, and this is spec text, not a safety inference:
+        // the downgrade-to-GET is a HISTORICAL exception granted to POST (RFC 9110 §15.4.2/3),
+        // and draft-ietf-httpbis-safe-method-w-body says of it in as many words — "the exceptions
+        // for redirecting a POST as a GET request after a 301 or 302 response do not apply to
+        // QUERY requests"; the server is asking for "a similar QUERY request to the new target
+        // URI". Downgrading would drop the body, and the body is the query, so the redirect
+        // would silently turn a filtered read into an unfiltered one. NOT `isSafeMethod`:
+        // OPTIONS and TRACE are safe too and no spec exempts them, so they keep today's
+        // behaviour. 303 stays unconditional — the draft agrees that a 303 to a QUERY means the
+        // result "can be accomplished via a normal retrieval request" at the Location.
         if (
             status === 303 ||
-            (status < 303 && method !== 'GET' && method !== 'HEAD')
+            (status < 303 &&
+                method !== 'GET' &&
+                method !== 'HEAD' &&
+                method !== 'QUERY')
         ) {
             method = 'GET';
             body = undefined;
@@ -322,6 +336,11 @@ export function encodeRequestBody(req: AdapterRequest): {
     contentType?: string;
 } {
     const method = req.method.toUpperCase();
+    // GET/HEAD only — deliberately NOT `isSafeMethod`. This is a TRANSPORT constraint, not a
+    // safety rule: `fetch` throws a TypeError when a GET/HEAD init carries a body, and XHR
+    // ignores it. QUERY is equally safe and MUST keep its body — the body IS the query
+    // (draft-ietf-httpbis-safe-method-w-body) — so widening this to "safe" would silently
+    // delete the payload of every QUERY request.
     if (method === 'GET' || method === 'HEAD') return { body: undefined };
     if (req.body === undefined || req.body === null) return { body: undefined };
     if (typeof req.body === 'string') return { body: req.body };

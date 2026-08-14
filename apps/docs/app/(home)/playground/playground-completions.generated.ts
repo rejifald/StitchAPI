@@ -20,8 +20,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "method",
             type: "property",
-            detail: "string",
-            info: "HTTP method; defaults to `GET`.",
+            detail: "KnownMethod | (string & {})",
+            info: "HTTP method; defaults to `GET`. Any verb the transport accepts, including **`QUERY`** — the safe, idempotent, cacheable method that carries a **request body** (`draft-ietf-httpbis-safe-method-w-body`), for a read whose filter is too large or too structured for a URL. The engine classifies `QUERY` as a read: no `Idempotency-Key` is stamped on it, and a 301/302 re-sends it as a `QUERY` rather than downgrading it to a bodyless `GET`. It keeps its body (unlike `GET`/`HEAD`, where the transport forbids one), and it is a valid CacheOptions.methods entry — opt in, since caching a body-carrying request is never a default.",
         },
         {
             label: "wire",

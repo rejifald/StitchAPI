@@ -1211,9 +1211,11 @@ export interface CircuitOptions {
  * set a correlation/trace header like `traceparent` or `X-Request-Id`; those identify a request
  * for logs and spans and belong to tracing, not dedupe.
  *
- * The key is sent on **writes only**; setting `idempotency` on a read (GET/HEAD) drops it and logs
- * a construction nudge — almost always a missing `method: 'POST'`. Both nudges fire only on the
- * default HTTP surface and are silenced by `warn: false`.
+ * The key is sent on **writes only**; setting `idempotency` on a read drops it and logs a
+ * construction nudge — almost always a missing `method: 'POST'`. "A read" is every method RFC 9110
+ * §9.2.1 calls *safe* (GET, HEAD, OPTIONS, TRACE) plus `QUERY`, which is safe but carries a body —
+ * so a body on the request is not what makes it a write. Both nudges fire only on the default HTTP
+ * surface and are silenced by `warn: false`.
  */
 export interface IdempotencyOptions {
     /**
@@ -1327,6 +1329,12 @@ export interface CacheOptions {
      * its method (`'POST'`) — a POST's read-vs-mutate intent cannot be inferred, so it is
      * explicit. Coalescing applies to exactly this set; mutations are never cached. A bare string
      * is shorthand for a one-element list (CONTRACT.md P7).
+     *
+     * `'QUERY'` is a valid entry, and its responses are spec-cacheable
+     * ([draft-ietf-httpbis-safe-method-w-body](https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/)).
+     * It is **not** in the default set — like a GraphQL POST, caching a body-carrying request is
+     * opt-in. The key already folds the request body in, so two different `QUERY` bodies to the
+     * same URL get two entries and cannot collide: `cache: { ttl: '1m', methods: 'QUERY' }`.
      */
     methods?: string | string[];
     /** In-process LRU cap on live entries (the store stays dumb). Default 1000. */
@@ -1577,6 +1585,14 @@ export interface PaginateOptions {
     /** Safety cap on pages. Default 50. */
     pages?: number;
 }
+/**
+ * The HTTP methods StitchAPI knows about — the RFC 9110 verbs plus `QUERY`
+ * (`draft-ietf-httpbis-safe-method-w-body`). Purely an **autocomplete list**: `method` is
+ * `KnownMethod | (string & {})`, so any other verb your transport accepts still typechecks.
+ */
+export type KnownMethod =
+    'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'QUERY';
+
 export interface StitchConfig {
     /** Label used in events and traces; defaults to `path` or `'stitch'`. */
     name?: string;
@@ -1586,8 +1602,17 @@ export interface StitchConfig {
      * declaration round-trips as JSON — Decision 11); the live object stays on `__rawConfig`.
      */
     kind?: Surface;
-    /** HTTP method; defaults to `GET`. */
-    method?: string;
+    /**
+     * HTTP method; defaults to `GET`. Any verb the transport accepts, including **`QUERY`** — the
+     * safe, idempotent, cacheable method that carries a **request body**
+     * (`draft-ietf-httpbis-safe-method-w-body`), for a read whose filter is too large or too
+     * structured for a URL. The engine classifies `QUERY` as a read: no `Idempotency-Key` is
+     * stamped on it, and a 301/302 re-sends it as a `QUERY` rather than downgrading it to a
+     * bodyless `GET`. It keeps its body (unlike `GET`/`HEAD`, where the transport forbids one),
+     * and it is a valid {@link CacheOptions.methods} entry — opt in, since caching a
+     * body-carrying request is never a default.
+     */
+    method?: KnownMethod | (string & {});
     /**
      * Wire-format options — request body encoding, response decoding, and urlencoded array
      * serialisation, grouped by category rather than by request/response phase (CONTRACT.md P24).

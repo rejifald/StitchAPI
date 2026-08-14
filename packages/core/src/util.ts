@@ -234,6 +234,31 @@ export function stripTrailingSlashes(s: string): string {
     return end === s.length ? s : s.slice(0, end);
 }
 
+// ---- HTTP method classification -------------------------------------------
+// RFC 9110 §9.2.1's safe set — "essentially read-only", so a server may treat the request as
+// having no side effect — plus QUERY (draft-ietf-httpbis-safe-method-w-body: "QUERY requests
+// are safe with regard to the target resource"). QUERY is the reason this set exists as a named
+// predicate rather than a fourth inline `=== 'GET' || === 'HEAD'`: it is a **read that carries a
+// request body**, so "safe" and "GET-shaped" stopped being the same question.
+//
+// This answers exactly one question — *is this request a read?* — and is deliberately NOT used
+// for the other two method tests in the transport, which look alike and are not:
+//   • `encodeRequestBody` drops the body on GET/HEAD only. That is a fetch/XHR constraint (a
+//     GET with a body is a TypeError), not a safety rule — routing it through here would delete
+//     the body of every QUERY, i.e. the one thing that already worked.
+//   • `followRedirects` exempts GET/HEAD/QUERY from the 301/302 downgrade-to-GET. That is the
+//     draft's explicit carve-out from a HISTORICAL POST exception, not a safety rule — OPTIONS
+//     and TRACE are safe and are not exempted by any spec text.
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE', 'QUERY']);
+
+/**
+ * Is `method` **safe** (RFC 9110 §9.2.1) — a read, requesting no change to the target resource?
+ * Safe methods are also idempotent, so this is the predicate for "the engine must not treat this
+ * as a write". Case-insensitive; an unknown verb is assumed unsafe (fail closed).
+ */
+export const isSafeMethod = (method: string): boolean =>
+    SAFE_METHODS.has(method.toUpperCase());
+
 export const isObj = (x: unknown): x is Record<string, unknown> =>
     !!x && typeof x === 'object' && !Array.isArray(x);
 
