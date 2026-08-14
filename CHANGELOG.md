@@ -13,6 +13,14 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Added
 
+- **`@stitchapi/download` — a batch downloader over the stitch resilience chain.** `downloadAll`
+  for a fire-and-collect batch, `DownloadManager` for a live queue: FIFO admission, a `concurrency`
+  ceiling, per-item settling so one failure never sinks the batch, cancel (one / queued / all),
+  aggregate progress with an ETA, an `idle` timeout that fails a stalled transfer instead of waiting
+  on it, and request dedupe so the same URL in flight twice is fetched once. Zero runtime
+  dependencies and its own size gate. Every item is an ordinary stitch, so `retry`, `throttle`,
+  `timeout` and tracing apply unchanged.
+
 - **`QUERY` is a first-class method — a read that carries a request body.**
   ([draft-ietf-httpbis-safe-method-w-body](https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/))
   `method: 'QUERY'` already sent its body and already cached correctly under
@@ -610,6 +618,25 @@ npm release are grouped under the in-development version that introduced them.
   `filename`, or pass `new Blob([value], { type })`.
 
 ### Fixed
+
+- **A transport failure reaches the caller as a `StitchError` carrying the original on `.cause`.**
+  ([#450](https://github.com/rejifald/StitchAPI/issues/450)) A socket reset, a DNS failure or an
+  abort surfaced as whatever the transport happened to throw, so the awaited and `.safe()` paths
+  handed back an error whose shape the engine never promised — and the undici `code` that says
+  _which_ failure it was (`UND_ERR_SOCKET`, `ECONNRESET`, …) came with it or not depending on the
+  adapter. Both paths now return a `StitchError` whose `cause` is the live transport error, so
+  `err.cause` (and its `.code`) tells a socket reset from a generic "fetch failed". `cause` is
+  non-enumerable, so it never serialises into a trace sink. An error the engine minted itself is
+  still re-surfaced unchanged.
+
+- **`stitchapi/download` refuses a partial or unresolved response instead of handing back a
+  truncated file.** A buffered download resolves to a whole Blob, but only `200` and `204`
+  definitionally carry a whole entity. A `206 Partial Content` — which `download` never asks for,
+  since it sends no `Range` header — was accepted and returned as if it were the complete file, so
+  a range-serving proxy or a resumed-and-mismatched cache silently truncated the download. A `3xx`
+  the adapter could not resolve (hop cap reached, or no `Location`) became an empty Blob. Both now
+  fail with the status in the message; `verdict.accept` is the documented way back in for a caller
+  who genuinely wants one.
 
 - **A cancelled call surfaces the caller's own abort reason, and is never reported as a retry.**
   ([#705](https://github.com/rejifald/StitchAPI/issues/705)) With a `retry` block configured, an

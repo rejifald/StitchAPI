@@ -25,7 +25,6 @@
         // depend on `stitchapi` being built first (the pre-push gate typechecks
         // before it builds). The published `exports` map still points at `lib/`.
         // Most-specific subpaths first.
-        "baseUrl": ".",
         "paths": {
             "stitchapi/testing": ["../core/src/testing.ts"],
             "stitchapi/download": ["../core/src/download.ts"],
