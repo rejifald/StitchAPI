@@ -335,7 +335,7 @@
         "fast-check": "^4.9.0",
         "tsd": "^0.33.0",
         "tsup": "^8.3.0",
-        "typescript": "^5.9.3",
+        "typescript": "^6.0.3",
         "typescript-eslint": "^8.66.0",
         "vitest": "^4.1.10",
         "zod": "^4.4.3"
