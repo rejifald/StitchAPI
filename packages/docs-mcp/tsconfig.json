@@ -1,5 +1,10 @@
 {
     "compilerOptions": {
+        // tsup injects `baseUrl` into every dts build (rollup.js: `baseUrl: compilerOptions.baseUrl
+        // || "."`), and TS6 deprecates it — TS5101. Nothing here declares one (#738 removed them
+        // all); this tolerates the one the bundler synthesises. Expires at TS7, which stops
+        // honouring `baseUrl` outright — by then the dts step must move off tsup.
+        "ignoreDeprecations": "6.0",
         "target": "ES2022",
         "lib": ["ES2022"],
         "module": "ESNext",

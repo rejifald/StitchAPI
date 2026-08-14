@@ -21,7 +21,9 @@ function streamOfBytes(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
                 controller.close();
                 return;
             }
-            controller.enqueue(chunks[i++]);
+            // The bounds check above guarantees an element; TS6 narrows indexed access to
+            // `T | undefined` here where 5.9 did not.
+            controller.enqueue(chunks[i++]!);
         },
     });
 }
