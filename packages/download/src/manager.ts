@@ -68,7 +68,7 @@ export class DownloadManager {
     readonly #dedupeInflight = new Map<string, Promise<DownloadResult>>();
     readonly #cancelled = new Set<DownloadId>();
     readonly #stalled = new Set<DownloadId>();
-    #drainWaiters: Array<() => void> = [];
+    #drainWaiters: (() => void)[] = [];
     #signalAborted = false;
 
     constructor(opts: BatchOptions = {}) {
@@ -338,7 +338,9 @@ export class DownloadManager {
 
     #armIdle(id: DownloadId, active: Active): void {
         if (this.#idle === undefined) return;
-        active.timer = this.#clock.setTimer(() => this.#onIdle(id), this.#idle);
+        active.timer = this.#clock.setTimer(() => {
+            this.#onIdle(id);
+        }, this.#idle);
     }
 
     #resetIdle(id: DownloadId): void {
@@ -346,7 +348,9 @@ export class DownloadManager {
         const active = this.#active.get(id);
         if (active === undefined) return;
         this.#clearIdle(active);
-        active.timer = this.#clock.setTimer(() => this.#onIdle(id), this.#idle);
+        active.timer = this.#clock.setTimer(() => {
+            this.#onIdle(id);
+        }, this.#idle);
     }
 
     #clearIdle(active: Active): void {

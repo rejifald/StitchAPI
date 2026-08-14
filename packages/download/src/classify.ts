@@ -83,7 +83,7 @@ export function classifyFailure(
 
     // No status and no known transport code: fall back to the message. A bare `fetch failed` / socket
     // / network error is a transport fault → retryable; anything else, assume terminal.
-    const msg = (raw instanceof Error ? raw.message : reason.message) ?? '';
+    const msg = raw instanceof Error ? raw.message : reason.message;
     const transportish =
         /fetch failed|socket|network|terminated|econn|dns|timeout|timed out|aborted/i.test(
             msg,
