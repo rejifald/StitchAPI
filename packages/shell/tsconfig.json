@@ -26,7 +26,6 @@
 
         // Resolve the workspace package to its SOURCE so typecheck + tests don't
         // depend on `stitchapi` being built first (mirrors @stitchapi/nest).
-        "baseUrl": ".",
         "paths": {
             "stitchapi": ["../core/src/index.ts"]
         }

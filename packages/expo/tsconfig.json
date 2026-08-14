@@ -23,7 +23,6 @@
 
         // Resolve the workspace packages to their SOURCE so typecheck + tests don't
         // depend on a build ordering. The published `exports` maps point at `lib/`.
-        "baseUrl": ".",
         "paths": {
             "stitchapi/testing": ["../core/src/testing.ts"],
             "stitchapi": ["../core/src/index.ts"],

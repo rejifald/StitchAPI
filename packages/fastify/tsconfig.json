@@ -24,7 +24,6 @@
         // Resolve the workspace package to its SOURCE so typecheck + tests don't
         // depend on `stitchapi` being built first (the pre-push gate typechecks
         // before it builds). The published `exports` map still points at `lib/`.
-        "baseUrl": ".",
         "paths": {
             "stitchapi/testing": ["../core/src/testing.ts"],
             "stitchapi/sse-emit": ["../core/src/sse-emit.ts"],

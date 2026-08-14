@@ -24,7 +24,6 @@
         // Resolve the workspace packages to their SOURCE so typecheck + tests
         // don't depend on `stitchapi` / `@stitchapi/query-core` / `@stitchapi/react`
         // being built first. The published `exports` maps still point at `lib/`.
-        "baseUrl": ".",
         "paths": {
             "stitchapi/testing": ["../core/src/testing.ts"],
             "stitchapi": ["../core/src/index.ts"],
