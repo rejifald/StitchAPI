@@ -10,6 +10,19 @@ import { CREDENTIALS } from './providers';
 let failures = 0;
 let checks = 0;
 
+// A stalled `await` must never read as a pass: if the event loop drains before `finish()` has
+// printed a verdict, the run was silently truncated mid-file. `process.exit` inside `finish()`
+// skips `beforeExit`, so real passes and fails are unaffected — only a stall trips this.
+let finished = false;
+process.on('beforeExit', () => {
+    if (!finished) {
+        print(
+            '\nFAIL — the event loop drained before finish() ran: a probe stalled mid-file',
+        );
+        process.exitCode = 1;
+    }
+});
+
 // Assertions compare raw bytes, but no credential VALUE may reach stdout: every printed line
 // passes through `redact`, which swaps each configured secret for its `<label>`. The evidence
 // survives — `x-api-key = <backup-key>` still says which credential went where — the bytes
@@ -74,6 +87,7 @@ export function heading(text: string): void {
  * twice on every successful call" is otherwise unreadable.
  */
 export function finish(claim: string, statement: string): never {
+    finished = true;
     const pass = failures === 0;
     print(
         `\n${pass ? 'PASS' : 'FAIL'} ${claim} — ${statement} (${checks - failures}/${checks} checks)`,

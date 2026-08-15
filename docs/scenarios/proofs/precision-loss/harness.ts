@@ -15,6 +15,19 @@
 let failures = 0;
 let checks = 0;
 
+// A stalled `await` must never read as a pass: if the event loop drains before `finish()` has
+// printed a verdict, the run was silently truncated mid-file. `process.exit` inside `finish()`
+// skips `beforeExit`, so real passes and fails are unaffected — only a stall trips this.
+let finished = false;
+process.on('beforeExit', () => {
+    if (!finished) {
+        console.log(
+            '\nFAIL — the event loop drained before finish() ran: a probe stalled mid-file',
+        );
+        process.exitCode = 1;
+    }
+});
+
 /**
  * The exact decimal digits of a value, for the one comparison this whole directory is about.
  *
@@ -228,6 +241,7 @@ export function printSeamTable(): {
  * so the verdict statement always carries the direction.
  */
 export function finish(claim: string, statement: string): never {
+    finished = true;
     const pass = failures === 0;
     console.log(
         `\n${pass ? 'PASS' : 'FAIL'} ${claim} — ${statement} (${checks - failures}/${checks} checks)`,

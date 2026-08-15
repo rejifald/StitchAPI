@@ -14,6 +14,19 @@
 let failures = 0;
 let checks = 0;
 
+// A stalled `await` must never read as a pass: if the event loop drains before `finish()` has
+// printed a verdict, the run was silently truncated mid-file. `process.exit` inside `finish()`
+// skips `beforeExit`, so real passes and fails are unaffected — only a stall trips this.
+let finished = false;
+process.on('beforeExit', () => {
+    if (!finished) {
+        console.log(
+            '\nFAIL — the event loop drained before finish() ran: a probe stalled mid-file',
+        );
+        process.exitCode = 1;
+    }
+});
+
 /** Render a measured value unambiguously — `0` vs `"0"` vs `null` is the whole scenario. */
 function show(v: unknown): string {
     if (v === undefined) return 'undefined';
@@ -71,6 +84,7 @@ export function heading(text: string): void {
  * does the right thing (C1's silence, C6's 5.0%). The verdict statement carries the direction.
  */
 export function finish(claim: string, statement: string): never {
+    finished = true;
     const pass = failures === 0;
     console.log(
         `\n${pass ? 'PASS' : 'FAIL'} ${claim} — ${statement} (${checks - failures}/${checks} checks)`,

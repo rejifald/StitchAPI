@@ -6,13 +6,26 @@
 // measured number whether it passes or fails — `age 0ms` and `age 360000ms` ARE the findings,
 // and they have to be readable out of context.
 //
-// Two of the checks below exist because half this scenario cannot be measured on a virtual clock
-// (C5: the shipped signer stamps `new Date()`), so those runs use REAL time and their numbers
-// carry real scheduling jitter. `checkAtMost` / `checkAtLeast` state the bound the claim actually
-// rests on rather than pretending a wall-clock measurement is exact.
+// Two of the checks below exist because parts of this scenario are corroborated on REAL time
+// (the C1/C2 corroboration runs and C5 (d)), and those numbers carry real scheduling jitter.
+// `checkAtMost` / `checkAtLeast` state the bound the claim actually rests on rather than
+// pretending a wall-clock measurement is exact.
 
 let failures = 0;
 let checks = 0;
+
+// A stalled `await` must never read as a pass: if the event loop drains before `finish()` has
+// printed a verdict, the run was silently truncated mid-file. `process.exit` inside `finish()`
+// skips `beforeExit`, so real passes and fails are unaffected — only a stall trips this.
+let finished = false;
+process.on('beforeExit', () => {
+    if (!finished) {
+        console.log(
+            '\nFAIL — the event loop drained before finish() ran: a probe stalled mid-file',
+        );
+        process.exitCode = 1;
+    }
+});
 
 /** Assert an observed value equals what the claim predicts. Prints the MEASURED value either way. */
 export function check(label: string, actual: unknown, expected: unknown): void {
@@ -95,6 +108,7 @@ export function heading(text: string): void {
  * unreadable.
  */
 export function finish(claim: string, statement: string): never {
+    finished = true;
     const pass = failures === 0;
     console.log(
         `\n${pass ? 'PASS' : 'FAIL'} ${claim} — ${statement} (${checks - failures}/${checks} checks)`,

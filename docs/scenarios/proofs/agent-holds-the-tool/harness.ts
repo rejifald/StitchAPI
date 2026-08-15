@@ -23,6 +23,19 @@ import { SECRETS } from './vendor';
 let failures = 0;
 let checks = 0;
 
+// A stalled `await` must never read as a pass: if the event loop drains before `finish()` has
+// printed a verdict, the run was silently truncated mid-file. `process.exit` inside `finish()`
+// skips `beforeExit`, so real passes and fails are unaffected — only a stall trips this.
+let finished = false;
+process.on('beforeExit', () => {
+    if (!finished) {
+        print(
+            '\nFAIL — the event loop drained before finish() ran: a probe stalled mid-file',
+        );
+        process.exitCode = 1;
+    }
+});
+
 /** Swap each known secret VALUE for its `<label>` in anything headed for stdout. */
 function redact(line: string): string {
     let out = line;
@@ -180,6 +193,7 @@ export function heading(text: string): void {
  * direction.
  */
 export function finish(claim: string, statement: string): never {
+    finished = true;
     const pass = failures === 0;
     print(
         `\n${pass ? 'PASS' : 'FAIL'} ${claim} — ${statement} (${checks - failures}/${checks} checks)`,
