@@ -1,14 +1,19 @@
 // C2 (DECIDING) — can ANYTHING downstream detect the corruption?
 //
 // The capture predicts every seam fails, "because `raw` is already the parsed body". This script
-// walks each seam in turn and prints what it actually held. Two of the rows come out differently
-// from the prediction, and the second one is the most important measurement in this directory:
+// walks each seam in turn and prints what it actually held. Three of the rows now come out
+// differently from the prediction — two refuted by the first run of this survey, and a third
+// ((a), the capture's own example) flipped later by Zod 4. The second refutation is the most
+// important measurement in this directory:
 //
 //   REFUTED (i)  — `Number.isSafeInteger` inside an `output` schema IS a working detector. It has
 //                  zero false negatives (a corrupted integer is necessarily > 2^53, so it is
 //                  necessarily unsafe) and a bounded, characterisable false-positive set (a large
-//                  integer that happened to be exactly representable). The capture's "a schema that
-//                  says z.number().int() passes it" is true; "validation cannot help" is not.
+//                  integer that happened to be exactly representable). The capture's "validation
+//                  cannot help" is not true — and since the workspace moved to Zod 4 (#589),
+//                  neither is its example "a schema that says z.number().int() passes it": Zod 4
+//                  folds the safe-integer cap into `.int()`, so the capture's own spelling now
+//                  rejects the corrupted id. Measured in (a).
 //   REFUTED (ii) — the Adapter is NOT the only seam that can see raw text. `wire: { response:
 //                  'text' }` is a published config option that makes `AdapterResponse.body` the
 //                  UNPARSED STRING, on the stock `fetchAdapter`. `transform` then runs on text.
@@ -89,23 +94,28 @@ async function run(
 async function main(): Promise<void> {
     heading("C2 (a) — `output: z.number().int()`, the capture's example");
     {
+        // On Zod 3 this seam was blind — `.int()` accepted 1234567890123456768 with zero
+        // findings, and that measurement is what the capture generalised from. Zod 4 (the
+        // workspace's zod@4.4.3) folds the safe-integer range into `.int()`, so the same schema
+        // now rejects the corrupted id outright.
         const corrupt = await run(ONE_ID_TEXT, {
             output: z.object({ id: z.number().int() }),
         });
-        check('the call SUCCEEDED on a corrupted id', corrupt.ok, true);
-        checkSeq('drift findings', corrupt.findings, []);
-        checkDigits(
-            'and the validated value it handed back',
-            (corrupt.data as { id: number }).id,
-            '1234567890123456768',
-        );
+        check('the call FAILED on a corrupted id (Zod 4)', corrupt.ok, false);
+        checkSeq('drift findings', corrupt.findings, [
+            'error|invalid|id|Too big: expected int to be <=9007199254740991',
+        ]);
+        const intact = await run(ONE_SAFE_ID_TEXT, {
+            output: z.object({ id: z.number().int() }),
+        });
+        check('and it ACCEPTS the intact id', intact.ok, true);
         seamRow(
             'output: z.number().int()',
             'SEES_PARSED',
-            'accepted 1234567890123456768 as a valid int',
+            'Zod 4 caps `.int()` at 2^53-1 — rejects 1234567890123456768',
         );
         note(
-            'the corrupted value is a perfectly valid integer, so an integer schema has nothing to object to',
+            'the value is still parsed before the schema sees it — the seam holds the double, not the digits — but Zod 4 turned this row from blind into a detector with the same trade as (c): anything above 2^53 is rejected, representable or not',
             '',
         );
     }
@@ -211,7 +221,7 @@ async function main(): Promise<void> {
     heading('C2 (d) — `drift()`: what is on the LEFT side of the diff?');
     {
         // The capture asks the critical question directly: does drift compare against raw TEXT or
-        // against the parsed body? `engine.ts:1201` says `const rawBody = value` — the post-
+        // against the parsed body? `engine.ts:1233` says `const rawBody = value` — the post-
         // transform, pre-validation PARSED value. This measures it rather than reading it.
         //
         // The probe: a schema that COERCES number -> string. Drift reports coercions, and the
@@ -492,7 +502,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        'PARTIALLY REFUTED — the capture is right about the seams it named and wrong about its conclusion. CONFIRMED: `output: z.number().int()` accepts 1234567890123456768 with zero findings; `.inspect().raw` is an OBJECT whose `.id` is the number 1234567890123456768 (`raw` means pre-VALIDATION, not pre-parse); `hooks.onResponse` gets `ctx = {attempt,name,res}` and `ctx.res = {body,headers,status,url}` with `body.id = 1234567890123456768` and no key that could hold text; `Surface.interpret` sees the same; a `TraceSink` sees four events, no wire text and no symbol channels. And drift\'s left side is measured, not assumed: under `z.coerce.string()` the finding is `warn|coerced|id|number -> string` and the coerced value is "1234567890123456800" — a NUMBER on the left, not the sent digits — so `diff(raw, validated)` compares parsed-to-validated, and on a matching schema `drift()` reports nothing at all. TWO REFUTATIONS. (i) `z.number().refine(Number.isSafeInteger)` IS a working detector: it rejects the corrupted id and ACCEPTS the intact one, and walking 2^53-1 / 2^53 / 2^53+1 / 2^53+2 shows `lossless=false` never co-occurs with `flagged=false` — false negatives are impossible; the cost is false positives on large-but-representable integers. (ii) The Adapter is NOT the only seam that can see bytes: `wire: { response: "text" }` is published config that makes `ctx.res.body` the verbatim string {"id":1234567890123456789} on the STOCK `fetchAdapter`, and `transform` then runs pre-parse — a config-only repair that recovered the exact sent digits',
+        'PARTIALLY REFUTED — the capture is right about the seams it named and wrong about its conclusion, and Zod 4 has since retired its headline example. CONFIRMED: every named seam holds the parsed double — `.inspect().raw` is an OBJECT whose `.id` is the number 1234567890123456768 (`raw` means pre-VALIDATION, not pre-parse); `hooks.onResponse` gets `ctx = {attempt,name,res}` and `ctx.res = {body,headers,status,url}` with `body.id = 1234567890123456768` and no key that could hold text; `Surface.interpret` sees the same; a `TraceSink` sees four events, no wire text and no symbol channels. And drift\'s left side is measured, not assumed: under `z.coerce.string()` the finding is `warn|coerced|id|number -> string` and the coerced value is "1234567890123456800" — a NUMBER on the left, not the sent digits — so `diff(raw, validated)` compares parsed-to-validated, and on a matching schema `drift()` reports nothing at all. OVERTAKEN: "`output: z.number().int()` accepts 1234567890123456768 with zero findings" was true on Zod 3; Zod 4\'s `.int()` enforces the safe-integer range, so the same schema now REJECTS it — `error|invalid|id|Too big: expected int to be <=9007199254740991` — while accepting the intact id. TWO REFUTATIONS. (i) `z.number().refine(Number.isSafeInteger)` IS a working detector: it rejects the corrupted id and ACCEPTS the intact one, and walking 2^53-1 / 2^53 / 2^53+1 / 2^53+2 shows `lossless=false` never co-occurs with `flagged=false` — false negatives are impossible; the cost is false positives on large-but-representable integers. (ii) The Adapter is NOT the only seam that can see bytes: `wire: { response: "text" }` is published config that makes `ctx.res.body` the verbatim string {"id":1234567890123456789} on the STOCK `fetchAdapter`, and `transform` then runs pre-parse — a config-only repair that recovered the exact sent digits',
     );
 }
 

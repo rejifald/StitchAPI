@@ -250,7 +250,7 @@ async function run(
                 },
             });
             // `stitch({ kind })`, NOT `stream({ kind })` — the `stream()` helper spreads your config
-            // and then overwrites `kind` with `streamSurface` (stream.ts:143-146), so a custom
+            // and then overwrites `kind` with `streamSurface` (stream.ts:147-150), so a custom
             // surface passed to it is silently dropped. C8(b) asserts that.
             const exportAll = stitch({
                 url: URL,
@@ -280,9 +280,9 @@ async function main(): Promise<void> {
         const m = await run(mode, rows, bufferChars);
         console.log(JSON.stringify({ mode, rows, ok: true, ...m }));
     } catch (e) {
-        // A workload that BLEW UP is a measurement too — C3's whole finding is one of these. Report
-        // it as data on stdout rather than a stack trace on stderr, so the claim scripts can assert
-        // on the message.
+        // A workload that BLEW UP is a measurement too — C3's original finding (the pre-#665 cap
+        // trip) was one of these, and C7's OOM corpse still is. Report it as data on stdout rather
+        // than a stack trace on stderr, so the claim scripts can assert on the message.
         console.log(
             JSON.stringify({
                 mode,

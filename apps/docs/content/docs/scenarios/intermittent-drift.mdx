@@ -37,9 +37,9 @@ payment provider moves `transaction_id` from `12345` to `"12345"`, your code cas
 ## What StitchAPI does
 
 **The default is safe, and that is the headline.** Against `z.number()`, a `transaction_id` that
-arrives as `"12345"` produces `error | invalid | transaction_id | Expected number, received
-string` and the **call fails** with `data: null`. Even `z.coerce.number()` on `"abc"` fails —
-Zod rejects `NaN`. StitchAPI does not manufacture a $0 charge on its own.
+arrives as `"12345"` produces `error | invalid | transaction_id | Invalid input: expected
+number, received string` and the **call fails** with `data: null`. Even `z.coerce.number()` on
+`"abc"` fails — Zod rejects `NaN`. StitchAPI does not manufacture a $0 charge on its own.
 
 **The precision is excellent.** Over 100 calls where a geocoder returned `null` on 5 of them,
 drift fired on **exactly** calls `[20, 40, 60, 80, 100]` — matching the vendor's own ledger,

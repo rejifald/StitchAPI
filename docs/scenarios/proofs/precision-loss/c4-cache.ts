@@ -8,7 +8,7 @@
 //   JSON store   — throws, with exactly the predicted message, on the WRITE.
 //
 // The measurement that is NOT in the capture, and is the more interesting one: the cache KEY
-// encoder handles bigint deliberately (`cache.ts:42` — a `bigint:` type tag chosen so `42n` cannot
+// encoder handles bigint deliberately (`cache.ts:43` — a `bigint:` type tag chosen so `42n` cannot
 // collide with the string `'42n'`). So the failure is confined to the value-persistence layer, and
 // a store that serialises with a bigint-aware replacer works end to end.
 //
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
     heading('C4 (e) — the cache KEY encoder already knows about bigint');
     {
         // Not in the capture, and it is the reason (c) fails on the VALUE rather than on the KEY.
-        // `cache.ts:42` renders a bigint as the tagged token `bigint:<digits>` — chosen, per its
+        // `cache.ts:43` renders a bigint as the tagged token `bigint:<digits>` — chosen, per its
         // comment, so `42n` cannot collide with the string `'42n'`. Measured through a `query`,
         // which is part of the cache key.
         const adapter = bigintAdapter(ONE_ID_TEXT);
@@ -230,7 +230,7 @@ async function main(): Promise<void> {
 
     finish(
         'C4',
-        'CONFIRMED, and narrower than the capture drew it. `memoryStore` SURVIVES a BigInt body completely — it holds `{ value, expires }` in a Map by reference and never encodes, so a cache hit returns 1234567890123456789n unchanged. A JSON-serialising store THROWS on the write with exactly the predicted string, "Do not know how to serialize a BigInt", and the throw is FATAL to the call (ok=false), not a silent cache miss. Adding a bigint-aware replacer to that store fixes the throw and introduces a subtler bug, measured: the value survives as the string "1234567890123456789n", so `typeof data.id` is `bigint` on a cache MISS and `string` on a cache HIT — a type that depends on cache state, which a cold-cache test suite never sees. And the part the capture did not predict: the cache KEY encoder already handles bigint on purpose (`cache.ts:42`, a `bigint:` type tag chosen so `42n` cannot collide with the string `"42n"`) — two identical bigint queries coalesced to one transport call and the string spelling was correctly a different key. The cache breaks on value persistence only',
+        'CONFIRMED, and narrower than the capture drew it. `memoryStore` SURVIVES a BigInt body completely — it holds `{ value, expires }` in a Map by reference and never encodes, so a cache hit returns 1234567890123456789n unchanged. A JSON-serialising store THROWS on the write with exactly the predicted string, "Do not know how to serialize a BigInt", and the throw is FATAL to the call (ok=false), not a silent cache miss. Adding a bigint-aware replacer to that store fixes the throw and introduces a subtler bug, measured: the value survives as the string "1234567890123456789n", so `typeof data.id` is `bigint` on a cache MISS and `string` on a cache HIT — a type that depends on cache state, which a cold-cache test suite never sees. And the part the capture did not predict: the cache KEY encoder already handles bigint on purpose (`cache.ts:43`, a `bigint:` type tag chosen so `42n` cannot collide with the string `"42n"`) — two identical bigint queries coalesced to one transport call and the string spelling was correctly a different key. The cache breaks on value persistence only',
     );
 }
 

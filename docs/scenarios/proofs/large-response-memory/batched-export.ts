@@ -1,7 +1,7 @@
 // USER CODE — the assembled answer (C8). One custom {@link Surface}, and it exists for exactly one
 // reason: the engine keeps every `delta` it emits.
 //
-//   engine.ts:1437-1444
+//   engine.ts:1486-1492
 //     // MEMORY NOTE: every chunk is accumulated so the awaited/`.stream()` result can mirror the
 //     // whole delta spine ...
 //     chunks.push(chunk);
@@ -19,7 +19,7 @@
 //
 // What you give up by doing it here, and it is not nothing:
 //   - `output` no longer describes a row. The engine validates the DELTA, and the delta is now a
-//     receipt (`engine.ts:1414-1419`), so the per-record contract has to move inside this hook.
+//     receipt (`engine.ts:1463-1472`), so the per-record contract has to move inside this hook.
 //   - the awaited result is the receipts, not the rows. That is the point, but it means the call
 //     site's type changes and every `for (const row of await …)` downstream has to change with it.
 import { streamSurface } from '../../../../packages/core/src/stream';

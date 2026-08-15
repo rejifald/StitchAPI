@@ -115,12 +115,13 @@ async function main(): Promise<void> {
             false,
         );
         note(
-            '(c) → `StubStitchOptions` is `{ name, status, config, events }` (test-stub.ts:31-42). `config` is `Partial<RedactedStitchConfig>`, which is the REDACTED read-out shape — it carries no schema, so there is nowhere to put the contract even if you wanted to',
+            '(c) → `StubStitchOptions` is `{ name, status, config, events }` (test-stub.ts:33-43). `config` is `Partial<RedactedStitchConfig>`, which is the REDACTED read-out shape — it carries no schema, so there is nowhere to put the contract even if you wanted to',
             '',
         );
 
-        // The workaround is your own: wrap the impl in a validator. It works — but only if the impl
-        // is `async`, for the reason section (g) measures.
+        // The workaround is your own: wrap the impl in a validator. It works — and since #664 the
+        // guard may throw synchronously; `.safe()` reports it as `ok: false` either way (section
+        // (g) pins that).
         const Params = z.object({ id: z.string() });
         const guarded = stubStitch<Invoice>(async (input) => {
             Params.parse(input.params);
@@ -135,7 +136,7 @@ async function main(): Promise<void> {
             true,
         );
         note(
-            '(c) → the `impl` function is the seam. It receives the raw `StitchInput`, so a validator can run there — but you have to remember to write it, nothing tells you that you did not, and it has to be `async` (see (g))',
+            '(c) → the `impl` function is the seam. It receives the raw `StitchInput`, so a validator can run there — but you have to remember to write it, and nothing tells you that you did not',
             '',
         );
     }
@@ -229,16 +230,20 @@ async function main(): Promise<void> {
         );
         check('the PARENT stub recorded the call', stub.callCount(), 0);
         note(
-            "(f) → `.with()` on a stub returns a NEW stub with its own spy (test-stub.ts:187-191 re-`assemble`s), so the parent's `callCount()` stays 0. A test that binds and then asserts on the original spy sees nothing",
+            "(f) → `.with()` on a stub returns a NEW stub with its own spy (test-stub.ts:198-202 re-`assemble`s), so the parent's `callCount()` stays 0. A test that binds and then asserts on the original spy sees nothing",
             '',
         );
     }
 
-    heading('C5 (g) — a BUG: `.safe()` on a stub can throw');
-    // `.safe()` is the never-throws surface. The real stitch honours that even when the transport
-    // throws synchronously. The stub does not: `resolve()` (test-stub.ts:59-63) evaluates
-    // `impl(input)` as an ARGUMENT to `Promise.resolve`, so a synchronous throw escapes the promise
-    // chain before there is a chain to catch it.
+    heading(
+        'C5 (g) — `.safe()` never throws, even for a SYNC-throwing impl (fixed by #664)',
+    );
+    // `.safe()` is the never-throws surface, and the stub now honours it the way the real stitch
+    // does. At audit time it did not — `resolve()` evaluated `impl(input)` as an ARGUMENT to
+    // `Promise.resolve`, so a synchronous throw escaped before there was a chain to catch it, and
+    // `.safe()` THREW. This audit filed that as #650; since #664 `resolve()` is an `async`
+    // function (test-stub.ts:59-70), which turns the sync throw into a rejection — a sync throw
+    // and an async rejection are indistinguishable to every caller.
     {
         const syncThrow = stubStitch<Invoice>(() => {
             throw new Error('boom');
@@ -253,7 +258,7 @@ async function main(): Promise<void> {
         check(
             '(g) stub .safe() with a SYNC-throwing impl',
             outcome,
-            'THREW boom',
+            'returned ok=false',
         );
 
         const asyncThrow = stubStitch<Invoice>(() =>
@@ -291,26 +296,26 @@ async function main(): Promise<void> {
             'transport boom',
         );
 
-        // `.stream()` on the same stub is fine — the generator has a try/catch.
+        // `.stream()` on the same stub was always fine — the generator has a try/catch.
         const streamed = await collectStitchEvents(
             stubStitch<Invoice>(() => {
                 throw new Error('boom');
             })().stream(),
         );
-        checkSeq('(g) …but `.stream()` handles it correctly', streamed.types, [
-            'start',
-            'error',
-            'done',
-        ]);
+        checkSeq(
+            '(g) …and `.stream()` handles it the same way',
+            streamed.types,
+            ['start', 'error', 'done'],
+        );
         note(
-            '(g) → `SafeResult` exists so a caller never needs a try/catch. A stub whose impl throws synchronously breaks that, where the real stitch it replaces does not — so the code under test needs a try/catch that production does not need, and the fix (`async (input) => …`) is invisible at the call site',
+            '(g) → `SafeResult` exists so a caller never needs a try/catch, and the stub now keeps that promise for a sync throw — measured identical to the async twin and to the real stitch with a synchronously-throwing adapter. The code under test needs no try/catch that production does not need',
             '',
         );
     }
 
     finish(
         'C5',
-        'THE ASYMMETRY IS REAL AND IT IS THE WHOLE INPUT CONTRACT. Structurally the stub is faithful: `isStitch()` accepts it, `safe`/`unwrap`/`stream`/`with`/`invalidate` are functions and `cache` is an object, `.stream()` yields `start,result,done`, and `failStitch({status:503,message:"vendor down"})` yields `start,error,done` with the message and status intact. But it runs NONE of the `input` schemas. Measured on one line of calling code with the argument `42` where the schema says `z.string()`: the real stitch returns an error and the transport count stays at 1 (no request left the process); the stub RESOLVES to `inv_1:4200` and records `{"params":{"id":42}}`. There is no way to hand a stub the contract either — `StubStitchOptions` is `{name,status,config,events}` and `config` is `Partial<RedactedStitchConfig>`, the redacted read-out shape, which carries no schema. The workaround is to validate inside the `impl` function yourself (3 lines, and it does work), which is exactly the kind of thing nobody remembers. Two smaller divergences: a real run emits a `progress` event the stub omits, so the two spines are not interchangeable; and `.with()` returns a NEW stub with a fresh spy, so the parent\'s `callCount()` reads 0 after a bound call. AND A BUG, found in passing: `.safe()` on a stub whose impl throws SYNCHRONOUSLY throws instead of resolving — measured "THREW boom" where the same stub with an async rejection returns ok=false and the REAL stitch with a synchronously-throwing adapter returns ok=false / "transport boom". `resolve()` (test-stub.ts:59-63) evaluates `impl(input)` as an argument to `Promise.resolve`, so the throw escapes before there is a chain to catch it. `.stream()` on the same stub is unaffected (`start,error,done`)',
+        'THE ASYMMETRY IS REAL AND IT IS THE WHOLE INPUT CONTRACT. Structurally the stub is faithful: `isStitch()` accepts it, `safe`/`unwrap`/`stream`/`with`/`invalidate` are functions and `cache` is an object, `.stream()` yields `start,result,done`, and `failStitch({status:503,message:"vendor down"})` yields `start,error,done` with the message and status intact. But it runs NONE of the `input` schemas. Measured on one line of calling code with the argument `42` where the schema says `z.string()`: the real stitch returns an error and the transport count stays at 1 (no request left the process); the stub RESOLVES to `inv_1:4200` and records `{"params":{"id":42}}`. There is no way to hand a stub the contract either — `StubStitchOptions` is `{name,status,config,events}` (test-stub.ts:33-43) and `config` is `Partial<RedactedStitchConfig>`, the redacted read-out shape, which carries no schema. The workaround is to validate inside the `impl` function yourself (3 lines, and it does work), which is exactly the kind of thing nobody remembers. Two smaller divergences: a real run emits a `progress` event the stub omits, so the two spines are not interchangeable; and `.with()` returns a NEW stub with a fresh spy, so the parent\'s `callCount()` reads 0 after a bound call. And the bug this audit found in passing is FIXED: `.safe()` on a stub whose impl throws SYNCHRONOUSLY used to throw (filed as #650); since #664 `resolve()` is an `async` function (test-stub.ts:59-70), so the throw becomes a rejection — measured `returned ok=false` for the sync and async arms alike, matching the real stitch with a synchronously-throwing adapter (ok=false / "transport boom"). `.stream()` on the same stub was always fine (`start,error,done`)',
     );
 }
 

@@ -1,6 +1,6 @@
 ---
 title: 'The agent picks the arguments'
-description: 'Exposing a vendor API to an LLM over MCP. The credential boundary held under 30 payload scans — the argument boundary is yours, and a query parameter pinned in the path is only a default.'
+description: 'Exposing a vendor API to an LLM over MCP. The credential boundary held under 30 payload scans — the argument boundary is yours, and an input slot with no schema is a full passthrough.'
 prerequisites: ['/docs/surfaces/mcp', '/docs/reference/auth-strategies']
 ---
 
@@ -71,7 +71,8 @@ token on every attempt.
 
 ### The argument boundary is yours
 
-Everything else in `input` reaches the request. Five levers, measured on an **ordinary stitch**:
+Everything else in `input` reaches the request. Five levers, measured on an **ordinary stitch** —
+one that declares no input schemas:
 
 | Lever                                                        | Measured                                                                                                                     |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -84,11 +85,19 @@ Everything else in `input` reaches the request. Five levers, measured on an **or
 The first row is the sharpest, because `?tenant=acme` in a configured path reads like an
 operator invariant and is spelled like one. It is `{ ...predefined, ...input.query }`.
 
-**A declared input schema does not close it**, and this is the finding most likely to surprise:
-`validateInput` throws on failure but **discards the parsed value**, so a schema that strips
-unknown keys — the default in Zod, Valibot and ArkType alike — does not strip them from the
-request. Measured: a `query` validator that returned `{ limit: 10 }` still put
-`?tenant=globex&limit=10` on the wire. A schema here is a **check, not a filter**.
+**A declared input schema now closes it.** When this audit first ran, `validateInput` threw on
+failure but **discarded the parsed value** — a schema was a check, not a filter, and a `query`
+validator that returned `{ limit: 10 }` still put `?tenant=globex&limit=10` on the wire. We filed
+that as [#648](https://github.com/rejifald/StitchAPI/issues/648);
+[#663](https://github.com/rejifald/StitchAPI/pull/663) fixed it. A declared slot now sends **what
+its schema returns** — coerced, defaulted, stripped — so the same validator puts
+`?tenant=acme&limit=10` on the wire: the model's `tenant=globex` gone, the operator's pin
+restored. Our probe keeps that pinned as a regression check.
+
+The surviving caveat is the real security point: **a slot with no schema is untouched.** A schema
+filters the one slot it is declared on, and an undeclared slot stays the full passthrough the
+table above measures — declaring `params` says nothing about `query`, and nothing requires a slot
+to be declared.
 
 ### The safe exposure is 47 lines across 3 seams
 
@@ -108,7 +117,9 @@ const server = createMcpServer(
   to reject a stitch whose configured `name` differs from its key, because `selectStitch` falls
   back to that name: a renamed stitch stays callable while vanishing from `list_stitches`.
 - **`only`** — a `Proxy` apply-trap that **rebuilds** the input from an explicit key list before
-  the engine sees it. This is what the discarded-parsed-value finding forces.
+  the engine sees it. Since [#663](https://github.com/rejifald/StitchAPI/pull/663) a declared
+  schema filters its own slot, so `only` is no longer forced — it earns its place covering the
+  slots a stitch leaves undeclared, in one line, and as defence in depth on the rest.
 - **`readsOnly`** — an `Adapter` wrapper, the last seam before the transport, refusing non-GET.
 
 `throttle` and `circuit` both apply on the MCP path, because `run_stitch` calls the stitch and
@@ -146,7 +157,7 @@ turned twenty tool calls into three vendor requests and seventeen fast-fails.
    registry filter is a real seam, but the documented starter does not use it.
 
 <Callout type="warn">
-    Nothing in `StitchConfig`'s 44 top-level slots excludes a stitch from MCP.
+    Nothing in `StitchConfig`'s 32 top-level slots excludes a stitch from MCP.
     The nearest-looking key, `sensitive: true`, is a **cache** opt-out — a
     stitch carrying it was still listed and still ran.
 </Callout>

@@ -99,7 +99,7 @@ async function main(): Promise<void> {
             kind: partSurface,
             adapter: api.adapter(),
             clock,
-            timeout: { perAttempt: 1_000 },
+            timeout: { each: 1_000 },
             retry: { attempts: 3, backoff: { curve: 'fixed', base: 0 } },
             hooks: { onError: (ctx) => void fired.push(ctx.attempt) },
         });

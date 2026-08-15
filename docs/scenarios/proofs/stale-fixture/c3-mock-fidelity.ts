@@ -11,6 +11,10 @@
 // class instance, `undefined`, and a status of `999` or `-1` — none of which survives a JSON
 // transport. The gap is `body`, and it is not a small one, because `body` is the entire fixture.
 //
+// Against its own published contract the mock now scores 9 of 9 — the pre-aborted-signal rule it
+// failed at audit time was filed as #650 and fixed in #664 — but read what that buys: every one of
+// the 9 rules constrains the TRANSPORT, never the fixture, so the body gap above is untouched.
+//
 //   pnpm exec tsx docs/scenarios/proofs/stale-fixture/c3-mock-fidelity.ts
 import { stitch } from '../../../../packages/core/src/index';
 import { mockAdapter } from '../../../../packages/core/src/test-mock';
@@ -83,7 +87,7 @@ async function main(): Promise<void> {
             ['content-type', 'x-trace'],
         );
         note(
-            '(a) → test-mock.ts:149-161 `build()`. That is the whole of its response hygiene',
+            '(a) → test-mock.ts:150-162 `build()`. That is the whole of its response hygiene',
             '',
         );
     }
@@ -212,7 +216,7 @@ async function main(): Promise<void> {
         note('rules violated', report.violations.length);
         for (const v of report.violations)
             note(`violation: ${v.rule}`, v.detail);
-        checkSeq('the rules a `mockAdapter` CAN satisfy', report.passed, [
+        checkSeq('the rules `mockAdapter` satisfies — all 9', report.passed, [
             'status: 200 resolves with status 200',
             'status: 404 resolves without throwing',
             'status: 500 resolves without throwing',
@@ -220,20 +224,37 @@ async function main(): Promise<void> {
             'response: headers are readable with lowercase names',
             'response: text body round-trips',
             'response: JSON body round-trips as parsed data',
+            'abort: a pre-aborted signal rejects',
             'abort: an in-flight abort rejects promptly',
         ]);
         checkSeq(
-            'the rule it CANNOT',
+            'rules it violates',
             report.violations.map((v) => v.rule),
-            ['abort: a pre-aborted signal rejects'],
+            [],
         );
-        checkSeq(
-            '…and the detail',
-            report.violations.map((v) => v.detail),
-            ['adapter resolved although the signal was already aborted'],
+
+        // The rule it failed at audit time, exercised directly. `mockAdapter` used to consult
+        // `req.signal` only inside its `delay` branch, so a delay-less route ANSWERED a cancelled
+        // request — a cancellation test asserted the opposite of production. Filed as #650; since
+        // #664 the signal is checked before any route logic (test-mock.ts:165-170): nothing is
+        // sent, no spy entry is recorded, no response-sequence slot is consumed.
+        const spied = mockAdapter([{ respond: { body: { ok: true } } }]);
+        const pre = new AbortController();
+        pre.abort();
+        let rejected = 'resolved';
+        try {
+            await raw(spied, { signal: pre.signal });
+        } catch (e) {
+            rejected = (e as Error).name;
+        }
+        check(
+            'a delay-less route REJECTS a pre-aborted signal',
+            rejected,
+            'AbortError',
         );
+        check('…and records no spy entry', spied.callCount(), 0);
         note(
-            '(e) → 8 of 9 rules pass, and the ONE failure is a genuine fidelity bug, not an artifact of this harness: `mockAdapter` consults `req.signal` only inside its `delay` branch (test-mock.ts:188-189), so a route with no `delay` RESOLVES for a request whose signal was already aborted. Every real transport rejects. But read what the 9 rules cover — statuses, header case, body round-tripping, abort. NONE constrains what a fixture MAY contain; they constrain what a TRANSPORT must do with it. The contract kit is for adapter authors, exactly as the capture predicted',
+            '(e) → 9 of 9 rules pass — the pre-abort rule since #664, which this audit filed as #650. But read what the 9 rules cover — statuses, header case, body round-tripping, abort. NONE constrains what a fixture MAY contain; they constrain what a TRANSPORT must do with it. The contract kit is for adapter authors, exactly as the capture predicted',
             '',
         );
     }
@@ -292,7 +313,7 @@ async function main(): Promise<void> {
 
     finish(
         'C3',
-        'IT VALIDATES ALMOST NOTHING, AND THE GAP IS EXACTLY THE FIXTURE. `mockAdapter` normalises two fields — `status` defaults to 200 and header names are lowercased (test-mock.ts:149-161) — and checks nothing else. Measured: it served statuses 999, -1, 0, 1.5 and 200.7 verbatim, and served a `Date`, a `Map`, a class instance, `undefined`, a `function`, a `bigint` and a Symbol-keyed object as response bodies, all of which reached the caller unchanged through the full engine. The consequence is a working test for code that cannot work: a fixture built from `new Invoice(...)` gives the caller `data.total === 42` from a GETTER, where the same object over a JSON wire is `{"id":"inv_1"}` and `data.total` is undefined. The library does publish a transport contract, and running it against `mockAdapter` turns up a SECOND finding the claim did not ask for: the mock passes 8 of 9 rules and VIOLATES `abort: a pre-aborted signal rejects` — "adapter resolved although the signal was already aborted" — because it consults `req.signal` only inside its `delay` branch (test-mock.ts:188-189), so any route without a `delay` ignores an aborted signal that every real transport honours. And every one of the 9 rules constrains what a TRANSPORT must do with a response, not what a FIXTURE may contain, so passing them says nothing about fixture realism. The single fixture shape that is rejected, `respond: {}`, is rejected by the TYPE (`AtLeastOne<MockResponse>`) and is reachable at runtime anyway through a responder function, which returns `status: 200, body: undefined`',
+        'IT VALIDATES ALMOST NOTHING, AND THE GAP IS EXACTLY THE FIXTURE. `mockAdapter` normalises two fields — `status` defaults to 200 and header names are lowercased (test-mock.ts:150-162) — and checks nothing else. Measured: it served statuses 999, -1, 0, 1.5 and 200.7 verbatim, and served a `Date`, a `Map`, a class instance, `undefined`, a `function`, a `bigint` and a Symbol-keyed object as response bodies, all of which reached the caller unchanged through the full engine. The consequence is a working test for code that cannot work: a fixture built from `new Invoice(...)` gives the caller `data.total === 42` from a GETTER, where the same object over a JSON wire is `{"id":"inv_1"}` and `data.total` is undefined. The library does publish a transport contract, and running it against `mockAdapter` now passes ALL 9 rules — including `abort: a pre-aborted signal rejects`, which it VIOLATED at audit time because `req.signal` was consulted only inside its `delay` branch; this audit filed that as #650 and #664 moved the check ahead of any route logic (test-mock.ts:165-170), measured here as an AbortError with no spy entry recorded. But every one of the 9 rules constrains what a TRANSPORT must do with a response, not what a FIXTURE may contain, so passing them says nothing about fixture realism. The single fixture shape that is rejected, `respond: {}`, is rejected by the TYPE (`AtLeastOne<MockResponse>`) and is reachable at runtime anyway through a responder function, which returns `status: 200, body: undefined`',
     );
 }
 

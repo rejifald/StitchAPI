@@ -2,11 +2,20 @@
 
 **Status:** drafted, **HELD BACK — security-sensitive.** Review before disclosing.
 **Scenario:** [pii-in-the-logs](../pii-in-the-logs.md)
-**Proofs:** `docs/scenarios/proofs/pii-in-the-logs/` (8 scripts, 196 checks, offline)
+**Proofs:** `docs/scenarios/proofs/pii-in-the-logs/` (8 scripts, 206 checks, offline)
 
 > Held per the standing instruction not to file drafts that disclose a data-exposure path. Both
 > findings below are sensitive-data-in-logs (CWE-532 shape). The third section is ordinary and
 > could be split out and filed on its own.
+
+> **Status note, 2026-08-15 re-measure.** §1's worked repro rested on Zod 3's enum wording, and
+> the workspace's Zod 4 bump (#589) retired it: the stock enum message is now
+> `Invalid option: expected one of "enterprise"|"free"` — expected options only, never the
+> received value — so with stock Zod all four sinks measure clean. The `validationErrors`
+> verbatim-copy mechanism (`drift.ts:50-56`) is unchanged, and C7(h) proves a validator whose
+> message does echo the input — a custom `refine`/`check` message, or another library's wording —
+> still carries the value into the JSONL, `consoleSink` and `loggerSink`. The ask below stands,
+> scoped to validators that echo.
 
 ## 1. ADR 0018 §4's safety claim does not hold for hard validation
 

@@ -35,10 +35,12 @@ for f in docs/scenarios/proofs/multipart-upload/c[0-9]*.ts; do pnpm exec tsx "$f
 Run from the repository root — the scripts import core from `packages/core/src` by relative path, so
 they test the working tree, not the published bundle.
 
-They typecheck under `packages/core`'s full strict set:
+They typecheck under `packages/core`'s full strict set — `--ignoreConfig` because TypeScript 6
+makes a file list alongside a `tsconfig.json` an error (TS5112), and here the flags are the
+whole config:
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \

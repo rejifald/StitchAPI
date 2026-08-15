@@ -237,11 +237,11 @@ async function main(): Promise<void> {
             '',
         );
         note(
-            'C5(g) — `stubStitch.safe()` still throws on a SYNC-throwing impl. `contractStub` sidesteps it by being `async`, but the underlying behaviour is unchanged',
+            'C5(g) — closed upstream rather than by this guard: `stubStitch.safe()` no longer throws on a SYNC-throwing impl (#664), so `contractStub` being `async` is style, not a workaround',
             '',
         );
         note(
-            'C2 — `timeout.total`, `cache.ttl`, `memoryStore` TTL, OAuth2 expiry, SigV4 and `done.elapsed` are still wall-clock. `assertClockHonest` refuses the pairing; it does not fix it',
+            'C2 — `timeout.total`, `cache.ttl`, `memoryStore` TTL and `done.elapsed` are still wall-clock, by decision (ADR 0010 §4); OAuth2 expiry and SigV4 moved onto the clock upstream (#664/#667). `assertClockHonest` refuses the remaining pairings; it does not fix them',
             '',
         );
     }

@@ -45,7 +45,7 @@ wait is on a `manualClock`, and nothing here does real crypto or real I/O.
 They typecheck under `packages/core`'s full strict set:
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \
@@ -55,16 +55,16 @@ cd packages/core && pnpm exec tsc --noEmit \
 
 ## What each script establishes
 
-| Script                        | Question                                             | Measured                                                                                                                                               |
-| ----------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `c1-key-per-attempt.ts`       | one key per call, or one per attempt?                | **One per call.** 3 attempts → 1 key, 1 charge. A **lost response was recovered** by the retry's replay. Pagination is the exception: 3 pages → 3 keys |
-| `c2-restart-stability.ts`     | **DECIDING** — does the default key survive a crash? | **No.** 2 keys, **2 charges for 1 payment**. `keyOf` fixes it; a `__config` round-trip silently un-fixes it                                            |
-| `c3-derived-key-stability.ts` | is a derived key stable against re-serialisation?    | **Only if it ignores the body's shape.** `JSON.stringify(body)` → 2 keys, **2 charges, and no 409**                                                    |
-| `c4-cached-failure.ts`        | does `retry` burn its budget on a replayed 500?      | **Not by default** (1 request). With 500 in `retry.on`: 4 requests, 3 replays. `interpret` cannot veto it                                              |
-| `c5-key-body-mismatch.ts`     | same key, changed body → 409. Retried? Actionable?   | **Not retried, and actionable** (`status: 409` + `idempotency_key_in_use`). `verdict.accept` **swallows** it                                           |
-| `c6-ttl-expiry.ts`            | a re-drive after the key is pruned                   | **2 charges** at 25h vs a 24h TTL, 1 at 23h. **Nothing client-side notices** — the duplicate is a clean 200                                            |
-| `c7-timeout-ambiguity.ts`     | "never sent" vs "sent, outcome unknown"?             | **Indistinguishable.** Identical `StitchError`s over ledgers of **0 and 1 charges**. No event carries the key                                          |
-| `c8-assembled.ts`             | all six workloads, end to end                        | **5 charges / 6 intended** (the sixth declined). Control: **8 / 6**, two duplicates. 43 lines of user code                                             |
+| Script                        | Question                                             | Measured                                                                                                                                                                                  |
+| ----------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `c1-key-per-attempt.ts`       | one key per call, or one per attempt?                | **One per call.** 3 attempts → 1 key, 1 charge. A **lost response was recovered** by the retry's replay. Pagination is the exception: 3 pages → 3 keys                                    |
+| `c2-restart-stability.ts`     | **DECIDING** — does the default key survive a crash? | **No.** 2 keys, **2 charges for 1 payment**. `keyOf` fixes it; a `__config` round-trip silently un-fixes it                                                                               |
+| `c3-derived-key-stability.ts` | is a derived key stable against re-serialisation?    | **Only if it ignores the body's shape** — or a schema canonicalises it first (#663): raw `JSON.stringify(body)` → 2 keys, **2 charges, and no 409**; with a coercing schema → **1 and 1** |
+| `c4-cached-failure.ts`        | does `retry` burn its budget on a replayed 500?      | **Not by default** (1 request). With 500 in `retry.on`: 4 requests, 3 replays. `interpret` cannot veto it                                                                                 |
+| `c5-key-body-mismatch.ts`     | same key, changed body → 409. Retried? Actionable?   | **Not retried, and actionable** (`status: 409` + `idempotency_key_in_use`). `verdict.accept` **swallows** it                                                                              |
+| `c6-ttl-expiry.ts`            | a re-drive after the key is pruned                   | **2 charges** at 25h vs a 24h TTL, 1 at 23h. **Nothing client-side notices** — the duplicate is a clean 200                                                                               |
+| `c7-timeout-ambiguity.ts`     | "never sent" vs "sent, outcome unknown"?             | **Indistinguishable.** Identical `StitchError`s over ledgers of **0 and 1 charges**. No event carries the key                                                                             |
+| `c8-assembled.ts`             | all six workloads, end to end                        | **5 charges / 6 intended** (the sixth declined). Control: **8 / 6**, two duplicates. 43 lines of user code                                                                                |
 
 ## Files
 
@@ -123,9 +123,12 @@ cd packages/core && pnpm exec tsc --noEmit \
   distinct keys, 2 charges. Two of the capture's named risks turn out to be non-risks in JavaScript:
   `4999.0` and `4999` are one value, and a present-but-`undefined` optional field is dropped by
   `JSON.stringify`. **Key order is the whole exposure.**
-- **An input schema does not protect the key.** `validateInput` (engine.ts:384-409) validates each slot
-  and **discards the parsed value** — the coerced/defaulted/stripped object never replaces `input`. A
-  canonicalising body schema left the two keys distinct and the two charges in place.
+- **An input schema now protects the key.** This audit measured the opposite — `validateInput`
+  validated each slot and **discarded the parsed value**, so a canonicalising body schema left the two
+  keys distinct and the two charges in place — and filed it as #648; #663 closed it. `validateInput`
+  (engine.ts:415-447) now **returns the parsed input** and the engine runs the whole call on it
+  (engine.ts:1768-1773), `applyIdempotency` included. Re-measured in C3(e) and kept as a regression
+  pin: a coercing body schema under the naive `JSON.stringify` key → **1 key, 1 charge**.
 - **C5 is the least dangerous failure here, and worth saying so.** A 409 means the vendor **refused**,
   so the money is safe: 1 charge, at the FIRST body's amount. It is not retried (409 is not in the
   default `retry.on`) and it is actionable (`status: 409`, `error.body.error.code ===
@@ -139,12 +142,15 @@ cd packages/core && pnpm exec tsc --noEmit \
   IS measurable is how much StitchAPI carries: a dropped request (0 charges) and a lost response (1
   charge) produced **field-for-field identical** `StitchError`s — `name: 'StitchError'`,
   `status: undefined`, `attempts: 1`, `message: 'timed out after 5000ms'`, `body: undefined`.
-- **The `TimeoutError` class is flattened away.** The engine throws one (resilience.ts:17,233); `errEvt`
-  (engine.ts:346-355) reduces it to a message on an event and `rebuildError` (stitch.ts:489-516)
-  rebuilds a plain `StitchError`. The class survives **only** in `hooks.onError` (measured:
-  `TimeoutError/Error` — note `.name` is `'Error'`, the class never sets it), and `TimeoutError` is not
-  exported from any public entry point (only `RateLimitError` is, index.ts:86). So "was this a
-  timeout?" is a string test on the message.
+- **The `TimeoutError` class survives as `cause`, not as the thrown type.** The engine throws one
+  (resilience.ts:21,228); `errEvt` (engine.ts:378-396) reduces it to a message on the event **and pins
+  the live instance**, which `rebuildError` (stitch.ts:545-573) re-attaches as `cause` on the rebuilt
+  `StitchError`. Measured: `error.cause.constructor.name === 'TimeoutError'` at the caller, and
+  `hooks.onError` is handed the same instance (`TimeoutError/Error` — note `.name` is `'Error'`, the
+  class never sets it). `TimeoutError` is still not exported from any public entry point (only
+  `RateLimitError` is, index.ts:86), so "was this a timeout?" is the structural check
+  `err.cause?.constructor.name === 'TimeoutError'` — no longer a string test on the message. What
+  `cause` cannot say is which side of the wire the request died on: both C7 cases carry the same one.
 - **A transport failure is retried unconditionally.** The throw path (engine.ts:675-703) retries on
   `attempt < max` alone — there is no status to match `retry.on` against. Measured:
   `retry: { attempts: 3, on: [] }` still made **3 requests**. "Retry a 503 but not a timeout" is not
@@ -187,7 +193,8 @@ cd packages/core && pnpm exec tsc --noEmit \
   registry row, or a cross-service handoff is an obvious use of that.
 - **`keyOf: (i) => JSON.stringify(i.body)` is the obvious implementation and it is unstable.** Key
   order alone moved it, and the failure is a **silent second charge**, not an error. Derive from the
-  business fact, or hash a canonical rendering. An input schema will not do it for you.
+  business fact, hash a canonical rendering — or declare a coercing body schema: since #663 `keyOf`
+  reads the **validated** body, and C3(e) pins the naive key at 1 key / 1 charge under one.
 - **`verdict: { accept: [409], flag: 'ok' }` does not classify an idempotency conflict — it SUCCEEDS on
   it.** Measured `ok: true`, with `{ error: { type: 'idempotency_error', … } }` handed back as the
   call's **data**. The caller records a successful charge for the new amount; the vendor holds one

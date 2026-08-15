@@ -1,6 +1,6 @@
 ---
 title: 'The ID that changed on the way in'
-description: 'JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines — and a bigint in params vanishes.'
+description: 'JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines.'
 prerequisites: ['/docs/reference/config-types', '/docs/guides/validation/drift']
 ---
 
@@ -101,7 +101,7 @@ line corrupts.
 
 ### Two places the library already got this right
 
-`cache.ts:42` tags bigint cache keys deliberately, so `42n` cannot collide with the string
+`cache.ts:43` tags bigint cache keys deliberately, so `42n` cannot collide with the string
 `"42n"` — two identical bigint queries coalesced to one call. And `trace.ts` ships a `bigintSafe`
 replacer so tracing cannot break the call it observes, which makes a `fileSink` the one
 diagnostic surface in this whole scenario that ends up holding the vendor's real digits.
@@ -114,11 +114,15 @@ diagnostic surface in this whole scenario that ends up holding the vendor's real
    withholding a warning it could have given: `hooks.onResponse`, `Surface.interpret`,
    `.inspect().raw`, `.report()` and a `TraceSink` all hold the already-parsed number. `raw`
    means pre-**validation**, not pre-parse.
-2. **A `bigint` in `params` silently vanishes.** `expandTemplateVar` (`util.ts:392`) branches on
-   `string | number | boolean`, so a bigint produces `…/v1/things/` — no error, no event. The
-   sibling `query` slot handles bigint **exactly**, and a `form` body does too. Of four outbound
-   positions bigint works in two, throws in one (JSON body — loud, and correct), and silently
-   vanishes in one. **The two URL positions disagree with each other.**
+2. **A `bigint` in `params` silently vanished — this audit found it, and it is fixed.**
+   `expandTemplateVar` branched on `string | number | boolean`, so a bigint produced
+   `…/v1/things/` — no error, no event — while the sibling `query` slot handled bigint
+   **exactly**: the two URL positions disagreed with each other.
+   [#661](https://github.com/rejifald/StitchAPI/pull/661) fixed it before the issue draft was
+   even filed — `bigint` joined the scalar arm (`util.ts:421`) and the folded `params` slot is
+   typed `string | number | bigint` — so path and query now agree, measured as the exact digits
+   in the URL. Of four outbound positions bigint works in three and throws in one (JSON body —
+   loud, and correct).
 3. **Reading an id and handing it straight back is eight lines and wrong.** A number in `params`
    goes out as `1234567890123456800` — a **third** distinct digit string, and not the one a
    debugger shows you. That is the `Unknown Channel` shape, with nothing reported.

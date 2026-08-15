@@ -291,7 +291,7 @@ async function main(): Promise<void> {
             url: `${BASE}/v1/users`,
             adapter: vendor.adapter(),
             kind: deprecationSurface({ fold: true }),
-            cache: { ttl: '1h', version: 'v1' },
+            cache: { ttl: '1h', fingerprint: { version: 'v1' } },
             clock,
             trace: watch,
         });

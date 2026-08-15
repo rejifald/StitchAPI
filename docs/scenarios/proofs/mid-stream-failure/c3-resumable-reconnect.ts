@@ -3,9 +3,11 @@
 // header value actually sent on the reopened request.
 //
 // This is the shape SSE was designed for, and it is the one case where the answer is genuinely
-// clean — the delta spine is `ABCDE`, once, across a drop. The cost is measured too, because it is
-// not zero: the loop cannot tell "the feed is finished" from "the connection dropped", so it keeps
-// reopening until the attempt budget runs out.
+// clean — the delta spine is `ABCDE`, once, across a drop. Since #647 the loop also knows when to
+// stop: a body that runs out is the stream FINISHING (`openAndDecode` returns `'closed'` at
+// engine.ts:1499-1501, and the loop at engine.ts:1524-1529 never reopens it), so a healthy feed
+// costs exactly one open. The remaining cost is measured in (d): a feed that keeps dropping still
+// fails once the attempt budget is spent, with the partial only on `.stream()`.
 //
 //   pnpm exec tsx docs/scenarios/proofs/mid-stream-failure/c3-resumable-reconnect.ts
 import { sse } from '../../../../packages/core/src/sse';
@@ -48,21 +50,20 @@ async function main(): Promise<void> {
         checkSeq('(a) `Last-Event-ID` sent on each open', idsOf(api), [
             '(none)', // the first connection carries no header
             't2', // the drop happened after `id: t2` — this is the resume point
-            't5',
-            't5',
         ]);
-        check('(a) reconnects the consumer could see', obs.reconnects, 3);
+        check('(a) reconnects the consumer could see', obs.reconnects, 1);
         check('(a) done.ok', obs.ok, true);
         note(
             '(a) → this is the clean case',
-            'ONE `sse: { reconnect: true }` and the resume is correct — no duplication, right header',
+            'ONE `sse: { reconnect: true }` and the resume is correct — no duplication, right header, and the resumed body closing cleanly ends the run at 2 opens',
         );
     }
 
-    // ── (b) the cost: a CLEAN close is treated as a drop, so the loop over-reopens ────────────
-    // `openAndDecode` returns `'closed'` when the body runs out, and the reconnect loop
-    // (engine.ts:1460-1490) treats `'closed'` exactly like `'error'`. There is no "the stream is
-    // finished" signal, so a resumable stitch always burns its whole attempt budget.
+    // ── (b) a CLEAN close ends the loop: a feed that never drops opens exactly once ───────────
+    // `openAndDecode` returns `'closed'` when the body runs out, and since #647 the reconnect
+    // loop treats that as the stream FINISHING (engine.ts:1519-1529): it finalizes with what it
+    // collected instead of reopening. Before the fix this same fixture burned the whole attempt
+    // budget — 4 opens for a feed that never dropped (issue #640).
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({
@@ -80,23 +81,18 @@ async function main(): Promise<void> {
         });
         const obs = await observe(feed, {}, clock);
         check('(b) text', obs.text, 'ABCDE');
-        check('(b) opens for a feed that never dropped', api.opens.length, 4);
-        check('(b) wasted round trips', api.opens.length - 1, 3);
-        checkSeq('(b) `Last-Event-ID` sent', idsOf(api), [
-            '(none)',
-            't5',
-            't5',
-            't5',
-        ]);
+        check('(b) opens for a feed that never dropped', api.opens.length, 1);
+        check('(b) wasted round trips', api.opens.length - 1, 0);
+        checkSeq('(b) `Last-Event-ID` sent', idsOf(api), ['(none)']);
         note(
-            '(b) → harmless HERE only because the server correctly returns nothing after `t5`',
-            'a server that ignores `Last-Event-ID` replays instead — that is C4',
+            '(b) → "finished" and "dropped" are distinguished now',
+            'the reopen-until-the-budget-runs-out behaviour this fixture used to measure was fixed by #647',
         );
     }
 
     // ── (c) the server's own pacing wins ──────────────────────────────────────────────────────
     // A `retry:` field on the dropped connection beats `reconnect.delay` and `retry.backoff`
-    // (engine.ts:1480-1481). Measured as exact virtual gaps between opens.
+    // (engine.ts:1543-1544). Measured as exact virtual gaps between opens.
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({
@@ -163,7 +159,7 @@ async function main(): Promise<void> {
 
     finish(
         'C3',
-        'YES — this is the one case that genuinely just works. A feed with `id:` on every frame, dropped after 2 of 5 tokens, reopened with `sse: { reconnect: true }`: the consumer observed `ABCDE`, five deltas, ZERO duplication, and the reopened request carried the exact right header — measured `Last-Event-ID` sequence `[(none), "t2", "t5", "t5"]`, where `t2` is the last id delivered before the drop. Server pacing is honoured (a `retry: 9000` frame produced measured gaps 9000,9000,9000, overriding an authored `reconnect.delay: "250ms"`). Two real costs, both measured: the loop cannot distinguish "the feed finished" from "the connection dropped", so a feed that NEVER drops still opens 4 times (3 wasted round trips, each replaying `Last-Event-ID: t5`); and a feed that keeps dropping resumes correctly (`ABCD`, no repeats) but still ends `done(ok:false)` with no `result` event once the budget is spent',
+        'YES — this is the one case that genuinely just works, and since #647 it works without waste. A feed with `id:` on every frame, dropped after 2 of 5 tokens, reopened with `sse: { reconnect: true }`: the consumer observed `ABCDE`, five deltas, ZERO duplication, and the reopened request carried the exact right header — measured `Last-Event-ID` sequence `[(none), "t2"]`, where `t2` is the last id delivered before the drop; the resumed body then closed cleanly and the loop stopped at 2 opens. A feed that never drops opens ONCE — a clean close is the stream finishing, not a drop (before #647 this same fixture spent the whole budget: 4 opens; issue #640). Server pacing is honoured (a `retry: 9000` frame produced measured gaps 9000,9000,9000, overriding an authored `reconnect.delay: "250ms"`). The remaining cost, still measured: a feed that keeps dropping resumes correctly (`ABCD`, no repeats) but still ends `done(ok:false)` with no `result` event once the budget is spent',
     );
 }
 

@@ -84,8 +84,10 @@ outcome.
    per call and cannot bound the gap.
 3. **Timeout disambiguation.** A dropped request (**0 charges**) and a lost response (**1
    charge**) produced **field-for-field identical** errors: `StitchError`, `status: undefined`,
-   `attempts: 1`, `timed out after 5000ms`, `body: undefined`. The `TimeoutError` class is
-   flattened away and unexported, surviving only in `hooks.onError`.
+   `attempts: 1`, `timed out after 5000ms`, `body: undefined` — and the same live `TimeoutError`
+   on `error.cause`. The class stays unexported, but the instance rides `cause`, so "was this a
+   timeout?" is the structural check `err.cause?.constructor.name === 'TimeoutError'`, not a
+   message match. What it cannot tell you is whether the money moved.
 4. **"Don't retry into the unknown."** `retry.on` gates statuses only — a transport failure is
    retried even with `on: []`. The only lever is `attempts: 1`.
 5. **"Don't retry a replayed failure."** Inexpressible declaratively: `interpret` runs _after_
@@ -102,8 +104,9 @@ outcome.
     **`keyOf: (i) => JSON.stringify(i.body)` fails by charging twice, not by erroring.** Key
     order alone moved the hash — measured **2 keys, 2 charges, statuses `[200, 200, 200]`**, no
     `409` anywhere, because the vendor never saw the same key twice. Derive from a business
-    reference, or canonicalise before hashing. An input **schema does not canonicalise** what
-    `keyOf` sees.
+    reference, canonicalise before hashing — or declare a coercing input **schema**: `keyOf` now
+    reads the **validated** body (#648, closed by #663), so a schema that normalises the body
+    stabilises the key. Measured: the same three renderings under one → 1 key, 1 charge.
 
     Two smaller ones: **pagination mints a key per page** (3 pages, 3 keys), and
     **`verdict: { accept: [409], flag: 'ok' }` swallows an idempotency conflict**, returning the

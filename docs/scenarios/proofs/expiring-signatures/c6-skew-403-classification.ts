@@ -3,19 +3,19 @@
 //
 // MEASURED, and the answers split three ways:
 //
-//   (a) NOT retried by default — `retry.on` defaults to `[429, 502, 503, 504]` (engine.ts:612) and
+//   (a) NOT retried by default — `retry.on` defaults to `[429, 502, 503, 504]` (engine.ts:640) and
 //       403 is not in it. One request, one failure. The library gets this right by default.
 //   (b) But `retry` does not HELP either, and the reason is worth stating: with a drifting host the
 //       engine re-signs on every attempt (C1) and every fresh signature carries the SAME wrong
 //       clock. Four attempts, four distinct signatures, four identical skews of 600000ms. Signing
 //       per attempt is necessary and completely insufficient.
 //   (c) With `circuit` configured, a skew 403 IS counted as a dependency failure: it throws at
-//       engine.ts:824-831 and `attemptWithCircuit` records it (engine.ts:879-891). Measured: a
+//       engine.ts:855-863 and `attemptWithCircuit` records it (engine.ts:910-922). Measured: a
 //       misconfigured host clock opened the breaker and the next calls reported `503 circuit open`.
 //       A local clock problem now reads as "S3 is down".
 //   (d) THE FOOTGUN. `verdict: { accept: [403], flag: 'ok' }` — the pure-config classification that
 //       worked in scenario 9 — SWALLOWS the skew error here, because `verdict.flag` is three-state
-//       and an ABSENT flag is "no signal" (surface.ts:180-190). AWS's error envelope has no `ok`
+//       and an ABSENT flag is "no signal" (surface.ts:195-205). AWS's error envelope has no `ok`
 //       field, so the flag never fires and `accept` alone succeeds on the 403. Measured: the call
 //       returned `ok: true` and handed the caller `RequestTimeTooSkewed` AS ITS DATA.
 //   (e) What does work is ~6 lines of `Surface.interpret` composing `verdictOf`: a real error for
@@ -93,7 +93,7 @@ async function main(): Promise<void> {
         );
         note(
             '(a) why',
-            '`retry.on` defaults to [429,502,503,504] (engine.ts:612); 403 is not in it',
+            '`retry.on` defaults to [429,502,503,504] (engine.ts:640); 403 is not in it',
         );
     }
 
@@ -184,7 +184,7 @@ async function main(): Promise<void> {
         check('(d) requests that reached the wire', aws.calls.length, 1);
         note(
             '(d) why the `flag` did not save it',
-            '`verdict.flag` is three-state; an ABSENT flag is "no signal" (surface.ts:180-190). AWS error bodies have no `ok` field, so the flag never fires and `accept` alone succeeds on the 403',
+            '`verdict.flag` is three-state; an ABSENT flag is "no signal" (surface.ts:195-205). AWS error bodies have no `ok` field, so the flag never fires and `accept` alone succeeds on the 403',
         );
     }
 
@@ -213,7 +213,7 @@ async function main(): Promise<void> {
         );
         note(
             '(e) the mechanism',
-            'a surface rejection returns `{ ok: false }` rather than throwing, so `attemptWithCircuit` records a circuit SUCCESS (engine.ts:874-878) while the caller still gets a failure',
+            'a surface rejection returns `{ ok: false }` rather than throwing, so `attemptWithCircuit` records a circuit SUCCESS (engine.ts:905-908) while the caller still gets a failure',
         );
         note(
             '(e) cost',

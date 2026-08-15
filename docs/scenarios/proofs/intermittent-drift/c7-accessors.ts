@@ -11,9 +11,9 @@
 //   .inspect()        — findings + raw + validated, FRESH PROBE  ← the only one with both VALUES
 //   .report()         — the above plus attempts/timing/config, FRESH PROBE
 //
-// "Expected vs actual" is only half-carried. A HARD finding has both (`Expected number, received
-// string`) because the message comes from Zod. A SOFT finding has neither: `detail` is
-// `kindOf(old) -> kindOf(new)` (drift.ts:77-83), which is types, not values.
+// "Expected vs actual" is only half-carried. A HARD finding has both (`Invalid input: expected
+// number, received string`) because the message comes from Zod. A SOFT finding has neither:
+// `detail` is `kindOf(old) -> kindOf(new)` (drift.ts:77-83), which is types, not values.
 //
 //   pnpm exec tsx docs/scenarios/proofs/intermittent-drift/c7-accessors.ts
 import { drift, stitch } from '../../../../packages/core/src/index';
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     }
 
     // ── (b) await / `.safe()` on a HARD finding: a generic message ───────────────────────────
-    // `StitchError` has `{ status, attempts, body, url }` and no `findings` (types.ts:1656-1690).
+    // `StitchError` has `{ status, attempts, body, url }` and no `findings` (types.ts:1857-1891).
     // The field name is emitted on the event stream and then dropped on the way out.
     {
         const findings: string[] = [];
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
             false,
         );
         checkSeq('(b) what the SINK saw for the same run', findings, [
-            'error|invalid|transaction_id|Expected number, received string',
+            'error|invalid|transaction_id|Invalid input: expected number, received string',
             'event:contract violation (drift)',
         ]);
         note(
@@ -276,7 +276,7 @@ async function main(): Promise<void> {
         }).safe();
 
         checkSeq('(f) HARD finding detail', hard, [
-            'Expected number, received string',
+            'Invalid input: expected number, received string',
         ]);
         checkSeq('(f) SOFT finding details', soft.sort(), [
             'string -> number',
@@ -335,7 +335,7 @@ async function main(): Promise<void> {
 
     finish(
         'C7',
-        'PARTLY ACTIONABLE, AND IT DEPENDS ENTIRELY ON THE ACCESSOR. The FIELD PATH is always carried, on every accessor that carries a finding at all, including the array case where `sample=charges[2].transaction_id` gives a concrete index. EXPECTED/ACTUAL is only half there: a HARD finding carries both types (`Expected number, received string`, Zod\'s message), a SOFT one carries `kindOf(old) -> kindOf(new)` and no values. The accessor table: `await`/`.safe()` carries NOTHING for a soft finding (`{ok,data,error}` and a $0 value) and a generic `contract violation (drift)` for a hard one — `StitchError` has no `findings` — while the trace sink for the SAME run named the field and both types; `hooks.onResponse` runs before validation; `.stream()` gets every finding plus the validated value in ONE request; `.inspect()` is the only accessor with RAW (`"abc"`) and VALIDATED (`0`) in one object, and `.report()` adds the run diagnostics — but both are FRESH PROBES: `.report()` on the drifting stitch reported ZERO findings because the probe hit a clean response',
+        'PARTLY ACTIONABLE, AND IT DEPENDS ENTIRELY ON THE ACCESSOR. The FIELD PATH is always carried, on every accessor that carries a finding at all, including the array case where `sample=charges[2].transaction_id` gives a concrete index. EXPECTED/ACTUAL is only half there: a HARD finding carries both types (`Invalid input: expected number, received string`, Zod\'s message), a SOFT one carries `kindOf(old) -> kindOf(new)` and no values. The accessor table: `await`/`.safe()` carries NOTHING for a soft finding (`{ok,data,error}` and a $0 value) and a generic `contract violation (drift)` for a hard one — `StitchError` has no `findings` — while the trace sink for the SAME run named the field and both types; `hooks.onResponse` runs before validation; `.stream()` gets every finding plus the validated value in ONE request; `.inspect()` is the only accessor with RAW (`"abc"`) and VALIDATED (`0`) in one object, and `.report()` adds the run diagnostics — but both are FRESH PROBES: `.report()` on the drifting stitch reported ZERO findings because the probe hit a clean response',
     );
 }
 

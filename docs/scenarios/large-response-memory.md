@@ -3,33 +3,40 @@
 **Researched:** 2026-08-05 · **Status:** VERIFIED — achievable with user code · page shipped
 **Slug:** `large-response-memory`
 
-**Verification:** 8 proof scripts (97 checks), run offline, one process per measurement,
+**Verification:** 8 proof scripts (101 checks), run offline, one process per measurement,
 `peakLive` = high-water `heapUsed` after a forced GC. Requires `--expose-gc`. In
 [`proofs/large-response-memory/`](proofs/large-response-memory/). Published page:
 [`scenarios/large-response-memory.mdx`](../../apps/docs/content/docs/scenarios/large-response-memory.mdx).
-Escalated: [`issue-drafts/streaming-is-not-memory-bounded.md`](issue-drafts/streaming-is-not-memory-bounded.md).
+Escalated: [`issue-drafts/streaming-is-not-memory-bounded.md`](issue-drafts/streaming-is-not-memory-bounded.md)
+→ #659. **Re-pinned 2026-08-15** after #665 fixed §2 (the `decode: 'json'` array buffering) —
+C3/C4/C6/C8 re-measured against the in-tree core; §1 (the engine accumulator) unchanged and open.
 
-| Claim                               | Verdict                                     | Measured                                                                                                                                                                 |
-| ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| C1 — buffered baseline              | linear, and **fair to the library**         | 21.4 MB wire → **53.8 MB** retained (2.5×), matching a bare `JSON.parse` to within **0.2 MB**. The multiplier is `JSON.parse`'s                                          |
-| C2 — `ndjson` flat?                 | **NO — and the two halves are in one call** | decoder driven directly: **0.8 MB for 1,000,000 rows**. Through the engine: **3.5 → 30.2 MB** (linear). `.stream()` 30.2 vs `await` 33.5 — the same number twice         |
-| C3 — `decode: 'json'` on one array  | streams the parse, **buffers the text**     | emission correct under every adversarial case; heap tracks the whole array at **0.88× wire**, time quadratic; trips its own cap at **37,000 rows** and blames the vendor |
-| C4 — does `output` re-buffer        | **capture REFUTED — innocent**              | 500 calls for 500 records, each one object, `sawArrayOfLength: 0`; heap within 1%                                                                                        |
-| C5 — `pick`/`transform` on a stream | neither runs                                | `transform` called **0** times over 200 deltas; completely silent                                                                                                        |
-| C6 — backpressure                   | propagates; the cap throws                  | producer stayed within 8 chunks; 20,000 rows streamed through a **1,000-char** cap while the engine kept all 20,000                                                      |
-| C7 — guard on the buffered path     | **none**                                    | 400,000 rows under a 96 MB ceiling → `FATAL ERROR … heap out of memory`, **exit 134**, no catchable error, no `finally`                                                  |
-| C8 — assembled                      | PASS                                        | **1.3 MB flat vs 53.8 MB** — a 40× cut — via `Surface.stream` yielding a receipt per batch. 75 lines + 4 config vs 67 hand-rolled                                        |
+| Claim                               | Verdict                                     | Measured                                                                                                                                                                                                            |
+| ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 — buffered baseline              | linear, and **fair to the library**         | 21.4 MB wire → **53.8 MB** retained (2.5×), matching a bare `JSON.parse` to within **0.2 MB**. The multiplier is `JSON.parse`'s                                                                                     |
+| C2 — `ndjson` flat?                 | **NO — and the two halves are in one call** | decoder driven directly: **0.8 MB for 1,000,000 rows**. Through the engine: **3.5 → 30.2 MB** (linear). `.stream()` 30.2 vs `await` 33.5 — the same number twice                                                    |
+| C3 — `decode: 'json'` on one array  | **streams — defect fixed by #665**          | emission correct under every adversarial case; post-#665 heap is **flat at 0.6 MB / 21.4 MB wire** (was 0.88×), time linear (was quadratic); the default cap bounds one **element** and no longer trips at 37k rows |
+| C4 — does `output` re-buffer        | **capture REFUTED — innocent**              | 500 calls for 500 records, each one object, `sawArrayOfLength: 0`; heap within 1%                                                                                                                                   |
+| C5 — `pick`/`transform` on a stream | neither runs                                | `transform` called **0** times over 200 deltas; completely silent                                                                                                                                                   |
+| C6 — backpressure                   | propagates; the cap throws                  | producer stayed within 8 chunks; 20,000 rows streamed through a **1,000-char** cap while the engine kept all 20,000                                                                                                 |
+| C7 — guard on the buffered path     | **none**                                    | 400,000 rows under a 96 MB ceiling → `FATAL ERROR … heap out of memory`, **exit 134**, no catchable error, no `finally`                                                                                             |
+| C8 — assembled                      | PASS                                        | **1.3 MB flat vs 53.8 MB** — a 40× cut — via `Surface.stream` yielding a receipt per batch. 75 lines + 4 config vs 67 hand-rolled                                                                                   |
 
-**One hypothesis refuted in the library's favour, one confirmed worse than feared.** `output`
-does _not_ re-buffer a stream — it validates per delta and costs nothing. But the memory the
-capture went looking for is spent somewhere it didn't think to look: `engine.ts:1443` retains
-every chunk unconditionally, so **the library owns a genuinely O(1) NDJSON decoder and spends
-the win one line later** — and `.stream()`, the mitigation the engine's own MEMORY NOTE
-recommends, measures identically to `await`.
+**One hypothesis refuted in the library's favour, one confirmed worse than feared — then fixed
+in core.** `output` does _not_ re-buffer a stream — it validates per delta and costs nothing.
+But the memory the capture went looking for is spent somewhere it didn't think to look:
+`engine.ts:1492` retains every chunk unconditionally, so **the library owns a genuinely O(1)
+NDJSON decoder and spends the win one line later** — and `.stream()`, the mitigation the
+engine's own MEMORY NOTE recommends, measures identically to `await`. That half is still open
+(#659 §1).
 
-**The `decode: 'json'` defect is one branch, not a design limit.** `compact()` floors on
-`valueStart`, which for a top-level array is the opening `[`, so nothing is released until `]`.
-Control: the same 100,000 records as _concatenated top-level values_ run **flat at 0.9 MB**.
+**The `decode: 'json'` defect was one branch, and #665 removed it.** `compact()` floored on
+`valueStart`, which for a top-level array was the opening `[`, so nothing was released until
+`]`. Filed as #659 §2; fixed by #665 — a top-level array now records no compaction floor of its
+own, emitted elements are released as they close, and both shapes run **flat (0.6 MB for one
+100,000-row array, 0.9 MB concatenated; 21.4 MB of wire)** in linear time, with the default cap
+now passing well-formed arrays of any length. The cap bounds one **element**; the assembled
+seam (C8) bounds both wire formats at **1.4 MB**, no longer NDJSON-only.
 
 ---
 

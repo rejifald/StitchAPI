@@ -77,7 +77,7 @@ async function main(): Promise<void> {
         );
         note(
             '(a) → PER DELTA, unambiguously',
-            '500 calls, 500 of them carrying a single object, and the validator never saw an array at all. `engine.ts:1414-1419` runs it inside the decode loop, before the `delta` is emitted',
+            '500 calls, 500 of them carrying a single object, and the validator never saw an array at all. `engine.ts:1463-1472` runs it inside the decode loop, before the `delta` is emitted',
         );
     }
 
@@ -131,8 +131,8 @@ async function main(): Promise<void> {
     }
 
     // ── (d) the value served is the RAW chunk, not the validated one ──────────────────────────
-    // The buffered path serves `validated` (engine.ts:1223, "serve the validated value"). The
-    // streaming path destructures only `{ errors }` from the same function (engine.ts:1419) and
+    // The buffered path serves `validated` (engine.ts:1264, "serve the validated value"). The
+    // streaming path destructures only `{ errors }` from the same function (engine.ts:1468) and
     // throws the validated value away. So a coercing/stripping schema type-checks and then does
     // nothing to what the consumer receives.
     {
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
         check('(d) the raw field is intact', first['currency'], 'usd');
         note(
             '(d) → on a stream, `output` VALIDATES but never TRANSFORMS',
-            'engine.ts:1419 keeps `{ errors }` and drops `value`; engine.ts:1223 on the buffered path does the opposite. The same schema coerces on `await` and does not on `.stream()`',
+            'engine.ts:1468 keeps `{ errors }` and drops `value`; engine.ts:1264 on the buffered path does the opposite. The same schema coerces on `await` and does not on `.stream()`',
         );
     }
 
@@ -175,16 +175,10 @@ async function main(): Promise<void> {
         validated.peakLive,
         1.15,
     );
-    const jbare = probeOk({
-        mode: 'stream-json',
-        rows: 100_000,
-        buffer: 1_000_000_000,
-    });
-    const jval = probeOk({
-        mode: 'stream-json-output',
-        rows: 100_000,
-        buffer: 1_000_000_000,
-    });
+    // On the library-default cap: since #665 a 100k-row single array no longer needs a raised
+    // `stream.buffer.chars` to finish (C3d).
+    const jbare = probeOk({ mode: 'stream-json', rows: 100_000 });
+    const jval = probeOk({ mode: 'stream-json-output', rows: 100_000 });
     note('(e) same, `decode: "json"` without `output`', mb(jbare.peakLive));
     note('(e) same, `decode: "json"` with `output`', mb(jval.peakLive));
     checkFlat(
@@ -195,12 +189,12 @@ async function main(): Promise<void> {
     );
     note(
         '(e) → `output` is INNOCENT',
-        'the hypothesis this claim was written to catch does not happen. Validation is free in memory terms, on both decoders. What is expensive is `chunks` (C2) and the array buffer (C3), neither of which `output` touches',
+        'the hypothesis this claim was written to catch does not happen. Validation is free in memory terms, on both decoders. What is expensive is `chunks` (C2), which `output` does not touch — and since #665 the two decoders cost the same, because the engine’s accumulator is the only linear term left',
     );
 
     finish(
         'C4',
-        'PER DELTA, and the fear was misplaced. The instrumented contract was called 500 times for 500 records, every call carrying ONE object, and `sawArrayOfLength` stayed at 0 — including when the wire was literally one top-level array under `decode: "json"`. In heap terms `output` is free: 30.2MB against 30.2MB on `ndjson`, 48.7MB against 48.8MB on `json`, both within 1%. Two things it does that a config author will not expect. A failing row is a CIRCUIT BREAKER, not a filter: `contract violation (drift)`, the stream ends, the rows already delivered stay and the rest are never read. And on a stream `output` VALIDATES WITHOUT TRANSFORMING — `engine.ts:1419` keeps only `{ errors }` and discards the validated value, where `engine.ts:1223` on the buffered path serves it. The same coercing schema reshapes your data on `await` and silently does not on `.stream()`',
+        'PER DELTA, and the fear was misplaced. The instrumented contract was called 500 times for 500 records, every call carrying ONE object, and `sawArrayOfLength` stayed at 0 — including when the wire was literally one top-level array under `decode: "json"`. In heap terms `output` is free: 30.2MB against 30.2MB on `ndjson`, 30.2MB against 30.2MB on `json` (on the default cap — post-#665 the array shape needs no raised cap and costs what `ndjson` costs), both within 1%. Two things it does that a config author will not expect. A failing row is a CIRCUIT BREAKER, not a filter: `contract violation (drift)`, the stream ends, the rows already delivered stay and the rest are never read. And on a stream `output` VALIDATES WITHOUT TRANSFORMING — `engine.ts:1468` keeps only `{ errors }` and discards the validated value, where `engine.ts:1264` on the buffered path serves it. The same coercing schema reshapes your data on `await` and silently does not on `.stream()`',
     );
 }
 

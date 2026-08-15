@@ -3,10 +3,13 @@
 // itself contain the PII value?
 //
 // The answer to the first is yes, with one hard precondition and one hard limit. The answer to the
-// second is yes for SOFT drift (paths and kinds only, never values, exactly as ADR 0018 §4 claims)
-// and NO for HARD validation, where the finding `detail` is the validator's own message and Zod's
-// enum/union messages quote the received value verbatim — into `consoleSink` and `loggerSink`,
-// the two destinations C1 measured as carrying nothing.
+// second is no for SOFT drift (paths and kinds only, never values, exactly as ADR 0018 §4 claims)
+// and VALIDATOR-DEPENDENT for hard validation: `validationErrors` copies the validator's own
+// message into `detail` verbatim, so the message's wording decides. Stock Zod 4 (the workspace's
+// validator since #589) no longer echoes the received value — its enum error names only the
+// expected options, and every sink measures clean (g). A validator whose message DOES embed the
+// input — a custom refine/check message here, Zod 3's enum wording historically — still carries it
+// into `consoleSink` and `loggerSink`, the two destinations C1 measured as carrying nothing (h).
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c7-drift-signal.ts
 import { drift, stitch } from '../../../../packages/core/src/index';
@@ -34,6 +37,7 @@ import type { Sentinel } from './harness';
 import {
     check,
     checkSeq,
+    checkStr,
     finish,
     heading,
     leakRow,
@@ -358,14 +362,17 @@ async function main(): Promise<void> {
     }
 
     heading(
-        'C7 (g) — REFUTATION: a HARD finding CAN carry the value, into the payload-free sinks',
+        "C7 (g) — a HARD finding's `detail` is the validator's message; stock Zod 4 does not echo the value",
     );
     {
         // ADR 0018 §4: "`detailFor` emits kinds only, never values … so `findings` never leak a
         // secret even when `redact` is off." That holds for the three SOFT kinds, which is all
         // `detailFor` produces. Hard failures do not go through `detailFor`: `validationErrors`
-        // (drift.ts:50) copies the VALIDATOR's message into `detail`, and Zod's enum/union
-        // messages quote the received value.
+        // (drift.ts:50) copies the VALIDATOR's message into `detail` verbatim, so whether a value
+        // escapes is the validator's wording, not this repo's. Zod 3's enum message quoted the
+        // received value; Zod 4 — the workspace's validator since #589 — names only the expected
+        // options. Both halves get pinned: here the stock enum stays clean end to end, and (h)
+        // proves the verbatim-copy path still carries a message that does echo.
         const ENUMED = z.object({
             id: z.string(),
             plan: z.enum(['enterprise', 'free']),
@@ -381,12 +388,16 @@ async function main(): Promise<void> {
         const w = await probe.inspect();
         const invalid = w.findings.find((f) => f.change === 'invalid');
         check('there is a hard `invalid` finding', invalid !== undefined, true);
-        check(
-            'and its `detail` contains the RECEIVED VALUE',
-            (invalid?.detail ?? '').includes(SSN),
-            true,
+        checkStr(
+            "its `detail` is Zod 4's enum message — expected options only",
+            invalid?.detail ?? '',
+            'Invalid option: expected one of "enterprise"|"free"',
         );
-        note('the finding detail', invalid?.detail);
+        check(
+            'and it does NOT contain the received value',
+            (invalid?.detail ?? '').includes(SSN),
+            false,
+        );
 
         const t = tempFileSink();
         const a = stitch({
@@ -399,12 +410,12 @@ async function main(): Promise<void> {
         });
         await a.safe();
         const fileRow = leakRow(
-            'fileSink — hard finding detail',
+            'fileSink — stock Zod 4 enum',
             t.text(),
             SENTINELS,
             'JSONL on disk',
         );
-        check('the JSONL carries the value', fileRow.hits.has('ssn'), true);
+        check('the JSONL stays clean', fileRow.hits.size, 0);
         t.cleanup();
 
         const cap = captureStderr();
@@ -422,12 +433,12 @@ async function main(): Promise<void> {
             cap.restore();
         }
         const consoleRow = leakRow(
-            'consoleSink — hard finding detail',
+            'consoleSink — stock Zod 4 enum',
             cap.text(),
             SENTINELS,
             'stderr — the sink C1 measured at 0/7',
         );
-        check('consoleSink carries it too', consoleRow.hits.has('ssn'), true);
+        check('consoleSink stays clean too', consoleRow.hits.size, 0);
         note(
             'the stderr line',
             cap
@@ -448,12 +459,12 @@ async function main(): Promise<void> {
         });
         await c.safe();
         const loggerRow = leakRow(
-            'loggerSink — hard finding detail',
+            'loggerSink — stock Zod 4 enum',
             logger.text(),
             SENTINELS,
             'the messages handed to pino/winston',
         );
-        check('and loggerSink', loggerRow.hits.has('ssn'), true);
+        check('and loggerSink', loggerRow.hits.size, 0);
 
         const spans: OtelSpan[] = [];
         const d = stitch({
@@ -468,7 +479,131 @@ async function main(): Promise<void> {
         });
         await d.safe();
         const otlpRow = leakRow(
-            'otlpSink — hard finding detail',
+            'otlpSink — stock Zod 4 enum',
+            bytesOf(spans),
+            SENTINELS,
+            'OTLP exports level/path/change only',
+        );
+        check('OTLP too — it drops `detail` regardless', otlpRow.hits.size, 0);
+        note(
+            "→ so with the workspace's stock validator the repro this claim originally REFUTED ADR 0018 §4 with no longer fires: Zod 4's enum message (\"Invalid option: expected one of …\") names the expected options and never the received value, and all four sinks measure 0 of 7. That is a fact about Zod 4's wording, not about this repo — nothing between the validator and the sinks changed, which is what (h) pins",
+        );
+    }
+
+    heading(
+        'C7 (h) — the verbatim-copy path is intact: a validator that echoes DOES leak',
+    );
+    {
+        // Same body, same failing slot — but the schema's failure message embeds the received
+        // value, the way Zod 3's enum message did and any custom refine/check message can. If
+        // `validationErrors` (drift.ts:50) still copies `iss.message` verbatim, the value must
+        // reach every detail-carrying sink; if the copy path had been fixed, this stays clean.
+        const ECHOING = z.object({
+            id: z.string(),
+            plan: z.string().refine((v) => v === 'enterprise' || v === 'free', {
+                error: (iss) =>
+                    `unexpected plan, received ${String(iss.input)}`,
+            }),
+        });
+        const vendorSentBadPlan = { id: 'cus_7Q2', plan: SSN };
+        const probe = stitch({
+            name: 'getCustomer',
+            baseUrl: BASE,
+            path: '/v1/customers/1',
+            adapter: fakeVendor({ body: vendorSentBadPlan }),
+            output: ECHOING,
+        });
+        const w = await probe.inspect();
+        const invalid = w.findings.find((f) => f.change === 'invalid');
+        check('there is a hard `invalid` finding', invalid !== undefined, true);
+        check(
+            'and its `detail` contains the RECEIVED VALUE',
+            (invalid?.detail ?? '').includes(SSN),
+            true,
+        );
+        note('the finding detail', invalid?.detail);
+
+        const t = tempFileSink();
+        const a = stitch({
+            name: 'getCustomer',
+            baseUrl: BASE,
+            path: '/v1/customers/1',
+            adapter: fakeVendor({ body: vendorSentBadPlan }),
+            output: ECHOING,
+            trace: t.sink,
+        });
+        await a.safe();
+        const fileRow = leakRow(
+            'fileSink — echoing validator',
+            t.text(),
+            SENTINELS,
+            'JSONL on disk',
+        );
+        check('the JSONL carries the value', fileRow.hits.has('ssn'), true);
+        t.cleanup();
+
+        const cap = captureStderr();
+        try {
+            const b = stitch({
+                name: 'getCustomer',
+                baseUrl: BASE,
+                path: '/v1/customers/1',
+                adapter: fakeVendor({ body: vendorSentBadPlan }),
+                output: ECHOING,
+                trace: consoleSink(),
+            });
+            await b.safe();
+        } finally {
+            cap.restore();
+        }
+        const consoleRow = leakRow(
+            'consoleSink — echoing validator',
+            cap.text(),
+            SENTINELS,
+            'stderr — the sink C1 measured at 0/7',
+        );
+        check('consoleSink carries it too', consoleRow.hits.has('ssn'), true);
+        note(
+            'the stderr line',
+            cap
+                .text()
+                .replace(/\x1b\[\d+m/g, '')
+                .split('\n')
+                .find((l) => l.includes('drift')),
+        );
+
+        const logger = captureLogger();
+        const c = stitch({
+            name: 'getCustomer',
+            baseUrl: BASE,
+            path: '/v1/customers/1',
+            adapter: fakeVendor({ body: vendorSentBadPlan }),
+            output: ECHOING,
+            trace: loggerSink(logger),
+        });
+        await c.safe();
+        const loggerRow = leakRow(
+            'loggerSink — echoing validator',
+            logger.text(),
+            SENTINELS,
+            'the messages handed to pino/winston',
+        );
+        check('and loggerSink', loggerRow.hits.has('ssn'), true);
+
+        const spans: OtelSpan[] = [];
+        const d = stitch({
+            name: 'getCustomer',
+            baseUrl: BASE,
+            path: '/v1/customers/1',
+            adapter: fakeVendor({ body: vendorSentBadPlan }),
+            output: ECHOING,
+            trace: otlpSink({
+                exporter: { export: (s) => void spans.push(...s) },
+            }),
+        });
+        await d.safe();
+        const otlpRow = leakRow(
+            'otlpSink — echoing validator',
             bytesOf(spans),
             SENTINELS,
             'OTLP exports level/path/change only',
@@ -479,7 +614,7 @@ async function main(): Promise<void> {
             0,
         );
         note(
-            "→ the REFUTATION, stated plainly: ADR 0018 §4 says `findings` never leak a value. It is true of the three SOFT kinds (`detailFor`, drift.ts:77) and false of the HARD kind (`validationErrors`, drift.ts:50, which copies `iss.message` verbatim). Whether a value escapes therefore depends on the SCHEMA LIBRARY's message wording, not on anything in this repo: Zod says \"Expected number, received string\" for a type error (safe) and \"Invalid enum value. Expected 'enterprise' | 'free', received '078-05-1120'\" for an enum (not safe). The two sinks documented as payload-free — console and logger — print it, because a finding is metadata by classification",
+            "→ ADR 0018 §4's scoping, stated plainly: `findings` never leak a value is true of the three SOFT kinds (`detailFor`, drift.ts:77) and conditional for the HARD kind (`validationErrors`, drift.ts:50, which copies `iss.message` verbatim). Whether a value escapes depends on the SCHEMA LIBRARY's message wording, not on anything in this repo. The workspace's stock validator stopped echoing when #589 moved it to Zod 4; the copy path did not change, so a message that echoes — custom refine/check wording, another library, a future Zod — rides into the JSONL, `consoleSink` and `loggerSink`, the two sinks documented as payload-free, because a finding is metadata by classification. Only OTLP drops `detail`",
         );
     }
 
@@ -487,10 +622,15 @@ async function main(): Promise<void> {
     console.log(
         `\n  hard-validation finding detail: ${hard.leaking} of ${hard.leaking + hard.clean} destinations carry the received VALUE.`,
     );
+    check(
+        'every leaking destination sits behind the echoing validator, none behind stock Zod 4',
+        hard.leaking,
+        3,
+    );
 
     finish(
         'C7',
-        "CONFIRMED for the soft signal, with two qualifications and one REFUTATION. The signal works and is precise: when the vendor adds `taxId` at the top level, one level down, and inside every array element, `drift()` emits exactly three NEW `undeclared` findings — `taxId`, `profile.taxId`, `contacts[].taxId` — at level `info`, and the finding contains NO value (0 of 1 new-field sentinel and 0 of 7 PII sentinels across the findings array, the raw drift events, the JSONL, stderr, the logger and OTLP). Qualification one: the signal is noisy at rest — the same schema produces 7 `undeclared` findings on the UNCHANGED response, so \"a new field appeared\" is a diff against a baseline, not an alert. Qualification two: it is schema-anchored, so with no `output` (or with `output` but no `drift()` wrapper) the same changed response yields 0 findings — C7 is a property of C6, not an independent safety net. A limit worth recording: `severity: { undeclared: 'error' }` is a TYPE error (`DriftSeverity` excludes `error`, and the JSDoc says soft drift is always non-fatal) but a WORKING kill-switch at runtime — through a cast it re-levels the finding and fails the call. And the REFUTATION: ADR 0018 §4 claims `findings` never leak a secret because `detailFor` emits kinds only. That holds for the three soft kinds and NOT for hard validation — `validationErrors` (drift.ts:50) copies the validator's own message into `detail`, and Zod's enum message quotes the received value (\"Invalid enum value. Expected 'enterprise' | 'free', received '078-05-1120'\"). Measured end to end: that value reaches the JSONL file, `consoleSink` and `loggerSink` — the two sinks C1 measured at 0 of 7 — while OTLP alone stays clean because it exports level/path/change and drops `detail`",
+        "CONFIRMED for the soft signal, with two qualifications and one CONDITIONAL leak on the hard path. The signal works and is precise: when the vendor adds `taxId` at the top level, one level down, and inside every array element, `drift()` emits exactly three NEW `undeclared` findings — `taxId`, `profile.taxId`, `contacts[].taxId` — at level `info`, and the finding contains NO value (0 of 1 new-field sentinel and 0 of 7 PII sentinels across the findings array, the raw drift events, the JSONL, stderr, the logger and OTLP). Qualification one: the signal is noisy at rest — the same schema produces 7 `undeclared` findings on the UNCHANGED response, so \"a new field appeared\" is a diff against a baseline, not an alert. Qualification two: it is schema-anchored, so with no `output` (or with `output` but no `drift()` wrapper) the same changed response yields 0 findings — C7 is a property of C6, not an independent safety net. A limit worth recording: `severity: { undeclared: 'error' }` is a TYPE error (`DriftSeverity` excludes `error`, and the JSDoc says soft drift is always non-fatal) but a WORKING kill-switch at runtime — through a cast it re-levels the finding and fails the call. And the hard path: ADR 0018 §4 claims `findings` never leak a secret because `detailFor` emits kinds only. That holds for the three soft kinds; for hard validation the truth is CONDITIONAL, because `validationErrors` (drift.ts:50) copies the validator's own message into `detail` verbatim and the wording decides. With stock Zod 4 (the workspace's validator since #589) nothing escapes — the enum message ('Invalid option: expected one of \"enterprise\"|\"free\"') names only the expected options, and all four sinks measure 0 of 7. With a validator whose message echoes the input — a custom refine/check message here, Zod 3's enum wording historically — the received value reaches the JSONL file, `consoleSink` and `loggerSink` — the two sinks C1 measured at 0 of 7 — while OTLP alone stays clean because it exports level/path/change and drops `detail`. The Zod-enum repro died with #589; the verbatim-copy mechanism did not",
     );
 }
 

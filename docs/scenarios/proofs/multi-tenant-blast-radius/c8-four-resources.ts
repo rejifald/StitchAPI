@@ -257,7 +257,7 @@ async function main(): Promise<void> {
                 name: 'me',
                 path: '/v1/me',
                 headers: { 'x-tenant': t },
-                cache: { ttl: '60s', tenancy, version: 'v1' },
+                cache: { ttl: '60s', tenancy, fingerprint: { version: 'v1' } },
             });
         const p1 = await cached('t1', 'principal')({}).safe();
         const p2 = await cached('t2', 'principal')({}).safe();

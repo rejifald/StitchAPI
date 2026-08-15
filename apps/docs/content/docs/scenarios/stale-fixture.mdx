@@ -79,7 +79,7 @@ the difference is visible through the same schema: `ok`, `ok`, `contract violati
    `ok: false`, five keys different**. Nothing offline closes it, because offline the only bytes
    are the fixture's. The comparison that catches it is 8 lines and every seam it needs already
    exists; what is missing is a place to put a call you are only allowed to make sometimes.
-2. **`manualClock` drives six time-driven features and not the other six.** The table below is
+2. **`manualClock` drives eight time-driven features and not the other four.** The table below is
    the one to keep. A test written against a wall-clock row **passes without asserting
    anything**.
 3. **`mockAdapter` validates almost nothing.** It defaults `status` to 200 and lowercases header
@@ -104,21 +104,30 @@ the difference is visible through the same schema: `ok`, `ok`, `contract violati
 
 ### Which features `manualClock` actually drives
 
-| Feature                         | Driven by         | Measured                                                                   |
-| ------------------------------- | ----------------- | -------------------------------------------------------------------------- |
-| `retry` backoff                 | **`manualClock`** | `advance(5000)` → 3 calls; `advance(0)` → 1 call, pending                  |
-| `throttle` rate                 | **`manualClock`** | `advance(3000)` → 3 calls                                                  |
-| `throttle` concurrency          | **`manualClock`** | holder releases on virtual time → queued callers proceed                   |
-| `circuit.cooldown`              | **`manualClock`** | `advance(60_000)` past a 30s cooldown → half-open probe reaches the vendor |
-| `timeout` (per-attempt)         | **`manualClock`** | `advance(2000)` past a 1s timeout → error                                  |
-| `Retry-After`                   | **`manualClock`** | reads the injected clock — **and that is the trap**, see below             |
-| **`timeout.total`**             | wall clock        | a 1000ms budget survived **2700 virtual ms** across 3 attempts, `ok: true` |
-| **`cache.ttl`**                 | wall clock        | `advance(600_000)` past a 60s TTL still served the cached entry            |
-| **`memoryStore` TTL**           | wall clock        | a 1s entry survived 60,000 virtual ms                                      |
-| **event `at` / `done.elapsed`** | wall clock        | `at = 1785941469178` while `clock.now() = 0`; `done.elapsed` reads `0`     |
-| **OAuth2 token expiry**         | wall clock        | 600,000 virtual ms past a 60s `expires_in` refetched nothing               |
-| **AWS SigV4 signing date**      | wall clock        | `new Date()`, and no `clock` option exists to pass                         |
-| `paginate`                      | no time           | no inter-page delay knob; 3 pages fetched at `clock.now() = 0`             |
+| Feature                         | Driven by         | Measured                                                                         |
+| ------------------------------- | ----------------- | -------------------------------------------------------------------------------- |
+| `retry` backoff                 | **`manualClock`** | `advance(5000)` → 3 calls; `advance(0)` → 1 call, pending                        |
+| `throttle` rate                 | **`manualClock`** | `advance(3000)` → 3 calls                                                        |
+| `throttle` concurrency          | **`manualClock`** | holder releases on virtual time → queued callers proceed                         |
+| `circuit.cooldown`              | **`manualClock`** | `advance(60_000)` past a 30s cooldown → half-open probe reaches the vendor       |
+| `timeout` (per-attempt)         | **`manualClock`** | `advance(2000)` past a 1s timeout → error                                        |
+| `Retry-After`                   | **`manualClock`** | reads the injected clock — **and that is the trap**, see below                   |
+| OAuth2 token expiry             | **`manualClock`** | `advance(600_000)` past a 60s `expires_in` → a fresh token fetch                 |
+| AWS SigV4 signing date          | **`manualClock`** | `x-amz-date` reads the clock; a default `manualClock()` signs `19700101T000000Z` |
+| **`timeout.total`**             | wall clock        | a 1000ms budget survived **2700 virtual ms** across 3 attempts, `ok: true`       |
+| **`cache.ttl`**                 | wall clock        | `advance(600_000)` past a 60s TTL still served the cached entry                  |
+| **`memoryStore` TTL**           | wall clock        | a 1s entry survived 60,000 virtual ms                                            |
+| **event `at` / `done.elapsed`** | wall clock        | `at = 1785941469178` while `clock.now() = 0`; `done.elapsed` reads `0`           |
+| `paginate`                      | no time           | no inter-page delay knob; 3 pages fetched at `clock.now() = 0`                   |
+
+The OAuth2 and SigV4 rows are new arrivals in the driven half: both read the wall clock when this
+audit measured them — 600,000 virtual ms past a 60s `expires_in` refetched nothing, and no clock
+reached the signer. Filed as [#650](https://github.com/rejifald/StitchAPI/issues/650) and
+[#658](https://github.com/rejifald/StitchAPI/issues/658), fixed by
+[#664](https://github.com/rejifald/StitchAPI/pull/664) and
+[#667](https://github.com/rejifald/StitchAPI/pull/667): token freshness and `x-amz-date` now read
+the same injected clock that drives retry and throttle. The four rows still on the wall are
+deliberate scope — the clock owns control-flow time, not bookkeeping.
 
 <Callout type="warn">
     **`Retry-After` is a trap precisely because it honours the clock.**

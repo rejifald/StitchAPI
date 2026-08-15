@@ -153,9 +153,10 @@ export function singleArray(
 
 /**
  * CONCATENATED top-level values with no separator and no newline: `{…}{…}{…}`. The `'json'` decoder
- * advertises this shape alongside the single array, and it is the control that localises C3's
- * finding: same decoder, same records, same bytes — the only difference is whether they sit inside
- * one top-level array or stand as siblings.
+ * advertises this shape alongside the single array, and it is the control that localised C3's
+ * original defect (#659 §2, fixed by #665): same decoder, same records, same bytes — the only
+ * difference is whether they sit inside one top-level array or stand as siblings. Post-#665 the
+ * two shapes measure alike, which is what C3(f) now pins.
  */
 export function concatObjects(rows: number): Wire {
     return lazyWire(

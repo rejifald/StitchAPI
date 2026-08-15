@@ -24,14 +24,14 @@ so they test the working tree, not the published bundle.
 
 ## What each script establishes
 
-| Script                          | Question                                   | Measured                                                                              |
-| ------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `c1-retry-on-200-throttled.ts`  | can `retry` fire on a 200-with-THROTTLED?  | **No.** `retry.on` is handed **1** argument, the number `200`                         |
-| `c2-computed-wait.ts`           | can the wait be computed from the body?    | **Not via `backoff`** — but `SurfaceOutcome.after` is honoured exactly (6000ms)       |
-| `c3-extensions-reachability.ts` | is `extensions.cost` reachable?            | **Only via `hooks.onResponse`.** Error, event stream and `.inspect().raw` all lose it |
-| `c4-delegate-on-200.ts`         | does `throttle.delegate` trip on a 200?    | **No** (default `[429]`). `on: 200` trips on **successes** too                        |
-| `c5-throttle-rate-cost.ts`      | can `throttle.rate` express a cost budget? | **No.** 10 calls the bucket takes instantly are spread over **18s**                   |
-| `c6-assembled-solution.ts`      | can a user assemble correct behaviour?     | **Yes** — a custom `Surface`, **73 lines**, 8/8 queries survive a hostile neighbour   |
+| Script                          | Question                                   | Measured                                                                                                                    |
+| ------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `c1-retry-on-200-throttled.ts`  | can `retry` fire on a 200-with-THROTTLED?  | **No.** `retry.on` is handed **1** argument, the number `200`                                                               |
+| `c2-computed-wait.ts`           | can the wait be computed from the body?    | **Not via `backoff`** (cast past → `bad backoff` at construction) — but `SurfaceOutcome.after` is honoured exactly (6000ms) |
+| `c3-extensions-reachability.ts` | is `extensions.cost` reachable?            | **Only via `hooks.onResponse`.** Error, event stream and `.inspect().raw` all lose it                                       |
+| `c4-delegate-on-200.ts`         | does `throttle.delegate` trip on a 200?    | **No** (default `[429]`). `on: 200` trips on **successes** too                                                              |
+| `c5-throttle-rate-cost.ts`      | can `throttle.rate` express a cost budget? | **No.** 10 calls the bucket takes instantly are spread over **18s**                                                         |
+| `c6-assembled-solution.ts`      | can a user assemble correct behaviour?     | **Yes** — a custom `Surface`, **73 lines**, 8/8 queries survive a hostile neighbour                                         |
 
 ## Files
 
@@ -44,11 +44,15 @@ so they test the working tree, not the published bundle.
 
 ## Reading the numbers honestly
 
-- **C1(f) and C2(a2) are hacks, not seams.** Mutating `ctx.res.status` inside `onResponse` really
-  does drive the retry matcher (the hook fires at `engine.ts:705`, the matcher reads at `:743`) —
-  but it rewrites the status every later stage sees, and the final `StitchError.status` comes back
-  as the invented `429` rather than the wire's `200`. They are measured because "I couldn't find the
-  spelling" and "the built-in can't do it" are different claims, and both needed ruling out.
+- **C1(f) and C2(a2) are the ruled-out hacks, and one of them no longer even constructs.** C1(f):
+  mutating `ctx.res.status` inside `onResponse` really does drive the retry matcher (the hook fires
+  at `engine.ts:736`, the matcher reads at `:774`) — but it rewrites the status every later stage
+  sees, and the final `StitchError.status` comes back as the invented `429` rather than the wire's
+  `200`. C2(a2): casting a delay function past `backoff`'s type used to construct clean and
+  silently fall back to the default curve; since #666 (filed from this audit as #651 §3) the same
+  cast throws `bad backoff` at construction, and the probe now pins the throw. Both were measured
+  because "I couldn't find the spelling" and "the built-in can't do it" are different claims, and
+  both needed ruling out.
 - **C2's `@ts-expect-error` blocks are the proof, not decoration.** A `@ts-expect-error` that is
   _not_ an error fails `tsc`. These files typecheck clean under `packages/core`'s full strict set,
   so every "this is a type error" claim is machine-checked.

@@ -29,14 +29,15 @@ for f in docs/scenarios/proofs/mid-stream-failure/c[0-9]*.ts; do pnpm exec tsx "
 ```
 
 Run from the repository root — the scripts import core from `packages/core/src` by relative path, so
-they test the working tree, not the published bundle. That matters here: this scenario is about code
-shipped two commits ago (#622).
+they test the working tree, not the published bundle. That matters here: this scenario tracks
+`sse.reconnect` (shipped in #622), and the replay this audit filed against it (#640) has since been
+fixed in core by #647 — C3/C4/C8/C9 now pin the fixed behaviour.
 
 They typecheck under `packages/core`'s full strict set (the `@ts-expect-error` block in C8 is the
 machine-checked half of that claim — a `@ts-expect-error` that is _not_ an error fails `tsc`):
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \
@@ -46,17 +47,17 @@ cd packages/core && pnpm exec tsc --noEmit \
 
 ## What each script establishes
 
-| Script                      | Question                                          | Measured                                                                                                     |
-| --------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `c1-drop-mid-body.ts`       | what does a `.stream()` consumer see on a drop?   | **An `error` event, not a throw** — and a CLEAN truncation is `result,done(ok:true)`, identical to success   |
-| `c2-retry-on-a-stream.ts`   | does `retry` re-emit already-delivered deltas?    | **No — `retry` never runs on a stream.** 4 requests buffered vs **1** streaming, same config                 |
-| `c3-resumable-reconnect.ts` | does `reconnect` resume a feed with `id:`?        | **Yes, cleanly.** `ABCDE` once, `Last-Event-ID` `[(none),t2,t5,t5]`. Costs 3 wasted opens on a finished feed |
-| `c4-openai-reconnect.ts`    | …and against an OpenAI stream with no `id:`?      | **4× replay of a stream that never failed.** `ABCDEABCDEABCDEABCDE`, 24 deltas, `done(ok:true)`              |
-| `c5-in-band-error.ts`       | can a `data: {"error"}` frame at 200 fail?        | **Only via `output`.** `interpret` runs **0 times** on a stream; `verdict.flag` inert; `onError` never fires |
-| `c6-missing-done.ts`        | can "ended early" be told from "ended"?           | **Not by any built-in** — but 8 lines of surface `stream` hook makes it a named failure                      |
-| `c7-partial-output.ts`      | is the partial reachable when a stream fails?     | **`.stream()` only.** `.safe().data` null, `error.body` undefined, `.inspect()` `data:null status:0`         |
-| `c8-connect-vs-body.ts`     | connect-retry ON, body-retry OFF?                 | **Not in config.** One flag governs both phases. `Surface.execute` expresses it in 10 lines                  |
-| `c9-assembled-solution.ts`  | best answer for the LLM case, and is it worth it? | **62 lines** across 2 seams vs **83** hand-rolled; byte-identical results on all 6 shapes                    |
+| Script                      | Question                                          | Measured                                                                                                      |
+| --------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `c1-drop-mid-body.ts`       | what does a `.stream()` consumer see on a drop?   | **An `error` event, not a throw** — and a CLEAN truncation is `result,done(ok:true)`, identical to success    |
+| `c2-retry-on-a-stream.ts`   | does `retry` re-emit already-delivered deltas?    | **No — `retry` never runs on a stream.** 4 requests buffered vs **1** streaming, same config                  |
+| `c3-resumable-reconnect.ts` | does `reconnect` resume a feed with `id:`?        | **Yes, cleanly.** `ABCDE` once, `Last-Event-ID` `[(none),t2]`, 2 opens; a feed that never drops opens once    |
+| `c4-openai-reconnect.ts`    | …and against an OpenAI stream with no `id:`?      | **A no-op since #647.** 1 open, `ABCDE`, one `[DONE]`, `done(ok:true)`; an id-less drop is never reopened     |
+| `c5-in-band-error.ts`       | can a `data: {"error"}` frame at 200 fail?        | **Only via `output`.** `interpret` runs **0 times** on a stream; `verdict.flag` inert; `onError` never fires  |
+| `c6-missing-done.ts`        | can "ended early" be told from "ended"?           | **Not by any built-in** — but 8 lines of surface `stream` hook makes it a named failure                       |
+| `c7-partial-output.ts`      | is the partial reachable when a stream fails?     | **`.stream()` only.** `.safe().data` null, `error.body` undefined, `.inspect()` `data:null status:0`          |
+| `c8-connect-vs-body.ts`     | connect-retry ON, body-retry OFF?                 | **Not in config.** A status refusal is terminal for `retry` and `reconnect` both. `Surface.execute`: 10 lines |
+| `c9-assembled-solution.ts`  | best answer for the LLM case, and is it worth it? | **62 lines** across 2 seams vs **83** hand-rolled; byte-identical results on all 6 shapes                     |
 
 ## Files
 
@@ -77,21 +78,21 @@ cd packages/core && pnpm exec tsc --noEmit \
 
 ## Reading the numbers honestly
 
-- **C4 is a bug in freshly-shipped code, not a policy trade-off, and it is the finding of this
-  scenario.** `sse: { reconnect: true }` on a clean OpenAI-shaped completion — one that reached
-  `data: [DONE]` and closed normally — produced **4 opens, 24 deltas, 4 `[DONE]` sentinels** and
-  the text `ABCDEABCDEABCDEABCDE` delivered to the consumer as one uninterrupted spine, ending
-  `done(ok: true)`. Two independent defects compose. `resumable` is decided from surface
-  CAPABILITY, once, before any frame is read (engine.ts:1288 ands the reconnect flag with the mere
-  PRESENCE of `resumeToken` and `applyResume`), and `sseSurface` always exposes both hooks, so a
-  stream with no `id:` anywhere is classified resumable. When the reopen comes, `lastToken` is
-  still `undefined`, the guard at
-  engine.ts:1344 skips `applyResume`, and the request goes out with **no `Last-Event-ID`** — a
-  request for the whole completion, from token one. Separately, the reconnect loop treats a clean
-  close (`'closed'`) exactly like a drop (`'error'`) at engine.ts:1466, so `[DONE]` terminates
-  nothing and the attempt budget is always spent. The docs
-  ([surfaces.mdx:83-99](../../../../apps/docs/content/docs/reference/surfaces.mdx)) say "a dropped
-  stream is reopened"; they do not say a finished one is.
+- **C4 was the finding of this scenario, and it is fixed — the probes now pin the fix.** As
+  originally measured, `sse: { reconnect: true }` on a clean OpenAI-shaped completion — one that
+  reached `data: [DONE]` and closed normally — produced **4 opens, 24 deltas, 4 `[DONE]`
+  sentinels** and the text `ABCDEABCDEABCDEABCDE` delivered to the consumer as one uninterrupted
+  spine, ending `done(ok: true)`. Filed from this audit as #640; fixed in core by #647. Two
+  things changed. The reconnect decision now tests what the stream actually produced —
+  `recoverable = lastToken !== undefined || chunks.length === 0` (engine.ts:1518) — so a body
+  that delivered bytes but carried no `id:` is never reopened; a reopened request could only ask
+  for the whole completion again. And a clean close is the stream FINISHING: `openAndDecode`
+  returns `'closed'` (engine.ts:1499-1501) and the loop treats it as terminal
+  (engine.ts:1524-1529) instead of spending the attempt budget. Re-measured: **1 open, 6 deltas,
+  1 `[DONE]`, `ABCDE`, `done(ok: true)`** — identical with the flag off — and a dropped id-less
+  stream surfaces its error with `ABC` kept rather than replaying. The docs now state both
+  requirements ([surfaces.mdx:106-120](../../../../apps/docs/content/docs/reference/surfaces.mdx)):
+  a reopen needs a genuine drop AND a resume point.
 - **C2 refutes the capture in the safer direction, and the refutation matters more than the
   prediction.** The capture expects `retry` to duplicate deltas. It cannot, because `retry` does not
   run on a streaming stitch at all — `runStreaming` (engine.ts:1248) is a different function from
@@ -120,22 +121,28 @@ cfg)` (engine.ts:1371), which is deliberately status-only because there is no bu
   `delta` fired 3 times, `result` never did. And `.inspect()` — the accessor whose documented job is
   "what did the server actually send?" — answers `data: null`, `raw: null`, `status: 0`, so it does
   not even report the 200 that was received.
-- **C8's config workaround is worse than the gap it fills.** `verdict.accept: [503]` does make a 503
-  reconnectable (the accepted status streams a non-`ReadableStream` body, decodes nothing, returns
-  `'closed'`). Measured against a healing server: 9 opens, answer replayed 7 times. Measured against
-  a permanently-503 server: **`ok: true`, `data: []`** — four refusals in a row resolving as a
-  successful empty stream. Nothing warns.
+- **C8's config workaround stopped working and kept its trap.** `verdict.accept: [503]` used to
+  make a 503 reconnectable (measured then: 9 opens against a healing server, the answer replayed 7
+  times once it healed). Since #647 the accepted status's empty body is a clean close — the stream
+  _finishing_ — so measured now against the same healing server: **1 open, zero deltas,
+  `ok: true`**; the server healed and was never asked again. Against a permanently-503 server:
+  **`ok: true`, `data: []`** — a refusal resolving as a successful empty stream, still. Nothing
+  warns. The remaining connect gap is narrower but real: `reconnect` does retry a THROWN connect
+  (measured: 4 attempts on `ECONNREFUSED`), but an HTTP-status refusal is terminal for `retry` and
+  `reconnect` both, so `Surface.execute` is still the only home for "retry the 503 until it
+  heals".
 - **C9's comparison is honest in both directions.** 62 executable lines of user code against 83
   hand-rolled, and the hand-rolled side's SSE parser is counted because a hand-rolled client really
   does need one. The results are byte-identical on all six shapes and the open counts match, so the
   21-line difference is not buying behaviour — it is buying the spine (one `start`/`delta`×N/
   `error`/`done` trace under one traceId) and keeping `auth`/`headers`/`throttle`/`timeout` as
-  config. The caveat is load-bearing: adding `sse: { reconnect: true }` to the assembled stitch
-  re-breaks it (4 opens, `ABCDEABCDEABCDEABCDE`), and no surface hook can defend against that — the
-  decision is made above them in `runStreaming`.
-- **Two mitigations for C4 exist and both cost something.** Resetting the accumulator on the
-  `progress:reconnect` event recovers `ABCDE` — but "reset on reconnect" is the opposite of
-  resuming, so the reconnect bought nothing. `break`-ing out of the `for await` on `[DONE]` holds it
-  to 1 open — but leaving the loop early forfeits `await`/`.safe()` entirely, since awaiting drains
-  the generator, replays and all. Aborting a signal on `[DONE]` also stops it at 1 open, and poisons
-  the run with `Error: aborted`.
+  config. The caveat that used to be load-bearing here is retired: adding
+  `sse: { reconnect: true }` to the assembled stitch now measures 1 open, `ABCDE` — since #647 the
+  flag cannot un-do the assembled answer; on an id-less stream it is merely useless.
+- **The consumer-side mitigations C4 used to require are dead code now, measured.** Resetting the
+  accumulator on `progress:reconnect` has nothing to react to — zero reconnect boundaries are
+  emitted on a completed stream. `break`-ing out of the `for await` on `[DONE]` still ends
+  consumption early (and still skips the terminal events), but no longer changes the open count: 1
+  open either way. Aborting a signal on `[DONE]` no longer poisons anything — the run has already
+  finished (measured: `result, done(ok: true)`, 1 open) — and since #674 an abort that does land
+  mid-run surfaces the caller's own `abort(reason)` rather than a minted `Error: aborted`.

@@ -1,25 +1,26 @@
-// The two signing instruments this scenario measures with, and why there have to be two.
+// The two signing instruments this scenario measures with, and why there are two.
 //
-// `@stitchapi/aws-sigv4`'s `awsSigV4` stamps its timestamp from `new Date()` (aws-sigv4/src/
-// index.ts:301) — NOT from the stitch's injected `clock`. C5 measures that directly. The
-// consequence for everything else is procedural: on a `manualClock` the throttle, the backoff and
-// the circuit cooldown all run on virtual time while the signature's timestamp keeps ticking on
-// wall time, so an age computed across the two is meaningless. Six virtual minutes of queueing —
-// the interval where this scenario actually bites — cannot be measured with the shipped signer at
-// all without waiting six real ones.
+// When this audit first ran, `@stitchapi/aws-sigv4`'s `awsSigV4` stamped its timestamp from
+// `new Date()` — NOT from the stitch's injected `clock` — so six virtual minutes of queueing could
+// not be measured with the shipped signer at all without waiting six real ones. That defect was
+// filed from this audit as #658 and fixed by #667: the shipped signer now stamps
+// `amzDateOf(new Date(clockNow(ctx)))` (aws-sigv4/src/index.ts:324), where `clockNow` (:266) reads
+// `ctx.clock?.now() ?? Date.now()` — the stitch's resolved clock. C5 pins that directly.
 //
-// So:
-//   • `stampedSigV4` wraps the REAL `awsSigV4` and brackets its `apply` with wall-clock reads. It
-//     measures the SHIPPED code path, on real time, over queue intervals short enough to run in a
-//     few seconds. This is the instrument that keeps the findings honest.
+// The two instruments predate the fix and both stay useful:
+//   • `stampedSigV4` wraps the REAL `awsSigV4` and brackets its `apply` with clock reads. It
+//     measures the SHIPPED code path — on virtual time since #667, and on real time in the C1/C2
+//     parts that keep a wall-clock run as corroboration.
 //   • `clockSigV4` is ~20 lines of user code that mints the timestamp from an injected `Clock` and
 //     hands it to the package's own exported `signRequestV4`. Same engine seam (`cfg.auth.apply`),
-//     same signing function, same headers — only the clock source differs. It measures the same
-//     ordering at virtual intervals large enough to cross the five-minute window.
+//     same signing function, same headers. It WAS the workaround for #658; it remains the
+//     independent baseline C5 (b) checks the shipped signer against, and — through its `offset`
+//     seam, which `awsSigV4` still does not expose — the mechanism C7/C8 use to shift ONLY the
+//     signature's clock without touching the clock that drives retry, throttle and circuit.
 //
 // Both are used for C1–C4 and they must agree. Where they do, the ordering finding rests on the
-// shipped code and the virtual-time run is just a magnifying glass. `clockSigV4` is also the
-// answer to C5 and the foundation of C8, so it is written as production code, not test scaffolding.
+// shipped code and the independent signer is just a magnifying glass. `clockSigV4` is also the
+// foundation of C8, so it is written as production code, not test scaffolding.
 import {
     EMPTY_PAYLOAD_SHA256,
     awsSigV4,
@@ -63,9 +64,10 @@ export const CREDS: SignerOptions = {
  * signing changes — this delegates to the real strategy and then reads back the `x-amz-date` it
  * wrote onto the request.
  *
- * `now` defaults to wall-clock because that is the only clock the wrapped strategy honours; passing
- * anything else would record a time the signature does not agree with, which is the very confusion
- * C5 is about.
+ * `now` is the recorder's clock and must match the clock the stitch runs on, or the log records a
+ * time the signature does not agree with. It defaults to wall-clock for the real-time runs; under
+ * a `manualClock` pass `() => clock.now()`, because since #667 the wrapped strategy stamps from
+ * the injected clock.
  */
 export function stampedSigV4(
     opts: SignerOptions,
@@ -88,7 +90,9 @@ export function stampedSigV4(
 }
 
 /**
- * SigV4 signing that mints its timestamp from an INJECTED clock — the seam `awsSigV4` does not
+ * SigV4 signing that mints its timestamp from an INJECTED clock plus a mutable offset. The clock
+ * half is no longer a workaround — since #667 the shipped `awsSigV4` reads the stitch's clock too
+ * (C5 (b) checks the two agree) — but the `offset` half is still a seam `awsSigV4` does not
  * expose. Everything else is the package's own `signRequestV4`, so the wire bytes are the same
  * shape the shipped strategy produces.
  *
@@ -98,7 +102,7 @@ export function stampedSigV4(
  * signs with the corrected clock. Nothing needs to reach back into the signer.
  *
  * Deliberately payload-less (`EMPTY_PAYLOAD_SHA256`): every request in these proofs is a GET, which
- * is what the shipped strategy signs for a GET too (aws-sigv4/src/index.ts:307-313).
+ * is what the shipped strategy signs for a GET too (aws-sigv4/src/index.ts:330-336).
  */
 export function clockSigV4(
     opts: SignerOptions & { clock: Clock; offset?: SkewOffset },

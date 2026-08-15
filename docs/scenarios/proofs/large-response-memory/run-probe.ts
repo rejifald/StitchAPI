@@ -29,7 +29,7 @@ export interface ProbeOk {
     marks: number;
     ms: number;
 }
-/** A measurement whose workload BLEW UP. Also data — C3's finding is one of these. */
+/** A measurement whose workload BLEW UP. Also data — C3's pre-#665 cap trip was one of these. */
 export interface ProbeFail {
     ok: false;
     mode: string;

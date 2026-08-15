@@ -3,8 +3,8 @@
 // The scenario names three ways to fall outside the five-minute window. Two of them the engine
 // already handles and needs no user code at all:
 //
-//   • the signature ageing in YOUR OWN queue (C2/C3) — the throttle wait is at engine.ts:629 and
-//     `cfg.auth.apply` at engine.ts:649, so the request is signed AFTER the wait, always;
+//   • the signature ageing in YOUR OWN queue (C2/C3) — the throttle wait is at engine.ts:657 and
+//     `cfg.auth.apply` at engine.ts:677, so the request is signed AFTER the wait, always;
 //   • the retry replaying a stale signature (C1) — `cloneReq` gives each attempt fresh headers and
 //     `auth.apply` re-runs per attempt.
 //
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
         );
         note(
             '(a) the breaker',
-            'never opened: the one 403 was a SURFACE rejection, which records a circuit success (engine.ts:874-878)',
+            'never opened: the one 403 was a SURFACE rejection, which records a circuit success (engine.ts:905-908)',
         );
     }
 
@@ -224,7 +224,7 @@ async function main(): Promise<void> {
     // ── (d) the breaker is checked BEFORE the queue, not after it ──────────────────────────
     // The same four failing calls as (b), fired together instead of one after another. Every one of
     // them reads the breaker's phase at t=0 — `attemptWithCircuit` calls `circuit.phase()`
-    // (engine.ts:863) before `attemptLoop` reaches `acquireWithin` (engine.ts:629) — so all four
+    // (engine.ts:894) before `attemptLoop` reaches `acquireWithin` (engine.ts:657) — so all four
     // are already past the gate when the first failure opens it. The breaker cannot retract a
     // request it has already admitted to the queue.
     {

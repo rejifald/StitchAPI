@@ -19,8 +19,13 @@ import type {
 } from '../../../../packages/core/src/types';
 
 // <count:begin>
-/** Availability failures — try the next provider. A 400 is not here, by design. */
-export const AVAILABILITY = [408, 425, 429, 500, 502, 503, 504] as const;
+/**
+ * Availability failures — try the next provider. `0` stands in for "no status at all":
+ * `StitchError.status` is `undefined` for a transport-level failure (DNS, refused connection,
+ * timeout), the guard below maps that to `0`, and a provider that never answered is the
+ * definition of "down". A 400 is not here, by design.
+ */
+export const AVAILABILITY = [0, 408, 425, 429, 500, 502, 503, 504] as const;
 
 /** One leg of the chain: a name for attribution, and the stitch that carries its own config. */
 export interface Leg<T> {
@@ -35,8 +40,9 @@ export interface Served<T> {
 }
 
 /**
- * Try each leg in order. Move on only when the failure is an AVAILABILITY failure; anything else
- * (a 400, a validation error, a bad credential) stops the chain and reaches the caller unchanged.
+ * Try each leg in order. Move on only when the failure is an AVAILABILITY failure — a listed
+ * status, or no status at all (the transport never answered); anything else (a 400, a bad
+ * credential) stops the chain and reaches the caller unchanged.
  */
 export function failover<T>(
     legs: readonly Leg<T>[],

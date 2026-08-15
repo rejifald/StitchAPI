@@ -72,7 +72,11 @@ the runtime owns where it runs.
 ```ts
 import type { AuthContext, AuthStrategy } from 'stitchapi';
 
+/** What the vault holds for the access token. `expiresAt: 0` = no known expiry. */
+type CachedAccess = { token: string; expiresAt: number };
+
 export function rotatingRefresh(opts: RotatingRefreshOptions): AuthStrategy {
+    const skew = opts.skewMs ?? 30_000; // treat the token as stale this early
     const accessKey = `rr:${opts.key}:access`;
     const refreshKey = `rr:${opts.key}:refresh`;
     let inFlight: Promise<string> | undefined;
@@ -82,6 +86,7 @@ export function rotatingRefresh(opts: RotatingRefreshOptions): AuthStrategy {
         const res = await opts.adapter({
             url: opts.tokenUrl,
             method: 'POST',
+            headers: { accept: 'application/json' },
             body: {
                 grant_type: 'refresh_token',
                 refresh_token: stored ?? opts.seedRefreshToken,
@@ -99,7 +104,11 @@ export function rotatingRefresh(opts: RotatingRefreshOptions): AuthStrategy {
         if (body.refresh_token)
             await ctx.vault.set(refreshKey, body.refresh_token);
         const ttl = body.expires_in ? body.expires_in * 1000 : undefined;
-        await ctx.vault.set(accessKey, { token: body.access_token }, ttl);
+        await ctx.vault.set(
+            accessKey,
+            { token: body.access_token, expiresAt: ttl ? Date.now() + ttl : 0 },
+            ttl,
+        );
         return body.access_token;
     };
 
@@ -112,9 +121,17 @@ export function rotatingRefresh(opts: RotatingRefreshOptions): AuthStrategy {
     return {
         name: 'rotatingRefresh',
         async apply(req, ctx) {
-            const cached = await ctx.vault.get(accessKey);
+            // `vault.get` returns `Promise<unknown>` — type the read. Freshness
+            // is the STORED expiry minus a skew, so a token about to lapse
+            // mid-request is already treated as stale.
+            const cached = (await ctx.vault.get(accessKey)) as
+                CachedAccess | undefined;
+            const fresh =
+                cached &&
+                (cached.expiresAt === 0 ||
+                    Date.now() < cached.expiresAt - skew);
             req.headers['authorization'] =
-                `Bearer ${cached?.token ?? (await redeemOnce(ctx))}`;
+                `Bearer ${fresh ? cached.token : await redeemOnce(ctx)}`;
         },
         shouldRefresh: (res) => res.status === 401,
         async refresh(ctx) {
@@ -129,9 +146,9 @@ Attach it like any other strategy, to any stitch:
 ```ts
 const issues = stitch({
     baseUrl: 'https://api.atlassian.com',
-    path: '/ex/jira/:cloudId/rest/api/3/search',
+    path: '/ex/jira/{cloudId}/rest/api/3/search',
     auth: rotatingRefresh({ key: `jira:${accountId}` /* … */ }),
-    store: redisStore,
+    store: redisStore(/* … */),
 });
 ```
 

@@ -248,7 +248,11 @@ async function main(): Promise<void> {
             (e: unknown) => (e as Error).message,
         );
         await clock.advance(24 * 3_600_000);
-        check('(c) the operation', await settled, 'aborted');
+        check(
+            '(c) the operation',
+            await settled,
+            'job budget of 3600000ms exhausted',
+        );
         check('(c) polls in one virtual hour', api.polls('job-1').length, 6);
         check(
             '(c) the last poll landed at (ms)',
@@ -256,8 +260,8 @@ async function main(): Promise<void> {
             3_000_000,
         );
         note(
-            '(c) `abort(new Error("job budget of 3600000ms exhausted"))` arrives as',
-            'aborted — the clocks’ `sleep` drops `signal.reason` (util.ts:39-55)',
+            '(c) `abort(new Error("job budget of 3600000ms exhausted"))` arrives',
+            'verbatim — `sleep` rejects with `abortReason(signal)`, the caller’s own reason (util.ts:39-69, #674)',
         );
     }
 
@@ -386,7 +390,7 @@ async function main(): Promise<void> {
 
     finish(
         'C9',
-        'The assembled answer runs: submit → 5 polls at the SERVER’s 300s pacing → 1 download, 1 submit, 20 virtual minutes, the job id persisted for a restart; resume reattaches after a 3-poll crash with 1 submit total; the deadline ends a runaway job at 6 polls in a virtual hour. The hand-rolled `while` produces the BYTE-IDENTICAL request sequence and pacing. What the extra lines buy is measured, not asserted: one `start` + one `done` per HOP with the 3 polls folded in as `attempts: 3` (instead of three unrelated calls), one traceId chaining `job-submit → job-poll → job-download`, and a per-hop `retry` policy (20 poll attempts, 1 download attempt). The cost is the honest number: 110 executable lines against 49 for the `while` — and ALL of the semantics are still yours',
+        'The assembled answer runs: submit → 5 polls at the SERVER’s 300s pacing → 1 download, 1 submit, 20 virtual minutes, the job id persisted for a restart; resume reattaches after a 3-poll crash with 1 submit total; the deadline ends a runaway job at 6 polls in a virtual hour, rejecting with its own reason (`job budget of 3600000ms exhausted`, #674). The hand-rolled `while` produces the BYTE-IDENTICAL request sequence and pacing. What the extra lines buy is measured, not asserted: one `start` + one `done` per HOP with the 3 polls folded in as `attempts: 3` (instead of three unrelated calls), one traceId chaining `job-submit → job-poll → job-download`, and a per-hop `retry` policy (20 poll attempts, 1 download attempt). The cost is the honest number: 110 executable lines against 49 for the `while` — and ALL of the semantics are still yours',
     );
 }
 

@@ -78,7 +78,7 @@ export function countingValidator(): ValidatorSpy {
 /**
  * A contract that COERCES: it returns a value that is not the one it was given (a `price` in
  * dollars added alongside the cents). Used to ask whether the streaming path serves the VALIDATED
- * value or the raw chunk — the buffered path serves the validated one (`engine.ts:1223`).
+ * value or the raw chunk — the buffered path serves the validated one (`engine.ts:1264`).
  */
 export function coercingValidator(): Validator {
     return {

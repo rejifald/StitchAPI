@@ -3,7 +3,7 @@
 //
 // There is exactly ONE seam, and it is `Surface.stream`. Not because the decoding needs replacing —
 // `decode: 'ndjson'` is already O(1) (C2a) — but because the engine retains every value that seam
-// yields (engine.ts:1443), so the only way to bound the run is to yield something small. A hook that
+// yields (engine.ts:1492), so the only way to bound the run is to yield something small. A hook that
 // consumes rows and emits one receipt per batch is that.
 //
 // The claim also prices what the seam costs you, because two things stop working when you take it:
@@ -98,8 +98,8 @@ async function main(): Promise<void> {
     }
 
     // ── (b) THE FOOTGUN: `stream({ kind })` silently drops your surface ───────────────────────
-    // `stream()` spreads your config and then writes `kind: streamSurface` over it (stream.ts:143-146
-    // — `sse()` does the same at sse.ts:210-212). So the assembled answer must be spelled
+    // `stream()` spreads your config and then writes `kind: streamSurface` over it (stream.ts:147-150
+    // — `sse()` does the same at sse.ts:210-213). So the assembled answer must be spelled
     // `stitch({ kind })`. Nothing warns; the deltas just quietly go back to being rows.
     {
         let sunk = 0;
@@ -155,27 +155,30 @@ async function main(): Promise<void> {
         'the baseline grows with the catalog and this does not, which is the difference between a number and a guarantee',
     );
 
-    // ── (d) the same seam over `decode: 'json'` — most of the win is gone ─────────────────────
-    // Because C3's array buffer is upstream of the seam. The batching surface fixes the ENGINE's
-    // accumulator; it cannot fix the decoder holding the array text.
-    const overJson = probeOk({
-        mode: 'assembled-json',
-        rows: 100_000,
-        buffer: 1_000_000_000,
-    });
+    // ── (d) the same seam over `decode: 'json'` — since #665, the whole win survives ──────────
+    // Pre-#665 the decoder's array buffer sat UPSTREAM of the seam: the batching surface fixed the
+    // engine's accumulator and still paid 19MB for the decoder holding the array text — and on
+    // default settings the call would not have finished at all. #665 releases elements as they
+    // close (C3c), so the seam now bounds BOTH wire formats, on the default cap.
+    const overJson = probeOk({ mode: 'assembled-json', rows: 100_000 });
     note(
         '(d) same surface, same rows, one top-level array instead of ndjson',
         `${mb(overJson.peakLive)} retained = ${x(overJson.ratio)} wire — against ${mb(a100.peakLive)} over ndjson`,
     );
+    checkFlat(
+        '(d) assembled over one array vs over ndjson',
+        Math.min(overJson.peakLive, a100.peakLive),
+        Math.max(overJson.peakLive, a100.peakLive),
+    );
     checkAtMost(
         '(d) how much of the buffered baseline it still costs',
         overJson.peakLive / baseline.peakLive,
-        0.6,
+        0.1,
         x,
     );
     note(
-        '(d) → the assembled answer is only as bounded as its WIRE FORMAT',
-        'over one giant array the seam removes the engine’s 29MB and leaves the decoder’s 19MB, and on default settings the call would not have finished at all (C3d)',
+        '(d) → the assembled answer no longer depends on the wire format',
+        'pre-#665 this point measured 19.0MB and needed a raised cap to finish; the decoder fix (#659 §2 → #665) closed the one gap the seam could not reach',
     );
 
     // ── (e) the price, in lines ───────────────────────────────────────────────────────────────
@@ -216,7 +219,7 @@ async function main(): Promise<void> {
 
     finish(
         'C8',
-        'ACHIEVABLE, with ONE seam and a wire format you may not be offered. The seam is `Surface.stream` — not to replace the decoding (`decode: "ndjson"` is already O(1)) but because the engine retains everything that hook yields, so the fix is to yield one small receipt per batch instead of one row per row. Measured over `ndjson`: 1.3MB retained for 100,000 rows against the C1 baseline’s 53.8MB, a 40x cut, and FLAT — 1.3MB at 1,000 rows and 1.4MB at 100,000. It cost 75 counted lines of surface plus 4 lines of config, against 67 lines hand-rolled with no library at all; the lines are a wash and what the config buys is the resilience stack around the open. Two prices are real. Over a single top-level JSON ARRAY the same seam still costs 19.0MB, because C3’s array buffer sits UPSTREAM of it. And `stream({ kind })` silently drops the surface — `stream()` overwrites `kind` after spreading your config (stream.ts:143-146) — so the answer only works spelled `stitch({ kind })`, with no warning if you get it wrong',
+        'ACHIEVABLE, with ONE seam — and since #665 the wire format no longer decides it. The seam is `Surface.stream` — not to replace the decoding (`decode: "ndjson"` is already O(1)) but because the engine retains everything that hook yields, so the fix is to yield one small receipt per batch instead of one row per row. Measured over `ndjson`: 1.3MB retained for 100,000 rows against the C1 baseline’s 53.8MB, a 40x cut, and FLAT — 1.3MB at 1,000 rows and 1.4MB at 100,000. Over a single top-level JSON ARRAY the same seam now costs the same 1.4MB on the default cap — pre-#665 it still paid 19.0MB for the decoder’s array buffer sitting upstream, a gap #659 §2 filed and #665 closed. It cost 75 counted lines of surface plus 4 lines of config, against 67 lines hand-rolled with no library at all; the lines are a wash and what the config buys is the resilience stack around the open. One price is real: `stream({ kind })` silently drops the surface — `stream()` overwrites `kind` after spreading your config (stream.ts:147-150) — so the answer only works spelled `stitch({ kind })`, with no warning if you get it wrong',
     );
 }
 

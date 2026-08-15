@@ -1,6 +1,7 @@
 # Scenario: the customer data you didn't mean to log
 
-**Researched:** 2026-08-05 · **Status:** ✅ verified (8 claims, 196 checks, offline) · page shipped
+**Researched:** 2026-08-05 · **Re-measured:** 2026-08-15 (post-rebase: Zod 4 #589, input-shaping
+#663) · **Status:** ✅ verified (8 claims, 206 checks, offline) · page shipped
 **Slug:** `pii-in-the-logs`
 
 ---
@@ -102,7 +103,8 @@ deliberately rather than assuming.
    stay out of the trace sink and the cache?
 6. **C6** — is an **allowlist** expressible? Does an `output` schema that strips unknown keys
    keep them out of the log? (Note scenario 20 measured `output` DOES use its parsed value,
-   unlike `input` — so this may work where the input side does not.)
+   unlike `input` — so this may work where the input side does not. #663 has since made `input`
+   shape the request too.)
 7. **C7** — the drift angle: when a vendor **adds** a PII field, does anything notice? `drift()`
    reports `undeclared` keys — is that a usable "new field appeared, check it" signal?
 8. **C8** — assemble the best available "no customer data reaches a log" setup; report seams and
@@ -115,7 +117,8 @@ key does anything about it.
 
 ## Verification result
 
-**All 8 claims verified**, 196 checks across 8 scripts, re-run by me before writing up.
+**All 8 claims verified**, 206 checks across 8 scripts, re-run by me before writing up and again
+on the 2026-08-15 re-measure.
 
 | Claim                             | Verdict                                                                                              |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -125,7 +128,7 @@ key does anything about it.
 | C4 — credentials safe?            | **PARTIALLY REFUTED** — see below                                                                    |
 | C5 — boundary                     | `hooks.onResponse` is the earliest seam, and the **only** one covering the failure path              |
 | C6 — allowlist                    | **CONFIRMED** — `output` filters 7 → 0 without naming a single PII field                             |
-| C7 — drift as a signal            | **CONFIRMED**, and it **refutes ADR 0018 §4**                                                        |
+| C7 — drift as a signal            | **CONFIRMED**; the ADR 0018 §4 leak is conditional on the validator's wording (see below)            |
 | C8 — assembled                    | 42 lines, 2 seams, 0 of 9 on both paths                                                              |
 
 ### Hypotheses that were wrong
@@ -137,17 +140,20 @@ a naive custom sink — but an `access_token` in a **response body** goes 3 of 3
 because that sink's redactor is a header denylist rather than the deep scrubber sitting in the
 same file.
 
-**And the measurements refuted a shipped ADR.** ADR 0018 §4 says findings never leak a secret,
-justified by `detailFor` emitting kinds only. That is true of the three soft drift kinds and
-false of hard validation: `validationErrors` (`drift.ts:50-56`) copies the validator's message
-verbatim, and Zod's enum message quotes the received value. It reaches the two sinks that are
-otherwise 0 of 7.
+**And the measurements refuted a shipped ADR — a refutation the Zod 4 bump has since made
+conditional.** ADR 0018 §4 says findings never leak a secret, justified by `detailFor` emitting
+kinds only. That is true of the three soft drift kinds; for hard validation `validationErrors`
+(`drift.ts:50-56`) copies the validator's message verbatim, so the message's wording decides.
+When first measured, Zod's enum message quoted the received value into the two sinks that are
+otherwise 0 of 7. Zod 4 (#589) retired that wording — its enum error names only the expected
+options — so the stock repro no longer fires: C7(g) pins the clean measurement, and C7(h) proves
+the verbatim-copy path still carries the value for a validator whose message echoes it.
 
 ### What I got right, for once
 
 The pre-registered suspicion carried from [scenario 18](agent-holds-the-tool.md) held exactly:
-`sensitive: true` is a cache opt-out and nothing else, and the source agrees — one read, at
-`engine.ts:1022`.
+`sensitive: true` is a cache opt-out and nothing else, and the source agrees — one read, inside
+`ensureCache` (`engine.ts:1051` as of the 2026-08-15 re-measure).
 
 ### Outputs
 

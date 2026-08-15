@@ -1,6 +1,7 @@
 # Scenario: the agent chooses the arguments
 
-**Researched:** 2026-08-05 · **Status:** ✅ verified (8 claims, 181 checks, offline) · page shipped
+**Researched:** 2026-08-05 · **Re-verified:** 2026-08-15, post-#663 (C7 e is now a green
+regression pin) · **Status:** ✅ verified (8 claims, 181 checks, offline) · page shipped
 **Slug:** `agent-holds-the-tool`
 
 ---
@@ -129,7 +130,7 @@ adversarial.
 | C4 — error rendering                      | StitchAPI's own errors are terse; **the channel is unfiltered** — one real leak                                                                                                                  |
 | C5 — runaway containment                  | `throttle`/`circuit` apply; 1 tool call ≠ 1 request; no cost budget                                                                                                                              |
 | C6 — confirmation seam                    | None, either direction. User code can refuse, never ask                                                                                                                                          |
-| C7 — schema quality                       | Validates but **does not filter**                                                                                                                                                                |
+| C7 — schema quality                       | Validated but did not filter — filed as [#648](https://github.com/rejifald/StitchAPI/issues/648), fixed by #663; **a declared slot now filters, an undeclared slot stays passthrough**           |
 | C8 — assembled                            | 47 lines, 3 seams                                                                                                                                                                                |
 
 ### Hypotheses that were wrong
@@ -153,4 +154,6 @@ not on my list of claims at all.
 
 - Page: [agent-holds-the-tool.mdx](../../apps/docs/content/docs/scenarios/agent-holds-the-tool.mdx)
 - Drafts: [mcp-error-channel-leaks-a-query-credential](issue-drafts/mcp-error-channel-leaks-a-query-credential.md),
-  [input-schemas-check-but-never-filter](issue-drafts/input-schemas-check-but-never-filter.md)
+  [input-schemas-check-but-never-filter](issue-drafts/input-schemas-check-but-never-filter.md) —
+  the latter was filed as [#648](https://github.com/rejifald/StitchAPI/issues/648) and fixed by
+  [#663](https://github.com/rejifald/StitchAPI/pull/663); C7 (e) now pins the fixed behaviour

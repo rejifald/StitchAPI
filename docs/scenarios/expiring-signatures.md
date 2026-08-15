@@ -3,29 +3,31 @@
 **Researched:** 2026-08-05 · **Status:** VERIFIED — **ACHIEVABLE** (the first outright) · page shipped
 **Slug:** `expiring-signatures`
 
-**Verification:** 8 proof scripts (105 checks), run offline, stable across 24 runs, in
-[`proofs/expiring-signatures/`](proofs/expiring-signatures/). Published page:
+**Verification:** 8 proof scripts (107 checks), run offline, in
+[`proofs/expiring-signatures/`](proofs/expiring-signatures/) — the original audit was stable
+across 24 runs; C5 was re-pinned after the fix landed. Published page:
 [`scenarios/expiring-signatures.mdx`](../../apps/docs/content/docs/scenarios/expiring-signatures.mdx).
-Escalated: [`issue-drafts/sigv4-ignores-the-injected-clock.md`](issue-drafts/sigv4-ignores-the-injected-clock.md).
+Escalated: [`issue-drafts/sigv4-ignores-the-injected-clock.md`](issue-drafts/sigv4-ignores-the-injected-clock.md)
+— filed as #658; the clock half fixed by #667, which C5 now pins.
 
-| Claim                             | Verdict                                   | Measured                                                                                                                                                    |
-| --------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1 — signed per attempt?          | **per attempt**                           | 3 attempts 6 min apart → 3 distinct signatures, ages `[0,0,0]` ms; a 10-min `Retry-After` park still arrived fresh. Signed-once control: 6 min old, **403** |
-| C2 — wait before or after signing | **BEFORE — the deciding claim, positive** | 4 calls behind `rate: '1/2m'` → ages `[0,0,0,0]`, all `200`. Pre-signed control: `[0,2,4,6]` min and a **403**                                              |
-| C3 — concurrency                  | same                                      | held 6 min behind `concurrency: 1` → **0 ms**                                                                                                               |
-| C4 — circuit cooldown             | breaker queues nothing                    | 3 blocked calls → **0 signings**; half-open trial signed fresh                                                                                              |
-| C5 — injected clock?              | **library loses**                         | 600 virtual seconds moved the stamp **0 s**; under a default `manualClock()`, **0 of 3** accepted                                                           |
-| C6 — skew 403                     | not retried (good); classification fails  | 1 request at `attempts: 4`. But it **counts as a circuit failure**, and `verdict: {accept, flag}` **swallows** it                                           |
-| C7 — skew correction              | reachable                                 | `shouldRefresh`/`refresh` learned **600,000 ms** from the `Date` header and re-signed the same attempt to `200`, costing no retry budget                    |
-| C8 — assembled                    | PASS                                      | **4 of 4** through 10-min drift + 6-min queue + breaker, worst age **0 ms**; 26 lines, all for the drift half                                               |
+| Claim                             | Verdict                                      | Measured                                                                                                                                                    |
+| --------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 — signed per attempt?          | **per attempt**                              | 3 attempts 6 min apart → 3 distinct signatures, ages `[0,0,0]` ms; a 10-min `Retry-After` park still arrived fresh. Signed-once control: 6 min old, **403** |
+| C2 — wait before or after signing | **BEFORE — the deciding claim, positive**    | 4 calls behind `rate: '1/2m'` → ages `[0,0,0,0]`, all `200`. Pre-signed control: `[0,2,4,6]` min and a **403**                                              |
+| C3 — concurrency                  | same                                         | held 6 min behind `concurrency: 1` → **0 ms**                                                                                                               |
+| C4 — circuit cooldown             | breaker queues nothing                       | 3 blocked calls → **0 signings**; half-open trial signed fresh                                                                                              |
+| C5 — injected clock?              | **lost at audit; fixed by #667, now pinned** | 600 virtual seconds now move the stamp **600 s**; under a default `manualClock()`, **3 of 3** accepted (filed from this audit as #658)                      |
+| C6 — skew 403                     | not retried (good); classification fails     | 1 request at `attempts: 4`. But it **counts as a circuit failure**, and `verdict: {accept, flag}` **swallows** it                                           |
+| C7 — skew correction              | reachable                                    | `shouldRefresh`/`refresh` learned **600,000 ms** from the `Date` header and re-signed the same attempt to `200`, costing no retry budget                    |
+| C8 — assembled                    | PASS                                         | **4 of 4** through 10-min drift + 6-min queue + breaker, worst age **0 ms**; 26 lines, all for the drift half                                               |
 
 **The first scenario in the pass to come out ACHIEVABLE outright for its deciding claim**, and
-the reason is structural: `acquireWithin` (`engine.ts:629`) sits above `cfg.auth.apply` (`:649`)
+the reason is structural: `acquireWithin` (`engine.ts:657`) sits above `cfg.auth.apply` (`:677`)
 inside the attempt loop, and `cloneReq` gives each attempt fresh headers off the _unsigned_
 base. **A StitchAPI throttle cannot expire a signature** — botocore#149 is unreachable here.
 
 **The capture's hypotheses held**, which is also a first. What it did not anticipate is the
-inverse footgun: `hooks.onRequest` runs _after_ signing (`:652`), so a hand-rolled pacing gate
+inverse footgun: `hooks.onRequest` runs _after_ signing (`:680`), so a hand-rolled pacing gate
 there **re-creates the bug inside a library that doesn't have it** — measured, a 6-minute wait
 in `onRequest` aged the signature 6 minutes and got a 403.
 

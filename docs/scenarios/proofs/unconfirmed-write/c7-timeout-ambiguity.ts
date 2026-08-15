@@ -6,18 +6,20 @@
 // client. So the real question is a narrower one: does StitchAPI carry ENOUGH for the caller to
 // start a recovery, and does it carry it without lying?
 //
-// MEASURED, and it is worse than "no information":
+// MEASURED — the ambiguity is total, even though the timeout itself is now legible:
 //   (a) The two cases are byte-identical at the caller. A request dropped before processing and a
 //       request that CREATED A CHARGE and lost its response produce the same `StitchError`: same
 //       `name`, same `status` (undefined), same `message`, same `attempts`, same `body`
 //       (undefined). The ledgers differ — 0 charges vs 1 — and the client cannot see the ledger.
-//   (b) The error CLASS is lost. The engine throws a `TimeoutError` (resilience.ts:17,233), and
-//       `errEvt` (engine.ts:346-355) reduces it to a message on an event, from which `rebuildError`
-//       constructs a plain `StitchError`. Measured: `constructor.name === 'StitchError'`, and the
-//       only thing left of the timeout is the string `timed out after 5000ms`. `TimeoutError` is
-//       not exported from the package either, so even a string-free check is unavailable.
-//   (c) `hooks.onError` DOES receive the live error — `constructor.name === 'TimeoutError'` there.
-//       That hook is the only place the class survives, and it cannot change the outcome.
+//   (b) The error CLASS survives as `cause`, not as the thrown type. The engine throws a
+//       `TimeoutError` (resilience.ts:21,228); `errEvt` (engine.ts:378-396) reduces it to a message
+//       on the event but PINS the live instance, and `rebuildError` (stitch.ts:545-573) re-attaches
+//       it as `cause` on the rebuilt `StitchError`. Measured: `constructor.name === 'StitchError'`
+//       at the top, `cause.constructor.name === 'TimeoutError'` underneath. The class is still not
+//       exported (and never sets `.name` — it reads `'Error'`), so the structural check is on
+//       `cause.constructor.name`, not `instanceof`.
+//   (c) `hooks.onError` receives the same live error — `constructor.name === 'TimeoutError'` there
+//       too, before the caller sees anything. It still cannot change the outcome.
 //   (d) A TRANSPORT failure is retried UNCONDITIONALLY: `retry.on` gates statuses only, and the
 //       throw path (engine.ts:675-703) has no status to match. Measured: `retry: { attempts: 3,
 //       on: [] }` still made 3 requests. You cannot configure "retry a 503 but not a timeout" —
@@ -64,6 +66,8 @@ interface CallerView {
     ok: boolean;
     name: string;
     ctor: string;
+    /** `constructor.name` of `error.cause` — where the engine's `TimeoutError` now rides. */
+    causeCtor: string;
     status: string;
     attempts: number;
     message: string;
@@ -80,7 +84,7 @@ async function runOnce(
         url: URL_CHARGES,
         adapter: pay.adapter(),
         idempotency: { keyOf: refKeyOf },
-        timeout: { perAttempt: '5s' },
+        timeout: { each: '5s' },
         clock,
         ...extra,
     });
@@ -91,6 +95,8 @@ async function runOnce(
         ok: r.ok,
         name: r.error?.name ?? '(none)',
         ctor: r.error?.constructor.name ?? '(none)',
+        causeCtor:
+            (r.error?.cause as Error | undefined)?.constructor.name ?? '(none)',
         status: String(r.error?.status),
         attempts: r.error?.attempts ?? 0,
         message: r.error?.message ?? '',
@@ -137,7 +143,7 @@ async function main(): Promise<void> {
         );
     }
 
-    // ── (b) the error class is flattened away ───────────────────────────────────────────────
+    // ── (b) the thrown class is still `StitchError`; the timeout's identity rides `cause` ────
     {
         check(
             '(b) `error.constructor.name` on a timeout',
@@ -151,21 +157,26 @@ async function main(): Promise<void> {
             'undefined',
         );
         check(
-            '(b) the only thing that identifies a timeout',
+            '(b) the message still names the timeout',
             processedThenLost.message,
             'timed out after 5000ms',
         );
+        check(
+            '(b) and the live class rides `error.cause`',
+            processedThenLost.causeCtor,
+            'TimeoutError',
+        );
         note(
-            '(b) and a transport error’s message',
-            'is the underlying error’s (`ECONNRESET`), so "is this a timeout?" is a string test either way',
+            '(b) so "is this a timeout?"',
+            "is `err.cause?.constructor.name === 'TimeoutError'` — structural, no message match; a transport failure rides `cause` too (the `ECONNRESET`-style error, `.code` intact)",
         );
         note(
             '(b) `TimeoutError`',
-            'is declared at resilience.ts:17 and exported from NO public entry point (only `RateLimitError` is, index.ts:86)',
+            'is declared at resilience.ts:21 and exported from NO public entry point (only `RateLimitError` is, index.ts:86) — and it never sets `.name`, so the check is on `constructor.name`, not `cause.name`',
         );
     }
 
-    // ── (c) `hooks.onError` is where the class survives ─────────────────────────────────────
+    // ── (c) `hooks.onError` sees the same live instance, earlier ────────────────────────────
     {
         const clock = manualClock(T0);
         const pay = new FakePayments({ clock, loseResponseOn: [1] });
@@ -184,8 +195,8 @@ async function main(): Promise<void> {
             'TimeoutError/Error',
         ]);
         note(
-            '(c) the gap',
-            'the class is legible in the hook and gone by the time the caller sees it — and the hook cannot change the outcome',
+            '(c) the seam',
+            'the hook is handed the same instance the caller later finds on `error.cause` — earlier, but with no power to change the outcome',
         );
     }
 
@@ -231,7 +242,7 @@ async function main(): Promise<void> {
             adapter: pay.adapter(),
             idempotency: true, // the DEFAULT random key — the case that matters
             retry: { attempts: 1 }, // present only to silence the construction nudge
-            timeout: { perAttempt: '5s' },
+            timeout: { each: '5s' },
             hooks: {
                 onRequest: ({ req }) => {
                     sentKeys.push(
@@ -308,7 +319,7 @@ async function main(): Promise<void> {
 
     finish(
         'C7',
-        'the caller CANNOT distinguish the two cases — a dropped request and a charge whose response was lost produced field-for-field identical `StitchError`s (`StitchError` / status undefined / "timed out after 5000ms") over ledgers of 0 and 1 charges; the `TimeoutError` class is flattened away and unexported, a transport failure is retried even with `retry.on: []`, and NO event carries the idempotency key, so the default random key makes a query-by-key recovery impossible',
+        'the caller CANNOT distinguish the two cases — a dropped request and a charge whose response was lost produced field-for-field identical `StitchError`s (status undefined, "timed out after 5000ms", and the SAME live `TimeoutError` on `error.cause`) over ledgers of 0 and 1 charges; `cause` now says "this was a timeout" structurally (the class stays unexported — check `cause.constructor.name`) but never which side of the wire it died on; a transport failure is retried even with `retry.on: []`, and NO event carries the idempotency key, so the default random key makes a query-by-key recovery impossible',
     );
 }
 

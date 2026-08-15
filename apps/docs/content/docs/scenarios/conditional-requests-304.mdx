@@ -42,23 +42,34 @@ Four constraints most clients get wrong:
 
 There is no conditional-request feature — `If-None-Match` and `304` appear nowhere in the core.
 What there is, is the one seam that owns a request _and its own response_ in a single function:
-**`Surface.execute`**.
+**`Surface.execute`**. It is a one-argument `Adapter` the engine calls _in place of_ the
+transport — a surface with `execute` ignores `StitchConfig.adapter` — so the real transport is
+handed to the surface's factory and closed over (`transport` below), next to the store.
 
 ```ts
-execute: async (req, ctx) => {
-    const key = `${req.method} ${req.url}|${credentialOf(req)}`; // per-credential, see below
+execute: async (req) => {
+    const key = `${req.method} ${req.url} ${credentialOf(req.headers)}`; // per-credential, see below
     const cached = store.get(key);
-    if (cached) req.headers['if-none-match'] = cached.etag; // byte-exact, never normalized
-    else clearValidator(req); // a re-attempt must be able to DROP it
+    if (cached) req.headers['If-None-Match'] = cached.etag; // byte-exact, never normalized
+    else clearValidator(req.headers); // a re-attempt must be able to DROP it
 
-    const res = await ctx.adapter(req);
+    const res = await transport(req);
     if (res.status === 304 && cached) return { ...res, body: cached.body };
 
     const etag = res.headers['etag'];
-    if (etag) store.set(key, { etag, body: res.body });
+    if (res.status === 200 && etag) store.set(key, { etag, body: res.body });
     return res;
 },
 ```
+
+The `status === 200` gate on the write is load-bearing. Servers mint ETags on responses you
+must not learn from — Express fingerprints error bodies too, and CDNs validate error objects —
+and without the gate one ETagged error writes `{ etag, body: error }` into the store, which
+every later 304 then serves as `ok: true` data. The full 87-line version this abridges adds
+the rule the gate can't cover: a 304 with **no** stored body (an orphaned validator — a
+restarted process, an evicted entry) is refetched unconditionally instead of returned bare,
+which would rebuild the empty-304 trap by hand. It also bounds the store and keeps the
+counters (`revalidated` / `stored` / `orphans` / `unvalidatable`) the callout below asserts on.
 
 It needs **no custom `interpret`**. The substituted body rides back on a response whose status
 is still 304, and `classifyStatus` only fails at `>= 400` — so `.inspect().status` honestly

@@ -32,9 +32,9 @@ retry it" — the failure most likely to be retried is the one retry cannot fix.
 attempt loop, the throttle acquire sits _above_ the auth apply:
 
 ```
-engine.ts:629   const { waited } = await acquireWithin(…)   ← the queue wait
-engine.ts:649   await cfg.auth.apply(req, …)                ← signing
-engine.ts:652   await cfg.hooks?.onRequest?.(…)
+engine.ts:657   const { waited } = await acquireWithin(…)   ← the queue wait
+engine.ts:677   await cfg.auth.apply(req, …)                ← signing
+engine.ts:680   await cfg.hooks?.onRequest?.(…)
 ```
 
 and each attempt gets fresh headers off the _unsigned_ base request.
@@ -73,7 +73,7 @@ it for the drift half. With no user code at all the same workload gave
 `["403", "403", "503", "503"]`.
 
 <Callout type="error">
-    **`hooks.onRequest` runs *after* signing** (`:652` vs `:649`) — and it is
+    **`hooks.onRequest` runs *after* signing** (`:680` vs `:677`) — and it is
     the only user-code seam that does. A hand-rolled pacing gate there
     **re-creates botocore#149 inside a library that doesn't have it**: measured,
     a 6-minute wait in `onRequest` aged the signature 6 minutes and got a `403`.
@@ -92,10 +92,17 @@ it for the drift half. With no user code at all the same workload gave
 4. **A breaker does not shed a burst already queued behind a throttle** — the circuit phase is
    read before the throttle wait. Measured: 4 concurrent calls all reached the wire over 6
    minutes _after_ the breaker opened; the same 4 issued sequentially stopped after 2.
-5. **SigV4 signs with `new Date()`, not the injected clock.** On real time the stamp is correct —
-   this is a testability defect, not a wire defect — but it means a skew test on a `manualClock`
-   is impossible: 600 virtual seconds moved the shipped stamp **0 seconds**, and under a default
-   `manualClock()` **0 of 3** calls were accepted, with ~20,670 days of apparent skew.
+
+A fifth gap this audit found is gone. `awsSigV4` used to stamp `x-amz-date` from `new Date()`
+rather than the injected clock, so a skew test on a `manualClock` was impossible: 600 virtual
+seconds moved the shipped stamp **0 seconds**, and under a default `manualClock()` **0 of 3**
+calls were accepted. Filed as [#658](https://github.com/rejifald/StitchAPI/issues/658), fixed by
+[#667](https://github.com/rejifald/StitchAPI/pull/667): the signer now stamps from the stitch's
+[injected clock](/docs/guides/testing/mocking) — the same seam that drives retry, throttle and
+token freshness — so the same measurement moves **600 seconds** and a SigV4 stitch is testable
+on a `manualClock`, **3 of 3** accepted. One residual: a default `manualClock()` starts at epoch
+0 and signs `19700101T000000Z`, so seed it (`manualClock(Date.now())`) when the stamp must be
+plausible to a real endpoint.
 
 <Callout type="warn">
     **`verdict: { accept: [403], flag: 'ok' }` swallows the skew error.** The recipe that works

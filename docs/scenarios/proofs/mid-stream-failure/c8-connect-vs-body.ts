@@ -3,13 +3,15 @@
 // (unsafe — a replay duplicates content the consumer already has)? That is the policy every LLM
 // client actually wants, and it is the one thing this scenario is really asking for.
 //
-// The answer is that NO combination of config expresses it, for a reason that is easy to miss: the
-// two phases are not separately addressable. `retry` does not run on a streaming stitch at all
-// (C2), and `sse.reconnect` is a SINGLE flag that governs both phases at once — turn it on to get
-// connect recovery and you have also turned on the body replay that duplicates content (C4).
+// The answer is that NO combination of config expresses it. `retry` does not run on a streaming
+// stitch at all (C2), and `sse.reconnect` covers only half of the connect phase: it retries a
+// TRANSPORT throw (nothing was delivered, so nothing can duplicate — engine.ts:1518 counts an
+// empty spine as recoverable), but an HTTP-status refusal is terminal before the reconnect loop
+// ever sees it. Since #647 the flag no longer drags body replay in with it (C4) — the gap that
+// remains is precisely the 503-before-any-byte.
 //
-// There is a clean seam, and it is `Surface.execute` (surface.ts:118): a transport that owns the
-// connect and nothing else. It is called at engine.ts:1351, inside the resilience chain, BEFORE the
+// There is a clean seam, and it is `Surface.execute` (surface.ts:133): a transport that owns the
+// connect and nothing else. It is called at engine.ts:1400, inside the resilience chain, BEFORE the
 // body is decoded — so a retry loop inside it provably cannot re-deliver a delta.
 //
 //   pnpm exec tsx docs/scenarios/proofs/mid-stream-failure/c8-connect-vs-body.ts
@@ -79,7 +81,7 @@ async function main(): Promise<void> {
     }
 
     // ── (b) `reconnect` does not reach it either, when the refusal is an HTTP STATUS ─────────
-    // `classifyStatus` at engine.ts:1371 makes a rejected status TERMINAL — `return 'fail'` — so the
+    // `classifyStatus` at engine.ts:1420 makes a rejected status TERMINAL — `return 'fail'` — so the
     // reconnect loop never sees it. Documented as deliberate ("the server actively refused").
     {
         const clock = manualClock();
@@ -105,10 +107,11 @@ async function main(): Promise<void> {
         check('(b) done.ok', obs.ok, false);
     }
 
-    // ── (c) …but a transport-level THROW is reconnected — by the same flag that duplicates ───
+    // ── (c) …but a transport-level THROW is reconnected ──────────────────────────────────────
     // An `ECONNREFUSED` (the adapter rejects) returns `'error'` from `openAndDecode`
-    // (engine.ts:1353-1359), which IS reconnectable. So connect recovery does exist — welded to the
-    // body replay. One flag, two phases, no way to separate them.
+    // (engine.ts:1402-1408), and with zero chunks delivered the drop counts as recoverable
+    // (engine.ts:1518) — so `reconnect` does cover the THROWN half of the connect phase. The
+    // status half, the one real providers use to refuse, it never sees.
     {
         const clock = manualClock();
         let calls = 0;
@@ -127,15 +130,19 @@ async function main(): Promise<void> {
         check('(c) done.ok', obs.ok, false);
         check('(c) error.message', obs.error, 'ECONNREFUSED');
         note(
-            '(c) → so `reconnect: true` DOES retry a refused connect',
-            'and the same `reconnect: true` replays the whole answer once bytes flow (C4)',
+            '(c) → so `reconnect: true` DOES retry a refused connect — when the refusal is a THROW',
+            'an HTTP-status refusal stays terminal (b), and a 503 is how an overloaded provider actually refuses',
         );
     }
 
-    // ── (d) the config trick that appears to work, and the silent success it hides ───────────
+    // ── (d) the config trick that used to appear to work, and the silent success it hides ────
     // `verdict.accept: [503]` makes the 503 an acceptable status, so the streaming path opens its
-    // (buffered, non-stream) body, decodes nothing, returns `'closed'` — and reconnects. It works.
-    // It also means a server that is 503 FOREVER resolves the call SUCCESSFULLY with zero deltas.
+    // (buffered, non-stream) body, decodes nothing, and returns `'closed'`. Before #647 a close
+    // was treated as a drop, so this actually reconnected — measured then: 9 opens against this
+    // healing server, with the answer replayed 7 times once it healed. Now a clean close is the
+    // stream FINISHING (engine.ts:1524-1529), so the accepted 503 ENDS the run: the trick no
+    // longer buys even the connect retry, and a server that is 503 FOREVER still resolves the
+    // call SUCCESSFULLY with zero deltas.
     {
         const clock = manualClock();
         const healing = new FakeStreamProvider({
@@ -154,12 +161,13 @@ async function main(): Promise<void> {
             {},
             clock,
         );
-        check('(d) opens against a healing server', healing.opens.length, 9);
+        check('(d) opens against a healing server', healing.opens.length, 1);
         check(
-            '(d) text — note the replays after it healed',
+            '(d) text — the server healed and was never asked again',
             a.text,
-            'ABCDEABCDEABCDEABCDEABCDEABCDEABCDE',
+            '',
         );
+        check('(d) …and that empty run "succeeded"', a.ok, true);
 
         const dead = new FakeStreamProvider({
             clock,
@@ -183,8 +191,8 @@ async function main(): Promise<void> {
             '[]',
         );
         note(
-            '(d) → four 503s in a row resolve as a SUCCESSFUL empty stream',
-            'the workaround for the missing connect retry is a silent-failure generator',
+            '(d) → an accepted 503 resolves as a SUCCESSFUL empty stream',
+            'still true after #647 — the trick was never a connect retry, only a silent-failure generator',
         );
     }
 
@@ -272,13 +280,13 @@ async function main(): Promise<void> {
         );
         note(
             '(f) → all three are compile errors (machine-checked by the `@ts-expect-error`s above)',
-            'the smallest real fix is `reconnect.requireToken`: it alone would turn C4 from silent replay into a refusal',
+            '#647 made the last two engine behaviour — only a drop reconnects, and never without a token once bytes flowed — so the one still missing is the phase split, and `execute` is still how you write it',
         );
     }
 
     finish(
         'C8',
-        'NOT IN CONFIG — and the reason is that the two phases are not separately addressable. `retry` never runs on a streaming stitch (measured: 1 open against a 503 with `retry: { attempts: 4 }`, versus 4 on the buffered control), so the one case where replay is unambiguously safe is the one case it cannot cover. `sse.reconnect` does not help either when the refusal is an HTTP status: `classifyStatus` makes a rejected status terminal (measured: 1 open with BOTH `retry` and `reconnect` on, 0 reconnects). It DOES retry a transport-level throw — measured 4 connect attempts on `ECONNREFUSED` — but that is the same single flag that replays the whole answer once bytes flow, so the two policies cannot be set independently. The config workaround is worse than the gap: `verdict.accept: [503]` + `reconnect` does retry the connect (measured: 9 opens against a healing server) but a permanently-503 server then resolves SUCCESSFULLY with `data: []`, and once it heals it replays the answer 7 times. What works is `Surface.execute` (surface.ts:118): 10 lines of transport that retry only the connect. Measured in one run — 2 × 503 absorbed, then a body that drops after 3 tokens delivered ONCE (`ABC`), `done(ok:false)`, 0 reconnects. Missing, machine-checked: `retry.phase`, `reconnect.onlyOnDrop`, `reconnect.requireToken`',
+        'NOT IN CONFIG — the phases are still not separately addressable, and the gap that remains is the HTTP-status connect refusal. `retry` never runs on a streaming stitch (measured: 1 open against a 503 with `retry: { attempts: 4 }`, versus 4 on the buffered control), so the one case where replay is unambiguously safe is the one case it cannot cover. `sse.reconnect` does not cover it either: `classifyStatus` makes a rejected status terminal (measured: 1 open with BOTH `retry` and `reconnect` on, 0 reconnects). It DOES retry a transport-level throw — measured 4 connect attempts on `ECONNREFUSED`, safe because nothing was delivered — and since #647 that no longer drags body replay in with it (C4). The config workaround is now a pure trap: `verdict.accept: [503]` no longer reconnects at all — measured 1 open against a healing server, empty text, `ok: true` (before #647: 9 opens, the answer replayed 7 times) — and a permanently-503 server still resolves SUCCESSFULLY with `data: []`. What works is unchanged, `Surface.execute` (surface.ts:133): 10 lines of transport that retry only the connect. Measured in one run — 2 × 503 absorbed, then a body that drops after 3 tokens delivered ONCE (`ABC`), `done(ok:false)`, 0 reconnects. Missing, machine-checked: `retry.phase`, `reconnect.onlyOnDrop`, `reconnect.requireToken` — the last two became engine behaviour in #647; the phase split still needs `execute`',
     );
 }
 

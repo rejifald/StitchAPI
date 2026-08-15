@@ -80,6 +80,33 @@ const itemsFor = (tenant: string) =>
 **that tenant's own** breaker (`500, 500, 500, 503`) with zero effect on the others. And the
 20-call burst that pushed a quiet customer from t=0 to **t=2000 ms** arrived at **t=0**.
 
+**`flag: 'ok'` has a precondition, and missing it re-creates the swallowing.** The flag is
+three-state, and only a **present, falsy** value fails the call — absence is silence, not
+failure. The vendor measured above answers `401` with
+`{ "ok": false, "error": "invalid_token" }`. Against a vendor whose error body has no `ok` key
+at all — a plain `{ "error": "invalid_token" }` is typical — `accept: [401]` stands alone and
+the call resolves `ok: true` **with the error envelope as its data**. For that vendor, keep
+`accept` and restore the failure in five lines of `Surface.interpret` composing `verdictOf`
+(measured identically: a real `401`, 0 of 9 healthy failed, 0 circuit failures):
+
+```ts
+const credentialAware: Surface = {
+    id: 'http',
+    interpret: (res, cfg) => {
+        if (res.status === 401 || res.status === 403)
+            return {
+                ok: false,
+                message: `credential rejected (HTTP ${res.status})`,
+                status: res.status,
+            };
+        return verdictOf(res, cfg) ?? { ok: true, data: res.body };
+    },
+};
+```
+
+Pass it as the stitch's `kind`, and keep `verdict: { accept: [401, 403] }` — `accept` is what
+stops the engine throwing on the status before the surface is ever consulted.
+
 ## Isolation is a property of the key string, never of the object graph
 
 This is the part worth internalising, because the intuitive constructions don't work:

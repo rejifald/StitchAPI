@@ -113,7 +113,7 @@ async function main(): Promise<void> {
             adapter: pay.adapter(),
             idempotency: true,
             retry: { attempts: 3, backoff: BACKOFF },
-            timeout: { perAttempt: '5s' },
+            timeout: { each: '5s' },
             clock,
         });
 
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
             adapter: pay.adapter(),
             idempotency: true,
             retry: { attempts: 3, backoff: BACKOFF },
-            timeout: { perAttempt: '5s' },
+            timeout: { each: '5s' },
             clock,
         });
 

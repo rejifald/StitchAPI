@@ -7,9 +7,9 @@
 //
 // MEASURED: signed per attempt. Three attempts six virtual minutes apart produced three DISTINCT
 // timestamps, three DISTINCT signatures, and an age of 0ms on every one — including attempt 3,
-// eighteen minutes after the call started. `cloneReq` (engine.ts:261-264) hands each attempt a
+// eighteen minutes after the call started. `cloneReq` (engine.ts:270-273) hands each attempt a
 // FRESH header object copied from the unsigned base request, so last attempt's `x-amz-date` cannot
-// survive into this one even by accident, and `cfg.auth.apply` (engine.ts:649) re-runs inside the
+// survive into this one even by accident, and `cfg.auth.apply` (engine.ts:677) re-runs inside the
 // loop.
 //
 // Part (d) is the one that is NOT free: a server-directed `Retry-After: 600` is honoured
@@ -39,7 +39,7 @@ const ATTEMPTS = 3;
  * Longer than the five-minute window, so attempt 2 is ALREADY doomed if the signature is reused.
  *
  * `max` is NOT decoration. `backoffDelay` clamps every computed delay to `backoff.max`, which
- * defaults to **10 seconds** (resilience.ts:47,56) — so `base: '6m'` alone yields a 10-second wait,
+ * defaults to **10 seconds** (resilience.ts:51,60) — so `base: '6m'` alone yields a 10-second wait,
  * measured. That default is a quiet piece of protection for this scenario (a COMPUTED backoff can
  * never park a call long enough to expire a signature), and part (d) shows the hole in it: a
  * server-directed `Retry-After` skips `backoffDelay` entirely and is unbounded by design.
@@ -186,7 +186,7 @@ async function main(): Promise<void> {
     }
 
     // ── (d) a server-directed `Retry-After` longer than the window ───────────────────────────
-    // `retry.respect` defaults ON and is deliberately unbounded (engine.ts:743-767), so a server
+    // `retry.respect` defaults ON and is deliberately unbounded (engine.ts:775-798), so a server
     // saying `Retry-After: 600` parks the call for TEN MINUTES — twice the skew window — before the
     // next attempt. That is only survivable because the next attempt re-signs.
     {

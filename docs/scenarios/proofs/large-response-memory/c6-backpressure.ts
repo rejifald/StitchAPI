@@ -95,6 +95,12 @@ async function main(): Promise<void> {
     // Same body, same consumer, but the source enqueues everything without consulting `desiredSize`.
     // The whole response then sits in the stream's internal queue as `Uint8Array`s — which live in
     // EXTERNAL memory, so `heapUsed` reports nothing at all. `arrayBuffers` is where it shows.
+    //
+    // The lazy bound is loose on purpose: `arrayBuffers` counts every live backing store, including
+    // chunks already DEQUEUED that the collector has not yet swept. Post-#665 the decoder's linear
+    // scan produces little heap pressure, so collections are rarer and the high-water sits at ~8% of
+    // the body (pre-#665 the quadratic scan forced constant GC and it read 1.3%). The claim is the
+    // CONTRAST: a pulled producer stays an order of magnitude below the eager producer's 100%.
     {
         const lazy = probeOk({
             mode: 'stream-json',
@@ -117,7 +123,7 @@ async function main(): Promise<void> {
         checkAtMost(
             '(b) lazy producer’s queue as a fraction of the body',
             lazy.peakBuffers / lazy.wireBytes,
-            0.05,
+            0.15,
             pct,
         );
         checkAtLeast(
@@ -174,7 +180,7 @@ async function main(): Promise<void> {
         }
         note(
             '(c) → THROW. Not truncate, not block',
-            'the decoder raises, `runStreaming` turns it into an `error` event plus `done(ok:false)` (engine.ts:1446-1448, 1466-1472). The connection is torn down; no partial unit is delivered',
+            'the decoder raises, `runStreaming` turns it into an `error` event plus `done(ok:false)` (engine.ts:1495-1498, 1530-1535). The connection is torn down; no partial unit is delivered',
         );
     }
 
@@ -209,7 +215,7 @@ async function main(): Promise<void> {
 
     finish(
         'C6',
-        'Backpressure PROPAGATES and the cap THROWS — and neither fact bounds the call. A consumer awaiting a macrotask per row kept the producer within 8 chunks of 32: the chain is pull-based end to end, so a slow reader really does stop the socket, and a lazy producer’s queue stayed at 1.3% of the body. A producer that ignores `desiredSize` puts 100% of the body in the stream’s internal queue instead — and that backlog is INVISIBLE to `heapUsed`, because a `Uint8Array`’s store is external memory; it only shows in `arrayBuffers`. At the cap, all three decoders (`json`, `ndjson`, `lines`) THROW: an `error` event, `done(ok:false)`, zero deltas from the offending unit, no truncation and no pause. And the cap is a malformed-input guard, not a budget: 20,000 well-formed rows streamed cleanly through a 1,000-CHARACTER cap while the engine quietly accumulated all 20,000 of them',
+        'Backpressure PROPAGATES and the cap THROWS — and neither fact bounds the call. A consumer awaiting a macrotask per row kept the producer within 8 chunks of 32: the chain is pull-based end to end, so a slow reader really does stop the socket, and a lazy producer’s buffer high-water stayed at ~8% of the body (part of that is dequeued chunks the collector had not yet swept — post-#665 the linear scan forces far fewer collections than the old quadratic one did). A producer that ignores `desiredSize` puts 100% of the body in the stream’s internal queue instead — and that backlog is INVISIBLE to `heapUsed`, because a `Uint8Array`’s store is external memory; it only shows in `arrayBuffers`. At the cap, all three decoders (`json`, `ndjson`, `lines`) THROW: an `error` event, `done(ok:false)`, zero deltas from the offending unit, no truncation and no pause. And the cap is a malformed-input guard, not a budget: 20,000 well-formed rows streamed cleanly through a 1,000-CHARACTER cap while the engine quietly accumulated all 20,000 of them',
     );
 }
 

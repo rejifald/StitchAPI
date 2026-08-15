@@ -1,20 +1,27 @@
 // C3 — THE DECIDING CLAIM. `decode: 'json'` against ONE SINGLE TOP-LEVEL ARRAY.
 //
-// types.ts:1441-1450 documents it as "the structural, unframed streaming-JSON decoder (issue #111):
+// types.ts:1624-1631 documents it as "the structural, unframed streaming-JSON decoder (issue #111):
 // one `delta` per complete value / top-level array element, tolerant of internal newlines and
 // concatenated values". If that holds with bounded memory, the hard case of this whole scenario is a
 // config value — a real capability few clients have.
 //
-// The answer is split, and the split is the finding:
-//   (a) EMISSION is correct, and impressively so. Right count, right boundaries, records containing
-//       `,` `]` `}` and escaped quotes inside strings, pretty-printed records spanning many lines,
-//       nested arrays and objects, chunk boundaries placed one character apart.
-//   (b) MEMORY is not bounded. The decoder retains the ENTIRE array text — 0.88x the wire, growing
-//       linearly — because the compaction floor is pinned to the array's opening `[`.
-//   (c) It therefore HITS ITS OWN CAP. On defaults, a single array larger than 8,388,608 characters
-//       fails the stream, and the error blames the vendor for something the vendor did not do.
-//   (d) The same records as CONCATENATED top-level values are flat. The defect is one branch, not
-//       the decoder.
+// It holds — since #665. When this directory was first captured the answer was split: emission was
+// correct and memory was not. The decoder retained the ENTIRE array text (0.88x the wire, growing
+// linearly, quadratic scan time) because the compaction floor was pinned to the array's opening `[`,
+// and it therefore tripped its own 8M-char default cap at ~37,000 rows — truncating the export under
+// an error that blamed the vendor. That defect was filed as #659 §2 and fixed by #665: a top-level
+// array records no compaction floor of its own (json-stream.ts:166-174), so emitted elements are
+// released as they close (json-stream.ts:236-247) and the cap bounds one ELEMENT rather than the
+// array (json-stream.ts:20-28). This script pins the fixed behaviour:
+//   (a) EMISSION is correct, and impressively so — the half that was never at fault. Right count,
+//       right boundaries, records containing `,` `]` `}` and escaped quotes inside strings,
+//       pretty-printed records spanning many lines, nested containers, 1-character chunks.
+//   (b) the event spine through a real stitch — unchanged.
+//   (c) MEMORY is flat and TIME is linear on the single-array shape.
+//   (d) the DEFAULT cap no longer trips on a well-formed array of any length; one oversized
+//       ELEMENT still trips it, which is what the guard is for.
+//   (e) the 60,000-row export that used to truncate at 37,312 rows arrives whole, on defaults.
+//   (f) the concatenated control and the array now measure ALIKE — the branch gap is closed.
 //
 //   pnpm exec tsx docs/scenarios/proofs/large-response-memory/c3-json-single-array.ts
 import { jsonStream } from '../../../../packages/core/src/json-stream';
@@ -30,18 +37,20 @@ import {
 } from './fake-export';
 import {
     check,
+    checkAtMost,
     checkFlat,
-    checkLinear,
     checkSeq,
     finish,
     heading,
     mb,
     note,
-    x,
 } from './harness';
-import { SCALES, probe, probeOk, series } from './run-probe';
+import { SCALES, probe, series } from './run-probe';
 
 const URL = 'https://api.vendor.example/v1/products/export';
+
+/** A heap÷wire ratio as `2.8%` — post-#665 these sit far below 1x, where `x()` rounds to `0.0x`. */
+const pct = (f: number): string => `${(f * 100).toFixed(1)}%`;
 
 /** Decode a text body with `decode: 'json'` and return the emitted values. */
 async function decode(
@@ -116,7 +125,7 @@ async function main(): Promise<void> {
         );
         note(
             '(a) → emission is CORRECT, and it is the capability the scenario asked for',
-            'a single array is decoded element by element with the right boundaries under every adversarial input tried',
+            'a single array is decoded element by element with the right boundaries under every adversarial input tried — the half of the original finding that was never at fault',
         );
     }
 
@@ -147,53 +156,94 @@ async function main(): Promise<void> {
     }
 
     // ── (c) memory: does it stream, or hold the array? ────────────────────────────────────────
+    // Pre-#665 this series was LINEAR — 0.88x the wire retained at 100k rows, 34x growth over a
+    // 100x workload — because `compact()` floored on the array's opening `[`. Post-#665 the array
+    // records no floor of its own (json-stream.ts:166-174): `elementStart` floors the window while
+    // an element is mid-flight, and between elements the floor falls back to the scan cursor, so
+    // emitted elements are released (json-stream.ts:236-247).
     const json = series('decoder-json');
     for (const [i, m] of json.entries())
         note(
             `(c) decoder alone, ${String(SCALES[i])} rows / ${mb(m.wireBytes)} wire`,
-            `${mb(m.peakLive)} retained = ${x(m.ratio)} wire, ${String(m.ms)}ms`,
+            `${mb(m.peakLive)} retained = ${pct(m.ratio)} of wire, ${String(m.ms)}ms`,
         );
     const [j1, j10, j100] = json as [
         (typeof json)[0],
         (typeof json)[0],
         (typeof json)[0],
     ];
-    checkLinear('(c) 10x -> 100x decoder heap', j10.peakLive, j100.peakLive, 6);
-    checkLinear('(c) 1x -> 100x decoder heap', j1.peakLive, j100.peakLive, 15);
-    note(
+    checkFlat('(c) 1x -> 100x decoder heap', j1.peakLive, j100.peakLive);
+    checkFlat('(c) 10x -> 100x decoder heap', j10.peakLive, j100.peakLive);
+    checkAtMost(
         '(c) retained heap ÷ wire bytes at 100k rows',
-        `${x(j100.ratio)} — the decoder is holding the WHOLE ARRAY TEXT`,
+        j100.ratio,
+        0.1,
+        pct,
     );
     note(
-        '(c) json-stream.ts:230-236',
-        'the compaction floor is `valueStart`, and for a top-level ARRAY `valueStart` is the opening `[` (line 163) and stays there until the closing `]` (line 183). `compact(live)` is therefore a no-op for the entire array',
+        '(c) → the decoder no longer holds the array text',
+        `pre-#665 the same point measured 0.88x the wire; it is now floor-dominated noise (\`settled\` is ~0.6MB of one-time module/JIT cost at every scale)`,
     );
     note(
-        '(c) and it is quadratic in TIME as well',
-        `${String(j10.ms)}ms at 10k rows -> ${String(j100.ms)}ms at 100k — 10x the rows, ~${String(Math.round(j100.ms / Math.max(1, j10.ms)))}x the time, because every chunk re-flattens the growing buffer (peak heap incl. garbage: ${mb(j100.peakHeap)})`,
+        '(c) and the TIME is linear now',
+        `${String(j10.ms)}ms at 10k rows -> ${String(j100.ms)}ms at 100k — 10x the rows, ~${String(Math.round(j100.ms / Math.max(1, j10.ms)))}x the time. Pre-#665 it was ~28x, because every chunk re-flattened a buffer pinned at the opening \`[\``,
     );
 
-    // ── (d) the CAP: on defaults, a big array fails outright ──────────────────────────────────
+    // ── (d) the DEFAULT cap: no cliff for well-formed arrays; one oversized ELEMENT still trips ─
     check(
         '(d) the default cap, in characters',
         JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS,
         8_388_608,
     );
-    const under = probe({ mode: 'decoder-json', rows: 37_000 });
-    const over = probe({ mode: 'decoder-json', rows: 38_000 });
-    check('(d) 37,000 rows (7.9MB of wire) — decoded?', under.ok, true);
-    check('(d) 38,000 rows (8.2MB of wire) — decoded?', over.ok, false);
+    // No `--buffer` override here: these two runs sit ON the library default, exactly where the
+    // pre-#665 decoder failed (37,000 rows decoded; 38,000 did not).
+    const past = probe({ mode: 'decoder-json', rows: 38_000 });
+    const far = probe({ mode: 'decoder-json', rows: 100_000 });
     check(
-        '(d) the message the caller gets',
-        over.ok ? '' : over.error,
-        'json decoder: in-progress value exceeded the stream.buffer.chars cap (8388608); a malformed or never-closing value was streamed',
+        '(d) 38,000 rows (8.2MB of wire, past the old cliff) — decoded?',
+        past.ok,
+        true,
     );
+    check(
+        '(d) 100,000 rows (21.4MB of wire) on the default cap — decoded?',
+        far.ok,
+        true,
+    );
+    check('(d) records at 100,000', far.ok ? far.records : -1, 100_000);
     note(
-        '(d) → the message is WRONG about the cause',
-        'nothing was malformed and nothing failed to close. A perfectly well-formed 8.2MB array trips a guard written for an unterminated one, and the error tells you to go and look at the vendor',
+        '(d) → the cliff at ~37,000 rows is gone',
+        'the cap bounds ONE value, and a top-level array is capped by its largest ELEMENT, not by its length (json-stream.ts:20-28). A well-formed array of any row count passes the default',
     );
-    // What the same body does through a real stitch: an `error` event, and the deltas already
-    // emitted are kept.
+    // The guard keeps its teeth: a single element larger than the cap still trips it — an element
+    // mid-flight floors the window, so a value that never closes cannot grow the buffer unbounded.
+    {
+        const body = `[{"id":1},{"pad":"${'x'.repeat(30_000)}"}]`;
+        const got: unknown[] = [];
+        let err = '';
+        try {
+            for await (const v of jsonStream(
+                splitStream(body, 1_000).body,
+                20_000,
+            ))
+                got.push(v);
+        } catch (e) {
+            err = e instanceof Error ? e.message : String(e);
+        }
+        check('(d) elements delivered before the oversized one', got.length, 1);
+        check(
+            '(d) one ELEMENT over the cap still trips the guard',
+            err,
+            'json decoder: in-progress value exceeded the stream.buffer.chars cap (20000); a malformed or never-closing value was streamed',
+        );
+        note(
+            '(d) → the message finally matches the mechanism',
+            'the error now fires only for a single value/element the cap was written to bound — not for a well-formed export that merely grew past a threshold nobody set',
+        );
+    }
+
+    // ── (e) the 60,000-row array through a real stitch, on DEFAULTS ───────────────────────────
+    // Pre-#665 this delivered 37,312 rows and then `error` / `done(ok:false)` — a silent truncation
+    // for any loop that only matches `delta`, at a threshold that moved with the vendor's data.
     {
         const wire = singleArray(60_000);
         const exportAll = stream({
@@ -205,22 +255,13 @@ async function main(): Promise<void> {
         check(
             '(e) 60,000 rows on defaults -> error event?',
             s.error !== undefined,
-            true,
+            false,
         );
-        // The hypothesis here was "zero deltas — the guard runs on the buffer, so it trips before
-        // anything is emitted". WRONG, in the library's favour: `pending` is drained and yielded
-        // BEFORE `guard()` runs (json-stream.ts:224-238), so every element that closed under the cap
-        // is delivered first. The failure is a TRUNCATION, not a total loss.
-        check('(e) deltas delivered before it failed', s.deltas.length, 37_312);
-        check(
-            '(e) …of how many rows',
-            `${String(s.deltas.length)}/60000`,
-            '37312/60000',
-        );
-        checkSeq('(e) terminal spine', s.types.slice(-2), ['error', 'done']);
+        check('(e) deltas delivered', s.deltas.length, 60_000);
+        checkSeq('(e) terminal spine', s.types.slice(-2), ['result', 'done']);
         note(
-            '(e) → a PARTIAL result, then a wrong diagnosis',
-            'the consumer gets 62% of the catalog and an error blaming the vendor’s framing. A `.stream()` loop that only matches `delta` sees a silent truncation at a threshold that moves with the vendor’s data',
+            '(e) → the whole export arrives, and the spine ends clean',
+            'no truncation, no wrong diagnosis. What remains above the decoder is the ENGINE cost: `chunks` retains every element (C2b), on this decoder like every other',
         );
     }
 
@@ -229,7 +270,7 @@ async function main(): Promise<void> {
     for (const [i, m] of concat.entries())
         note(
             `(f) concatenated \`{…}{…}\`, ${String(SCALES[i])} rows / ${mb(m.wireBytes)} wire`,
-            `${mb(m.peakLive)} retained = ${x(m.ratio)} wire`,
+            `${mb(m.peakLive)} retained = ${pct(m.ratio)} of wire`,
         );
     const [c1, , c100] = concat as [
         (typeof concat)[0],
@@ -238,29 +279,20 @@ async function main(): Promise<void> {
     ];
     checkFlat('(f) 1x -> 100x concatenated heap', c1.peakLive, c100.peakLive);
     check('(f) records decoded', c100.records, 100_000);
-    note(
-        '(f) → the defect is one BRANCH, not the decoder',
-        'identical records, identical bytes: as siblings they cost 0.9MB flat, wrapped in one array they cost 19.7MB and rising. The compaction is right for a top-level value and pinned for a top-level array',
-    );
-
-    // ── (g) what the raised cap buys you ──────────────────────────────────────────────────────
-    const raised = probeOk({
-        mode: 'decoder-json',
-        rows: 100_000,
-        buffer: 1_000_000_000,
-    });
-    note(
-        '(g) `stream: { decode: "json", buffer: { chars: 1e9 } }` at 100k rows',
-        `succeeds, at ${mb(raised.peakLive)} retained and ${mb(raised.peakHeap)} peak including garbage`,
+    checkAtMost(
+        '(f) concatenated retained ÷ wire at 100k rows',
+        c100.ratio,
+        0.1,
+        pct,
     );
     note(
-        '(g) → raising the cap converts a hard failure into the memory profile you were trying to avoid',
-        'it is the `--max-old-space-size` move from the capture’s own table: it moves the cliff, it does not remove it',
+        '(f) → the two shapes now measure ALIKE',
+        `one array: ${mb(j100.peakLive)}; the same records as siblings: ${mb(c100.peakLive)} — both floor-dominated. Pre-#665 the array cost 19.7MB and rising while the siblings cost 0.9MB flat; the array branch now releases exactly the way the sibling branch always did`,
     );
 
     finish(
         'C3',
-        'It STREAMS THE PARSE and BUFFERS THE TEXT — correct emission, unbounded memory, and on defaults it does not finish. Emission is genuinely right: one delta per element, holding up under `,`/`]`/`}` inside string values, escaped quotes, embedded newlines, pretty-printed multi-line records, deep nesting, and 1-character chunk boundaries. Memory is not: retained heap tracks the WHOLE ARRAY TEXT at 0.88x the wire and 34x growth over a 100x workload, because `compact()` floors on `valueStart` and for a top-level array `valueStart` is the opening `[` (json-stream.ts:163, 183, 230-236) — and the time is quadratic too, 28x for 10x the rows. So the decoder trips its OWN default guard: 37,000 rows decode, 38,000 fail, and the message — "a malformed or never-closing value was streamed" — accuses the vendor of something it did not do. On a 60,000-row array the consumer gets 37,312 rows and then `error`/`done(ok:false)`: a SILENT TRUNCATION for any loop that only matches `delta`, at a threshold that moves with the vendor’s data. The control settles where the defect is: the same 100,000 records as CONCATENATED top-level values run flat at 0.9MB. One branch of one function, not a design limit',
+        'It STREAMS — since #665, on both axes. Emission was always right: one delta per element, holding up under `,`/`]`/`}` inside string values, escaped quotes, embedded newlines, pretty-printed multi-line records, deep nesting, and 1-character chunk boundaries. Memory now matches it: a 100,000-row single array (21.4MB of wire) decodes flat at 0.6MB retained — under 3% of the wire, against 0.88x pre-fix — in linear rather than quadratic time, because a top-level array records no compaction floor of its own and emitted elements are released as they close (json-stream.ts:166-174, 236-247). The default cap no longer trips on any well-formed array: it bounds ONE value, so an array is capped by its largest ELEMENT, not its length (json-stream.ts:20-28) — 38,000 and 100,000 rows both decode on defaults where 38,000 used to fail, the 60,000-row export that truncated at 37,312 rows arrives whole with a clean `result`/`done`, and a single oversized element still trips the guard, which is what it is for. The concatenated control and the array now measure alike. The defect this claim originally captured was real — filed as #659 §2, fixed by #665; what remains is the engine’s accumulator (C2), which is every decoder’s cost, not this one’s',
     );
 }
 

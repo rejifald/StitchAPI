@@ -111,7 +111,7 @@ base URL, and they are usually on the same host.
 2. **`.with()` survives the broadcast but binds a constant.** A group built once and called twice
    left the shadow pinned to `cus_7Q2` while the primary followed `cus_ZZZ`.
 3. **A bare `void v2(input)` sends zero requests.** `StitchResult` extends `PromiseLike`
-   (`types.ts:1962`), so nothing runs until `.then`. No request, no rejection, no
+   (`types.ts:2007`), so nothing runs until `.then`. No request, no rejection, no
    `unhandledRejection` — the dual-run silently compares nothing. Same root cause as
    [#660](https://github.com/rejifald/StitchAPI/issues/660); `void v2.safe(input)` is the spelling
    that works.

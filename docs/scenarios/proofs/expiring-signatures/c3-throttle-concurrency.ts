@@ -1,16 +1,16 @@
 // C3 — the same question as C2, for the OTHER half of `throttle`: a request held behind a busy
 // concurrency pool.
 //
-// The two halves are separate code paths inside one `acquire` (resilience.ts:129-157): the
+// The two halves are separate code paths inside one `acquire` (resilience.ts:133-161): the
 // concurrency slot is taken first and its waiters are served FIFO (`takeSlot`,
-// resilience.ts:120-127), then the rate spacing is paced WITHIN the held slot. So a request can be
+// resilience.ts:124-131), then the rate spacing is paced WITHIN the held slot. So a request can be
 // blocked by either, and scenario 9 measured the concurrency half being the sharper of the two — a
 // quiet caller behind a busy pool is not slowed proportionally, it is queued LAST.
 //
 // MEASURED: same answer. Four calls behind `throttle: { concurrency: 1 }` against an upstream that
 // holds each request for two virtual minutes were granted at 0, 2, 4 and 6 minutes, and every one
-// carried a signature aged 0ms. The whole `acquire` — both halves — sits at engine.ts:629, above
-// the `cfg.auth.apply` at engine.ts:649.
+// carried a signature aged 0ms. The whole `acquire` — both halves — sits at engine.ts:657, above
+// the `cfg.auth.apply` at engine.ts:677.
 //
 // Part (c) is worth more than it looks: the two limiters STACK, so a call can be held by the
 // concurrency pool and then paced again by the rate budget, and the signature is still minted after

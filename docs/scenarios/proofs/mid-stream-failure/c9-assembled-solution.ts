@@ -221,9 +221,11 @@ async function main(): Promise<void> {
         );
     }
 
-    // ── (e) the one-line version of "do not do this" ─────────────────────────────────────────
-    // Adding `sse: { reconnect: true }` to the assembled stitch un-does it: the truncation throw
-    // becomes a reconnect trigger and the answer is delivered repeatedly.
+    // ── (e) the one-line hazard that used to un-do all of it, now pinned harmless ────────────
+    // Adding `sse: { reconnect: true }` to the assembled stitch used to re-break it: the engine's
+    // reconnect loop sits above every surface hook, and it replayed the completed stream 4×
+    // (issue #640). Since #647 a completed body is never reopened and an id-less drop has nothing
+    // to resume from, so the flag is inert here and the assembled answer survives it unchanged.
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({ clock, tokens: TOKENS });
@@ -236,21 +238,17 @@ async function main(): Promise<void> {
         const p = completion(chat, {});
         await clock.advance(3_600_000);
         const c = await p;
-        check('(e) with `reconnect: true` → opens', api.opens.length, 4);
-        check(
-            '(e) with `reconnect: true` → text',
-            c.text,
-            'ABCDEABCDEABCDEABCDE',
-        );
+        check('(e) with `reconnect: true` → opens', api.opens.length, 1);
+        check('(e) with `reconnect: true` → text', c.text, 'ABCDE');
         note(
-            '(e) → the surface rules survive; the reconnect loop is above them',
-            'nothing a surface can do prevents this — the decision is made in `runStreaming`',
+            '(e) → the flag buys nothing on an id-less stream, and costs nothing',
+            'before #647 this exact fixture measured 4 opens and `ABCDEABCDEABCDEABCDE`',
         );
     }
 
     finish(
         'C9',
-        `ASSEMBLED AND RUN. ${String(executableLines('llm-stream.ts'))} executable lines of user code (\`llm-stream.ts\`) across TWO seams — \`Surface.execute\` for connect-only retry, and the surface's \`stream\` hook for the \`[DONE]\` requirement plus in-band error frames — with the consumer draining \`.stream()\` so the partial is never lost. Measured across all six shapes: a complete answer delivered ONCE (\`ABCDE\`, 6 deltas, 1 open); a healed connect replayed at the connect phase only (3 opens, \`ABCDE\` once); a mid-body drop keeping \`ABC\` with \`socket reset by peer\`; a truncation caught as \`stream truncated: no [DONE] sentinel\` with \`ABC\` kept; an in-band error frame as \`provider error frame: upstream provider overloaded\` with \`AB\` kept and the bad frame withheld; and a dead server failing after 4 connect attempts rather than resolving empty. The hand-rolled twin (${String(executableLines('hand-rolled.ts'))} executable lines, its own SSE parser included) produces byte-identical results on every shape and the same open counts — so the extra machinery is not buying behaviour, it is buying the spine: one \`start\`/\`delta\`×N/\`error\`/\`done\` trace under one traceId, and \`auth\`/\`headers\`/\`throttle\`/\`timeout\` staying config instead of growing the hand-rolled file. The load-bearing caveat: adding \`sse: { reconnect: true }\` to this same stitch re-breaks it (measured 4 opens, \`ABCDEABCDEABCDEABCDE\`), and no surface hook can defend against that — the decision is made above them in \`runStreaming\``,
+        `ASSEMBLED AND RUN. ${String(executableLines('llm-stream.ts'))} executable lines of user code (\`llm-stream.ts\`) across TWO seams — \`Surface.execute\` for connect-only retry, and the surface's \`stream\` hook for the \`[DONE]\` requirement plus in-band error frames — with the consumer draining \`.stream()\` so the partial is never lost. Measured across all six shapes: a complete answer delivered ONCE (\`ABCDE\`, 6 deltas, 1 open); a healed connect replayed at the connect phase only (3 opens, \`ABCDE\` once); a mid-body drop keeping \`ABC\` with \`socket reset by peer\`; a truncation caught as \`stream truncated: no [DONE] sentinel\` with \`ABC\` kept; an in-band error frame as \`provider error frame: upstream provider overloaded\` with \`AB\` kept and the bad frame withheld; and a dead server failing after 4 connect attempts rather than resolving empty. The hand-rolled twin (${String(executableLines('hand-rolled.ts'))} executable lines, its own SSE parser included) produces byte-identical results on every shape and the same open counts — so the extra machinery is not buying behaviour, it is buying the spine: one \`start\`/\`delta\`×N/\`error\`/\`done\` trace under one traceId, and \`auth\`/\`headers\`/\`throttle\`/\`timeout\` staying config instead of growing the hand-rolled file. The caveat that used to be load-bearing is retired: adding \`sse: { reconnect: true }\` to this same stitch measured 1 open and \`ABCDE\` — since #647 a completed or id-less body is never reopened, so the flag no longer un-does the assembled answer; it is merely useless here`,
     );
 }
 

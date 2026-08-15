@@ -22,7 +22,8 @@ headers — `authorization`, `cookie`, `host`, `x-forwarded-for`, `content-type`
 reached the vendor as **zero headers**. And even on a stitch that opts in, `authorization` is
 unforgeable, because `auth` is applied to a clone **after** the merge (engine.ts:647).
 
-Three findings go the other way, and one of them is a genuine credential leak:
+Three findings went the other way — one is a genuine credential leak, and one has since been fixed
+upstream (#663):
 
 - **The MCP error channel is an unfiltered `Error.message` pass-through** (C4). StitchAPI's own
   messages are terse and clean — `HTTP 500`, `timed out after 25ms`, `circuit open` — and a vendor
@@ -35,10 +36,13 @@ Three findings go the other way, and one of them is a genuine credential leak:
   path** (C2 d). `path: '/v1/orders?tenant=acme'` + `input: { query: { tenant: 'globex' } }` put
   `?tenant=globex` on the wire and the vendor returned the other tenant's data. A pin is a default,
   not a constraint.
-- **A declared input schema is a check, not a filter** (C7 e). `validateInput` throws on failure and
-  **discards the parsed value** (engine.ts:400-408), so a schema that strips unknown keys — the
-  default behaviour of Zod, Valibot and ArkType alike — does not strip them from the request. A
-  `query` validator that returned `{ limit: 10 }` still put `?tenant=globex&limit=10` on the wire.
+- **A declared input schema was a check, not a filter — filed as #648, fixed by #663** (C7 e).
+  `validateInput` threw on failure and **discarded the parsed value**; it now returns each declared
+  slot's parsed value — coerced, defaulted, stripped — and the engine runs on it
+  (engine.ts:415-447). The `query` validator that returned `{ limit: 10 }` used to put
+  `?tenant=globex&limit=10` on the wire; measured now it puts `?tenant=acme&limit=10` — the
+  stripped key gone, the operator's pin restored — and C7 (e) keeps that pinned as a regression
+  check. A slot with **no** schema is still the full passthrough.
 
 And the shape of the surface decides two more: there is **no allow-list** beyond the registry object
 you hand `createMcpServer` (C3), and **no confirmation seam in either direction** (C6) — the server
@@ -69,7 +73,7 @@ purpose** — `src/mcp.ts` reads the build-time `__PKG_VERSION__` define, and wi
 `tsc` cannot see the identifier:
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \
@@ -106,31 +110,31 @@ directory, and it is documented in place.
 
 ### What the model can set
 
-| Input field                                     | Reaches the wire?               | What an attacker actually gets                                                                                                        |
-| ----------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `headers`                                       | **no**                          | deleted outright unless the stitch declares `input.headers` (mcp.ts:128)                                                              |
-| `headers` (opted in)                            | **yes, except `authorization`** | any non-credential header; on a `cookieSession` stitch, a `SESSION` pair sent **before** the real one                                 |
-| `query`                                         | **yes**                         | **overwrites an operator's pinned query parameter**; appends anything else                                                            |
-| `params`                                        | **yes, encoded**                | `{id}` percent-encodes `/` → traversal blocked. `{+id}` (reserved expansion) does **not** → a different endpoint, with the credential |
-| `body`                                          | **yes, whole**                  | the entire request body of a write, when no `input.body` schema is declared                                                           |
-| `signal`                                        | **yes, inert**                  | aborts the call before it is sent — a self-inflicted denial, no request on the wire                                                   |
-| `url` / `baseUrl` / `path` / `adapter` / `auth` | **no**                          | inert: the engine reads input by field name and these are config slots                                                                |
+| Input field                                     | Reaches the wire?                | What an attacker actually gets                                                                                                        |
+| ----------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `headers`                                       | **no**                           | deleted outright unless the stitch declares `input.headers` (mcp.ts:128)                                                              |
+| `headers` (opted in)                            | **yes, except `authorization`**  | any non-credential header; on a `cookieSession` stitch, a `SESSION` pair sent **before** the real one                                 |
+| `query`                                         | **yes, absent a `query` schema** | **overwrites an operator's pinned query parameter**; appends anything else. A declared schema's parsed value is what ships (#663)     |
+| `params`                                        | **yes, encoded**                 | `{id}` percent-encodes `/` → traversal blocked. `{+id}` (reserved expansion) does **not** → a different endpoint, with the credential |
+| `body`                                          | **yes, whole**                   | the entire request body of a write, when no `input.body` schema is declared                                                           |
+| `signal`                                        | **yes, inert**                   | aborts the call before it is sent — a self-inflicted denial, no request on the wire                                                   |
+| `url` / `baseUrl` / `path` / `adapter` / `auth` | **no**                           | inert: the engine reads input by field name and these are config slots                                                                |
 
 Read the two tables together: **the credential boundary is the library's and it holds; the argument
 boundary is entirely the operator's.** That is the finding this directory exists for.
 
 ## What each script establishes
 
-| Script                   | Question                                                    | Measured                                                                                                                  |
-| ------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `c1-credential-reach.ts` | **DECIDING** — does a credential reach the model anywhere?  | **No.** 30 payload scans, 4 auth strategies, 14,529 bytes; the wire proves each call authenticated; stdio bytes identical |
-| `c2-input-rewrite.ts`    | **DECIDING** — can `input` redirect or rewrite the call?    | **The header hypothesis is refuted** (6 headers → 0). 5 other levers are real; `authorization` is unforgeable             |
-| `c3-allowlist.ts`        | any allow-list? what do the discovery tools disclose?       | **None beyond the registry object.** ~1KB/stitch incl. the internal URL. `selectStitch` also answers to `__config.name`   |
-| `c4-error-rendering.ts`  | does a failure leak the URL, headers or the vendor body?    | **No — and yes.** `HTTP 500` only; but the channel is unfiltered and `apiKey({in:'query'})` + a transport error leaks     |
-| `c5-runaway.ts`          | do `throttle`/`circuit` apply? any non-count budget?        | **Both apply; nothing is on by default.** 1 tool call = 5 (retry) or 12 (paginate) requests. **No spend budget exists**   |
-| `c6-confirmation.ts`     | is there a confirmation seam for an irreversible call?      | **No, in either direction.** No elicitation channel, no tool `annotations`, one tool name for a read and a refund         |
-| `c7-schema.ts`           | is `input` typed enough? does a schema constrain the model? | **Four untyped bags; presence-only descriptions.** A schema checks ONE slot and its parsed value is discarded             |
-| `c8-assembled.ts`        | the safest exposure, against the naive one                  | **47 executable lines, 3 seams, 0 config keys** — and every C2/C3/C7 attack replayed and blocked                          |
+| Script                   | Question                                                    | Measured                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `c1-credential-reach.ts` | **DECIDING** — does a credential reach the model anywhere?  | **No.** 30 payload scans, 4 auth strategies, 14,529 bytes; the wire proves each call authenticated; stdio bytes identical            |
+| `c2-input-rewrite.ts`    | **DECIDING** — can `input` redirect or rewrite the call?    | **The header hypothesis is refuted** (6 headers → 0). 5 other levers are real; `authorization` is unforgeable                        |
+| `c3-allowlist.ts`        | any allow-list? what do the discovery tools disclose?       | **None beyond the registry object.** ~1KB/stitch incl. the internal URL. `selectStitch` also answers to `__config.name`              |
+| `c4-error-rendering.ts`  | does a failure leak the URL, headers or the vendor body?    | **No — and yes.** `HTTP 500` only; but the channel is unfiltered and `apiKey({in:'query'})` + a transport error leaks                |
+| `c5-runaway.ts`          | do `throttle`/`circuit` apply? any non-count budget?        | **Both apply; nothing is on by default.** 1 tool call = 5 (retry) or 12 (paginate) requests. **No spend budget exists**              |
+| `c6-confirmation.ts`     | is there a confirmation seam for an irreversible call?      | **No, in either direction.** No elicitation channel, no tool `annotations`, one tool name for a read and a refund                    |
+| `c7-schema.ts`           | is `input` typed enough? does a schema constrain the model? | **Four untyped bags; presence-only descriptions.** A schema filters its ONE slot (#663, pinned); an undeclared slot is a passthrough |
+| `c8-assembled.ts`        | the safest exposure, against the naive one                  | **47 executable lines, 3 seams, 0 config keys** — and every C2/C3/C7 attack replayed and blocked                                     |
 
 ## Files
 
@@ -152,6 +156,9 @@ boundary is entirely the operator's.** That is the finding this directory exists
 - `safe-exposure.ts` — the answer C8 counts, between `BEGIN`/`END USER CODE` markers: `expose` (the
   allow-list, which also rejects the configured-name bypass), `only` (a `Proxy` apply-trap that
   rebuilds the input from an explicit key list), `readsOnly` (a method gate on the `Adapter`).
+- `ambient.d.ts` — one `declare` for core's build-time `__PKG_VERSION__` define, so the typecheck
+  command below runs against the unmodified tree (core keeps its own copy in `src/version.d.ts`,
+  which a bare file-list `tsc` never loads).
 
 ## Reading the numbers honestly
 
@@ -199,12 +206,15 @@ boundary is entirely the operator's.** That is the finding this directory exists
    no redaction on this path — `errorResult((e as Error).message)` is the whole of it (mcp.ts:184).
 2. **A query parameter pinned in the configured path is a default, not a constraint.**
    `path: '/v1/orders?tenant=acme'` reads like an operator invariant and is overwritten by
-   `input: { query: { tenant: 'globex' } }` (`{ ...predefined, ...input.query }`, engine.ts:202).
-   Measured end to end: the vendor echoed `globex`. Anything that must not move belongs in a
-   `headers` entry or in the path template, not in the query string.
-3. **An input schema does not filter — and the two cookie writers disagree.** `validateInput`
-   discards its parsed value (engine.ts:400-408), so a stripping schema lets unknown keys through to
-   the wire. Separately, `cookieSession.apply` **joins** the `Cookie` header
+   `input: { query: { tenant: 'globex' } }` (`{ ...predefined, ...input.query }`, engine.ts:211).
+   Measured end to end: the vendor echoed `globex`. Since #663 a strip-mode `input.query` schema is
+   the constraint — C7 (e) measures the pin surviving it; absent one, anything that must not move
+   belongs in a `headers` entry or in the path template, not in the query string.
+3. **An input schema filters only its own slot — and the two cookie writers disagree.** Since #663
+   (issue #648, filed from this audit) `validateInput` returns the parsed value and the request is
+   built from it (engine.ts:415-447), so a stripping schema drops unknown keys from the wire — but
+   only on the slot it is declared on; an undeclared slot is a full passthrough. Separately,
+   `cookieSession.apply` **joins** the `Cookie` header
    (`[req.headers.cookie, cookie].join('; ')`, auth.ts:918-921) while `apiKey({ in: 'cookie' })`
    **replaces** the same-named pair via `setCookiePair` (auth.ts:228-245). Measured on a
    headers-opted-in stitch: `SESSION=attacker; SESSION=sess_live_…`, and a vendor that reads the
@@ -216,7 +226,7 @@ boundary is entirely the operator's.** That is the finding this directory exists
 5. **`sensitive: true` does not mean "do not expose this".** It is a **cache** opt-out
    (types.ts:1652-1658) — the one word in `StitchConfig` that reads like an agent-visibility flag,
    and measured, a stitch carrying it was still listed by `list_stitches` and still ran. None of the
-   44 top-level config slots controls MCP exposure.
+   32 top-level config slots controls MCP exposure.
 6. **`stitch mcp --module ./stitches.ts` exposes the whole module.** `collectStitches` recognises a
    stitch structurally and keys it by export name (cli.ts:654-657), so a write, an internal login
    stitch and a debug endpoint are all equally callable the moment they are exported. There is no

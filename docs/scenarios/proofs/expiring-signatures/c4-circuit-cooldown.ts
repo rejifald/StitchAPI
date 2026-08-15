@@ -2,8 +2,8 @@
 //
 // The capture groups the breaker with the rate limiter as a place a signature could age. It is a
 // different shape and the difference is the finding: the breaker does not QUEUE anything. It
-// fast-fails. `attemptWithCircuit` (engine.ts:846-893) reads the phase BEFORE calling
-// `attemptLoop`, so an open breaker throws `CircuitOpenError` at engine.ts:871 without ever
+// fast-fails. `attemptWithCircuit` (engine.ts:877-923) reads the phase BEFORE calling
+// `attemptLoop`, so an open breaker throws `CircuitOpenError` at engine.ts:902 without ever
 // reaching the throttle, the transport, or `cfg.auth.apply`.
 //
 // MEASURED: a call that fast-failed on an open breaker performed ZERO signings — the signing ledger
@@ -75,7 +75,7 @@ async function main(): Promise<void> {
         );
         note(
             '(a) the fast-fail error',
-            'CircuitOpenError, status 503, thrown at engine.ts:871 before the throttle and before auth',
+            'CircuitOpenError, status 503, thrown at engine.ts:902 before the throttle and before auth',
         );
     }
 

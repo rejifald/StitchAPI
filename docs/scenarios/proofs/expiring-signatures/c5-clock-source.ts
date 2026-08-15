@@ -1,26 +1,28 @@
 // C5 — does SigV4 signing read the INJECTED clock, or `Date.now()`?
 //
-// This is the one claim in the set that the library LOSES, and it is the third instance of a
+// When this audit first ran, the library LOST this claim, and it was the third instance of a
 // pattern two earlier scenarios already found: scenario 4 measured `timeout.total` reading wall
 // time and scenario 6 measured `cache.ttl` doing the same, each while the code beside them used the
-// injected `clock`. `@stitchapi/aws-sigv4` makes it three — `amzDateOf(new Date())`, aws-sigv4/
-// src/index.ts:301, with no `clock` anywhere in the package.
+// injected `clock`. `@stitchapi/aws-sigv4` made it three — `amzDateOf(new Date())`, with no `clock`
+// anywhere in the package: 600 virtual seconds moved the shipped stamp 0 seconds, and 0 of 3 calls
+// were accepted under a default `manualClock()`. Filed from this audit as #658; fixed by #667,
+// riding the `AuthContext.clock` seam #664 added for `oauth2`. The signer now stamps
+// `amzDateOf(new Date(clockNow(ctx)))` (aws-sigv4/src/index.ts:324), where `clockNow` (:266) is
+// the same `ctx.clock?.now() ?? Date.now()` fallback core's `auth.ts` uses.
 //
-// MEASURED: advancing a `manualClock` by ten virtual minutes between two signings moved the shipped
-// signer's timestamp by 0 SECONDS. The same two signings through a clock-reading signer moved by
-// exactly 600. So the shipped strategy is unaffected by `clock`, and:
+// So this script is now the REGRESSION PIN of the fixed behaviour:
 //
-//   • Part (c): a SigV4 stitch under `manualClock()` — the default `manualClock()` starts at epoch
-//     0 — signs with the real wall time while every fake in the test runs in 1970. Everything is
-//     403. Measured: 0 of 3 calls accepted, and the failure is a pure artifact of the test clock.
-//   • This is also WHY C1–C4 are measured the way they are. A virtual queue is invisible to a
-//     signer on wall time, so those claims run twice: once with a clock-reading substitute at
-//     virtual intervals big enough to cross the five-minute window, and once with the shipped
-//     strategy on the real clock at intervals small enough to run in seconds.
-//
-// The narrow good news in (d): because the timestamp comes from `new Date()` at the moment `apply`
-// runs, it is at least always CURRENT. The bug is a testability bug, not a correctness one — no
-// production request goes out with a wrong timestamp because of it.
+//   • Part (a): advancing a `manualClock` by ten virtual minutes between two signings moves the
+//     SHIPPED signer's timestamp by exactly 600 seconds — the stamp rides the injected clock.
+//   • Part (b): `clockSigV4` — the ~20-line user-code signer that WAS the workaround — measures the
+//     same 600 through the same rig. The fix made the workaround unnecessary; their agreement is
+//     the check.
+//   • Part (c): a SigV4 stitch under a default `manualClock()` (which starts at epoch 0) is now
+//     testable: the fake validates against the same clock and accepts 3 of 3. The residual worth
+//     knowing: epoch 0 signs `19700101T000000Z`, so seed the clock (`manualClock(Date.now())`)
+//     when the stamp must be plausible to a real endpoint.
+//   • Part (d): on the default `systemClock` nothing changed on the wire — `systemClock.now()` IS
+//     `Date.now()`, and the request is accepted with sub-second skew.
 //
 //   pnpm exec tsx docs/scenarios/proofs/expiring-signatures/c5-clock-source.ts
 import { stitch, systemClock } from '../../../../packages/core/src/index';
@@ -28,7 +30,6 @@ import { manualClock } from '../../../../packages/core/src/testing';
 import type { AuthStrategy } from '../../../../packages/core/src/types';
 import { FakeAws, parseAmzDate } from './fake-aws';
 import { check, checkAtMost, checkSeq, finish, heading, note } from './harness';
-import type { SignEvent } from './signers';
 import { CREDS, clockSigV4, stampedSigV4 } from './signers';
 import { runOut } from './virtual-time';
 
@@ -38,8 +39,9 @@ const MIN = 60_000;
 
 /**
  * Sign twice through a stitch, ten virtual minutes apart (a `rate` of 1/10m does the spacing), and
- * report how far the WIRE timestamp moved between them. A signer on the injected clock reports 600
- * seconds; one on `Date.now()` reports ~0.
+ * report how far the WIRE timestamp moved between them. A signer on the injected clock reports
+ * exactly 600 — the grants land at exact virtual instants, so this is deterministic; one on
+ * `Date.now()` would report ~0.
  */
 async function stampDriftSeconds(
     strategyFor: (clock: ReturnType<typeof manualClock>) => AuthStrategy,
@@ -69,34 +71,32 @@ async function main(): Promise<void> {
 
     // ── (a) the shipped strategy ────────────────────────────────────────────────────────────
     {
-        const log: SignEvent[] = [];
-        const { drift, stamps } = await stampDriftSeconds(() =>
-            stampedSigV4(CREDS, log),
+        const { drift, stamps } = await stampDriftSeconds((clock) =>
+            stampedSigV4(CREDS, [], () => clock.now()),
         );
-        note('(a) the two wire timestamps', JSON.stringify(stamps));
-        // At most 1, not exactly 0: the two signings are milliseconds apart in REAL time, and if
-        // those milliseconds straddle a wall-clock second the stamp ticks by one. That tick is the
-        // claim restated — the timestamp tracks wall time, not the 600 virtual seconds that passed
-        // between the two grants.
-        checkAtMost(
+        checkSeq('(a) the two wire timestamps', stamps, [
+            '20260805T120000Z',
+            '20260805T121000Z',
+        ]);
+        check(
             '(a) SHIPPED awsSigV4 — seconds the timestamp moved across a 600s virtual gap',
             drift,
-            1,
+            600,
         );
         note(
-            '(a) what it read instead',
-            '`amzDateOf(new Date())` — aws-sigv4/src/index.ts:301; the package imports no Clock at all',
+            '(a) what it reads',
+            '`amzDateOf(new Date(clockNow(ctx)))` — aws-sigv4/src/index.ts:324; `clockNow` (:266) is `ctx.clock?.now() ?? Date.now()` (#658, fixed by #667)',
         );
     }
 
-    // ── (b) a clock-reading signer, same rig ────────────────────────────────────────────────
+    // ── (b) the pre-fix workaround signer, same rig ─────────────────────────────────────────
     {
         const { drift, stamps } = await stampDriftSeconds((clock) =>
             clockSigV4({ ...CREDS, clock }),
         );
         note('(b) the two wire timestamps', JSON.stringify(stamps));
         check(
-            '(b) clock-reading signer — seconds the timestamp moved across the same gap',
+            '(b) clock-reading user-code signer — seconds moved across the same gap (agreement)',
             drift,
             600,
         );
@@ -104,14 +104,16 @@ async function main(): Promise<void> {
 
     // ── (c) the consequence for anyone testing a SigV4 stitch ───────────────────────────────
     // `manualClock()` with no argument starts at epoch 0 — the documented default. Point the fake
-    // server at that same clock (the ordinary thing to do) and every request is ~56 years skewed.
+    // server at that same clock (the ordinary thing to do) and, since #667, signer and validator
+    // agree: zero skew, every request accepted. Before the fix this exact rig measured 0 of 3
+    // accepted with ~20,670 days of apparent skew.
     {
         const clock = manualClock();
         const aws = new FakeAws({ clock });
         const call = stitch({
             url: URL_S3,
             adapter: aws.adapter(),
-            auth: stampedSigV4(CREDS, []),
+            auth: stampedSigV4(CREDS, [], () => clock.now()),
             clock,
         });
         const results = await Promise.all([
@@ -124,30 +126,34 @@ async function main(): Promise<void> {
         check(
             '(c) calls accepted with a default `manualClock()` and the SHIPPED signer',
             results.filter((r) => r.ok).length,
-            0,
+            3,
         );
         checkSeq(
             '(c) status per call',
             aws.calls.map((c) => c.status),
-            [403, 403, 403],
+            [200, 200, 200],
+        );
+        checkSeq(
+            '(c) the wire timestamp — epoch 0, so seed the clock when the stamp must be plausible',
+            aws.stamps(),
+            ['19700101T000000Z', '19700101T000000Z', '19700101T000000Z'],
         );
         note(
             '(c) the skew the fake server measured',
-            `${String(Math.round((aws.calls[0]?.skewMs ?? 0) / -86_400_000))} days — the wall clock against a virtual epoch of 0`,
+            `${String(Math.round((aws.calls[0]?.skewMs ?? 0) / -86_400_000))} days — signer and validator share the virtual clock`,
         );
     }
 
-    // ── (d) the limit of the damage ─────────────────────────────────────────────────────────
-    // On the real clock the shipped signer is CORRECT: it stamps the instant `apply` runs. So this
-    // is a testability defect, not a wire defect — worth stating plainly, because "the signer
-    // ignores the clock" reads much worse than it is.
+    // ── (d) nothing changed on the wire ─────────────────────────────────────────────────────
+    // On the default `systemClock` the stamp is wall-clock time, exactly as before the fix —
+    // `systemClock.now()` IS `Date.now()`. The clock seam is a testability property, not a wire
+    // change.
     {
         const aws = new FakeAws({ clock: systemClock });
-        const log: SignEvent[] = [];
         const call = stitch({
             url: URL_S3,
             adapter: aws.adapter(),
-            auth: stampedSigV4(CREDS, log),
+            auth: stampedSigV4(CREDS, []),
         });
         const r = await call({}).safe();
         const skew = Math.abs(aws.calls[0]?.skewMs ?? Infinity);
@@ -162,7 +168,7 @@ async function main(): Promise<void> {
 
     finish(
         'C5',
-        'the SHIPPED signer reads `new Date()`, NOT the injected clock — 0 seconds of movement across a 600-second virtual advance, and 0 of 3 calls accepted under a default manualClock; a clock-reading signer moved 600s. It is a testability defect, not a wire defect: on real time the stamp is correct',
+        'the SHIPPED signer stamps from the INJECTED clock (#658, fixed by #667) — a 600-second virtual advance moved the wire timestamp exactly 600 seconds, a default manualClock() gets 3 of 3 accepted (signing 19700101T000000Z — seed it for plausible stamps), and the default systemClock path still stamps wall time',
     );
 }
 

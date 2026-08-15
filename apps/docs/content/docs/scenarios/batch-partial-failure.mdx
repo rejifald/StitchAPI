@@ -78,7 +78,14 @@ const kind: Surface = {
             ledger.gaveUp = true;
             return { ok: true, data: ledger };
         }
-        return { ok: false, retry: true, after: backoff(ledger.rounds) };
+        // `message` is required on the retry arm — it becomes the `retry`
+        // event's detail, so the trace says WHY the round is being re-run.
+        return {
+            ok: false,
+            retry: true,
+            message: `${ledger.residue.length} unprocessed after round ${ledger.rounds}`,
+            after: backoff(ledger.rounds),
+        };
     },
 };
 

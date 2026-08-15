@@ -90,11 +90,13 @@ id — which is exactly the shape a dead foreign key takes.
 <Callout type="error">
     **A declared concurrency budget silently multiplies across stitch objects.** One stitch called
     100 times at `concurrency: 8` → peak **8**. One hundred *separate* stitches each declaring 8 →
-    peak **100**, because the limiter is per stitch. `pool: 'host'` repairs it — **and adding a
-    `store` silently breaks the repair again** (peak 100), because the store-backed throttle never
-    reads `pool`. The store is exactly what you add to make the *rate* budget cross-process, and it
-    un-pools the *concurrency* on the way past with the config unchanged. A seam-level
-    `concurrency` survives both.
+    peak **100**, because the limiter is per stitch. `pool: 'host'` repairs it, and a lease-capable
+    `store` keeps the repair — measured peak **8** — and makes it fleet-wide: the store holds
+    **one** budget under the same host key, so eight in flight means eight across every worker on
+    that store. The remaining trap is a store *without* the lease verbs (an eventually-consistent
+    KV, a minimal custom store): concurrency falls back to per-process there, and the multiplied
+    budget returns with the config unchanged. A seam-level `concurrency` survives the
+    stitch-per-id shape on its own.
 
     Related: **a backing-off call holds its slot.** With a bound of 4 and a 1 s backoff, ~95% of
     the budget sat idle on sleeping calls, and the retry re-queued at the **back** of the FIFO.

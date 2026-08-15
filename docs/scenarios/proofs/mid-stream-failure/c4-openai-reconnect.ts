@@ -2,22 +2,22 @@
 // `id:` anywhere, terminated by `data: [DONE]`. Silent restart from the beginning (duplication),
 // refusal, or something else?
 //
-// Measured: SILENT RESTART, four times over, on a stream that DID NOT FAIL. This is the sharpest
-// finding in the scenario and it is a correctness bug in freshly-shipped code (#622), not a policy
-// trade-off. Two independent defects compose:
+// Measured today: A NO-OP. One open, one answer, one `[DONE]` — with or without the flag. It was
+// not always so: this probe originally measured a SILENT RESTART, four times over, on a stream
+// that never failed (`ABCDEABCDEABCDEABCDE`, 24 deltas, `done(ok: true)`), filed from this audit
+// as issue #640 and fixed in core by #647. Two things changed:
 //
-//   1. `resumable` (engine.ts:1288) is `policy.enabled && !!resumeToken && !!applyResume` — the
-//      surface's CAPABILITY, evaluated once, before any frame is read. `sseSurface` always exposes
-//      both hooks, so an OpenAI stream with no `id:` in it anywhere is classified resumable. When
-//      the reopen happens, `lastToken` is still `undefined`, the `attempt > 1 && lastToken !==
-//      undefined` guard at engine.ts:1344 skips `applyResume`, and the request goes out with NO
-//      `Last-Event-ID` — i.e. a request for the whole completion, from token one.
-//   2. The reconnect loop (engine.ts:1460-1490) treats a CLEAN body close (`'closed'`) exactly like
-//      a drop (`'error'`). There is no "this stream is complete" signal, so `[DONE]` means nothing
-//      and a finished completion is reopened until the attempt budget is spent.
+//   1. Capability alone no longer decides. `canResume` (engine.ts:1337) still ands the flag with
+//      the presence of `resumeToken`/`applyResume`, but the reconnect decision now also tests what
+//      THIS stream actually produced: `recoverable = lastToken !== undefined || chunks.length ===
+//      0` (engine.ts:1518). A body that delivered bytes but no `id:` has no resume point, so it is
+//      never reopened — a reopened request could only ask for the whole completion again.
+//   2. A clean close is the stream FINISHING. `openAndDecode` returns `'closed'` when the body
+//      runs out (engine.ts:1499-1501) and the loop treats that as terminal (engine.ts:1524-1529),
+//      so `[DONE]` + close ends the run instead of spending the reconnect budget.
 //
-// Together: one config flag turns one answer into four, delivered to the consumer as one
-// uninterrupted delta spine, and the run ends `ok: true`.
+// This file pins the fixed behaviour, so a regression shows up as a red check rather than a
+// re-audit.
 //
 //   pnpm exec tsx docs/scenarios/proofs/mid-stream-failure/c4-openai-reconnect.ts
 import { sse } from '../../../../packages/core/src/sse';
@@ -33,9 +33,10 @@ const TOKENS = ['A', 'B', 'C', 'D', 'E'];
 async function main(): Promise<void> {
     heading('C4 — `reconnect` on an OpenAI-shaped stream with no `id:`');
 
-    // ── (a) A STREAM THAT NEVER FAILED, replayed four times ───────────────────────────────────
+    // ── (a) a stream that never failed is delivered ONCE, flag or no flag ─────────────────────
     // No `cut`. The provider writes all five tokens and `data: [DONE]`, then closes normally. The
-    // consumer is handed the complete answer FOUR times and the run reports success.
+    // reconnect flag spends nothing: the clean close ends the run. (Before #647 this fixture
+    // measured 4 opens and `ABCDEABCDEABCDEABCDE`, ending `done(ok: true)`.)
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({ clock, tokens: TOKENS });
@@ -47,29 +48,27 @@ async function main(): Promise<void> {
         });
         const obs = await observe(chat, {}, clock);
 
-        check('(a) opens the provider saw', api.opens.length, 4);
-        check(
-            '(a) TEXT the consumer accumulated',
-            obs.text,
-            'ABCDEABCDEABCDEABCDE',
-        );
-        check('(a) deltas delivered', obs.data.length, 24); // 4 × (5 tokens + [DONE])
-        check('(a) `[DONE]` sentinels observed', obs.dones, 4);
+        check('(a) opens the provider saw', api.opens.length, 1);
+        check('(a) TEXT the consumer accumulated', obs.text, 'ABCDE');
+        check('(a) deltas delivered', obs.data.length, 6); // 5 tokens + [DONE]
+        check('(a) `[DONE]` sentinels observed', obs.dones, 1);
         checkSeq(
             '(a) `Last-Event-ID` sent on each open',
             api.lastEventIds.map((v) => v ?? '(none)'),
-            ['(none)', '(none)', '(none)', '(none)'],
+            ['(none)'],
         );
         check('(a) done.ok', obs.ok, true);
         note(
-            '(a) → the model ran 4 times, the caller pays 4×, the UI renders the answer 4×',
-            'and nothing in the result says so: `done(ok: true)` with a 24-element array',
+            '(a) → the model ran once, the caller pays once, the UI renders the answer once',
+            'the flag is inert here — nothing to resume from, so nothing is reopened (#647)',
         );
     }
 
     // ── (b) the same flag on a stream that DID drop ───────────────────────────────────────────
-    // A drop after 3 of 5. The partial is replayed whole on every reopen — `ABCABCABCABC` — and the
-    // run still ends in failure. Worst of both: duplicated content AND an error.
+    // A drop after 3 of 5. Three deltas were delivered and no frame carried an `id:`, so the drop
+    // is NOT recoverable (engine.ts:1518) — a reopen could only replay `ABC` into the consumer.
+    // The failure surfaces instead, with the partial kept on `.stream()`. (Before #647 the partial
+    // was replayed whole on every reopen — `ABCABCABCABC` — AND the run failed.)
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({
@@ -84,16 +83,17 @@ async function main(): Promise<void> {
             sse: { reconnect: true },
         });
         const obs = await observe(chat, {}, clock);
-        check('(b) opens', api.opens.length, 4);
-        check('(b) TEXT the consumer accumulated', obs.text, 'ABCABCABCABC');
+        check('(b) opens', api.opens.length, 1);
+        check('(b) TEXT the consumer accumulated', obs.text, 'ABC');
         check('(b) `[DONE]` sentinels', obs.dones, 0);
         check('(b) done.ok', obs.ok, false);
         check('(b) error.message', obs.error, 'socket reset by peer');
     }
 
     // ── (c) `sse: true` is the same thing ─────────────────────────────────────────────────────
-    // The shorthand (`stitch.ts:243` — `sse === true` becomes `{ reconnect: true }`) reads like
+    // The shorthand (`stitch.ts:294` — `sse === true` becomes `{ reconnect: true }`) reads like
     // "this is an SSE stitch", which is exactly the sort of thing someone adds without thinking.
+    // Since #647 that reflex is harmless here too.
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({ clock, tokens: TOKENS });
@@ -104,15 +104,15 @@ async function main(): Promise<void> {
             sse: true,
         });
         const obs = await observe(chat, {}, clock);
-        check('(c) `sse: true` → opens', api.opens.length, 4);
-        check('(c) `sse: true` → text', obs.text, 'ABCDEABCDEABCDEABCDE');
+        check('(c) `sse: true` → opens', api.opens.length, 1);
+        check('(c) `sse: true` → text', obs.text, 'ABCDE');
     }
 
-    // ── (d) the duplication IS detectable by the consumer — a `progress:reconnect` marks it ────
-    // `runStreaming` emits `{ type: 'progress', phase: 'reconnect' }` before each reopen
-    // (engine.ts:1482-1488). A consumer that resets its accumulator on that event recovers the
-    // right text. This is the mitigation, and it is user code, and it costs the whole point of
-    // reconnect (the resume) since every reopen starts over.
+    // ── (d) the old consumer-side mitigation has nothing left to do ───────────────────────────
+    // The original finding forced consumers to reset their accumulator on every
+    // `progress: { phase: 'reconnect' }` event to undo the replay. That boundary is emitted only
+    // before a genuine reopen (engine.ts:1545-1551), and a completed id-less stream is no longer
+    // reopened — so the reset never fires, and the accumulated text is right WITHOUT it.
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({ clock, tokens: TOKENS });
@@ -123,12 +123,15 @@ async function main(): Promise<void> {
             sse: { reconnect: true },
         });
         let text = '';
+        let resets = 0;
         const drain = (async () => {
             for await (const ev of chat.stream(
                 {},
             ) as AsyncIterable<StitchEvent>) {
-                if (ev.type === 'progress' && ev.phase === 'reconnect')
+                if (ev.type === 'progress' && ev.phase === 'reconnect') {
+                    resets++;
                     text = '';
+                }
                 if (ev.type === 'delta')
                     text +=
                         contentOf((ev.chunk as { data: unknown }).data) ?? '';
@@ -136,21 +139,23 @@ async function main(): Promise<void> {
         })();
         await clock.advance(3_600_000);
         await drain;
+        check('(d) `progress:reconnect` boundaries observed', resets, 0);
         check(
-            '(d) text after resetting on every `progress:reconnect`',
+            '(d) text with the defensive reset still wired up',
             text,
             'ABCDE',
         );
         note(
-            '(d) → the boundary is visible, so a careful consumer can undo the damage',
-            'but "reset the accumulator" is the OPPOSITE of resuming — the reconnect bought nothing',
+            '(d) → the reset-on-reconnect defence is dead code now',
+            'no boundary event fires on a completed stream, and the text is right without it',
         );
     }
 
-    // ── (e) the cheap escape: `break` on `[DONE]` ─────────────────────────────────────────────
-    // Leaving the `for await` calls `.return()` on the generator, so the engine never reaches the
-    // reconnect. One open, one answer. The price is that you can no longer `await` the stitch —
-    // awaiting drains the whole generator, replays and all.
+    // ── (e) `break` on `[DONE]` still works — it is just no longer an escape hatch ────────────
+    // Leaving the `for await` calls `.return()` on the generator. Before #647 this was the cheap
+    // way to hold a reconnecting stream to one open, at the price of forfeiting `await` (which
+    // drains the whole generator, replays and all). Now both paths open once; breaking early only
+    // means the consumer skips the terminal `result`/`done` events.
     {
         const clock = manualClock();
         const api = new FakeStreamProvider({ clock, tokens: TOKENS });
@@ -172,7 +177,7 @@ async function main(): Promise<void> {
 
     finish(
         'C4',
-        'SILENT RESTART FROM THE BEGINNING — and, worse than the capture guessed, it happens to streams that never failed. `sse: { reconnect: true }` on a clean OpenAI-shaped completion produced 4 opens, a 24-delta spine, 4 `[DONE]` sentinels, and the measured text `ABCDEABCDEABCDEABCDE` delivered to the consumer as one uninterrupted stream — ending `done(ok: true)`. No `Last-Event-ID` was ever sent (measured `[(none) ×4]`): there is no id to resume from, so every reopen is a request for the whole completion. Two defects compose — `resumable` is decided from surface CAPABILITY before any frame is read (engine.ts:1288), and a clean close is treated as a drop (engine.ts:1466), so `[DONE]` terminates nothing. On a stream that DID drop the result is `ABCABCABCABC` plus a failure. `sse: true` is the same flag. Two mitigations exist and both are user code: reset the accumulator on the `progress:reconnect` event (measured: recovers `ABCDE`), or `break` on `[DONE]` (measured: 1 open) — which forfeits `await` entirely',
+        'A NO-OP, NOT A REPLAY. `sse: { reconnect: true }` on a clean OpenAI-shaped completion measured 1 open, 6 deltas, 1 `[DONE]`, text `ABCDE`, `done(ok: true)` — identical with the flag off. On a stream that DID drop after 3 tokens: 1 open, `ABC` kept on `.stream()`, `done(ok: false)` with `socket reset by peer` — the id-less drop is not reopened, because a reopened request could only ask for the whole completion (engine.ts:1518 requires a resume token once bytes have flowed; a clean close is terminal at engine.ts:1524-1529). `sse: true` is the same flag and the same no-op. The consumer-side defences the original finding required are dead code now: zero `progress:reconnect` boundaries fire on a completed stream, and `break`-ing on `[DONE]` no longer changes the open count. This is the FIXED behaviour of the sharpest finding of this audit — a completed stream reopened 4×, delivering `ABCDEABCDEABCDEABCDE` under `done(ok: true)` — filed as issue #640, fixed in core by #647; these checks pin it against regression',
     );
 }
 

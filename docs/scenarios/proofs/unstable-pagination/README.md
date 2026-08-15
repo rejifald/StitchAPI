@@ -34,7 +34,7 @@ they test the working tree, not the published bundle.
 They typecheck under `packages/core`'s full strict set:
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \

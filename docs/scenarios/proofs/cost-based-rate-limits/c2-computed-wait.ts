@@ -41,10 +41,13 @@ async function main(): Promise<void> {
         check('(a) `backoff: () => ms` is a TYPE ERROR', true, true);
     }
 
-    // ── (a2) and if you cast past it, it is SILENTLY IGNORED ───────────────────────────────────
-    // `backoffDelay` (resilience.ts:38-56) reads `.curve` / `.base` / `.max` off whatever it is
-    // given. A function has none of them, so it degrades to the default `expo-jitter`/100ms curve
-    // and is never called — no throw, no warning.
+    // ── (a2) and if you cast past it, construction THROWS ──────────────────────────────────────
+    // The shorthand fold in `stitch()` normalises `backoff` onto `{ curve }`, so a cast-through
+    // function lands on `curve`, matches no valid curve, and dies with `Error: bad backoff`
+    // before any request exists (stitch.ts:234-257). That is #666, filed from this audit as
+    // #651 §3: it used to construct clean and silently degrade to the default `expo-jitter`/100ms
+    // curve, the function never called — measured then as gaps of ~100, ~200ms where the config
+    // asked for 6000, with no throw and no warning.
     {
         const { shop, clock } = emptyShop(300);
         let invoked = 0;
@@ -52,27 +55,30 @@ async function main(): Promise<void> {
             invoked++;
             return 6000;
         };
-        const call = graphql({
-            url: 'https://shop.myshopify.com/admin/api/graphql.json',
-            document: DOC,
-            adapter: shop.adapter(),
-            clock,
-            // The cast is the point: this is what "I got past the type error" looks like.
-            retry: { attempts: 3, on: 200, backoff: sneaky } as unknown as {
-                attempts: number;
-                on: number;
-                backoff: 'fixed';
-            },
-        });
-        const p = call.safe();
-        await clock.advance(60_000);
-        await p;
-        check('(a2) the delay function was invoked', invoked, 0);
-        check('(a2) requests still made', shop.calls.length, 3);
-        note(
-            '(a2) gaps (ms) — the default jittered curve, not 6000',
-            gaps(shop).join(', '),
+        let died: unknown;
+        try {
+            graphql({
+                url: 'https://shop.myshopify.com/admin/api/graphql.json',
+                document: DOC,
+                adapter: shop.adapter(),
+                clock,
+                // The cast is the point: this is what "I got past the type error" looks like.
+                retry: { attempts: 3, on: 200, backoff: sneaky } as unknown as {
+                    attempts: number;
+                    on: number;
+                    backoff: 'fixed';
+                },
+            });
+        } catch (e) {
+            died = e;
+        }
+        check(
+            '(a2) construction threw',
+            died instanceof Error ? died.message : String(died),
+            'bad backoff',
         );
+        check('(a2) requests made before it threw', shop.calls.length, 0);
+        check('(a2) the delay function was invoked', invoked, 0);
     }
 
     // ── (b) what the curve waits vs. what Shopify said to wait ────────────────────────────────
@@ -257,7 +263,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        '`backoff` has NO function form (type error; silently ignored if cast) and `retry.respect` reads a HEADER Shopify never sends — but `SurfaceOutcome.after` on a custom surface IS honoured as a computed wait',
+        '`backoff` has NO function form (type error; a cast past it throws `bad backoff` at construction since #666, filed from this audit as #651 §3) and `retry.respect` reads a HEADER Shopify never sends — but `SurfaceOutcome.after` on a custom surface IS honoured as a computed wait',
     );
 }
 

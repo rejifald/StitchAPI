@@ -11,15 +11,18 @@ stream at all — and fails for credentials that ride the payload: a vendor's `a
 response body, and a `client_secret` in a request body, are both written to the JSONL log in full.
 
 `sensitive: true` is settled. It is a cache opt-out and only a cache opt-out: 1 of 11 destinations
-changed, and it was the cache. Across all 54 files of `packages/core/src` there is exactly **one**
+changed, and it was the cache. Across the whole of `packages/core/src` there is exactly **one**
 read of the value.
 
 Two ADR claims were refuted by measurement:
 
 - **ADR 0018 §4** — "`findings` never leak a secret even when `redact` is off". True of soft drift,
-  false of hard validation, where the finding `detail` is the validator's own message. Zod's enum
-  message quotes the received value, and it reaches `consoleSink` and `loggerSink` — the two sinks
-  C1 measured as carrying nothing (C7(g)).
+  conditional for hard validation, where the finding `detail` is the validator's own message copied
+  verbatim — so the message's wording decides. Stock Zod 4 (the workspace's validator since #589)
+  no longer echoes the received value and every sink measures clean (C7(g)); a message that does
+  embed the input — a custom `refine`/`check` message here, Zod 3's enum wording at the time this
+  was first measured — reaches `consoleSink` and `loggerSink`, the two sinks C1 measured as
+  carrying nothing (C7(h)).
 - **`DriftOptions.severity`** — "soft drift is always non-fatal". At the type level yes
   (`DriftSeverity` excludes `error`); at runtime `severity: { undeclared: 'error' }` re-levels the
   finding and fails the call (C7(f)).
@@ -47,10 +50,12 @@ for f in docs/scenarios/proofs/pii-in-the-logs/c[0-9]*.ts; do pnpm exec tsx "$f"
 Run from the repository root — the scripts import core from `packages/core/src` by relative path, so
 they test the working tree, not the published bundle.
 
-They typecheck under `packages/core`'s full strict set:
+They typecheck under `packages/core`'s full strict set — `--ignoreConfig` because TypeScript 6
+makes a file list alongside a `tsconfig.json` an error (TS5112), and here the flags are the
+whole config:
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \
@@ -97,7 +102,7 @@ rather than quietly applied.
 | `c4-credentials.ts`      | is the credential half genuinely safe?     | **PARTIAL.** Declarative auth 0/3 everywhere; a token in a RESPONSE body is written to the log 3/3               |
 | `c5-boundary.ts`         | can PII be stripped at the boundary?       | **Yes — and only `hooks.onResponse` covers the failure path.** Order measured, not inferred                      |
 | `c6-allowlist.ts`        | is an allowlist expressible?               | **Yes, 7 → 0 at every value-reading destination.** Residue: `.inspect().raw` and `StitchError.body`              |
-| `c7-drift-signal.ts`     | does drift notice a new PII field?         | **Yes, 3 new `undeclared` findings, 0 values.** REFUTES ADR 0018 §4 on the hard-validation path                  |
+| `c7-drift-signal.ts`     | does drift notice a new PII field?         | **Yes, 3 new `undeclared` findings, 0 values.** ADR 0018 §4 is only as safe as the validator's message wording   |
 | `c8-assembled.ts`        | the best available setup, and its cost     | **42 lines, 2 seams, 0 of 9 destinations.** The boundary and the drift signal are mutually exclusive             |
 
 ## The C1 table

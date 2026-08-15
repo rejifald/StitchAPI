@@ -1,11 +1,11 @@
 // C6 — is an ALLOWLIST expressible? Does an `output` schema that strips unknown keys keep them out
 // of the trace, the log and the cache?
 //
-// Scenario 20 measured that `output` DOES use its parsed value (unlike `input`, which discards it —
-// issue #648). So a stripping schema should genuinely filter, and it does: with a four-field Zod
-// object declared as `output`, the JSONL sink, the console line, the `result` event, the cache
-// entry and `.inspect().data` all go from 7 sentinels to 0, at every depth and inside array
-// elements, with no field names enumerated anywhere.
+// Scenario 20 measured that `output` DOES use its parsed value (at the time unlike `input`, which
+// discarded it — issue #648, since closed by #663). So a stripping schema should genuinely filter,
+// and it does: with a four-field Zod object declared as `output`, the JSONL sink, the console
+// line, the `result` event, the cache entry and `.inspect().data` all go from 7 sentinels to 0,
+// at every depth and inside array elements, with no field names enumerated anywhere.
 //
 // And then there is the residue, which is the part worth writing down. An allowlist that filters
 // five destinations leaves two carrying the full record — `.inspect().raw`, by design, and
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
             7,
         );
         note(
-            '→ scenario 20 confirmed on the output side: the engine serves `value = validated` (engine.ts:1223), so a stripping schema is a real filter and not merely a check. The `input` side discards its parsed value (issue #648); the `output` side does not',
+            '→ scenario 20 confirmed on the output side: the engine serves `value = validated` (engine.ts:1264 as of this re-measure), so a stripping schema is a real filter and not merely a check. The `input` side used to discard its parsed value (issue #648); #663 closed that, so both directions now serve what the schema returned',
         );
     }
 
@@ -402,7 +402,7 @@ async function main(): Promise<void> {
 
     finish(
         'C6',
-        "CONFIRMED — an allowlist is expressible, it genuinely filters, and it is the only mechanism in this directory that survives a vendor adding a field. A four-field Zod `output` schema takes the JSONL sink, the `result` event / raw spine, the console line, the cache entry, `.inspect().data` and the whole `.inspect()` wrapper from 7 sentinels to 0, at depth (`profile.contact` gone) and inside array elements (`contacts[].email` gone), with no PII field name written anywhere. This confirms scenario 20 on the output side: the engine serves `value = validated` (engine.ts:1223), so `output` filters where `input` merely checks (issue #648). Wrapped in `drift()` it also emits a value-free inventory of everything it stripped — 7 `undeclared` findings whose paths name the fields and whose details are KINDS only (`undeclared field (string)`), 0 sentinels across every finding and every drift event. The residue is exactly two destinations and both are structural: `.inspect().raw` stays at 7/7 by design (it is captured before validation — it exists to show what the vendor really sent), and `StitchError.body` stays at 7/7 on any non-2xx because output validation is stage 7 and a failure never reaches it. Mode notes: `.passthrough()` returns the JSONL to 5/7 rather than 7/7, because it is SHALLOW — the two sentinels behind a nested `z.object` stay stripped; and `.strict()` fails the call rather than filtering, its message being the engine's `contract violation (drift)` while the schema's complaint rides a `DriftFinding.detail` that enumerates the undeclared KEY NAMES into every sink — names, never values. One finding outside the claims: on the failure path `JSON.stringify(inspection)` goes back to 7/7 through the enumerable `error` field, because `StitchError` assigns `this.body` in its constructor and `JSON.stringify(err)` therefore emits the whole response body (`err.stack` and `String(err)` stay clean)",
+        "CONFIRMED — an allowlist is expressible, it genuinely filters, and it is the only mechanism in this directory that survives a vendor adding a field. A four-field Zod `output` schema takes the JSONL sink, the `result` event / raw spine, the console line, the cache entry, `.inspect().data` and the whole `.inspect()` wrapper from 7 sentinels to 0, at depth (`profile.contact` gone) and inside array elements (`contacts[].email` gone), with no PII field name written anywhere. This confirms scenario 20 on the output side: the engine serves `value = validated` (engine.ts:1264 as of this re-measure), so a stripping `output` schema is a real filter and not merely a check — and since #663 closed #648, an `input` schema shapes its request the same way. Wrapped in `drift()` it also emits a value-free inventory of everything it stripped — 7 `undeclared` findings whose paths name the fields and whose details are KINDS only (`undeclared field (string)`), 0 sentinels across every finding and every drift event. The residue is exactly two destinations and both are structural: `.inspect().raw` stays at 7/7 by design (it is captured before validation — it exists to show what the vendor really sent), and `StitchError.body` stays at 7/7 on any non-2xx because output validation is stage 7 and a failure never reaches it. Mode notes: `.passthrough()` returns the JSONL to 5/7 rather than 7/7, because it is SHALLOW — the two sentinels behind a nested `z.object` stay stripped; and `.strict()` fails the call rather than filtering, its message being the engine's `contract violation (drift)` while the schema's complaint rides a `DriftFinding.detail` that enumerates the undeclared KEY NAMES into every sink — names, never values. One finding outside the claims: on the failure path `JSON.stringify(inspection)` goes back to 7/7 through the enumerable `error` field, because `StitchError` assigns `this.body` in its constructor and `JSON.stringify(err)` therefore emits the whole response body (`err.stack` and `String(err)` stay clean)",
     );
 }
 

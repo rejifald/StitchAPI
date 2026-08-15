@@ -33,7 +33,7 @@ They typecheck under `packages/core`'s full strict set (the `@ts-expect-error` b
 machine-checked half of several claims — a `@ts-expect-error` that is _not_ an error fails `tsc`):
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \
@@ -43,17 +43,17 @@ cd packages/core && pnpm exec tsc --noEmit \
 
 ## What each script establishes
 
-| Script                      | Question                                   | Measured                                                                                                          |
-| --------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `c1-location-header.ts`     | can `Location` become the next call's URL? | **Yes, through `hooks`.** `POST /jobs → 3× GET /jobs/job-1` in ONE stitch, 1 submit. Nothing built-in follows it  |
-| `c2-poll-surface.ts`        | can a `Surface` express the poll loop?     | **Yes.** 5 polls at 30s spacing, `attempts: 5`; `Failed` stops on the first terminal body with 17/20 unspent      |
-| `c3-retry-after.ts`         | can the wait come from `Retry-After`?      | **Not by itself.** `respect: true` gave 7ms, not 30s. The surface can read it — and `after: raw` is **1000× off** |
-| `c4-paginate.ts`            | can `paginate` express it?                 | **It loops** (capture refuted) — at gaps `0,0,0`. The natural `items` ends the run `ok` with `[]` after 1 poll    |
-| `c5-one-deadline.ts`        | ONE deadline over the triangle?            | **Yes, two ways.** `timeout.total` on a one-stitch triangle (253ms); or one `AbortSignal` through `linked`        |
-| `c6-linked-trace.ts`        | does `linked` draw one trace chain?        | **Yes.** 3 starts, 1 traceId, spans chained. But no operation-level span — a failure names the STEP               |
-| `c7-single-use-download.ts` | does `retry` hammer a spent link?          | **Not by default** (200,404). Widen `on` to 404 and it does (200,404,404,404). Per-stitch split works             |
-| `c8-resume.ts`              | can a stitch reattach after a restart?     | **Entirely user-side.** 0 store keys written; `cache` on the submit stops the dup and **loses the job id**        |
-| `c9-assembled-solution.ts`  | best answer, and is it worth it?           | 1 submit, 5 polls at the server's pacing, 1 download, resume, deadline — in **110 lines vs 49** hand-rolled       |
+| Script                      | Question                                   | Measured                                                                                                                                                        |
+| --------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `c1-location-header.ts`     | can `Location` become the next call's URL? | **Yes, through `hooks`.** `POST /jobs → 3× GET /jobs/job-1` in ONE stitch, 1 submit. Nothing built-in follows it                                                |
+| `c2-poll-surface.ts`        | can a `Surface` express the poll loop?     | **Yes.** 5 polls at 30s spacing, `attempts: 5`; `Failed` stops on the first terminal body with 17/20 unspent                                                    |
+| `c3-retry-after.ts`         | can the wait come from `Retry-After`?      | **Not by itself.** `respect: true` gave 7ms, not 30s. The surface can read it — and `after: raw` is **1000× off**                                               |
+| `c4-paginate.ts`            | can `paginate` express it?                 | **It loops** (capture refuted) — at gaps `0,0,0`. The natural `items` ends the run `ok` with `[]` after 1 poll                                                  |
+| `c5-one-deadline.ts`        | ONE deadline over the triangle?            | **Yes, two ways.** `timeout.total` on a one-stitch triangle (251ms); or one `AbortSignal` through `linked`, whose abort now surfaces the caller's reason (#674) |
+| `c6-linked-trace.ts`        | does `linked` draw one trace chain?        | **Yes.** 3 starts, 1 traceId, spans chained. But no operation-level span — a failure names the STEP                                                             |
+| `c7-single-use-download.ts` | does `retry` hammer a spent link?          | **Not by default** (200,404). Widen `on` to 404 and it does (200,404,404,404). Per-stitch split works                                                           |
+| `c8-resume.ts`              | can a stitch reattach after a restart?     | **Entirely user-side.** 0 store keys written; `cache` on the submit stops the dup and **loses the job id**                                                      |
+| `c9-assembled-solution.ts`  | best answer, and is it worth it?           | 1 submit, 5 polls at the server's pacing, 1 download, resume, deadline — in **110 lines vs 49** hand-rolled                                                     |
 
 ## Files
 
@@ -105,10 +105,15 @@ cd packages/core && pnpm exec tsc --noEmit \
   download's: a spent single-use link consumed all 8 shared attempts. The three-stitch `linked`
   shape gets this right (20 poll attempts, 1 download attempt) but gives up the single
   `timeout.total`. The two properties are not simultaneously reachable today.
-- **C2(c)/C5(a) — every failure arrives as a `StitchError` with a string.** "The job failed", "I ran
-  out of polls" and "the deadline fired" are `job failed: …`, `InProgress` and
-  `timed out after 250ms`. The engine's own `TimeoutError` identity does not survive to the caller,
-  and `error.status` is `undefined` on all three. Distinguishing them means matching strings.
+- **C2(c)/C5(a) — every failure arrives as a `StitchError`, and only the deadline is typed
+  underneath.** "The job failed", "I ran out of polls" and "the deadline fired" are `job failed: …`,
+  `InProgress` and `timed out after 250ms`, with `error.status` `undefined` on all three. The deadline
+  is the one you can now tell apart structurally: the engine's live `TimeoutError` rides `error.cause`
+  (measured in C5(a): `cause.constructor.name === 'TimeoutError'` — the class is unexported and its
+  `.name` is plain `'Error'`, so it is a constructor-name check, not `instanceof`). The other two
+  carry no cause; telling them apart still means matching strings. And since #674 an abort surfaces
+  the **caller's own reason** — C5(d)'s flow rejected with `job budget exhausted` and C9(c)'s with
+  `job budget of 3600000ms exhausted`, where both used to arrive as a minted `aborted`.
 - **C9's line counts are the honest comparison.** 110 executable lines for `jobTriangle` + the poll
   surface + the deadline + the header parse, against 49 for the hand-rolled `while` (the header
   parse is counted on **both** sides — a correct `while` needs it too). The wire behaviour is

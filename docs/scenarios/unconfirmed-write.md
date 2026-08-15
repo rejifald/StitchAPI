@@ -3,22 +3,22 @@
 **Researched:** 2026-08-05 · **Status:** VERIFIED — achievable with user code · page shipped
 **Slug:** `unconfirmed-write`
 
-**Verification:** 8 proof scripts (120 checks), run offline against a fake vendor that owns a
+**Verification:** 8 proof scripts (121 checks), run offline against a fake vendor that owns a
 charge ledger, so every number below is counted rather than inferred. In
 [`proofs/unconfirmed-write/`](proofs/unconfirmed-write/). Published page:
 [`scenarios/unconfirmed-write.mdx`](../../apps/docs/content/docs/scenarios/unconfirmed-write.mdx).
 Escalated: [`issue-drafts/idempotency-default-is-not-restart-safe.md`](issue-drafts/idempotency-default-is-not-restart-safe.md).
 
-| Claim                           | Verdict                                | Measured                                                                                                                  |
-| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| C1 — same key every attempt     | **PASS, in the library's favour**      | 3 attempts → 1 key, 1 charge; a response lost _after_ processing was **recovered** by the retry replaying the stored 200  |
-| C2 — default key restart-stable | **FAIL — deciding, capture confirmed** | re-driven job → **2 keys, 2 charges for 1 intended**; `keyOf` → 1 and 1                                                   |
-| C3 — derived key stability      | PASS with a sharp caveat               | `JSON.stringify(body)` moved on **key order alone** → 2 charges, statuses `[200,200,200]`, **no 409**                     |
-| C4 — cached failure             | **capture REFUTED**                    | a stored 500 is **not** retried by default — 1 request under `attempts: 4`                                                |
-| C5 — key/body mismatch          | PASS                                   | 409 not retried, `idempotency_key_in_use` on `error.body`; but `verdict: {accept, flag}` swallows it                      |
-| C6 — TTL expiry                 | **FAIL**                               | 25 h vs a 24 h TTL → **2 charges**, clean `200`, **no replay marker**, no client-side signal                              |
-| C7 — timeout ambiguity          | **FAIL**                               | dropped request (0 charges) and lost response (1 charge) → **field-for-field identical** errors; no event carries the key |
-| C8 — assembled                  | PASS                                   | **5 charges / 6 intended** (sixth declined) vs the default's **8 / 6** with two duplicates                                |
+| Claim                           | Verdict                                | Measured                                                                                                                                                            |
+| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 — same key every attempt     | **PASS, in the library's favour**      | 3 attempts → 1 key, 1 charge; a response lost _after_ processing was **recovered** by the retry replaying the stored 200                                            |
+| C2 — default key restart-stable | **FAIL — deciding, capture confirmed** | re-driven job → **2 keys, 2 charges for 1 intended**; `keyOf` → 1 and 1                                                                                             |
+| C3 — derived key stability      | PASS with a sharp caveat               | `JSON.stringify(body)` moved on **key order alone** → 2 charges, statuses `[200,200,200]`, **no 409**; a coercing schema now stabilises it — 1 key, 1 charge (#663) |
+| C4 — cached failure             | **capture REFUTED**                    | a stored 500 is **not** retried by default — 1 request under `attempts: 4`                                                                                          |
+| C5 — key/body mismatch          | PASS                                   | 409 not retried, `idempotency_key_in_use` on `error.body`; but `verdict: {accept, flag}` swallows it                                                                |
+| C6 — TTL expiry                 | **FAIL**                               | 25 h vs a 24 h TTL → **2 charges**, clean `200`, **no replay marker**, no client-side signal                                                                        |
+| C7 — timeout ambiguity          | **FAIL**                               | dropped request (0 charges) and lost response (1 charge) → **field-for-field identical** errors; no event carries the key                                           |
+| C8 — assembled                  | PASS                                   | **5 charges / 6 intended** (sixth declined) vs the default's **8 / 6** with two duplicates                                                                          |
 
 **The capture's central worry was right, and one hypothesis was wrong in the library's favour.**
 The default key is `randomUUID()` per call (`engine.ts:172`, inside `buildRequest` at `:257`), so

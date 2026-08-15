@@ -9,14 +9,14 @@
 Footguns escalated to a draft:
 [`issue-drafts/body-verdict-footguns.md`](issue-drafts/body-verdict-footguns.md).
 
-| Claim                                 | Verdict                              | Measured                                                                                                              |
-| ------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| C1 — `retry` on a 200-with-THROTTLED  | FAIL                                 | predicate receives 1 arg (`200`); `on: 200` retried successes — 3 requests, 900 points for one call                   |
-| C2 — wait computed from the body      | FAIL for `backoff`, PASS via surface | `backoff` fn is a type error, invoked **0** times if cast past; `SurfaceOutcome.after` honored at exactly **6000 ms** |
-| C3 — `extensions.cost` reachable      | PASS via one seam                    | `hooks.onResponse` only; `StitchError.body` undefined, `.inspect().raw` null on throttle                              |
-| C4 — `throttle.delegate` on a 200     | FAIL                                 | status-keyed (default `[429]`); `on: 200` fires on successes too                                                      |
-| C5 — `throttle.rate` as a cost budget | FAIL                                 | points token throws at construction; 10 absorbable calls took **18,000 ms**                                           |
-| C6 — assembled from the public API    | PASS                                 | custom `Surface`, **73 lines**, 8/8 succeeded against a neighbour draining the bucket                                 |
+| Claim                                 | Verdict                              | Measured                                                                                                                                        |
+| ------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 — `retry` on a 200-with-THROTTLED  | FAIL                                 | predicate receives 1 arg (`200`); `on: 200` retried successes — 3 requests, 900 points for one call                                             |
+| C2 — wait computed from the body      | FAIL for `backoff`, PASS via surface | `backoff` fn is a type error; cast past it, construction throws **`bad backoff`** (#666); `SurfaceOutcome.after` honored at exactly **6000 ms** |
+| C3 — `extensions.cost` reachable      | PASS via one seam                    | `hooks.onResponse` only; `StitchError.body` undefined, `.inspect().raw` null on throttle                                                        |
+| C4 — `throttle.delegate` on a 200     | FAIL                                 | status-keyed (default `[429]`); `on: 200` fires on successes too                                                                                |
+| C5 — `throttle.rate` as a cost budget | FAIL                                 | points token throws at construction; 10 absorbable calls took **18,000 ms**                                                                     |
+| C6 — assembled from the public API    | PASS                                 | custom `Surface`, **73 lines**, 8/8 succeeded against a neighbour draining the bucket                                                           |
 
 **The framing below was wrong.** The pre-verification hypotheses correctly predicted C1–C5,
 then concluded the built-ins failing might total to _not achievable_. They missed the seam that
@@ -29,6 +29,14 @@ body-reported quota.
 
 Also refuted: `.inspect().raw` is not a route to the payload — post-`pick` on success, and
 `null` on the throttled response despite `source: 'live'`.
+
+**Re-verified 2026-08-15 against the rebased tree.** The silent half of C2 (a2) is gone:
+[#666](https://github.com/rejifald/StitchAPI/pull/666) — the fix this audit's
+[#651](https://github.com/rejifald/StitchAPI/issues/651) §3 asked for — makes an unusable
+`backoff` throw `bad backoff` at construction, so the cast-past probe now pins the throw
+(0 requests made, delay fn never invoked) instead of the silent degrade it originally measured.
+The surface half is unchanged: `SurfaceOutcome.after` still honored at exactly **6000 ms**.
+Row and proof re-recorded; suite re-run green (6 scripts, 125 checks).
 
 ---
 

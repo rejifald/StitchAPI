@@ -7,10 +7,13 @@
 // them.
 //
 // The capture predicts one thing here: "A `bigint` in a request body is a `JSON.stringify` throw,
-// not silent corruption." That is confirmed exactly. But the survey turns up a THIRD outcome the
-// capture did not anticipate, and it is worse than either: a `bigint` in `params` is neither
-// corrupted nor rejected — it VANISHES, expanding to the empty string and producing a request to
-// the wrong URL.
+// not silent corruption." That is confirmed exactly. The first run of this survey also turned up a
+// THIRD outcome the capture did not anticipate, and it was worse than either: a `bigint` in
+// `params` was neither corrupted nor rejected — it VANISHED, expanding to the empty string and
+// producing a request to the wrong URL. That finding left this directory as
+// `issue-drafts/bigint-in-params-vanishes.md`, and #661 fixed it before the issue was even
+// filed: `bigint` joined `expandTemplateVar`'s scalar arm. C5(a) now pins the FIXED behaviour —
+// the exact digits in the URL — and the rows that still corrupt are the `number` ones.
 //
 //   pnpm exec tsx docs/scenarios/proofs/precision-loss/c5-request-side.ts
 import { fetchAdapter } from '../../../../packages/core/src/http-adapter';
@@ -107,22 +110,18 @@ async function main(): Promise<void> {
             { params: { id: BigInt(SNOWFLAKE) } },
         );
         checkStr(
-            'a BIGINT param — measured',
+            'a BIGINT param — the exact digits',
             asBigint.url,
-            `${BASE}/v1/things/`,
+            `${BASE}/v1/things/${SNOWFLAKE}`,
         );
         check(
-            'the id VANISHED from the URL',
+            'the id is PRESENT in the URL',
             asBigint.url.includes(SNOWFLAKE),
-            false,
+            true,
         );
-        check(
-            'and the call still succeeded — no error, no event',
-            asBigint.error,
-            '',
-        );
+        check('and the call succeeded — no error', asBigint.error, '');
         note(
-            '→ NOT IN THE CAPTURE, and the worst outcome of the three. `expandTemplateVar` (util.ts:392) branches on `string | number | boolean`; a bigint matches none of them and falls to the object arm, where `Object.entries(9007199254740993n)` is `[]`, so nothing is emitted. A repaired pipeline that hands its BigInt id straight back to a path parameter silently requests the COLLECTION instead of the item',
+            '→ FOUND BY THIS SURVEY, THEN FIXED. The first run measured the worst outcome of the three: `expandTemplateVar` branched on `string | number | boolean`, a bigint fell to the object arm, `Object.entries(9007199254740993n)` is `[]`, and the id VANISHED — `…/v1/things/`, a collection request where an item was meant, with no error and no event. Drafted as issue-drafts/bigint-in-params-vanishes.md; #661 fixed it before filing: the scalar arm (util.ts:421) now lists `bigint`, and this run pins the repaired behaviour',
             '',
         );
     }
@@ -159,7 +158,7 @@ async function main(): Promise<void> {
             `${BASE}/v1/things?since=${SNOWFLAKE}`,
         );
         note(
-            '→ the query path DOES handle bigint, correctly and exactly. `stringifyLeaf` (util.ts:332) lists `bigint` alongside number and boolean. So the two URL positions disagree with each other: `query` is bigint-safe, `params` drops it',
+            '→ the query path handles bigint correctly and exactly — `stringifyLeaf` (util.ts:371) has always listed `bigint` alongside number and boolean. Before #661 the two URL positions disagreed with each other (`query` bigint-safe, `params` dropping it); since #661 they agree',
             '',
         );
     }
@@ -216,7 +215,7 @@ async function main(): Promise<void> {
         );
         checkStr('a BIGINT in a form body', asBigint.body, `id=${SNOWFLAKE}`);
         note(
-            'so of four outbound positions, bigint works in two (query, form), throws in one (json body) and silently vanishes in one (params)',
+            'so of four outbound positions, bigint works in three (params, query, form) and throws in one (json body) — loud, and the correct refusal. Before #661 it was works-in-two: `params` silently vanished it',
             '',
         );
     }
@@ -253,7 +252,7 @@ async function main(): Promise<void> {
 
     finish(
         'C5',
-        'CONFIRMED for the body, and the survey found a THIRD outcome the capture did not anticipate. `params`: a string survives (/v1/things/1234567890123456789); a number goes out as 1234567890123456800 — the shortest-form rendering, a THIRD wrong digit string; and a BIGINT VANISHES, producing the URL https://api.snowflake.test/v1/things/ with no error and no event, because `expandTemplateVar` (util.ts:392) branches on string|number|boolean and `Object.entries(<bigint>)` is empty. `query`: string and bigint both survive EXACTLY (?since=1234567890123456789) because `stringifyLeaf` (util.ts:332) lists bigint; a number corrupts the same way. JSON `body`: a bigint throws exactly "Do not know how to serialize a BigInt" and no request is made — the capture confirmed, and the LOUD outcome. A `form` body handles bigint correctly (id=1234567890123456789), since it shares the query walker. So of four outbound positions, bigint works in two, throws in one, and silently vanishes in one — and the two URL positions disagree with each other. End to end, reading an id and handing it straight back produces a request for /v1/things/1234567890123456800: the openclaw `Unknown Channel` shape in eight lines, with nothing reported',
+        'CONFIRMED for the body, and the survey\'s own extra finding is now FIXED and pinned. `params`: a string survives (/v1/things/1234567890123456789); a number goes out as 1234567890123456800 — the shortest-form rendering, a THIRD wrong digit string; and a bigint renders its EXACT digits, because #661 added `bigint` to `expandTemplateVar`\'s scalar arm (util.ts:421). The first run of this survey measured the pre-#661 behaviour — the bigint VANISHED, producing https://api.snowflake.test/v1/things/ with no error and no event — drafted it as issue-drafts/bigint-in-params-vanishes.md, and #661 fixed it before the issue was filed. `query`: string and bigint both survive EXACTLY (?since=1234567890123456789) because `stringifyLeaf` (util.ts:371) lists bigint; a number corrupts the same way. JSON `body`: a bigint throws exactly "Do not know how to serialize a BigInt" and no request is made — the capture confirmed, and the LOUD outcome. A `form` body handles bigint correctly (id=1234567890123456789), since it shares the query walker. So of four outbound positions, bigint now works in three and throws in one — the two URL positions agree with each other again. What is NOT fixed is the number rows: end to end, reading an id and handing it straight back still produces a request for /v1/things/1234567890123456800 — the openclaw `Unknown Channel` shape in eight lines, with nothing reported',
     );
 }
 

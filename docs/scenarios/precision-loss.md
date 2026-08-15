@@ -1,6 +1,7 @@
 # Scenario: the ID that changed on the way in
 
-**Researched:** 2026-08-05 · **Status:** ✅ verified (8 claims, 191 checks, offline) · page shipped
+**Researched:** 2026-08-05 · **Re-verified:** 2026-08-15 (Zod 4, post-#661) · **Status:** ✅
+verified (8 claims, 191 checks, offline) · page shipped
 **Slug:** `precision-loss`
 
 ---
@@ -26,7 +27,8 @@ Three properties make this genuinely hard rather than merely annoying:
 - **The damage happens before your code runs.** By the time any application-level hook, schema
   or interceptor sees the value, it is already a `Number` and the original digits are gone.
   Validation cannot help: the corrupted value is a perfectly valid number, and often a perfectly
-  plausible ID. A schema that says `z.number().int()` passes it.
+  plausible ID. A schema that says `z.number().int()` passes it. _(True on Zod 3, when this was
+  captured; Zod 4's `.int()` caps at 2⁵³−1 and now rejects it — see the verification result.)_
 - **It is silent and data-dependent.** IDs below 2⁵³ round-trip perfectly, so the bug does not
   appear in dev, in tests, or for the first several years of a vendor's ID sequence. Snowflake
   IDs are time-ordered, which means **the failure arrives on a date**, fleet-wide, for everyone
@@ -121,16 +123,16 @@ value the vendor sent.
 
 **All 8 claims verified**, 191 checks across 8 scripts, re-run by me before writing up.
 
-| Claim                                   | Verdict                                                                                   |
-| --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| C1 — does the default path corrupt?     | **CONFIRMED and silent** — 4 events, 0 findings; sent digits appear nowhere in the spine  |
-| C2 — can anything downstream detect it? | **PARTIALLY REFUTED** — 9 seams blind, but 2 see raw text and a `refine` detector works   |
-| C3 — custom adapter cost                | 84 lines; trace sinks survive (against prediction)                                        |
-| C4 — cache + BigInt                     | `memoryStore` survives; a JSON store throws **fatally**                                   |
-| C5 — request side                       | Four positions, three behaviours — `params` **silently vanishes**                         |
-| C6 — streams                            | Split by **decoder**, not surface: bytes/lines/download lossless; ndjson/json/sse corrupt |
-| C7 — a loud detector                    | 15 lines, **0 false negatives** over 20,000 snowflakes, 0.535% FP                         |
-| C8 — assembled                          | Two setups: REPAIR 16 lines, DETECT 18 lines                                              |
+| Claim                                   | Verdict                                                                                                   |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| C1 — does the default path corrupt?     | **CONFIRMED and silent** — 4 events, 0 findings; sent digits appear nowhere in the spine                  |
+| C2 — can anything downstream detect it? | **PARTIALLY REFUTED** — 2 seams see raw text; a `refine` detector works; Zod 4's `.int()` now rejects too |
+| C3 — custom adapter cost                | 84 lines; trace sinks survive (against prediction)                                                        |
+| C4 — cache + BigInt                     | `memoryStore` survives; a JSON store throws **fatally**                                                   |
+| C5 — request side                       | Four positions — the `params` bigint-vanish found here is **fixed (#661)**; a `number` still corrupts     |
+| C6 — streams                            | Split by **decoder**, not surface: bytes/lines/download lossless; ndjson/json/sse corrupt                 |
+| C7 — a loud detector                    | 15 lines, **0 false negatives** over 20,000 snowflakes, 0.535% FP                                         |
+| C8 — assembled                          | Two setups: REPAIR 16 lines, DETECT 18 lines                                                              |
 
 ### Hypotheses that were wrong
 
@@ -143,7 +145,9 @@ happening.
 
 **"Validation cannot help."** `z.number().refine(Number.isSafeInteger)` separates corrupted from
 intact, and the boundary walk shows `lossless=false` never co-occurs with `flagged=false` — false
-negatives are **impossible**, not merely unobserved.
+negatives are **impossible**, not merely unobserved. Zod 4 later retired the capture's example
+outright: `.int()` now enforces the safe-integer range, so `z.number().int()` rejects the
+corrupted id (`Too big: expected int to be <=9007199254740991`) instead of passing it.
 
 **"Trace sinks break under BigInt."** `trace.ts` ships a `bigintSafe` replacer deliberately, so a
 `fileSink` is the one diagnostic surface that ends up holding the vendor's real digits.
@@ -155,4 +159,5 @@ double's shortest form _is_ `"19.99"`. Decimals fail in **arithmetic**; integers
 ### Outputs
 
 - Page: [precision-loss.mdx](../../apps/docs/content/docs/scenarios/precision-loss.mdx)
-- Draft: [bigint-in-params-vanishes](issue-drafts/bigint-in-params-vanishes.md)
+- Draft: [bigint-in-params-vanishes](issue-drafts/bigint-in-params-vanishes.md) — superseded:
+  fixed by #661 before the issue was filed

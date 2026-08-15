@@ -4,7 +4,7 @@
 // Measured: `info | undeclared | settlement_delay_ms | undeclared field (number)`, the call
 // succeeds, and the added value is STRIPPED from what the caller receives. That last half is the
 // part nobody writes down: drift tells you a field appeared and simultaneously guarantees you
-// cannot read it, because the value the engine serves is the VALIDATED one (engine.ts:1224).
+// cannot read it, because the value the engine serves is the VALIDATED one (engine.ts:1264).
 //
 //   pnpm exec tsx docs/scenarios/proofs/intermittent-drift/c1-added-field.ts
 import { drift, stitch } from '../../../../packages/core/src/index';
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     }
 
     // ── (b) …and the added value never reaches the caller ────────────────────────────────────
-    // The engine serves `validated`, not `raw` (engine.ts:1224), and a Zod object strips unknown
+    // The engine serves `validated`, not `raw` (engine.ts:1264), and a Zod object strips unknown
     // keys. So the one accessor a normal caller uses cannot see the new field at all.
     {
         const call = stitch({
@@ -180,7 +180,7 @@ async function main(): Promise<void> {
 
     finish(
         'C1',
-        'CONFIRMED, and quieter than the capture hoped for. An added field produces exactly one `info|undeclared|settlement_delay_ms|undeclared field (number)` finding, the call succeeds, and 51 added values across a 50-element array collapse to 2 findings with `all 50 elements` and a sample coordinate. `ignore: ["settlement_delay_ms"]` silences it without touching the schema. The half the capture does not mention: the engine serves the VALIDATED value (engine.ts:1224), so the added field is STRIPPED — `data.settlement_delay_ms` is `undefined` on the awaited path, and reading it needs `.inspect().raw`, which is a second request',
+        'CONFIRMED, and quieter than the capture hoped for. An added field produces exactly one `info|undeclared|settlement_delay_ms|undeclared field (number)` finding, the call succeeds, and 51 added values across a 50-element array collapse to 2 findings with `all 50 elements` and a sample coordinate. `ignore: ["settlement_delay_ms"]` silences it without touching the schema. The half the capture does not mention: the engine serves the VALIDATED value (engine.ts:1264), so the added field is STRIPPED — `data.settlement_delay_ms` is `undefined` on the awaited path, and reading it needs `.inspect().raw`, which is a second request',
     );
 }
 

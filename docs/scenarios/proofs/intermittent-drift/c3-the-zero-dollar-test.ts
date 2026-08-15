@@ -82,7 +82,7 @@ async function main(): Promise<void> {
         check('(a) the call FAILED', r.ok, false);
         check('(a) value the caller received', r.value, null);
         checkSeq('(a) findings', r.findings, [
-            'error|invalid|transaction_id|Expected number, received string',
+            'error|invalid|transaction_id|Invalid input: expected number, received string',
         ]);
         note(
             '(a) → a plain `z.number()` makes a type change FATAL with the field named and the two types named. No coercion, no $0 charge',
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
         check('(c) the call FAILED', r.ok, false);
         check('(c) value the caller received', r.value, null);
         checkSeq('(c) findings', r.findings, [
-            'error|invalid|transaction_id|Expected number, received nan',
+            'error|invalid|transaction_id|Invalid input: expected number, received NaN',
         ]);
         note(
             '(c) → REFUTES the capture: `z.coerce.number()` on `"abc"` does NOT silently become NaN or 0. It is an `error` and the call fails',
@@ -213,7 +213,7 @@ async function main(): Promise<void> {
         const strict = await receive(NUM_TO_STR, 12345);
         check('(h) `z.string()` on a number: call FAILED', strict.ok, false);
         checkSeq('(h) findings', strict.findings, [
-            'error|invalid|transaction_id|Expected string, received number',
+            'error|invalid|transaction_id|Invalid input: expected string, received number',
         ]);
 
         const COERCE_STR = z.object({
@@ -288,7 +288,7 @@ async function main(): Promise<void> {
 
     finish(
         'C3',
-        'THE CAPTURE IS HALF WRONG AND THE OTHER HALF IS WORSE. Refuted: the default is SAFE. `z.number()` on `"12345"` is `error|invalid|transaction_id|Expected number, received string` and the call FAILS with `data: null`; `z.coerce.number()` on `"abc"` also FAILS (`received nan`) because Zod rejects NaN. StitchAPI does not manufacture a $0 charge on its own. Confirmed and worse: TWO ordinary spellings do. `z.coerce.number().catch(0)` on `"abc"` hands the caller literal `0` at `warn`, and `z.coerce.number()` on `null` hands the caller literal `0` at `warn` with NO `.catch()` at all, because `Number(null) === 0` — six wire values (`null`, `""`, `"  "`, `false`, `[]`, `"0"`) coerce to exactly 0 and only `"abc"` rejects. And the finding for `"12345" -> 12345` is BYTE-IDENTICAL to the finding for `"abc" -> 0`: both are `warn|coerced|transaction_id|string -> number`, because `detail` is `kindOf(old) -> kindOf(new)` (drift.ts:77-83) and the VALUES are never in the finding. The tolerant schemas people write to survive drift — `z.union([number,string])`, `z.unknown()` — pass the raw string through with ZERO findings',
+        'THE CAPTURE IS HALF WRONG AND THE OTHER HALF IS WORSE. Refuted: the default is SAFE. `z.number()` on `"12345"` is `error|invalid|transaction_id|Invalid input: expected number, received string` and the call FAILS with `data: null`; `z.coerce.number()` on `"abc"` also FAILS (`received NaN`) because Zod rejects NaN. StitchAPI does not manufacture a $0 charge on its own. Confirmed and worse: TWO ordinary spellings do. `z.coerce.number().catch(0)` on `"abc"` hands the caller literal `0` at `warn`, and `z.coerce.number()` on `null` hands the caller literal `0` at `warn` with NO `.catch()` at all, because `Number(null) === 0` — six wire values (`null`, `""`, `"  "`, `false`, `[]`, `"0"`) coerce to exactly 0 and only `"abc"` rejects. And the finding for `"12345" -> 12345` is BYTE-IDENTICAL to the finding for `"abc" -> 0`: both are `warn|coerced|transaction_id|string -> number`, because `detail` is `kindOf(old) -> kindOf(new)` (drift.ts:77-83) and the VALUES are never in the finding. The tolerant schemas people write to survive drift — `z.union([number,string])`, `z.unknown()` — pass the raw string through with ZERO findings',
     );
 }
 

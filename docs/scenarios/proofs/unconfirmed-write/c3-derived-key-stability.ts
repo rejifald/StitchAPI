@@ -17,9 +17,11 @@
 //   (c) `refKeyOf` — the business fact alone — is stable across all three variants: 1 key, 1 charge.
 //   (d) `canonicalKeyOf` — a sha256 over sorted-key JSON — is likewise stable across all three, and
 //       still moves when the AMOUNT changes, which is the property you actually want.
-//   (e) An `input.body` SCHEMA does not save you: `validateInput` (engine.ts:384-409) validates and
-//       DISCARDS the parsed value, so `keyOf` sees the caller's raw object, not a normalised one. A
-//       Zod schema with `.default()` / key stripping canonicalises nothing for keying purposes.
+//   (e) An `input.body` SCHEMA now saves you too: `validateInput` (engine.ts:415-447) returns the
+//       parsed value and the engine runs the rest of the call on it (engine.ts:1768-1773) —
+//       `applyIdempotency` included — so a canonicalising schema held the naive key at 1 key /
+//       1 charge across all three variants. This audit measured the opposite and filed it as
+//       #648; #663 closed it. (e) is the regression pin.
 //
 //   pnpm exec tsx docs/scenarios/proofs/unconfirmed-write/c3-derived-key-stability.ts
 import { stitch } from '../../../../packages/core/src/index';
@@ -164,15 +166,17 @@ async function main(): Promise<void> {
         );
     }
 
-    // ── (e) an input SCHEMA does not canonicalise the body for `keyOf` ───────────────────────
-    // `validateInput` runs before `buildRequest`, so it is tempting to think a schema normalises the
-    // input the key is derived from. It does not: the validated value is discarded (engine.ts:401).
+    // ── (e) an input SCHEMA canonicalises the body for `keyOf` — the regression pin ──────────
+    // `validateInput` (engine.ts:415-447) returns the parsed input and the engine runs everything
+    // downstream on it (engine.ts:1768-1773), so `buildRequest` → `applyIdempotency` derives the
+    // key from the VALIDATED body. It used to discard the parsed value — measured here as 2 keys /
+    // 2 charges and filed as #648, closed by #663 — so this section pins the fix.
     {
         const clock = manualClock(T0);
         const pay = new FakePayments({ clock });
-        // A validator that returns a CONSTANT canonical value. If `keyOf` saw the validated value,
-        // every key would be identical — so two distinct keys is a direct measurement that it does
-        // not. (`Validator.validate` is async, hence the `Promise.resolve`.)
+        // A validator that returns a CONSTANT canonical value. `keyOf` sees the validated value,
+        // so every key is identical — ONE distinct key is the direct measurement that the parsed
+        // result replaces the raw body. (`Validator.validate` is async, hence the `Promise.resolve`.)
         const canonicalising: Validator = {
             validate: () =>
                 Promise.resolve({
@@ -196,23 +200,23 @@ async function main(): Promise<void> {
         check(
             '(e) DISTINCT keys with a canonicalising body schema in place',
             pay.distinctKeys(),
-            2,
+            1,
         );
         checkCharges(
             '(e) schema + `JSON.stringify(body)`',
             pay.chargeCount(),
             1,
-            2,
+            1,
         );
         note(
             '(e) why',
-            '`validateInput` checks the value and throws away the parsed result — `keyOf` gets the caller’s raw object',
+            '`validateInput` returns the parsed input (#663, closing #648) — `keyOf` gets the canonical value, not the caller’s raw object',
         );
     }
 
     finish(
         'C3',
-        'a derived key is restart-stable but only as stable as what it reads: `JSON.stringify(body)` moved on KEY ORDER alone and produced 2 charges for 1 payment with NO 409, while `refKeyOf` and a canonical sha256 held at 1 key / 1 charge across all three variants; number formatting and undefined fields are harmless in JS, and an input SCHEMA does not canonicalise what `keyOf` sees',
+        'a derived key is restart-stable but only as stable as what it reads: `JSON.stringify(body)` moved on KEY ORDER alone and produced 2 charges for 1 payment with NO 409, while `refKeyOf` and a canonical sha256 held at 1 key / 1 charge across all three variants; number formatting and undefined fields are harmless in JS, and since #663 a canonicalising input SCHEMA tames even the naive key — `keyOf` reads the validated body (1 key, 1 charge)',
     );
 }
 

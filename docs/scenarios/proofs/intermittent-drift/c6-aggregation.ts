@@ -133,7 +133,7 @@ async function main(): Promise<void> {
 
     // ── (c) TRAP 2: the cache divides your drift rate by the hit ratio ───────────────────────
     // A cache hit emits `start` and `result` (so the denominator grows) but no drift (the engine
-    // states outright that soft drift is meaningless on a hit, engine.ts:1605-1613). Five calls
+    // states outright that soft drift is meaningless on a hit, engine.ts:1668-1669). Five calls
     // against a 100%-drifting vendor, one wire request, and the measured rate is 20%.
     {
         const vendor = new FakeVendor({ mutation: 'nulled', rate: 1 });
@@ -144,7 +144,12 @@ async function main(): Promise<void> {
             adapter: vendor.adapter(),
             output: drift(Charge),
             trace: rate,
-            cache: { ttl: 60_000, version: 'v1' },
+            // `fingerprint: 'v1'` is the manual version tag (ADR 0004; bare string ≡
+            // `{ version: 'v1' }`). Without it the fingerprint ladder fails closed on a Zod
+            // schema — no registered fingerprinter → `bypass: no fingerprinter registered for
+            // 'zod'` — and every call would go to the wire, which is a different trap than the
+            // one this section measures.
+            cache: { ttl: 60_000, fingerprint: 'v1' },
         });
         for (let i = 0; i < 5; i += 1) await cached.safe();
 
@@ -341,7 +346,7 @@ async function main(): Promise<void> {
     // ── (h) the seams that DO NOT work, measured ─────────────────────────────────────────────
     // For completeness, because the capture asked "where would a counter live".
     {
-        // hooks: `HookContext` is `{ name, attempt, req?, res?, error? }` (types.ts:1278-1284) and
+        // hooks: `HookContext` is `{ name, attempt, req?, res?, error? }` (types.ts:1443-1449) and
         // `onResponse` runs BEFORE validation, so there is no finding to count there.
         const keys: string[] = [];
         const call = stitch({
@@ -372,7 +377,7 @@ async function main(): Promise<void> {
         );
 
         // A `StitchStore` can hold the counter (Redis, for a rate across workers), but `handle` is
-        // SYNCHRONOUS (`handle(...): void`, types.ts:1957-1960) so the increment is fire-and-forget
+        // SYNCHRONOUS (`handle(...): void`, types.ts:2161-2164) so the increment is fire-and-forget
         // and you own the promise. Measured working, with the caveat on the page.
         const map = new Map<string, number>();
         const store: StitchStore = {

@@ -309,7 +309,7 @@ export const pages: Page[] = [
         path: 'scenarios/mid-stream-failure',
         title: 'A stream that fails after 800 tokens',
         description:
-            'The 200 was spent on the first token, so the failure arrives in-band or not at all. When a stream can be resumed this is one flag; when it cannot — every LLM API — that same flag replays the whole answer.',
+            'The 200 was spent on the first token, so the failure arrives in-band or not at all. When a stream can be resumed this is one flag; when it cannot — every LLM API — the flag has nothing to resume from, and the real answer is two small seams of user code.',
         kind: 'guide',
     },
     {
@@ -400,7 +400,7 @@ export const pages: Page[] = [
         path: 'scenarios/agent-holds-the-tool',
         title: 'The agent picks the arguments',
         description:
-            'Exposing a vendor API to an LLM over MCP. The credential boundary held under 30 payload scans — the argument boundary is yours, and a query parameter pinned in the path is only a default.',
+            'Exposing a vendor API to an LLM over MCP. The credential boundary held under 30 payload scans — the argument boundary is yours, and an input slot with no schema is a full passthrough.',
         kind: 'guide',
     },
     {
@@ -414,7 +414,7 @@ export const pages: Page[] = [
         path: 'scenarios/precision-loss',
         title: 'The ID that changed on the way in',
         description:
-            'JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines — and a bigint in params vanishes.',
+            'JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines.',
         kind: 'guide',
     },
     {

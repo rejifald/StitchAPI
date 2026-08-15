@@ -5,14 +5,15 @@
 //
 //   1. RETRY THE CONNECT, NEVER THE BODY. A 503 before the first byte is replayed; a drop after the
 //      first byte is not. `Surface.execute` is the right home for this because it runs before a
-//      single delta is decoded (engine.ts:1351), so it cannot re-deliver one.
+//      single delta is decoded (engine.ts:1400), so it cannot re-deliver one.
 //   2. `[DONE]` OR IT DID NOT FINISH. The surface's `stream` hook is the only place that sees the
 //      body end, so it is the only place that can tell "ended" from "ended early".
 //   3. AN IN-BAND `{ "error": … }` FRAME IS A FAILURE. Same hook, same reason — and throwing from
 //      it means the bad frame is never handed to the consumer.
 //   4. NEVER LOSE THE PARTIAL. `.stream()` is the only channel that has it (C7), so the consumer
 //      accumulates as it goes and keeps what it has when the run fails.
-//   5. `sse.reconnect` STAYS OFF. On an id-less stream it replays the whole answer (C4).
+//   5. `sse.reconnect` STAYS OFF. On an id-less stream there is nothing to resume from — since
+//      #647 the flag is a no-op there rather than a replay (C4) — so it buys nothing here.
 import type { SseEvent } from '../../../../packages/core/src/sse';
 import { sseSurface } from '../../../../packages/core/src/sse';
 import type { Surface } from '../../../../packages/core/src/surface';

@@ -1,7 +1,7 @@
 // C5 — `pick` / `transform` on a streaming stitch: per-delta or buffering?
 //
 // The question the capture asked is the wrong question, and finding that out is the claim. Neither
-// runs at all. `runStreaming` never calls them (engine.ts:1244-1247 says so in a comment; the code
+// runs at all. `runStreaming` never calls them (engine.ts:1287-1290 says so in a comment; the code
 // path simply has no call site), so the honest answers are "neither" — and the interesting part is
 // what that failure MODE looks like from the call site, because a `pick` that silently does nothing
 // is a config that reads correct and returns the wrong shape.
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
         );
         note(
             '(d) → completely silent',
-            'the engine teaches elsewhere (an upload progress bar the transport cannot draw gets an `info` event — engine.ts:1694-1698). Two ignored config slots on a stream get nothing',
+            'the engine teaches elsewhere (an upload progress bar the transport cannot draw gets an `info` event — engine.ts:1779-1783). Two ignored config slots on a stream get nothing',
         );
     }
 

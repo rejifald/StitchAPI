@@ -198,7 +198,7 @@ async function main(): Promise<void> {
             );
         }
         checkSeq('(c) one null, four declarations', rows, [
-            'required         ok=false finding=error|invalid|formatted_address|Expected string, received null value=<call failed>',
+            'required         ok=false finding=error|invalid|formatted_address|Invalid input: expected string, received null value=<call failed>',
             '.nullable()      ok=true finding=<none> value=null',
             '.catch("")       ok=true finding=warn|coerced|formatted_address|null -> string value=""',
             '.nullish()       ok=true finding=<none> value=null',
@@ -277,7 +277,9 @@ async function main(): Promise<void> {
         checkSeq(
             '(e) the finding',
             [...new Set(findings)],
-            ['error|invalid|formatted_address|Expected string, received null'],
+            [
+                'error|invalid|formatted_address|Invalid input: expected string, received null',
+            ],
         );
         note(
             '(e) → a 5% hard failure rate, each one naming the field. This IS the detection the scenario wants; the price is that the caller loses `place_id`, `lat` and `lng` too',

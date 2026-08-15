@@ -8,8 +8,8 @@
 // MEASURED: it does. Four calls behind `throttle: { rate: '1/2m' }` were granted at 0, 2, 4 and 6
 // virtual minutes, and every one of them carried a signature aged 0ms on arrival. The fourth waited
 // SIX MINUTES — past the five-minute window — and was accepted, because it was signed at the moment
-// its slot came up, not at the moment it was enqueued. `auth.apply` runs at engine.ts:649, INSIDE
-// the attempt loop and AFTER the `acquireWithin` at engine.ts:629.
+// its slot came up, not at the moment it was enqueued. `auth.apply` runs at engine.ts:677, INSIDE
+// the attempt loop and AFTER the `acquireWithin` at engine.ts:657.
 //
 // Part (b) is the control, and it is what makes (a) evidence rather than an assertion: the same
 // four calls with the headers pre-signed at t=0 measured ages of 0 / 2 / 4 / 6 minutes and a 403
@@ -136,11 +136,11 @@ async function main(): Promise<void> {
     }
 
     // ── (c) the SHIPPED signer, on the real clock ─────────────────────────────────────────────
-    // (a) uses `clockSigV4` because `awsSigV4` stamps `new Date()` (C5), so a virtual queue is
-    // invisible to it. That makes (a) a measurement of the ENGINE's ordering with a substitute
-    // strategy. This part closes the gap: the real `@stitchapi/aws-sigv4`, real time, a real
-    // ~2.4-second queue. Both instruments run through the same seam (`cfg.auth.apply`), so if the
-    // ordering held only for the substitute, this is where it would show.
+    // (a) uses `clockSigV4`, written when `awsSigV4` still stamped `new Date()` (C5's original
+    // finding, fixed by #667) — so (a) measures the ENGINE's ordering with an independent
+    // strategy. This part keeps the corroborating run: the real `@stitchapi/aws-sigv4`, real time,
+    // a real ~2.4-second queue. Both instruments run through the same seam (`cfg.auth.apply`), so
+    // if the ordering held only for one of them, this is where it would show.
     {
         const aws = new FakeAws({ clock: systemClock });
         const signed: SignEvent[] = [];
@@ -193,7 +193,7 @@ async function main(): Promise<void> {
     }
 
     // ── (d) the one seam that CAN reintroduce the bug ────────────────────────────────────────
-    // `hooks.onRequest` runs at engine.ts:652 — AFTER `cfg.auth.apply` at 649 and before the
+    // `hooks.onRequest` runs at engine.ts:680 — AFTER `cfg.auth.apply` at 677 and before the
     // transport. Everything the engine does with the request happens before signing; this hook is
     // the single place a user's own code runs after it. A hook that WAITS therefore ages the
     // signature by exactly its wait, and the natural reason to put a wait there — pacing the call
@@ -231,7 +231,7 @@ async function main(): Promise<void> {
         check('(d) the call failed', result.ok, false);
         note(
             '(d) the ordering',
-            'auth.apply engine.ts:649 → hooks.onRequest engine.ts:652 → transport. A hook is the ONLY user code that runs after signing',
+            'auth.apply engine.ts:677 → hooks.onRequest engine.ts:680 → transport. A hook is the ONLY user code that runs after signing',
         );
     }
 

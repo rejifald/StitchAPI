@@ -63,7 +63,7 @@ async function driveJob(
         url: URL_CHARGES,
         adapter: pay.adapter(),
         retry: { attempts: 3, backoff: { curve: 'fixed', base: '2s' } },
-        timeout: { perAttempt: '5s' },
+        timeout: { each: '5s' },
         clock,
         ...extra,
     });

@@ -11,10 +11,12 @@
 //      `{ id: <digits> }` is described to the model as `"params": true`. The schema is on the
 //      config (`__config.input.params`) and is simply not projected, so the model must guess and
 //      find out by failing.
-//   3. A declared schema is CHECK-ONLY, and it covers one slot. `validateInput` (engine.ts:384-409)
-//      throws when a slot fails and otherwise DISCARDS the parsed value — so a schema that strips
-//      unknown keys does not strip them from the request. Measured below: a `query` schema that
-//      returns `{ limit: 10 }` still puts the model's `tenant=globex` on the wire.
+//   3. A declared schema covers ONE slot — and since #663 it FILTERS that slot. This audit first
+//      measured `validateInput` throwing on failure and otherwise DISCARDING the parsed value, so
+//      a stripping schema let the model's `tenant=globex` through to the wire; we filed that as
+//      #648, and #663 fixed it: `validateInput` (engine.ts:415-447) now RETURNS each declared
+//      slot's parsed value — coerced, defaulted, stripped — and the engine runs on it. Section (e)
+//      is the regression pin. What remains is (d): an UNDECLARED slot is the full passthrough.
 //
 // The good news is real and worth stating first: validation runs BEFORE any request is built, so a
 // slot that fails its contract costs the vendor nothing.
@@ -46,7 +48,8 @@ interface RunStitchSchema {
 /**
  * A validator shaped like every mainstream schema library's default object mode: it ACCEPTS the
  * value and returns a copy with unknown keys removed. Zod's `.parse`, Valibot's `object`, ArkType's
- * default — all of them strip. The question is whether the engine uses what came back.
+ * default — all of them strip. The question is whether the engine uses what came back — before
+ * #663 it did not; (e) pins that it now does.
  */
 const strippingQuery: Validator = {
     validate: (value) =>
@@ -137,7 +140,7 @@ async function main(): Promise<void> {
     });
     check('a failed contract costs the vendor nothing', wire.count, 0);
     note(
-        'engine.ts:1687 — `await validateInput(cfg, input)` is the first thing `execute` does',
+        'engine.ts:1773 — `input = await validateInput(cfg, callInput)` is the first thing `execute` does',
         'ahead of buildRequest, auth, throttle and the adapter',
     );
 
@@ -163,7 +166,7 @@ async function main(): Promise<void> {
     );
 
     heading(
-        'C7 (e) — a declared schema is CHECK-ONLY: the parsed value is discarded',
+        'C7 (e) — a declared schema FILTERS: the request is built from the parsed value (#663)',
     );
     const stripWire = new Wire(route);
     const stripApi = seam({ baseUrl: BASE, adapter: stripWire.adapter() });
@@ -193,27 +196,27 @@ async function main(): Promise<void> {
         '{"limit":10}',
     );
     checkWire(
-        'but the wire carried the STRIPPED key too',
+        'and the wire carries what the validator RETURNED',
         stripWire.last.url,
-        `${BASE}/v1/orders?tenant=globex&limit=10`,
+        `${BASE}/v1/orders?tenant=acme&limit=10`,
     );
     check(
-        'and the operator’s pinned tenant is gone',
+        'the stripped key is gone and the operator’s pin survives',
         new URL(stripWire.last.url).searchParams.get('tenant'),
-        'globex',
+        'acme',
     );
     note(
-        'engine.ts:400-408 — `const r = await v.validate(...); if (!r.ok) throw`',
-        'the parsed value is never read; `output` uses its parsed value (engine.ts:428), `input` does not',
+        'engine.ts:444 — `out[part] = r.value`: the parsed value replaces the slot',
+        'validateInput returns the input the request is built from (engine.ts:415-447), and `execute` runs on it — the same parsed-value rule `output` has had since ADR 0015',
     );
     note(
-        'so a stripping schema is a validity check, not a filter',
-        'an operator who writes `z.object({ limit: z.number() })` on `query` and expects unknown keys to be dropped is wrong — they reach the vendor',
+        'before #663 this section measured `?tenant=globex&limit=10` — the parsed value was discarded',
+        'filed from this audit as #648; the two checks above are the regression pin on the fix',
     );
 
     finish(
         'C7',
-        'THE MODEL IS TOLD A SLOT EXISTS AND NEVER WHAT GOES IN IT, AND A DECLARED SCHEMA IS A CHECK RATHER THAN A FILTER. The tool schema is four untyped bags — `params`/`query`/`headers` typed `object`, `body` typed as anything, no `required`, no `additionalProperties: false` (while `list_stitches`, which takes nothing, IS closed) — and it is identical for every stitch, because one tool for every endpoint is what code-mode buys its constant context with. `describe_stitch` does not make up the difference: a stitch whose `params` contract is `{ id: <digits> }` is described as `"params": true`, so a model that guesses `{ orderId: 77 }` learns the shape only by failing. ONE HALF IS GENUINELY GOOD: `validateInput` is the first thing `execute` does (engine.ts:1687), so a slot that breaks its contract costs the vendor zero requests. TWO HALVES ARE NOT. A schema constrains ONE SLOT — `getOrderTyped` declares `params` and the model still appended `?tenant=globex&include=internal_notes` through the undeclared `query`. And the check is check-only: `validateInput` throws on failure and DISCARDS the parsed value (engine.ts:400-408), so a schema that strips unknown keys — which is the default behaviour of Zod, Valibot and ArkType alike — does not strip them from the request. Measured: a `query` validator that returned `{ limit: 10 }` still put `?tenant=globex&limit=10` on the wire, overwriting the operator\'s pinned `tenant=acme`. `output` uses its parsed value; `input` never does',
+        "THE MODEL IS TOLD A SLOT EXISTS AND NEVER WHAT GOES IN IT — AND A DECLARED SCHEMA NOW FILTERS ITS SLOT, WHILE AN UNDECLARED SLOT STAYS A FULL PASSTHROUGH. The tool schema is four untyped bags — `params`/`query`/`headers` typed `object`, `body` typed as anything, no `required`, no `additionalProperties: false` (while `list_stitches`, which takes nothing, IS closed) — and it is identical for every stitch, because one tool for every endpoint is what code-mode buys its constant context with. `describe_stitch` does not make up the difference: a stitch whose `params` contract is `{ id: <digits> }` is described as `\"params\": true`, so a model that guesses `{ orderId: 77 }` learns the shape only by failing. TWO HALVES ARE NOW GENUINELY GOOD: `validateInput` is the first thing `execute` does (engine.ts:1773), so a slot that breaks its contract costs the vendor zero requests — and since #663 (issue #648, filed from this audit) it RETURNS each declared slot's parsed value and the engine runs on it (`out[part] = r.value`, engine.ts:444), so a schema that strips unknown keys — the default behaviour of Zod, Valibot and ArkType alike — strips them from the request too. Measured as the regression pin: a `query` validator that returned `{ limit: 10 }` put `?tenant=acme&limit=10` on the wire — the model's `tenant=globex` gone, the operator's pinned tenant restored. THE HALF THAT REMAINS: a schema constrains ONE SLOT — `getOrderTyped` declares `params` and the model still appended `?tenant=globex&include=internal_notes` through the undeclared `query` — and nothing requires a slot to be declared. `input` now follows the same parsed-value rule `output` has always had (ADR 0015)",
     );
 }
 

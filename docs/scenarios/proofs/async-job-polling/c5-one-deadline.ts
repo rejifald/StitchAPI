@@ -1,7 +1,7 @@
 // C5 — THE DECIDING CLAIM. Is there ONE deadline over submit + N polls + download? "Give up after
 // an hour" is a budget over the whole triangle, not over any single call.
 //
-// Four candidates are measured for what each ACTUALLY bounds: `timeout.total`, `timeout.perAttempt`,
+// Four candidates are measured for what each ACTUALLY bounds: `timeout.total`, `timeout.each`,
 // three `linked` members each with their own budget, and a caller-owned `AbortSignal`.
 //
 // One measurement here is deliberately WALL-CLOCK: `timeout.total`'s deadline is compared against
@@ -125,11 +125,18 @@ async function main(): Promise<void> {
         const wall = Date.now() - t0;
 
         check('(a) the call failed', r.ok, false);
-        // The engine throws a `TimeoutError` (engine.ts:468-469), but every failure reaches the
-        // caller as a `StitchError` — the identity is flattened, so only the MESSAGE distinguishes
-        // "the deadline fired" from "the job failed" from "the poll budget ran out".
+        // The engine throws a `TimeoutError` (engine.ts:505-506) and the caller still gets a
+        // `StitchError` — but the live instance now rides `error.cause`, so "the deadline fired"
+        // is a structural check (`cause.constructor.name === 'TimeoutError'`; the class is
+        // unexported and never sets `.name`). "The job failed" and "the poll budget ran out"
+        // carry no such cause and are still told apart by MESSAGE alone.
         check('(a) error name', r.error?.name, 'StitchError');
         check('(a) error message', r.error?.message, 'timed out after 250ms');
+        check(
+            '(a) the live `TimeoutError` rides `error.cause`',
+            (r.error?.cause as Error | undefined)?.constructor.name,
+            'TimeoutError',
+        );
         checkAtMost('(a) wall-clock elapsed (ms)', wall, 1000);
         check('(a) submits', api.submits, 1);
         check(
@@ -144,8 +151,8 @@ async function main(): Promise<void> {
         );
     }
 
-    // ── (b) `timeout.perAttempt` bounds ONE poll, not the operation ───────────────────────────
-    // Its own doc says so (types.ts:1064-1069). Under a manual clock the per-attempt deadline is
+    // ── (b) `timeout.each` bounds ONE poll, not the operation ─────────────────────────────────
+    // Its own doc says so (types.ts:1167-1176). Under a manual clock the per-attempt deadline is
     // clock-driven, so this one IS virtual: 40 polls run to the retry budget, each well inside its
     // own 5s attempt window, while 40× that has elapsed.
     {
@@ -165,16 +172,12 @@ async function main(): Promise<void> {
             adapter: api.adapter(),
             clock,
             retry: { attempts: 40 },
-            timeout: { perAttempt: '5s' },
+            timeout: { each: '5s' },
         });
         const p = poll.safe();
         await clock.advance(24 * 3_600_000);
         const r = await p;
-        check(
-            '(b) polls made under `perAttempt: 5s`',
-            api.polls(id).length,
-            40,
-        );
+        check('(b) polls made under `each: 5s`', api.polls(id).length, 40);
         check(
             '(b) virtual time the last poll landed at (ms)',
             api.polls(id).at(-1)?.at,
@@ -187,7 +190,7 @@ async function main(): Promise<void> {
         );
         check('(b) error message', r.error?.message, 'InProgress');
         note(
-            '(b) → 39 virtual minutes elapsed under a "5s" timeout; it bounds an attempt, nothing more',
+            '(b) → 39 virtual minutes elapsed under a "5s" `each`; it bounds an attempt, nothing more',
             '',
         );
     }
@@ -288,11 +291,11 @@ async function main(): Promise<void> {
             .then(() => ctrl.abort(new Error('job budget exhausted')));
         await clock.advance(24 * 3_600_000);
 
-        // NOT `job budget exhausted`: both clocks' `sleep` reject with a fresh `Error('aborted')`
-        // and discard `signal.reason` (util.ts:39-55, test-clock.ts:64-79), even though the engine's
-        // own `abortReason` (engine.ts:544-549) preserves it on the throttle path. An abort that
-        // lands during a poll wait therefore loses the caller's reason.
-        check('(d) the flow', await settled, 'rejected: aborted');
+        // The caller's reason SURVIVES (#674): both clocks' `sleep` reject with
+        // `abortReason(signal)` — the signal's own reason whenever it is an Error (util.ts:39-69;
+        // test-clock.ts:65-85 mirrors it) — so an abort that lands during a poll wait surfaces the
+        // deadline's `Error('job budget exhausted')` verbatim, not a minted 'aborted'.
+        check('(d) the flow', await settled, 'rejected: job budget exhausted');
         check('(d) submits', api.submits, 1);
         check(
             '(d) polls made in one virtual hour',
@@ -359,7 +362,7 @@ async function main(): Promise<void> {
 
     finish(
         'C5',
-        'YES, with user code — and by TWO different routes with different costs. (1) Collapse the triangle into ONE stitch (C1(e)’s hook rewrite) and `timeout.total` is a single wall-clock budget over submit + polls + download: measured 253ms wall, `timed out after 250ms`, 1 submit, both hops inside it. (2) Keep three stitches under `linked` and thread ONE caller-owned `AbortSignal` through every `input.signal`: measured 6 polls in a virtual hour, then a rejection. What does NOT express it: `timeout.perAttempt` (39 virtual minutes elapsed under a "5s" setting), and `linked` itself, which takes a body and no options — three members means three independent budgets summing to 90s. The trap: `timeout.total` is compared against WALL-CLOCK while its sleeps run on the injected clock, so under a `manualClock` it goes silent — 60 polls across 59 virtual seconds never tripped a 10s total',
+        'YES, with user code — and by TWO different routes with different costs. (1) Collapse the triangle into ONE stitch (C1(e)’s hook rewrite) and `timeout.total` is a single wall-clock budget over submit + polls + download: measured 251ms wall, `timed out after 250ms` with the live `TimeoutError` on `error.cause`, 1 submit, both hops inside it. (2) Keep three stitches under `linked` and thread ONE caller-owned `AbortSignal` through every `input.signal`: measured 6 polls in a virtual hour, then a rejection carrying the caller’s own reason (`job budget exhausted`, #674). What does NOT express it: `timeout.each` (39 virtual minutes elapsed under a "5s" setting), and `linked` itself, which takes a body and no options — three members means three independent budgets summing to 90s. The trap: `timeout.total` is compared against WALL-CLOCK while its sleeps run on the injected clock, so under a `manualClock` it goes silent — 60 polls across 59 virtual seconds never tripped a 10s total',
     );
 }
 

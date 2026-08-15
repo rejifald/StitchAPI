@@ -42,7 +42,10 @@ Three things become configuration, and they're worth having:
 ```ts
 const putPart = stitch({
     method: 'PUT',
-    url: 'https://s3.example.com/{key}?partNumber={part}&uploadId={uploadId}',
+    // `{?…}` is the RFC 6570 query operator, filled from `params`. A literal
+    // `?partNumber={part}` suffix is split off BEFORE templating and ships
+    // its braces percent-encoded.
+    url: 'https://s3.example.com/{key}{?partNumber,uploadId}',
     // S3's own transient error is 500 InternalError — NOT in the default set.
     retry: { attempts: 3, on: [429, 500, 502, 503, 504] },
     // One stitch, called N times. `pool: 'host'` because the default is per-stitch.

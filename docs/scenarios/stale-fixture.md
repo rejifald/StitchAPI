@@ -1,6 +1,7 @@
 # Scenario: the mock that passed for six months
 
-**Researched:** 2026-08-05 · **Status:** ✅ verified (8 claims, 168 checks, offline) · page shipped
+**Researched:** 2026-08-05 · **Re-verified:** 2026-08-15, post-#664/#667 (C2 j–k, C3 e and C5 g
+are now green regression pins) · **Status:** ✅ verified (8 claims, 172 checks, offline) · page shipped
 **Slug:** `stale-fixture`
 
 ---
@@ -125,10 +126,10 @@ suspicion, and if `manualClock` is unsound anywhere the testing guide needs to s
 | Claim                               | Verdict                                                                                                                                                                                                            |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | C1 — can a stale fixture be caught? | **PARTIAL — and the missing half is the scenario.** Fixture-drifts-from-schema: 4/4 caught. Vendor-drifts-while-fixture-holds: test `ok: true`, prod `ok: false`, 5 keys different, **nothing offline detects it** |
-| C2 — is `manualClock` sound?        | **CONFIRMED, and wider than recorded — 6 wall-clock, not 3**                                                                                                                                                       |
-| C3 — what does `mockAdapter` check? | Almost nothing; and it **fails the library's own adapter contract**                                                                                                                                                |
+| C2 — is `manualClock` sound?        | **CONFIRMED at audit time — 6 wall-clock, not 3.** Filing worked: OAuth2 + SigV4 are driven since #664/#667, so C2 now pins **8 driven / 4 wall** (the 4 are ADR 0010 §4 decisions)                                |
+| C3 — what does `mockAdapter` check? | Almost nothing; the adapter-contract violation found here is **fixed by #664** — 9/9 rules pass                                                                                                                    |
 | C4 — resilience without a vendor?   | **Fully testable.** The strongest result in the scenario                                                                                                                                                           |
-| C5 — `stubStitch` input contract    | Runs **none** of the input schemas; plus a `.safe()` bug                                                                                                                                                           |
+| C5 — `stubStitch` input contract    | Runs **none** of the input schemas; the `.safe()` sync-throw bug found here is **fixed by #664**                                                                                                                   |
 | C6 — sandbox parity                 | Targeting yes (3 targets, one `extends`), scheduling no                                                                                                                                                            |
 | C7 — streams                        | **Fully deterministic** — 5 runs, 1 outcome, byte-identical                                                                                                                                                        |
 | C8 — assembled                      | 98 lines, 5 seams, closes 4 of 5                                                                                                                                                                                   |
@@ -156,3 +157,9 @@ there is no cross-call baseline by design.
 
 - Page: [stale-fixture.mdx](../../apps/docs/content/docs/scenarios/stale-fixture.mdx)
 - Draft: [testing-kit-clock-gaps-and-two-bugs](issue-drafts/testing-kit-clock-gaps-and-two-bugs.md)
+  — filed as #650, fixed by #664: OAuth2 token freshness reads the engine-threaded `ctx.clock`
+  (`auth.ts:432`), `mockAdapter` rejects a pre-aborted signal before any route logic
+  (`test-mock.ts:165-170`), and `stubStitch().safe()` resolves `ok: false` for a sync-throwing
+  impl (`test-stub.ts:59-70`). The SigV4 half went through #658, fixed by #667. The probes were
+  re-pinned to the fixed behaviour on 2026-08-15 (C2 j–k expect DRIVEN; C3 e expects 9/9; C5 g
+  expects `ok=false`).

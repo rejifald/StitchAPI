@@ -5,23 +5,27 @@
 // requests-per-second cap does not protect you: what the vendor counts is how many of your
 // connections are open at once. The only honest measurement is PEAK IN-FLIGHT at the server.
 //
-// MEASURED: the declaration works, on ONE stitch, and every way of spreading the fan-out across
-// stitch OBJECTS silently multiplies the budget by the number of objects.
+// MEASURED: the declaration works, on ONE stitch, and spreading the fan-out across stitch
+// OBJECTS silently multiplies the budget — unless the limiter STATE is pooled: `pool: 'host'`
+// in-process, a lease-capable store fleet-wide (ADR 0025), or a seam.
 //   (a) no throttle → peak 100. `all()` bounded nothing (C1 d) and neither does a bare loop.
 //   (b) `throttle: { concurrency: 8 }` on ONE stitch called 100 times → PEAK 8. It holds exactly,
 //       and it is the right construction for this scenario.
 //   (c) THE TRAP: 100 SEPARATE stitches, each declaring `concurrency: 8` → PEAK 100. Each
-//       `stitch()` builds its own limiter (stitch.ts:985-988) with closure-local state
-//       (resilience.ts:107), so "8 at a time" became "8 at a time, 100 times over".
+//       `stitch()` builds its own limiter (stitch.ts:1042-1046) with closure-local state
+//       (resilience.ts:111), so "8 at a time" became "8 at a time, 100 times over".
 //   (d) `pool: 'host'` fixes (c) — peak 8 across 100 separate stitches, via the module-level
-//       `hostStates` registry (resilience.ts:84,106-107).
-//   (e) …and ADDING A `store` SILENTLY BREAKS THAT FIX AGAIN. `createStoreThrottle` keeps
-//       concurrency in a closure-local Map (store.ts:137-151) and never reads `pool` at all, so
-//       `pool: 'host'` + `store` measured PEAK 100. The store is what you add for cross-process
-//       rate limiting; it un-pools the concurrency on the way past.
+//       `hostStates` registry (resilience.ts:88,111).
+//   (e) …and a lease-capable `store` KEEPS that fix now (ADR 0025, #630). The engine keys the
+//       store throttle with the same pool-aware host key (engine.ts:642 → :274-283) and the
+//       store owns ONE counting semaphore under it (lease verbs, store.ts:90-106), so
+//       `pool: 'host'` + `store` measured PEAK 8 — a budget store.spec.ts:456-464 pins
+//       fleet-wide. Before #630 the store throttle kept concurrency per-instance and this exact
+//       construction measured PEAK 100; that residue survives only on a lease-LESS store
+//       (store.spec.ts:466-475).
 //   (f) A SEAM with a seam-level `concurrency` DOES pool across its members — peak 8 over 100
-//       member stitches (seam.ts:51-69) — which is the one construction that survives the
-//       stitch-per-id shape.
+//       member stitches (seam.ts:51-69) — which survives the stitch-per-id shape with nothing
+//       else declared.
 //   (g) A BACKING-OFF CALL HOLDS ITS SLOT. The backoff sleep is inside the `try` the release's
 //       `finally` guards (engine.ts:760-765, 834-837), so N slots can be occupied by N calls that
 //       are asleep and issuing nothing — measured 4 of 4 idle for 95% of the run.
@@ -103,7 +107,7 @@ async function main(): Promise<void> {
         );
         check('(b) requests made', vendor.customerRequests, 100);
         note(
-            '(b) → the slot is keyed on `nameOf(cfg)` (engine.ts:265-274)',
+            '(b) → the slot is keyed on `nameOf(cfg)` (engine.ts:274-283)',
             'one stitch called N times is ONE key over ONE limiter — which is exactly this scenario',
         );
     }
@@ -135,7 +139,7 @@ async function main(): Promise<void> {
         );
         note(
             '(c) → 100 limiters, 8 slots each: a declared budget multiplied by 100',
-            'stitch.ts:985-988 builds a throttle per stitch; `createThrottle` keeps state in a closure-local Map (resilience.ts:107)',
+            'stitch.ts:1042-1046 builds a throttle per stitch; `createThrottle` keeps state in a closure-local Map (resilience.ts:111)',
         );
     }
 
@@ -163,14 +167,16 @@ async function main(): Promise<void> {
         );
         note(
             '(d) → the state moves to a MODULE-level registry',
-            '`hostStates` (resilience.ts:84) is shared by every host-pooled limiter in the process, and `hostKey` keys on the URL host (engine.ts:265-274)',
+            '`hostStates` (resilience.ts:88) is shared by every host-pooled limiter in the process, and `hostKey` keys on the URL host (engine.ts:274-283)',
         );
     }
 
-    // ── (e) …and a `store` silently un-does it ─────────────────────────────────────────────────
-    // A store is what you add to make the RATE budget cross-process. `createStoreThrottle` does not
-    // read `pool` at all and keeps `inFlight`/`waiters` in its own closure-local Map, so the
-    // concurrency bound goes back to per-object — while the config still says `pool: 'host'`.
+    // ── (e) …and a lease-capable `store` now KEEPS the fix ─────────────────────────────────────
+    // A store is what you add to make the budgets cross-process, and since ADR 0025 (#630) that
+    // includes CONCURRENCY: the engine hands the store throttle the same pool-aware host key it
+    // gives the in-process limiter (engine.ts:642 → :274-283), and a store with the lease verbs
+    // (`memoryStore`: store.ts:90-106) holds ONE counting semaphore under that key — for this
+    // process and for every other worker on the same store (store.spec.ts:456-464).
     {
         const { clock, vendor, base } = context('e.vendor.test');
         const adapter = vendor.adapter();
@@ -192,11 +198,11 @@ async function main(): Promise<void> {
             "(e) `pool: 'host'` + a shared `store`",
             vendor.peakInFlight,
             BOUND,
-            100,
+            BOUND,
         );
         note(
-            '(e) → `createStoreThrottle` never reads `opts.pool` (store.ts:137-151)',
-            'the shared store carries the RATE window (`rl:` keys) and nothing else; concurrency stays a per-instance Map, so adding a store for cross-process rate limiting un-pools the concurrency',
+            '(e) → one budget, keyed like the in-process pool, owned by the store',
+            'the residue is a lease-LESS store (no `lease`/`release` — the fallback an eventually-consistent KV takes, store.ts:226-233): concurrency stays per-process there (store.spec.ts:466-475), which is where the old peak-100 trap survives',
         );
     }
 
@@ -226,7 +232,7 @@ async function main(): Promise<void> {
         );
         note(
             '(f) → `seamBucket` re-keys every acquire onto `seam:<id>` (seam.ts:51-69)',
-            'one bucket for every member, whatever its name — the only construction here that bounds a stitch-per-id fan-out',
+            'one bucket for every member, whatever its name — a stitch-per-id fan-out bounded with neither `pool` nor a store declared',
         );
     }
 
@@ -349,7 +355,7 @@ async function main(): Promise<void> {
 
     finish(
         'C3',
-        'YES on one stitch, NO on any construction that spreads the fan-out across stitch OBJECTS — and the failure is silent every time. `throttle: { concurrency: 8 }` on ONE stitch called 100 times measured PEAK 8 in-flight exactly, against an unthrottled baseline of 100, with all 100 calls completing. That is the right construction for this scenario and it needs no user code. THE TRAP IS REAL AND IT IS THE CONSTRUCTION C1 FORCES: the only way `all()` can express a per-id fan-out is one stitch per id, and 100 separate stitches each declaring `concurrency: 8` measured PEAK 100 — `makeStitch` builds a limiter per stitch (stitch.ts:985-988) over closure-local state (resilience.ts:107), so a declared budget of 8 became 800. `pool: \'host\'` repairs it (peak 8 over 100 stitches, via the module-level `hostStates` registry, resilience.ts:84) — AND ADDING A `store` SILENTLY BREAKS THE REPAIR: `createStoreThrottle` never reads `opts.pool` and keeps `inFlight` in a closure-local Map (store.ts:137-151), so `pool: "host"` + `store` measured PEAK 100 again. The store is exactly what you add to make the RATE budget cross-process, and it un-pools the CONCURRENCY on the way past with the config unchanged. The one construction that survives a stitch-per-id shape is a SEAM: 100 members under a seam-level `concurrency: 8` measured peak 8, because `seamBucket` re-keys every acquire onto one `seam:<id>` (seam.ts:51-69). ONE MORE, AGAINST AN ASSUMPTION THIS PROOF MADE AND HAD TO CORRECT: a BACKING-OFF call HOLDS its slot. The retry sleep sits inside the `try` the release `finally` guards (engine.ts:760-765, 834-837), so with a bound of 4, a 429ed first wave and a 1s backoff, the fifth call left at t=1050 rather than t=50 — 4 of 4 slots occupied by calls that were asleep and issuing nothing, ~95% of the declared budget idle. And a retry re-queues at the BACK of the FIFO (the `continue` releases to the next waiter, resilience.ts:162-164): the first call`s retry left at t=4200, behind every other call`s first attempt. ONE CLEAN WIN TO END ON: the coalescer sits OUTSIDE the throttle (engine.ts:1713-1718), so 100 calls over 30 ids at a bound of 8 fired exactly 22 `throttled` events — 30 real requests minus the first 8 — proving the 70 joiners never reached the limiter. The bound applies to REQUESTS, not to callers',
+        'YES on one stitch, NO on any UN-POOLED construction that spreads the fan-out across stitch OBJECTS — and that failure is silent. `throttle: { concurrency: 8 }` on ONE stitch called 100 times measured PEAK 8 in-flight exactly, against an unthrottled baseline of 100, with all 100 calls completing. That is the right construction for this scenario and it needs no user code. THE TRAP IS REAL AND IT IS THE CONSTRUCTION C1 FORCES: the only way `all()` can express a per-id fan-out is one stitch per id, and 100 separate stitches each declaring `concurrency: 8` measured PEAK 100 — `makeStitch` builds a limiter per stitch (stitch.ts:1042-1046) over closure-local state (resilience.ts:111), so a declared budget of 8 became 800. `pool: \'host\'` repairs it (peak 8 over 100 stitches, via the module-level `hostStates` registry, resilience.ts:88) — and a lease-capable `store` KEEPS THE REPAIR since ADR 0025 (#630): the engine keys the store throttle with the same pool-aware host key (engine.ts:642), the store owns ONE counting semaphore under it (store.ts:90-106), and `pool: "host"` + `store` measured PEAK 8 — a budget store.spec.ts:456-464 pins fleet-wide, every worker on that store included. The residue is a lease-LESS store (no `lease`/`release`): concurrency stays per-process there (store.spec.ts:466-475), the one place the old peak-100 trap survives. A SEAM also survives the stitch-per-id shape with nothing else declared: 100 members under a seam-level `concurrency: 8` measured peak 8, because `seamBucket` re-keys every acquire onto one `seam:<id>` (seam.ts:51-69). ONE MORE, AGAINST AN ASSUMPTION THIS PROOF MADE AND HAD TO CORRECT: a BACKING-OFF call HOLDS its slot. The retry sleep sits inside the `try` the release `finally` guards (engine.ts:760-765, 834-837), so with a bound of 4, a 429ed first wave and a 1s backoff, the fifth call left at t=1050 rather than t=50 — 4 of 4 slots occupied by calls that were asleep and issuing nothing, ~95% of the declared budget idle. And a retry re-queues at the BACK of the FIFO (the `continue` releases to the next waiter, resilience.ts:162-164): the first call`s retry left at t=4200, behind every other call`s first attempt. ONE CLEAN WIN TO END ON: the coalescer sits OUTSIDE the throttle (engine.ts:1713-1718), so 100 calls over 30 ids at a bound of 8 fired exactly 22 `throttled` events — 30 real requests minus the first 8 — proving the 70 joiners never reached the limiter. The bound applies to REQUESTS, not to callers',
     );
 }
 

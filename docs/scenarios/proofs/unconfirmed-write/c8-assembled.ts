@@ -62,7 +62,7 @@ const charge = (pay: FakePayments, clock: ManualClock) =>
         adapter: pay.adapter(),
         idempotency: { keyOf: refKeyOf },
         retry: { attempts: 3, backoff: { curve: 'fixed', base: '2s' } },
-        timeout: { perAttempt: '5s' },
+        timeout: { each: '5s' },
         clock,
     });
 
@@ -111,7 +111,7 @@ async function chargeNaively(
         adapter: pay.adapter(),
         idempotency: true,
         retry: { attempts: 3, backoff: { curve: 'fixed', base: '2s' } },
-        timeout: { perAttempt: '5s' },
+        timeout: { each: '5s' },
         clock,
     });
     await call({ body: payment }).safe();

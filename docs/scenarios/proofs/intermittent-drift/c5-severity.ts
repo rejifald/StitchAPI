@@ -207,7 +207,7 @@ async function main(): Promise<void> {
 
     // ── (f) …but the RUNTIME honours it if you cast past the type ────────────────────────────
     // `levelOf` returns whatever the map says (drift.ts:100) and the engine treats any
-    // `level === 'error'` finding as fatal (engine.ts:1215). So the capability exists, off-contract.
+    // `level === 'error'` finding as fatal (engine.ts:1256). So the capability exists, off-contract.
     // Reported in both directions: it works, and it is not something to build on.
     {
         const cast = {

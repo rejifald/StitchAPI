@@ -28,8 +28,10 @@ those wins has a default that undoes it**:
   (engine.ts:748-761): `expo-jitter` stayed configured and all 100 retries landed in one
   millisecond.
 - Building **one stitch per id** — the only construction `all()` can express this with — multiplies
-  the concurrency budget by the number of stitches (peak 100 against a declared 8), and adding a
-  **`store`** silently breaks the one fix (`pool: 'host'`) for it.
+  the concurrency budget by the number of stitches (peak 100 against a declared 8) until the state
+  is pooled. `pool: 'host'` fixes it, and since ADR 0025 (#630) a lease-capable **`store`** keeps
+  that fix — fleet-wide — instead of silently breaking it; only a lease-less store still reverts
+  concurrency to per-process.
 - Under coalescing every joiner is handed the **leader's object by reference**, so rows that share
   a customer share one mutable object.
 
@@ -51,10 +53,12 @@ Run from the repository root — the scripts import core from `packages/core/src
 they test the working tree, not the published bundle. The whole suite takes about twelve seconds:
 every wait is on a `manualClock`, and nothing here does real I/O.
 
-They typecheck under `packages/core`'s full strict set:
+They typecheck under `packages/core`'s full strict set — `--ignoreConfig` because TypeScript 6
+makes a file list alongside a `tsconfig.json` an error (TS5112), and here the flags are the
+whole config:
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \
@@ -68,7 +72,7 @@ cd packages/core && pnpm exec tsc --noEmit \
 | --------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | `c1-combinators.ts`         | can `all()` express N different inputs?                | **No — but not for the reason the capture gives.** Runtime length is fine; 100 members + 1 input = **100 requests for ONE id** |
 | `c2-coalesce.ts`            | **DECIDING** — does `cache.coalesce` dedupe in-flight? | **YES. 100 calls, 30 ids, 30 requests.** And a failed leader releases 99 joiners: **100 requests for one dead id**             |
-| `c3-bounded-concurrency.ts` | is `throttle: { concurrency }` a real bound?           | **On one stitch, exactly** (peak 8/8). On 100 stitches, **peak 100**. A `store` un-fixes `pool: 'host'`                        |
+| `c3-bounded-concurrency.ts` | is `throttle: { concurrency }` a real bound?           | **On one stitch, exactly** (peak 8/8). On 100 stitches, **peak 100**. `pool: 'host'` + a lease-capable `store` holds (peak 8)  |
 | `c4-partial-failure.ts`     | does one 404 cost the other 99?                        | **Only without `.safe()`.** Bare `Promise.all`: 0 rows kept, 100 requests spent. `.safe()`: 99 rows, failure at index 49       |
 | `c5-thundering-herd.ts`     | does `expo-jitter` de-cluster a 429ed burst?           | **Yes: ~98 distinct ms vs 1 for `expo`/`fixed`.** `Retry-After` puts all 100 back in one ms                                    |
 | `c6-trace.ts`               | one tree or a hundred roots? does `linked` help?       | **101 roots by default; 1 tree with `linked`** — drawn as a **101-deep chain** over calls that ran concurrently                |
@@ -127,12 +131,15 @@ cd packages/core && pnpm exec tsc --noEmit \
   customers fetched, and every one discarded by the fail-fast.
 - **C3's good news is narrow and its trap is the construction C1 forces.** One stitch, 100 calls,
   `concurrency: 8` → **peak 8**. One hundred stitches each declaring 8 → **peak 100**, because
-  `makeStitch` builds a limiter per stitch (stitch.ts:985-988) over closure-local state
-  (resilience.ts:107). `pool: 'host'` repairs it via the module-level `hostStates` registry
-  (resilience.ts:84) — and a **`store` breaks the repair again** (peak 100), because
-  `createStoreThrottle` never reads `opts.pool` and keeps `inFlight` in its own Map
-  (store.ts:137-151). A **seam** is the construction that survives: 100 members under a seam-level
-  `concurrency: 8` measured peak 8 (seam.ts:51-69).
+  `makeStitch` builds a limiter per stitch (stitch.ts:1042-1046) over closure-local state
+  (resilience.ts:111). `pool: 'host'` repairs it via the module-level `hostStates` registry
+  (resilience.ts:88) — and since ADR 0025 (#630) a lease-capable **`store` keeps the repair**
+  (peak 8): the engine hands the store throttle the same pool-aware host key (engine.ts:642,
+  274-283) and the store owns one counting semaphore under it (store.ts:90-106), a budget
+  `packages/core/test/store.spec.ts:456-464` pins fleet-wide. A lease-less store (no
+  `lease`/`release`) still keeps concurrency per-process (spec :466-475) — the one place the old
+  peak-100 reversion survives. A **seam** also survives with nothing else declared: 100 members
+  under a seam-level `concurrency: 8` measured peak 8 (seam.ts:51-69).
 - **This proof's own hypothesis about the throttle was wrong, in the library's disfavour.** It
   assumed a call sleeping on a retry backoff had released its slot. It has not: the backoff sleep
   is inside the `try` whose `finally` releases (engine.ts:760-765, 834-837). Measured with a bound
@@ -187,10 +194,12 @@ cd packages/core && pnpm exec tsc --noEmit \
 - **A declared `concurrency` is multiplied by the number of stitch objects.** 100 stitches each
   declaring 8 measured peak 100. This is not hypothetical: it is the construction C1 shows is the
   _only_ way `all()` can express a per-id fan-out.
-- **Adding a `store` un-pools `pool: 'host'` concurrency.** The config does not change, the rate
-  budget becomes cross-process as intended, and the concurrency bound quietly reverts to
-  per-instance — measured peak 100 against a declared 8. `createStoreThrottle` (store.ts:137-151)
-  reads `concurrency` and `rate` and never reads `pool`.
+- **A lease-less `store` un-pools `pool: 'host'` concurrency.** With a lease-capable store the
+  bound holds (peak 8, and fleet-wide — ADR 0025); with a store that lacks `lease`/`release`
+  (an eventually-consistent KV, a minimal custom store) the rate budget still becomes
+  cross-process while the concurrency bound quietly stays per-process
+  (store.ts:226-233, spec :466-475) — this construction's old measured reversion, peak 100
+  against a declared 8, with the config unchanged.
 - **A backing-off call holds its concurrency slot.** With `concurrency: N` and a long backoff, N
   slots can be occupied by N sleeping calls issuing nothing (measured ~95% idle over a 1s backoff).
   A retry then re-queues at the back of the FIFO, so a retried call finishes after every call that
@@ -226,5 +235,8 @@ cd packages/core && pnpm exec tsc --noEmit \
   upper bounds on tidiness, not predictions.
 - **Memory.** 100 concurrent calls means 100 live run states, 100 event streams and a joined array;
   nothing here measures the footprint. See [`large-response-memory`](../large-response-memory/).
-- **`store`-backed cross-process concurrency.** C3 (e) establishes that a store does not pool
-  concurrency in-process; it does not attempt a two-process test of whether anything could.
+- **`store`-backed cross-process concurrency, across real processes.** C3 (e) establishes that a
+  lease-capable store holds ONE budget in-process under the shared host key; the fleet-wide claim
+  rests on `packages/core/test/store.spec.ts:456-464` (four throttle instances over one store,
+  peak 3 of a declared 3), which simulates workers in one process. Nothing here runs two real
+  processes.

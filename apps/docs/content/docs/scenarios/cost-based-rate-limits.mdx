@@ -103,7 +103,9 @@ was measured going blind: a call that made 2 requests and slept 6 seconds report
 2. **`retry.on: 200` retries your successes.** The status matcher runs before `interpret` and
    cannot tell the two apart — measured 3× the requests and 3× the points for one result.
 3. **`backoff` has no function form.** A wait computed from the payload cannot enter through
-   it. Cast past the type error and it is **silently ignored**, degrading to the default curve.
+   it, and casting past the type error is not a way in either: construction **throws
+   `bad backoff`** rather than silently degrading to the default curve, as it once did
+   ([#651](https://github.com/rejifald/StitchAPI/issues/651), fixed by #666).
 4. **`retry.respect` reads a `Retry-After` header** that Shopify never sends.
 5. **`throttle.rate` cannot express cost.** Requests-per-interval only, minimum spacing, no
    burst. Approximating the 1,000-point bucket took **18 s** for work the bucket absorbs

@@ -8,16 +8,16 @@
 [`scenarios/n-plus-one-fanout.mdx`](../../apps/docs/content/docs/scenarios/n-plus-one-fanout.mdx).
 Escalated: [`issue-drafts/coalescing-does-not-share-failures.md`](issue-drafts/coalescing-does-not-share-failures.md).
 
-| Claim                             | Verdict                                            | Measured                                                                                                                                                                      |
-| --------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1 — combinators can't express it | confirmed, **wrong reason**                        | runtime length is fine; the **input broadcast** is the wall — 100 members, 1 input → **100 requests for 1 id**; `all()` bounded nothing (peak 100) and discarded 99 successes |
-| C2 — `cache.coalesce`             | **PASS — strongest positive of the pass**          | 100 concurrent calls / 30 ids → **30 requests**, no response landed. `coalesce: false` → 100. But a coalesced **failure is not shared**: 100 requests for one 404ing id       |
-| C3 — bounded concurrency          | works on one stitch; silently multiplied otherwise | one stitch → **peak 8** exactly; 100 stitches → **peak 100**; `pool: 'host'` fixes it; **adding a `store` breaks the fix again**                                              |
-| C4 — partial failure              | solved by `.safe()`                                | 99 rows kept, failure at index 49; bare `Promise.all` kept **0 rows and still spent all 100 requests**                                                                        |
-| C5 — thundering herd              | **default works**                                  | `expo-jitter` → **~98 distinct ms**; `'expo'` **and** `'fixed'` → **1 ms**. But `Retry-After` re-clusters all 100 into one ms by default                                      |
-| C6 — the trace                    | one tree, wrong shape                              | default 101 roots; `linked` gives 1 trace with per-call inputs — at **depth 101, fan-out 1** for calls that ran at peak 100                                                   |
-| C7 — ordering                     | positional and safe; **aliasing** is the finding   | 20 rows / 5 customers → **5 distinct objects**; mutating row 0 changed row 5                                                                                                  |
-| C8 — assembled                    | PASS                                               | **45 lines vs 87** hand-rolled — but **44 requests vs 32**, the gap being failure dedupe                                                                                      |
+| Claim                             | Verdict                                            | Measured                                                                                                                                                                                 |
+| --------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 — combinators can't express it | confirmed, **wrong reason**                        | runtime length is fine; the **input broadcast** is the wall — 100 members, 1 input → **100 requests for 1 id**; `all()` bounded nothing (peak 100) and discarded 99 successes            |
+| C2 — `cache.coalesce`             | **PASS — strongest positive of the pass**          | 100 concurrent calls / 30 ids → **30 requests**, no response landed. `coalesce: false` → 100. But a coalesced **failure is not shared**: 100 requests for one 404ing id                  |
+| C3 — bounded concurrency          | works on one stitch; silently multiplied un-pooled | one stitch → **peak 8** exactly; 100 stitches → **peak 100**; `pool: 'host'` fixes it; **a lease-capable `store` keeps the fix fleet-wide** (ADR 0025) — only a lease-less store reverts |
+| C4 — partial failure              | solved by `.safe()`                                | 99 rows kept, failure at index 49; bare `Promise.all` kept **0 rows and still spent all 100 requests**                                                                                   |
+| C5 — thundering herd              | **default works**                                  | `expo-jitter` → **~98 distinct ms**; `'expo'` **and** `'fixed'` → **1 ms**. But `Retry-After` re-clusters all 100 into one ms by default                                                 |
+| C6 — the trace                    | one tree, wrong shape                              | default 101 roots; `linked` gives 1 trace with per-call inputs — at **depth 101, fan-out 1** for calls that ran at peak 100                                                              |
+| C7 — ordering                     | positional and safe; **aliasing** is the finding   | 20 rows / 5 customers → **5 distinct objects**; mutating row 0 changed row 5                                                                                                             |
+| C8 — assembled                    | PASS                                               | **45 lines vs 87** hand-rolled — but **44 requests vs 32**, the gap being failure dedupe                                                                                                 |
 
 **The capture was right about C1 and wrong about why.** It said a runtime-length list rules out
 the combinators; it doesn't — `all(ids.map(…))` compiles. The input broadcast is what makes
@@ -28,6 +28,15 @@ broadcast** (7, 10, 16).
 capability most clients lack, it is one config field, and it is exactly the fix this shape
 needs. The complement — a coalesced _failure_ releases every joiner — is the one place the
 hand-rolled version wins, and it is precisely the shape a dead foreign key takes.
+
+**Re-verified 2026-08-15 against the rebased tree, and ADR 0025 (#630) flips C3 (e).**
+`pool: 'host'` + a shared `store` measured **peak 100** when this audit first ran — the store
+throttle never read `pool` — and measures **peak 8** now: the engine keys the store throttle
+with the same pool-aware host key, and a store with the lease verbs holds ONE budget under it,
+fleet-wide (pinned in `packages/core/test/store.spec.ts:456-464`). The peak-100 reversion
+survives only on a lease-less store (no `lease`/`release`), where concurrency stays
+per-process (spec :466-475). Row, page callout and proof re-recorded; suite re-run green
+(8 scripts, 180 checks).
 
 ---
 

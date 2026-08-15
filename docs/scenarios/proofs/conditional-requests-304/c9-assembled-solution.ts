@@ -187,7 +187,7 @@ async function main(): Promise<void> {
                 auth: bearer(`tok-${p}`),
                 output: issuesSchema,
                 retry: { attempts: 3, backoff: { curve: 'fixed', base: 0 } },
-                timeout: { perAttempt: '5s' },
+                timeout: { each: '5s' },
             });
         const alice = forUser('alice');
         const bob = forUser('bob');

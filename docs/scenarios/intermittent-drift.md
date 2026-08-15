@@ -1,6 +1,7 @@
 # Scenario: the vendor changed the shape for 5% of responses
 
-**Researched:** 2026-08-05 · **Status:** VERIFIED — achievable with user code · page shipped
+**Researched:** 2026-08-05 · **Re-verified:** 2026-08-15 (Zod 4 message format; `cache.fingerprint`) ·
+**Status:** VERIFIED — achievable with user code · page shipped
 **Slug:** `intermittent-drift`
 
 **Verification:** 8 proof scripts, run offline (142 checks), in

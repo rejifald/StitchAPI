@@ -2,7 +2,7 @@
 // offset, and re-sign with a corrected clock. Is there any seam in StitchAPI that can do that?
 //
 // MEASURED: yes, and it is the seam the library already has for exactly this SHAPE of problem —
-// `AuthStrategy.shouldRefresh` / `refresh` (types.ts:1273-1274, engine.ts:707-725). It was built for
+// `AuthStrategy.shouldRefresh` / `refresh` (types.ts:1438-1439, engine.ts:738-756). It was built for
 // "the token expired, get a new one and redo this attempt", and a stale clock is the same story with
 // a different noun. A drifting host measured: attempt 1 → 403 RequestTimeTooSkewed, the offset
 // learned from the response's `Date` header, the attempt REDONE with a corrected clock, 200. One
@@ -12,9 +12,9 @@
 //
 //   • `refresh(ctx)` does NOT receive the response. `shouldRefresh(res)` is the only auth hook that
 //     sees it, so the `Date` header has to be smuggled from one to the other through a closure.
-//   • It fires ONCE per run (the `refreshed` latch, engine.ts:615,709). Correct for this job — a
+//   • It fires ONCE per run (the `refreshed` latch, engine.ts:643,743). Correct for this job — a
 //     second failure after correcting is a real failure — but it is a latch, not a policy.
-//   • The redone attempt does NOT count against `retry.attempts` (`attempt--`, engine.ts:723), and
+//   • The redone attempt does NOT count against `retry.attempts` (`attempt--`, engine.ts:754), and
 //     it DOES re-acquire the throttle, so a corrected re-sign pays a second rate slot.
 //
 // Part (d) measures the alternative and finds it worse: `hooks.onResponse` also sees the response,
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
     }
 
     // ── (b) what it costs against the retry budget ──────────────────────────────────────────
-    // `attempt--` (engine.ts:723) means the corrected re-sign is FREE: a stitch with `attempts: 1`
+    // `attempt--` (engine.ts:754) means the corrected re-sign is FREE: a stitch with `attempts: 1`
     // still gets its second request. That is the difference between this seam and `retry.on`.
     {
         const clock = manualClock(T0);
@@ -153,7 +153,7 @@ async function main(): Promise<void> {
         check('(b) requests that reached the wire', aws.calls.length, 2);
         note(
             '(b) why',
-            '`attempt--` before `continue` (engine.ts:723) — the redone attempt is not counted',
+            '`attempt--` before `continue` (engine.ts:754) — the redone attempt is not counted',
         );
     }
 
@@ -242,7 +242,7 @@ async function main(): Promise<void> {
         );
         note(
             '(d) the mechanism',
-            '`refreshed` latches for the run (engine.ts:615,709), so one correction per call and no loop',
+            '`refreshed` latches for the run (engine.ts:643,743), so one correction per call and no loop',
         );
     }
 

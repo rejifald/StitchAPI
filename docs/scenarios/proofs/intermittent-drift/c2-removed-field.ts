@@ -71,7 +71,7 @@ async function main(): Promise<void> {
         check('(a) error message', o.message, 'contract violation (drift)');
         check('(a) data the caller got', o.data, null);
         checkSeq('(a) findings', o.findings, [
-            'error|invalid|currency|Required',
+            'error|invalid|currency|Invalid input: expected string, received undefined',
         ]);
         note(
             "(a) → `error` vs C1's `info`, `invalid` vs `undeclared`. Distinguishable in level AND in kind",
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
         );
         check('(d) the call FAILED (nullable ≠ optional)', o.ok, false);
         checkSeq('(d) findings', o.findings, [
-            'error|invalid|currency|Required',
+            'error|invalid|currency|Invalid input: expected string, received undefined',
         ]);
     }
 
@@ -187,7 +187,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        'CONFIRMED WITH A CONDITION. A removed field IS distinguishable from C1\'s addition — `error|invalid|currency|Required` against `info|undeclared`, three levels apart and a different `change` kind — and the call fails with `data: null`. But that is true only when the field is REQUIRED in your schema. The same wire body against `.optional()` produces a successful call and ZERO findings; against `.default("usd")` it produces `verbose|defaulted` and hands the caller a currency the vendor never sent. Four declarations, four answers, one vendor change. The removal is classified by YOUR schema, where the addition in C1 was classified by the vendor',
+        'CONFIRMED WITH A CONDITION. A removed field IS distinguishable from C1\'s addition — `error|invalid|currency|Invalid input: expected string, received undefined` against `info|undeclared`, three levels apart and a different `change` kind — and the call fails with `data: null`. But that is true only when the field is REQUIRED in your schema. The same wire body against `.optional()` produces a successful call and ZERO findings; against `.default("usd")` it produces `verbose|defaulted` and hands the caller a currency the vendor never sent. Four declarations, four answers, one vendor change. The removal is classified by YOUR schema, where the addition in C1 was classified by the vendor',
     );
 }
 

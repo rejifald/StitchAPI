@@ -7,7 +7,7 @@
 //   (a) the DECODER, called exactly as the engine calls it, is O(1). 1M rows / 214MB of wire ran in
 //       0.8MB of retained heap.
 //   (b) the same decoder THROUGH the engine is O(N), because `runStreaming` keeps every delta it
-//       emits (engine.ts:1443) so the terminal `result` can mirror the whole spine.
+//       emits (engine.ts:1492) so the terminal `result` can mirror the whole spine.
 //   (c) `.stream()` does not opt out of (b). It costs what `await` costs.
 //
 //   pnpm exec tsx docs/scenarios/proofs/large-response-memory/c2-ndjson-flat.ts
@@ -27,7 +27,7 @@ function main(): void {
     heading('C2 — `decode: "ndjson"`: is the streaming path flat?');
 
     // ── (a) the decoder alone — the control ───────────────────────────────────────────────────
-    // `streamSurface.stream(res, cfg)` is the exact call the engine makes (engine.ts:1403). Driving
+    // `streamSurface.stream(res, cfg)` is the exact call the engine makes (engine.ts:1452). Driving
     // it directly measures the decoder with nothing accumulating around it.
     const decoder = series('decoder-ndjson');
     for (const [i, m] of decoder.entries())
@@ -78,7 +78,7 @@ function main(): void {
         `${mb(d100.peakLive)} (decoder) -> ${mb(e100.peakLive)} (engine) = +${mb(cost)}`,
     );
     note(
-        '(b) → engine.ts:1443 `chunks.push(chunk)`',
+        '(b) → engine.ts:1492 `chunks.push(chunk)`',
         'unconditional, ungated by accessor, with no config that turns it off. The decoder streams; the engine collects',
     );
 
@@ -99,7 +99,7 @@ function main(): void {
 
     finish(
         'C2',
-        'NO — and the two halves of the answer are in the same call. The DECODER is flat: driven directly, `decode: "ndjson"` held 0.8MB of retained heap for 1,000,000 rows and 214MB of wire, and moved less than 15% across a 1000x change in workload. Through the ENGINE the same decoder is linear — 3.5MB -> 30.2MB from 10k to 100k rows — because `runStreaming` pushes every delta onto a `chunks` array (engine.ts:1443) so the terminal `result` can mirror the whole spine. `.stream()` does not escape it: 30.2MB iterating against 33.5MB awaiting, the same number twice. The library owns a genuinely O(1) NDJSON decoder and then spends the win one line later',
+        'NO — and the two halves of the answer are in the same call. The DECODER is flat: driven directly, `decode: "ndjson"` held 0.8MB of retained heap for 1,000,000 rows and 214MB of wire, and moved less than 15% across a 1000x change in workload. Through the ENGINE the same decoder is linear — 3.5MB -> 30.2MB from 10k to 100k rows — because `runStreaming` pushes every delta onto a `chunks` array (engine.ts:1492) so the terminal `result` can mirror the whole spine. `.stream()` does not escape it: 30.2MB iterating against 33.5MB awaiting, the same number twice. The library owns a genuinely O(1) NDJSON decoder and then spends the win one line later',
     );
 }
 

@@ -58,7 +58,7 @@ async function driveJob(
         url: URL_CHARGES,
         adapter: pay.adapter(),
         retry: { attempts: 2, backoff: { curve: 'fixed', base: '2s' } },
-        timeout: { perAttempt: '5s' },
+        timeout: { each: '5s' },
         clock,
         ...extra,
     });
@@ -165,12 +165,12 @@ async function main(): Promise<void> {
 
         await driveJob(pay, clock, {
             idempotency: { keyOf: refKeyOf },
-            timeout: { perAttempt: '5s', total: '1h' },
+            timeout: { each: '5s', total: '1h' },
         });
         await runOut(clock, 25 * HOUR, HOUR);
         await driveJob(pay, clock, {
             idempotency: { keyOf: refKeyOf },
-            timeout: { perAttempt: '5s', total: '1h' },
+            timeout: { each: '5s', total: '1h' },
         });
 
         checkCharges('(d) `timeout: { total: "1h" }`', pay.chargeCount(), 1, 2);

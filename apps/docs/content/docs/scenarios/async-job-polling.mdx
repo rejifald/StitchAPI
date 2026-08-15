@@ -119,14 +119,17 @@ If you don't need the trace or the per-hop policies, the `while` loop is the hon
 3. **`parseRetryAfter` is not exported.** The HTTP-date form has to be re-implemented by every
    surface author, and if you don't, the server's pacing is discarded silently.
 4. **No operation-scoped deadline field.** `linked` takes a body and nothing else. The budget
-   is an `AbortSignal` you build and thread through every `input.signal`.
+   is an `AbortSignal` you build and thread through every `input.signal`; when it fires, the
+   rejection carries your own abort `reason`.
 5. **No operation-level span.** `linked` emits nothing of its own, so a mid-operation failure
    is attributable to the _step_, never to "the export failed".
 6. **Nothing persists the job id.** The store is engine state — throttle, auth, cache. Resume
    is entirely yours.
-7. **Every failure flattens to `StitchError` plus a string.** "Deadline fired", "poll budget
-   exhausted" and "the job failed" are indistinguishable by type, and `status` is `undefined`
-   on all three.
+7. **Every failure arrives as `StitchError`, and only the deadline is typed underneath.** The
+   engine's live `TimeoutError` rides `error.cause` (the class is unexported — check
+   `cause?.constructor.name`), so "deadline fired" is structurally separable. "Poll budget
+   exhausted" and "the job failed" carry no cause, `status` is `undefined` on all three, and
+   telling those two apart is still string matching.
 8. **`paginate` cannot do this** — and not for the reason you'd guess. It _does_ loop (the
    default `items` wraps a non-array body as one item, so the empty-page break never fires),
    but it cannot **wait**: measured gaps of `0, 0, 0`, with no delay field. A paginated poll

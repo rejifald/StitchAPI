@@ -2,7 +2,7 @@
 //
 // The capture pre-registers a suspicion from scenario 18: `sensitive` is a CACHE opt-out and
 // nothing more. It is also, by a distance, the nearest-looking key in the whole config to "do not
-// log this" — `types.ts:1652-1658` calls itself "the honest 'do not persist this response' hatch
+// log this" — its `types.ts` JSDoc calls itself "the honest 'do not persist this response' hatch
 // for one-time tokens or compliance-bound data", which reads exactly like a logging control.
 //
 // This script settles it two ways, and they agree:
@@ -26,7 +26,15 @@ import {
     recordingStore,
     tempFileSink,
 } from './canary';
-import { check, checkSeq, finish, heading, note, scan } from './harness';
+import {
+    check,
+    checkSeq,
+    checkStr,
+    finish,
+    heading,
+    note,
+    scan,
+} from './harness';
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -162,23 +170,45 @@ async function main(): Promise<void> {
             );
         check('mentions in total', found.length, 6);
         check('of which are CODE, not prose', code.length, 3);
+        // Anchored on file + line CONTENT, never on line numbers: unrelated core edits move the
+        // coordinates without changing the fact, and a true claim should not fail on a re-grep.
+        // (The grep above prints each site's current line for anyone who wants the coordinate.)
         checkSeq(
-            'the three code sites, in full',
-            code.map((c) => `${c.file}:${c.line}`),
-            ['config-anatomy.ts:134', 'engine.ts:1020', 'types.ts:1658'],
+            'the three code sites (file and line content)',
+            code.map((c) => `${c.file}  ${c.text}`),
+            [
+                'config-anatomy.ts  sensitive: object;',
+                'engine.ts  if (!config || cfg.sensitive) return null;',
+                'types.ts  sensitive?: boolean;',
+            ],
         );
         note(
-            'two of the three are DECLARATIONS, not reads: `types.ts:1658` is the `StitchConfig` field, and `config-anatomy.ts:134` is the slot description — `sensitive: object`, i.e. no facts at all, which is why the slot rides onto the public `__config` untouched (no `dropped`, no `stage`, no `policy`). That leaves exactly one site that consults the VALUE',
+            'two of the three are DECLARATIONS, not reads: the `types.ts` line is the `StitchConfig` field, and the `config-anatomy.ts` line is the slot description — `sensitive: object`, i.e. no facts at all, which is why the slot rides onto the public `__config` untouched (no `dropped`, no `stage`, no `policy`). That leaves exactly one site that consults the VALUE',
         );
         const engine = readFileSync(join(SRC, 'engine.ts'), 'utf8').split('\n');
         const read = engine
             .map((t, i) => ({ line: i + 1, text: t.trim() }))
             .filter((l) => l.text.includes('cfg.sensitive'));
-        checkSeq(
-            'every read of the resolved value in the entire engine',
-            read.map((r) => `engine.ts:${r.line}  ${r.text}`),
-            ['engine.ts:1020  if (!config || cfg.sensitive) return null;'],
+        check(
+            'reads of the resolved value in the entire engine',
+            read.length,
+            1,
         );
+        checkStr(
+            'the one read, verbatim',
+            read[0]?.text ?? '',
+            'if (!config || cfg.sensitive) return null;',
+        );
+        // The enclosing function, recovered from the source at runtime rather than pinned by line.
+        const enclosing = engine
+            .slice(0, (read[0]?.line ?? 1) - 1)
+            .map(
+                (t) =>
+                    /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/.exec(t)?.[1],
+            )
+            .filter((n): n is string => n !== undefined)
+            .at(-1);
+        checkStr('and the function it gates', enclosing ?? '', 'ensureCache');
         note(
             '→ ONE read, in `ensureCache`. Nothing in `trace.ts`, `otlp.ts`, `stitch.ts` or any sink references the slot at all',
         );
@@ -299,7 +329,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        'CONFIRMED — the pre-registered suspicion holds exactly, and the measurement is unusually clean. `sensitive: true` changed the leak at 1 of 11 destinations, and that destination is the cache: store writes 1 → 0, cache-entry sentinels 7 → 0. Every other destination is byte-for-byte unaffected: the `result` event 7/7, the JSONL sink 7/7, `.inspect().raw` 7/7, `.report()` 7/7, `StitchError.body` 7/7, consoleSink/loggerSink 0/0 either way. The source agrees: across all 54 files of `packages/core/src` there are 6 mentions of the identifier, 3 of them code and 2 of THOSE declarations (`types.ts:1658` the config field, `config-anatomy.ts:134` the slot description) — exactly ONE site reads the value: `engine.ts:1020`, `if (!config || cfg.sensitive) return null`, inside `ensureCache`. No sink, no trace module, and no event builder references it. Stated plainly: `sensitive: true` means DO NOT PERSIST THIS TO THE CACHE. It does not mean do not log, do not trace, do not put on an error, or do not write to disk — and the JSONL sink will still write the full body to a file while the slot is set. It also survives onto the public `__config`, so `.report()` prints `"sensitive":true` next to the unredacted record',
+        'CONFIRMED — the pre-registered suspicion holds exactly, and the measurement is unusually clean. `sensitive: true` changed the leak at 1 of 11 destinations, and that destination is the cache: store writes 1 → 0, cache-entry sentinels 7 → 0. Every other destination is byte-for-byte unaffected: the `result` event 7/7, the JSONL sink 7/7, `.inspect().raw` 7/7, `.report()` 7/7, `StitchError.body` 7/7, consoleSink/loggerSink 0/0 either way. The source agrees: across the whole of `packages/core/src` there are 6 mentions of the identifier, 3 of them code and 2 of THOSE declarations (the `StitchConfig` field in `types.ts`, the slot description in `config-anatomy.ts`) — exactly ONE site reads the value, `if (!config || cfg.sensitive) return null`, inside `ensureCache` (the grep above prints its current line). No sink, no trace module, and no event builder references it. Stated plainly: `sensitive: true` means DO NOT PERSIST THIS TO THE CACHE. It does not mean do not log, do not trace, do not put on an error, or do not write to disk — and the JSONL sink will still write the full body to a file while the slot is set. It also survives onto the public `__config`, so `.report()` prints `"sensitive":true` next to the unredacted record',
     );
 }
 

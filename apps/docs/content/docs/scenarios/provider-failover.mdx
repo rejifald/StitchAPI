@@ -19,8 +19,10 @@ Two techniques wear similar clothes:
 Picking the wrong one is a bill, not a bug report.
 
 And the trigger has to **classify**, not just notice. The industry consensus is consistent:
-`404`, `429` and `5xx` are availability errors — try the next provider. A `400` is a bad
-request — **stop**, because your payload is malformed and the backup will reject it identically.
+timeouts (`408`), `429` and the whole `5xx` family are availability errors — and so is no
+status at all, the connection that never got an answer. Try the next provider. A `400` is a
+bad request — **stop**, because your payload is malformed and the backup will reject it
+identically.
 
 <Callout type="error">
     **`any()` is named for failover and priced as a hedge.** Its docstring says *"failover across
@@ -73,14 +75,21 @@ two different response envelopes into one string.
 **The routing between them is yours** — about 30 lines, on `linked`:
 
 ```ts
-const FAILOVER_ON = new Set([404, 408, 429, 500, 502, 503]);
+import type { StitchError } from 'stitchapi';
+import { linked } from 'stitchapi/pipe';
+
+// `0` stands in for "no status at all": `StitchError.status` is `undefined`
+// when the transport never answered — DNS, refused connection, timeout — which
+// is exactly the "provider is down" this page is about. `?? 0` routes it here.
+const FAILOVER_ON = new Set([0, 408, 425, 429, 500, 502, 503, 504]);
 
 const answer = await linked(async (run) => {
     try {
         return await run(primary, input);
     } catch (err) {
         // A 400 means the REQUEST is broken — the backup will reject it too.
-        if (!isStitchError(err) || !FAILOVER_ON.has(err.status ?? 0)) throw err;
+        // (A breaker-open fast-fail carries status 503, so it does fail over.)
+        if (!FAILOVER_ON.has((err as StitchError).status ?? 0)) throw err;
         return run(backup, input);
     }
 });

@@ -8,17 +8,17 @@
 [`scenarios/async-job-polling.mdx`](../../apps/docs/content/docs/scenarios/async-job-polling.mdx).
 Escalated to a draft: [`issue-drafts/clock-and-diagnostic-side-effects.md`](issue-drafts/clock-and-diagnostic-side-effects.md).
 
-| Claim                               | Verdict                       | Measured                                                                                                                                   |
-| ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| C1 — `Location` header → next URL   | reachable                     | `interpret`/`onResponse` get the full response; hook rewrite gave `POST /jobs → 3× GET /jobs/job-1`, 1 submit. Nothing built-in follows it |
-| C2 — poll loop as a `Surface`       | PASS                          | 5 polls at exactly 30 s virtual spacing; `Failed` stopped on the first terminal body, 17/20 attempts unspent                               |
-| C3 — `Retry-After` on the body path | **nothing honors it**         | server asked 30 s, measured gaps **7 ms**; surface-read works; capped expo fallback 1000/2000/4000/5000/5000                               |
-| C4 — `paginate`                     | refuted, worse than predicted | it _does_ loop (default `items` wraps a non-array as one item) — but gaps `0,0,0`, and it cannot fail                                      |
-| C5 — one deadline over the triangle | PASS, two routes              | one-stitch + `timeout.total` → 253 ms; three stitches + one `AbortSignal` → 6 polls/virtual hour                                           |
-| C6 — `linked` trace chain           | PASS                          | 3 starts, **1 traceId**, 3 spans, each parented to the last; without `run`, 3 traceIds and 0 parents                                       |
-| C7 — single-use download            | default is safe               | `retry.on` excludes 404 → `200,404` even at `attempts: 5`; per-stitch split gave 20 poll / 1 download                                      |
-| C8 — resumability                   | entirely user-side            | engine writes **0** store keys on submit; hand-rolled resume works, 1 submit total                                                         |
-| C9 — assembled                      | PASS                          | 1 submit → 5 polls at server pacing → 1 download; **110 lines vs 49** hand-rolled, byte-identical wire behavior                            |
+| Claim                               | Verdict                       | Measured                                                                                                                                    |
+| ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 — `Location` header → next URL   | reachable                     | `interpret`/`onResponse` get the full response; hook rewrite gave `POST /jobs → 3× GET /jobs/job-1`, 1 submit. Nothing built-in follows it  |
+| C2 — poll loop as a `Surface`       | PASS                          | 5 polls at exactly 30 s virtual spacing; `Failed` stopped on the first terminal body, 17/20 attempts unspent                                |
+| C3 — `Retry-After` on the body path | **nothing honors it**         | server asked 30 s, measured gaps **7 ms**; surface-read works; capped expo fallback 1000/2000/4000/5000/5000                                |
+| C4 — `paginate`                     | refuted, worse than predicted | it _does_ loop (default `items` wraps a non-array as one item) — but gaps `0,0,0`, and it cannot fail                                       |
+| C5 — one deadline over the triangle | PASS, two routes              | one-stitch + `timeout.total` → 251 ms; three stitches + one `AbortSignal` → 6 polls/virtual hour, rejecting with the caller's reason (#674) |
+| C6 — `linked` trace chain           | PASS                          | 3 starts, **1 traceId**, 3 spans, each parented to the last; without `run`, 3 traceIds and 0 parents                                        |
+| C7 — single-use download            | default is safe               | `retry.on` excludes 404 → `200,404` even at `attempts: 5`; per-stitch split gave 20 poll / 1 download                                       |
+| C8 — resumability                   | entirely user-side            | engine writes **0** store keys on submit; hand-rolled resume works, 1 submit total                                                          |
+| C9 — assembled                      | PASS                          | 1 submit → 5 polls at server pacing → 1 download; **110 lines vs 49** hand-rolled, byte-identical wire behavior                             |
 
 **Wrong hypotheses, fourth time running.** The capture predicted `paginate` would break
 immediately at `items.length === 0` because a job-status body has no items array. False — the

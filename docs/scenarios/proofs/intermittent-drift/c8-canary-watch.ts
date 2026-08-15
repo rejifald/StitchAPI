@@ -172,10 +172,10 @@ async function main(): Promise<void> {
         checkSeq('(b) what an on-call engineer reads', lines, [
             'clean             → <silent>',
             'addition 100%     → <silent>',
-            'removal 5%        → 5.0% of calls: error|invalid|currency|Required (5/100)',
-            'retype 5%         → 5.0% of calls: error|invalid|transaction_id|Expected number, received string (5/100)',
-            'garbage retype 5% → 5.0% of calls: error|invalid|transaction_id|Expected number, received string (5/100)',
-            'null 5%           → 5.0% of calls: error|invalid|transaction_id|Expected number, received null (5/100)',
+            'removal 5%        → 5.0% of calls: error|invalid|currency|Invalid input: expected string, received undefined (5/100)',
+            'retype 5%         → 5.0% of calls: error|invalid|transaction_id|Invalid input: expected number, received string (5/100)',
+            'garbage retype 5% → 5.0% of calls: error|invalid|transaction_id|Invalid input: expected number, received string (5/100)',
+            'null 5%           → 5.0% of calls: error|invalid|transaction_id|Invalid input: expected number, received null (5/100)',
         ]);
         note(
             '(b) → the rate, the field, and both types, on one line, with no per-call noise. The two retype workloads read IDENTICALLY, which is fine here BECAUSE neither produced a value',
@@ -324,7 +324,7 @@ async function main(): Promise<void> {
         check('(f) logical calls counted', watch.calls, 100);
         check('(f) successful calls', ok, 95);
         checkSeq('(f) the alert', watch.report(), [
-            '5.0% of calls: error|invalid|transaction_id|Expected number, received null (5/100)',
+            '5.0% of calls: error|invalid|transaction_id|Invalid input: expected number, received null (5/100)',
         ]);
         note(
             '(f) → 108 wire requests, 100 logical calls, and the rate is over LOGICAL calls. Retry did not inflate the denominator, and the 8 recovered 503s never touched the drift number',
@@ -388,7 +388,7 @@ async function main(): Promise<void> {
 
     finish(
         'C8',
-        'ACHIEVABLE, AND THE STRICT POSTURE IS THE ONE THAT WORKS. Two declarative lines — `output: drift(StrictCharge, { severity: { undeclared: "verbose" } })` and `trace: new DriftRate(...)` — measured over six workloads at 100 calls each: SILENT on a 100% addition rollout, and one alert line per breaking class at 5%, each carrying the rate, the field and both types (`5.0% of calls: error|invalid|transaction_id|Expected number, received null (5/100)`). ZERO $0 charges on every workload. The same six against the SOFT schema people write for availability keep 100% of calls and produce TEN $0 charges. The price is a WASH: 9 declarative lines + an 84-line sink = 93, against 92 hand-rolled. The detection half is 9 lines against ~35; the aggregation half is ~84 lines of user code either way. What the 92 lines do not have is the resilience stack, measured here as one `retry` line absorbing 8 x 503 across the canary with the rate still counting 100 LOGICAL calls out of 108 wire requests. And the hand-rolled classifier BEATS `DriftOptions` on one row: it levels a null `warn` and passes the value through, the fourth industry class C5 found inexpressible. The residual gap is C3(e): the moment a field is softened, the benign coercion and the $0 charge share one finding identity, and only the sink\'s `spanId` join to the `result` event (`10/10, 5 landed 0`) separates them',
+        'ACHIEVABLE, AND THE STRICT POSTURE IS THE ONE THAT WORKS. Two declarative lines — `output: drift(StrictCharge, { severity: { undeclared: "verbose" } })` and `trace: new DriftRate(...)` — measured over six workloads at 100 calls each: SILENT on a 100% addition rollout, and one alert line per breaking class at 5%, each carrying the rate, the field and both types (`5.0% of calls: error|invalid|transaction_id|Invalid input: expected number, received null (5/100)`). ZERO $0 charges on every workload. The same six against the SOFT schema people write for availability keep 100% of calls and produce TEN $0 charges. The price is a WASH: 9 declarative lines + an 84-line sink = 93, against 92 hand-rolled. The detection half is 9 lines against ~35; the aggregation half is ~84 lines of user code either way. What the 92 lines do not have is the resilience stack, measured here as one `retry` line absorbing 8 x 503 across the canary with the rate still counting 100 LOGICAL calls out of 108 wire requests. And the hand-rolled classifier BEATS `DriftOptions` on one row: it levels a null `warn` and passes the value through, the fourth industry class C5 found inexpressible. The residual gap is C3(e): the moment a field is softened, the benign coercion and the $0 charge share one finding identity, and only the sink\'s `spanId` join to the `result` event (`10/10, 5 landed 0`) separates them',
     );
 }
 

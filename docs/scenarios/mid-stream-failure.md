@@ -3,34 +3,38 @@
 **Researched:** 2026-08-05 · **Status:** VERIFIED — achievable with user code · page shipped
 **Slug:** `mid-stream-failure`
 
-**Verification:** 9 proof scripts, run offline (171 checks), in
+**Verification:** 9 proof scripts, run offline (173 checks), in
 [`proofs/mid-stream-failure/`](proofs/mid-stream-failure/). Published page:
 [`scenarios/mid-stream-failure.mdx`](../../apps/docs/content/docs/scenarios/mid-stream-failure.mdx).
 Escalated — **the pass's most severe finding, in code shipped in #622**:
-[`issue-drafts/sse-reconnect-replays-completed-streams.md`](issue-drafts/sse-reconnect-replays-completed-streams.md).
+[`issue-drafts/sse-reconnect-replays-completed-streams.md`](issue-drafts/sse-reconnect-replays-completed-streams.md)
+— filed as #640 and **fixed in core by #647** (a finished or id-less stream is never reopened);
+C3/C4/C8/C9 now pin the fixed behaviour.
 
 | Claim                                 | Verdict                 | Measured                                                                                                                                             |
 | ------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | C1 — drop mid-body, no `[DONE]`       | both, and they disagree | `.stream()` sees `error` as an EVENT not a throw; `await` gives `ok:false, data:null`; a **clean** close mid-answer is identical in shape to success |
 | C2 — does `retry` re-emit deltas      | **no — refuted**        | `ABC` once. `retry` never runs on a stream: 4 requests buffered vs **1** streaming, `attempts: 1`                                                    |
-| C3 — `reconnect` on a resumable feed  | **PASS — just works**   | `ABCDE`, zero duplication, `Last-Event-ID` `(none) → t2 → t5`; server `retry: 9000` honored                                                          |
-| C4 — `reconnect` on an id-less stream | **BUG**                 | a **completed** stream reopened **4×**, `ABCDEABCDEABCDEABCDE` delivered, `done(ok: true)`                                                           |
+| C3 — `reconnect` on a resumable feed  | **PASS — just works**   | `ABCDE`, zero duplication, `Last-Event-ID` `(none) → t2`; server `retry: 9000` honored; a finished feed is not reopened                              |
+| C4 — `reconnect` on an id-less stream | **BUG — fixed by #647** | was: a **completed** stream reopened **4×**, `ABCDEABCDEABCDEABCDE`, `done(ok: true)`; now measured: **1 open**, `ABCDE`, a no-op without `id:`      |
 | C5 — in-band error frame at 200       | only via `output`       | custom `interpret` ran **0 times**; `verdict.flag` inert; `onError` never fires post-200                                                             |
 | C6 — missing `[DONE]`                 | no built-in; 8 lines    | truncated and complete streams share the terminal spine `result, done(ok:true)`                                                                      |
 | C7 — is the partial reachable         | `.stream()` only        | `.safe().data` null; `StitchError.body/data/partial/chunks` undefined; `.inspect()` says `status: 0`                                                 |
-| C8 — connect-retry vs body-retry      | not in config           | one flag governs both; `Surface.execute` does it in 10 lines                                                                                         |
+| C8 — connect-retry vs body-retry      | not in config           | a status refusal is terminal for `retry` and `reconnect` both; `Surface.execute` does it in 10 lines                                                 |
 | C9 — assembled                        | PASS                    | **62 lines vs 83** hand-rolled — the first scenario where StitchAPI is _smaller_                                                                     |
 
-**Two hypotheses refuted, and the second one matters.** The capture nominated C2 as a deciding
+**Two hypotheses refuted, and the second one mattered.** The capture nominated C2 as a deciding
 claim — "does `retry` re-emit already-seen deltas into a downstream accumulator?" The answer is
 no, and for a reason the capture didn't anticipate: `retry` doesn't run on streams at all. But
-the duplication hazard the capture was hunting for **is real** — it just comes from
-`sse.reconnect`, not `retry`, and it fires on streams that never failed.
+the duplication hazard the capture was hunting for **was real** — it came from `sse.reconnect`,
+not `retry`, and it fired on streams that never failed. Filed as #640, fixed in core by #647;
+re-measured after the fix, the same fixture reads 1 open, `ABCDE`, no duplication.
 
 **The split verdict is worth keeping.** C3 alone is genuinely ACHIEVABLE — for a feed that
 emits `id:` and honors `Last-Event-ID`, `reconnect: true` is one flag and it is correct. That
 is the first clean built-in win in five scenarios. The overall verdict is only "with user code"
-because the same flag is actively harmful everywhere else, and C5–C8 each need code.
+because the flag does nothing for an id-less stream (since #647 a no-op rather than a replay —
+there is nothing to resume from), and C5–C8 each need code.
 
 ---
 

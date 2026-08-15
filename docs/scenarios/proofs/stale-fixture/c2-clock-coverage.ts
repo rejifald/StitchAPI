@@ -4,6 +4,12 @@
 // injected clock. This script stops accumulating sightings and enumerates the whole surface: every
 // place `packages/core/src` reads time, probed the same way, in one table.
 //
+// The enumeration found two rows nobody had recorded — OAuth2 token expiry and AWS SigV4 signing —
+// and filing them worked: both ride the injected clock now (#664 for OAuth2, via issue #650; #667
+// for SigV4, via #658), so rows (j) and (k) expect DRIVEN and this table pins the current split:
+// 8 driven, 4 wall-clock, 2 with no time in them. The four wall rows that remain are ADR 0010 §4
+// decisions (the clock owns control-flow time, not bookkeeping), not gaps awaiting a fix.
+//
 // THE METHOD. For each feature, the same scenario runs twice — once with the clock advanced by the
 // amount the test believes is decisive, once with `advance(0)` — and the two outcomes are compared:
 //
@@ -227,7 +233,7 @@ async function main(): Promise<void> {
     // wall-clock; the question is what that COSTS a test that does not know it.
     //
     // A driven/inert binary is the WRONG instrument for this row, and saying why is half the
-    // finding. `timeout.total` is not ignored by the clock: engine.ts:656-662 clamps each attempt's
+    // finding. `timeout.total` is not ignored by the clock: engine.ts:684-690 clamps each attempt's
     // abort to `budget.deadline - now()` and hands that to `withTimeout(..., rt.clock)`, so the
     // clamp DOES fire on virtual time. What is wall-anchored is the DEADLINE — `wallT0 + total`.
     // Virtual sleeps never move the wall, so the remaining budget is recomputed as ~the full total
@@ -308,13 +314,13 @@ async function main(): Promise<void> {
         check('(f) real clock: attempts the vendor saw', realVendor.count(), 2);
         note('(f) real clock: real ms elapsed', realElapsed);
         note(
-            '(f) → SAME config shape, 2.7x the budget consumed in each arm. Real clock: 2 attempts, dead at 101ms with `timed out after 100ms`. Manual clock: 3 attempts, 2700 virtual ms against a 1000ms budget, ok=true. The budget deadline is `wallT0 + total` (engine.ts:465) and every remaining-budget read is `deadline - now()` on the WALL (engine.ts:483/505/527/661), so under a manual clock it never drains',
+            '(f) → SAME config shape, 2.7x the budget consumed in each arm. Real clock: 2 attempts, dead at 101ms with `timed out after 100ms`. Manual clock: 3 attempts, 2700 virtual ms against a 1000ms budget, ok=true. The budget deadline is `wallT0 + total` (engine.ts:502) and every remaining-budget read is `deadline - now()` on the WALL (engine.ts:520/542/564/689), so under a manual clock it never drains',
             '',
         );
         row(
             'timeout.total',
             'WALL',
-            'engine.ts:465/483/505/527/661 use util now(); a 1000ms budget survived 2700 virtual ms and returned ok=true',
+            'engine.ts:502/520/542/564/689 use util now(); a 1000ms budget survived 2700 virtual ms and returned ok=true',
         );
     }
 
@@ -429,13 +435,17 @@ async function main(): Promise<void> {
         );
     }
 
-    // ── (j) OAuth2 token expiry — NOT in the capture's list ─────────────────────────────────────
-    // `auth.ts:502` gates token freshness on `now() < t.expiresAt - skew`, both wall-clock. A test
-    // that advances a manual clock past `expires_in` to assert a refresh will never see one.
-    heading('C2 (j) — OAuth2 token expiry (NOT in the claims list)');
+    // ── (j) OAuth2 token expiry — NOT in the capture's list, and the row that got FIXED ─────────
+    // At audit time this was wall-clock: `auth.ts` held zero occurrences of `clock`, so advancing
+    // past `expires_in` refetched nothing. This audit filed that as #650; #664 threads the stitch's
+    // resolved clock onto `AuthContext` and both halves of the freshness math read it —
+    // `clockNow(ctx) = ctx.clock?.now() ?? now()` (auth.ts:432), used for `expiresAt` at fetch time
+    // (auth.ts:571) and the `isFresh` gate at read time (auth.ts:583). So the row is DRIVEN now:
+    // a test can advance a manual clock past `expires_in` and see the refetch.
+    heading('C2 (j) — OAuth2 token expiry (filed as #650, fixed by #664)');
     await checkClockDriven(
         'oauth2 token expiry',
-        'inert',
+        'driven',
         async (advanceMs) => {
             const clock = manualClock();
             let tokenCalls = 0;
@@ -480,12 +490,19 @@ async function main(): Promise<void> {
     );
     row(
         'oauth2 token expiry',
-        'WALL',
-        'auth.ts:502/564 use util `now()`; advancing 600000 virtual ms past a 60s `expires_in` refetched nothing',
+        'CLOCK',
+        'auth.ts:432 clockNow reads the threaded ctx.clock (#664); advance(600000) past a 60s `expires_in` -> tokenCalls 1 -> 2',
     );
 
-    // ── (k) AWS SigV4 signing date ──────────────────────────────────────────────────────────────
-    heading('C2 (k) — AWS SigV4 signing date');
+    // ── (k) AWS SigV4 signing date — the other row that got FIXED ───────────────────────────────
+    // At audit time `awsSigV4` stamped `x-amz-date` from a bare `new Date()`, and a manual clock
+    // was not even expressible — there was no seam to hand one through. Filed as #658; #667 puts
+    // the stamp on the same seam OAuth2 uses: `clockNow(ctx) = ctx.clock?.now() ?? Date.now()`
+    // (aws-sigv4/src/index.ts:266), read at signing time (index.ts:324). The engine threads the
+    // stitch's resolved clock onto `AuthContext`, so under `manualClock()` — which starts at 0 —
+    // the signature is stamped at the virtual epoch: `19700101T000000Z`. A hand-built context
+    // with no `clock` still falls back to the wall, which is the documented default.
+    heading('C2 (k) — AWS SigV4 signing date (filed as #658, fixed by #667)');
     {
         const { awsSigV4 } =
             (await import('../../../../packages/aws-sigv4/src/index')) as typeof import('../../../../packages/aws-sigv4/src/index');
@@ -495,43 +512,53 @@ async function main(): Promise<void> {
             region: 'us-east-1',
             service: 'execute-api',
         });
-        const req: AdapterRequest = {
+        const ctxWith = (clock?: Clock): never =>
+            ({
+                emit: () => undefined,
+                vault: {
+                    get: () => Promise.resolve(undefined),
+                    set: () => Promise.resolve(),
+                    delete: () => Promise.resolve(),
+                },
+                ...(clock ? { clock } : {}),
+            }) as never;
+
+        // Arm 1 — a context carrying `manualClock()`, the way the engine threads it from `clock:`.
+        const virtReq: AdapterRequest = {
             url: `${BASE}/signed`,
             method: 'GET',
             headers: {},
         };
-        // A manual clock is not even expressible here: `awsSigV4` takes no `clock`.
-        await strategy.apply(req, {
-            emit: () => undefined,
-            vault: {
-                get: () => Promise.resolve(undefined),
-                set: () => Promise.resolve(),
-                delete: () => Promise.resolve(),
-            },
-        } as never);
-        const amzDate = req.headers['x-amz-date'] ?? '';
-        check('(k) the signature carries a date', amzDate.length > 0, true);
+        await strategy.apply(virtReq, ctxWith(manualClock()));
         check(
-            '(k) …and it is NOT the manual clock epoch (19700101T000000Z)',
+            '(k) under manualClock() the stamp IS the virtual epoch',
+            virtReq.headers['x-amz-date'],
+            '19700101T000000Z',
+        );
+
+        // Arm 2 — no `ctx.clock`: the documented fallback to the wall.
+        const wallReq: AdapterRequest = {
+            url: `${BASE}/signed`,
+            method: 'GET',
+            headers: {},
+        };
+        await strategy.apply(wallReq, ctxWith());
+        const amzDate = wallReq.headers['x-amz-date'] ?? '';
+        check(
+            '(k) with no ctx.clock a date is still stamped',
+            amzDate.length > 0,
+            true,
+        );
+        check(
+            '(k) …and it falls back to the WALL, not the epoch',
             amzDate.startsWith('19700101'),
             false,
         );
-        check(
-            '(k) `awsSigV4` accepts a `clock` option at all',
-            'clock' in
-                ({
-                    accessKeyId: () => '',
-                    secretAccessKey: () => '',
-                    region: '',
-                    service: '',
-                } as Record<string, unknown>),
-            false,
-        );
-        note('(k) measured x-amz-date', amzDate);
+        note('(k) measured wall-fallback x-amz-date', amzDate);
         row(
             'AWS SigV4 signing date',
-            'WALL',
-            `aws-sigv4/src/index.ts:301 \`new Date()\`; no clock option; measured ${amzDate}`,
+            'CLOCK',
+            'aws-sigv4/src/index.ts:266/324 stamp from ctx.clock (#667); manualClock() signs 19700101T000000Z',
         );
     }
 
@@ -581,7 +608,7 @@ async function main(): Promise<void> {
         row(
             'Retry-After (HTTP-date)',
             'CLOCK',
-            `resilience.ts:70 reads clock.now(); manualClock(0) turns "5s" into ${String(Math.round((virtual ?? 0) / 86_400_000))} days`,
+            `resilience.ts:74 reads clock.now(); manualClock(0) turns "5s" into ${String(Math.round((virtual ?? 0) / 86_400_000))} days`,
         );
     }
 
@@ -655,37 +682,33 @@ async function main(): Promise<void> {
     // ── the table ───────────────────────────────────────────────────────────────────────────────
     heading('C2 — the table');
     const tally = printClockTable();
-    note('rows driven by the injected clock', tally.clock);
-    note('rows on wall clock regardless', tally.wall);
-    note('rows with no time in them', tally.none);
+    check('rows driven by the injected clock', tally.clock, 8);
+    check('rows on wall clock regardless', tally.wall, 4);
+    check('rows with no time in them', tally.none, 2);
     check(
         'every time-driven feature is accounted for',
         tally.clock + tally.wall + tally.none,
         14,
     );
     checkSeq(
-        'the wall-clock set',
+        'the wall-clock set — all four are ADR 0010 §4 decisions',
         [
             'timeout.total',
             'cache.ttl',
             'memoryStore TTL',
-            'oauth2 token expiry',
-            'AWS SigV4 signing date',
             'event `at` / `done.elapsed`',
         ].sort(),
         [
-            'AWS SigV4 signing date',
             'cache.ttl',
             'event `at` / `done.elapsed`',
             'memoryStore TTL',
-            'oauth2 token expiry',
             'timeout.total',
         ],
     );
 
     finish(
         'C2',
-        'THE SUSPICION IS CONFIRMED AND THE SCOPE IS WIDER THAN RECORDED. Driven by `manualClock`: retry backoff, throttle rate, throttle concurrency, `circuit.cooldown`, the per-attempt `timeout`, and `Retry-After`. On wall clock regardless: `timeout.total`, `cache.ttl`, the `memoryStore` TTL beneath it, event `at`/`done.elapsed` — and TWO the pass had not recorded: OAuth2 token expiry (`auth.ts:502` gates freshness on wall `now()`, so advancing 600000 virtual ms past a 60s `expires_in` refetches nothing) and AWS SigV4 signing (`new Date()`, with no `clock` option to pass). `paginate` has no time in it to drive. The measured cost of the `timeout.total` row: a call configured to die after 1000ms consumed 2700 virtual ms across 3 attempts and returned ok=true, because the budget deadline is wall-anchored and virtual sleeps never drain it. And one row is a trap rather than a gap: `parseRetryAfter` DOES read the injected clock, so an HTTP-date `Retry-After` under `manualClock()` (which starts at 0) becomes a wait of ~20,000 DAYS instead of 5 seconds',
+        'THE SUSPICION WAS CONFIRMED AT AUDIT TIME — AND FILING IT WORKED. Driven by `manualClock` now: retry backoff, throttle rate, throttle concurrency, `circuit.cooldown`, the per-attempt `timeout`, `Retry-After`, and the two rows this enumeration found and filed — OAuth2 token expiry (#650, fixed by #664: `auth.ts:432` clockNow reads the engine-threaded ctx.clock, so advancing 600000 virtual ms past a 60s `expires_in` refetches; measured tokenCalls 1 -> 2) and AWS SigV4 signing (#658, fixed by #667: the stamp reads ctx.clock at aws-sigv4/src/index.ts:266/324, so `manualClock()` signs 19700101T000000Z). Still on wall clock, by decision (ADR 0010 §4 — control-flow time, not bookkeeping): `timeout.total`, `cache.ttl`, the `memoryStore` TTL beneath it, and event `at`/`done.elapsed`. `paginate` has no time in it to drive. The measured cost of the `timeout.total` row stands: a call configured to die after 1000ms consumed 2700 virtual ms across 3 attempts and returned ok=true, because the budget deadline is wall-anchored and virtual sleeps never drain it. And one row is a trap rather than a gap: `parseRetryAfter` DOES read the injected clock, so an HTTP-date `Retry-After` under `manualClock()` (which starts at 0) becomes a wait of ~20,000 DAYS instead of 5 seconds',
     );
 }
 

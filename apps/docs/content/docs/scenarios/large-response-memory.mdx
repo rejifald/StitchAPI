@@ -65,48 +65,57 @@ Fairness on the baseline: the buffered multiplier measured **2.5×**, and it is 
 not the library's — StitchAPI's overhead over a bare `JSON.parse` of the same bytes was **0.2
 MB**. It adds no copy. It also removes none.
 
-## `decode: 'json'` on one array: right answer, wrong memory
+## `decode: 'json'` on one array: right answer — and, since #665, right memory
 
-The structural decoder's **emission is correct**, and impressively so — one delta per element,
-holding up under `,` `]` `}` inside string values, escaped quotes, embedded newlines,
+The structural decoder's **emission was always correct**, and impressively so — one delta per
+element, holding up under `,` `]` `}` inside string values, escaped quotes, embedded newlines,
 pretty-printed multi-line records, deep nesting, and 1-character chunk boundaries.
 
-Its **memory is not bounded**: retained heap tracks the whole array text at **0.88× the wire**,
-with 34× growth over a 100× workload, and the time is quadratic (28× for 10× the rows).
+Its memory was not. The decoder retained the whole array text at ~0.9× the wire in quadratic
+time, and **tripped its own default cap mid-export**: a 60,000-row array delivered 37,312 rows
+and then `error`/`done(ok: false)` under _"a malformed or never-closing value was streamed"_ —
+which the vendor did not do. That defect was measured here, filed as
+[#659 §2](https://github.com/rejifald/StitchAPI/issues/659), and **fixed by
+[#665](https://github.com/rejifald/StitchAPI/issues/665)**: a top-level array records no
+compaction floor of its own, so emitted elements are released as they close.
 
-<Callout type="warn">
-    **So it trips its own default cap, and blames the vendor.** 37,000 rows decode; 38,000 fail
-    with *"a malformed or never-closing value was streamed"* — which the vendor did not do. On a
-    60,000-row array the consumer receives **37,312 rows and then `error`/`done(ok: false)`**: a
-    silent truncation for any loop that only matches `delta`, at a threshold that moves with your
-    customer's data.
-
-    The control settles where the defect is: the same 100,000 records as **concatenated top-level
-    values** run flat at **0.9 MB**. One branch, not a design limit.
-
+<Callout type="info">
+    **Re-measured after the fix:** a 100,000-row single array decodes **flat —
+    0.6 MB retained, under 3% of the 21.4 MB wire, in linear time — and finishes
+    on the default cap**; the same records as concatenated top-level values
+    measure alike. The cap no longer trips on a well-formed array of any length:
+    it bounds **one element**, so an array is capped by its largest element, not
+    its row count. (Node v24.18.1, arm64 macOS — absolute numbers differ
+    elsewhere; the shapes don't.)
 </Callout>
+
+What the fix does not change: through the engine, `decode: 'json'` now costs exactly what
+`ndjson` costs — 30.2 MB at 100,000 rows either way — because the accumulator above it still
+retains every element. The decoder stopped buffering; the engine hasn't. What it does change:
+the batched seam above no longer depends on being offered NDJSON — over one 100,000-row array
+the same surface runs at **1.4 MB**, where it used to pay 19 MB for the decoder's buffer
+sitting upstream of the seam.
 
 ## What StitchAPI does not solve here
 
 1. **No memory-bounded path is reachable from config alone.** Every decoder × every accessor is
    O(N) through the engine.
-2. **`decode: 'json'` does not bound a single top-level array** — the one case NDJSON can't cover.
-3. **No size guard, threshold, warning or event on the buffered path.** A 21 MB response emits
+2. **No size guard, threshold, warning or event on the buffered path.** A 21 MB response emits
    the same four events a 40-byte one does. When the wall arrives it is V8's: 400,000 rows under
    a 96 MB ceiling gave `FATAL ERROR: … JavaScript heap out of memory`, **exit 134** — no
    catchable error, no `error` event, no `finally`.
-4. **`stream.buffer.chars` is a malformed-input guard, not a budget.** It bounds one line or one
+3. **`stream.buffer.chars` is a malformed-input guard, not a budget.** It bounds one line or one
    un-closed value — 20,000 well-formed rows streamed cleanly through a **1,000-character** cap
    while the engine accumulated all 20,000. On a buffered stitch it typechecks and is **inert**.
-5. **`pick` and `transform` are silently inert on a stream** — `transform` called **zero** times
+4. **`pick` and `transform` are silently inert on a stream** — `transform` called **zero** times
    over 200 deltas. No `info`, no drift finding, no throw. A stitch that carries them and is
    later switched to `kind: stream` keeps compiling and quietly stops reshaping.
-6. **`output` on a stream validates without transforming.** The buffered path serves the
+5. **`output` on a stream validates without transforming.** The buffered path serves the
    validated value; the streaming path keeps only the errors. The same coercing schema reshapes
    your data on `await` and silently does not on `.stream()`.
-7. **A failing row is a circuit breaker, not a filter** — `contract violation (drift)`, the
+6. **A failing row is a circuit breaker, not a filter** — `contract violation (drift)`, the
    stream ends, and the rest is never read.
-8. **No batching primitive.** There's no `paginate`-style chunking for streams; the 75 lines
+7. **No batching primitive.** There's no `paginate`-style chunking for streams; the 75 lines
    above are yours.
 
 <Callout type="warn">

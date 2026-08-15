@@ -1,6 +1,6 @@
 ---
 title: 'A stream that fails after 800 tokens'
-description: 'The 200 was spent on the first token, so the failure arrives in-band or not at all. When a stream can be resumed this is one flag; when it cannot — every LLM API — that same flag replays the whole answer.'
+description: 'The 200 was spent on the first token, so the failure arrives in-band or not at all. When a stream can be resumed this is one flag; when it cannot — every LLM API — the flag has nothing to resume from, and the real answer is two small seams of user code.'
 prerequisites: ['/docs/reference/surfaces', '/docs/concepts/event-stream']
 ---
 
@@ -39,7 +39,10 @@ Three consequences, all awkward:
 on every frame, dropped after 2 of 5 tokens, with `sse: { reconnect: true }`:
 
 ```ts
-const feed = sse({ url: 'https://api.example.com/events', reconnect: true });
+const feed = sse({
+    url: 'https://api.example.com/events',
+    sse: { reconnect: true },
+});
 ```
 
 Measured: the consumer saw `ABCDE` — five deltas, **zero duplication** — and the reopened
@@ -47,29 +50,34 @@ request carried exactly the right header, `Last-Event-ID` moving `(none) → t2`
 the last id delivered before the drop. Server pacing is honoured too: a `retry: 9000` frame
 produced 9000 ms gaps, overriding the authored `reconnect.delay`.
 
-<Callout type="error">
-    **Do not enable `reconnect` on an LLM stream.** With no `id:` to resume
-    from, every reopen is a request for the *whole completion*. Measured on a
-    stream that **completed cleanly**: 4 opens, 4 `[DONE]` sentinels, and the
-    text `ABCDEABCDEABCDEABCDE` delivered to the consumer as one uninterrupted
-    stream — ending `done(ok: true)`. `sse: true` is the same flag. See [what
-    does not work](#what-stitchapi-does-not-solve-here) below.
+<Callout type="info">
+    **`reconnect` cannot help an LLM stream — resuming needs `id:`.** With no
+    `id:` on any frame there is nothing to replay as `Last-Event-ID`, so the
+    engine does not reopen. Measured on an OpenAI-shaped stream with
+    `sse: { reconnect: true }`: a completed stream is 1 open, `ABCDE` once,
+    one `[DONE]`, and a mid-body drop surfaces its error with the partial
+    kept (`ABC`, `done(ok: false)`) instead of being reopened. An earlier
+    build replayed the whole completion here — measured by this audit, filed
+    as #640, fixed in #647 — so the flag on an id-less stream is now a no-op,
+    not a replay. `sse: true` is the same flag. What the LLM case actually
+    needs is below.
 </Callout>
 
 For the LLM case the answer is **two seams**: `Surface.execute` for connect-only retry, and
 the surface's `stream` hook to require the sentinel and reject in-band error frames.
 
 ```ts
+const TRANSIENT = [429, 502, 503, 504]; // the engine's own default retry.on
+
 // Retry the CONNECT phase only — the one replay that is unambiguously safe.
-execute: async (req, ctx) => {
-    for (let attempt = 1; ; attempt++) {
-        try {
-            return await ctx.adapter(req);
-        } catch (err) {
-            if (attempt >= connectAttempts) throw err;
-            await ctx.sleep(backoff(attempt)); // no bytes have flowed yet
-        }
-    }
+// `transport` is the injected adapter (a surface with `execute` replaces
+// `config.adapter`), and adapters resolve on every status — a 503 is a value,
+// not a throw — so the loop tests `res.status`; a catch would never see it.
+execute: async (req) => {
+    let res = await transport(req);
+    for (let i = 1; i < connectAttempts && TRANSIENT.includes(res.status); i++)
+        res = await transport(req); // no bytes have flowed yet
+    return res;
 },
 
 // Require the sentinel: truncation is the ABSENCE of a frame, so nothing
@@ -107,10 +115,12 @@ hand-rolled file.
    with `error.attempts: 1`. The safe replay — the connect phase, before any byte — is the one
    case `retry` cannot cover.
 2. **`retry.attempts` is inert but `retry.backoff` is live**, as the _reconnect_ curve. One
-   name, two fates: `retry: { attempts: 1 }` still produced 4 opens.
-3. **Connect-phase and body-phase policy are not separately addressable.** One flag governs
-   both. `reconnect.onlyOnDrop`, `reconnect.requireToken` and `retry.phase` are all absent
-   (machine-checked).
+   name, two fates: on a resumable feed that kept dropping, `retry: { attempts: 1 }` still
+   produced 4 opens — the cap that binds is `reconnect.attempts`.
+3. **Connect-phase and body-phase policy are not separately addressable.**
+   `reconnect.onlyOnDrop`, `reconnect.requireToken` and `retry.phase` are all absent
+   (machine-checked) — the engine now behaves as the first two would have configured, but the
+   phase split itself still has no config spelling.
 4. **`interpret` and `verdict.flag` are dead code on streaming surfaces.** A custom surface's
    `interpret` ran **zero** times — `runStreaming` calls only `classifyStatus`. They typecheck
    and do nothing.
@@ -125,12 +135,10 @@ hand-rolled file.
    `StitchError` has `body`, `data`, `partial` and `chunks` all `undefined`; and `.inspect()` —
    whose whole job is "what did the server actually send?" — returns `data: null`, `raw: null`,
    `status: 0`. The engine is holding the answer one line above the `return` that discards it.
-8. **The reconnect loop sits above every surface hook**, so no surface can defend against the
-   replay in the callout above — that decision is made in `runStreaming`, before any hook runs.
 
 <Callout type="warn">
     **Default reconnect backoff is roughly 50 ms** (`expo-jitter` off base 100), so a dropped
-    stream replays within a tenth of a second unless you author a `retry.backoff`. And
+    stream reopens within a tenth of a second unless you author a `retry.backoff`. And
     `verdict: { accept: [503] }` combined with `reconnect` resolves a permanently-failing
     server **successfully** with `data: []`.
 </Callout>

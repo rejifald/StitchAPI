@@ -5,7 +5,7 @@
 **Suggested template:** bug_report.yml · **Suggested labels:** `dx`, `footgun`
 
 > The scenario itself resolved cleanly as a **documented boundary** — inbound receipt is out of
-> scope by design, and [the-stitch.mdx:44](../../apps/docs/content/docs/concepts/the-stitch.mdx)
+> scope by design, and [the-stitch.mdx:44](../../../apps/docs/content/docs/concepts/the-stitch.mdx)
 > already says so. These two findings are independent of that and apply to any stitch.
 
 Reproduce:

@@ -51,9 +51,13 @@ really "one event leaks", which is a much smaller thing to reason about.
 
 ### An `output` allowlist genuinely filters — 9 lines
 
-This is the answer, and it works because of an asymmetry
-[measured in scenario 20](/docs/scenarios/precision-loss): the engine serves the **validated**
-value, so `output` filters where `input` merely checks.
+This is the answer, and it works because the engine serves the **validated** value —
+[measured in scenario 20](/docs/scenarios/precision-loss), and since
+[#663](https://github.com/rejifald/StitchAPI/pull/663) no longer an asymmetry: an `input` schema
+now shapes the request the same way (scenario 20 caught it merely checking;
+[#648](https://github.com/rejifald/StitchAPI/issues/648) filed the gap).
+Either direction filters the slots you **declare** — a slot with no schema on it still flows
+through untouched, which is why the nine lines below have to be written.
 
 ```ts
 const SAFE = z.object({
@@ -91,7 +95,7 @@ OTLP.
 
 1. **`sensitive: true` does not mean "do not log".** It changed the leak at **1 of 11**
    destinations — the cache. Across all of `packages/core/src` there is exactly **one** read of
-   the value, `engine.ts:1022`, inside `ensureCache`. No sink, no trace module and no event
+   the value, `engine.ts:1051`, inside `ensureCache`. No sink, no trace module and no event
    builder mentions it. It means _do not persist this to the cache_, and while it is set the
    JSONL sink still writes the full body to disk. It also survives onto the public `__config`, so
    `.report()` prints `"sensitive":true` beside the record it did not protect.
@@ -106,11 +110,15 @@ OTLP.
    `String(err)` are clean, and **`logger.error({ err })` is the leak.** The same shape repeats on
    success: ADR 0016's non-enumerability protects `.inspect().raw` and nothing else, because
    `.inspect().data` holds the same record enumerably.
-4. **A validation error can carry the value into a log.** `validationErrors`
-   (`drift.ts:50-56`) copies the validator's own message into `detail`, and Zod's enum message
-   quotes back the value it received — so an SSN reaching an enum field is written out verbatim.
-   Measured reaching the JSONL file, `consoleSink` **and** `loggerSink` — the two
-   sinks that are otherwise 0 of 7. Only OTLP stays clean, because it drops `detail`.
+4. **A validation error can carry the value into a log — when the validator's message echoes
+   it.** `validationErrors` (`drift.ts:50-56`) copies the validator's own message into `detail`
+   verbatim, so what escapes is decided by the message's wording, not by anything in this
+   library. Stock Zod 4 (the workspace's validator since
+   [#589](https://github.com/rejifald/StitchAPI/pull/589)) no longer echoes the received value —
+   its enum error reads `Invalid option: expected one of "enterprise"|"free"`, and every sink
+   measures clean. A message that does embed the input — a custom `refine`/`check` message, or
+   Zod 3's enum wording — is measured reaching the JSONL file, `consoleSink` **and** `loggerSink`
+   — the two sinks that are otherwise 0 of 7. Only OTLP stays clean, because it drops `detail`.
 5. **The `fileSink` body cap is a size control, not a privacy control.** On a 2.9 KB body all
    seven sentinels still persisted into the `preview`; only an eighth planted past character 2048
    was absent. It keeps a _prefix_, so reordering the vendor's JSON changes which fields leak.
@@ -152,7 +160,7 @@ a 200 (only `.inspect().raw`, by design) but leaves the 500 path untouched; the 
 
 - [Trace sinks](/docs/guides/observability/trace-sinks) — the sinks measured above
 - [Drift](/docs/guides/validation/drift) — the inventory channel
-- [Scenario: the ID that changed on the way in](/docs/scenarios/precision-loss) — where the
-  `output`-uses-its-parsed-value asymmetry was measured
+- [Scenario: the ID that changed on the way in](/docs/scenarios/precision-loss) — where
+  `output`'s serve-the-parsed-value behaviour was measured
 - [Scenario: the agent picks the arguments](/docs/scenarios/agent-holds-the-tool) — the other
   scenario about data reaching somewhere it should not

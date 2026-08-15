@@ -65,7 +65,7 @@ async function main(): Promise<void> {
     // ── (b) the one cap there is, pointed at the buffered path ────────────────────────────────
     // `stream.buffer.chars` is a top-level `StitchConfig` slot. It compiles on a plain `stitch()`,
     // it survives `compose`, and `runOnce` never reads it — only the streaming decoders do
-    // (`stream.ts:77`, `json-stream.ts:89-97`, `line-reader.ts:38-46`).
+    // (`stream.ts:77`, `json-stream.ts:91-99`, `line-reader.ts:38-46`).
     {
         const wire = singleArray(50_000);
         const exportAll = stitch({

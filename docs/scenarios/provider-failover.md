@@ -53,9 +53,9 @@ Choosing the wrong one is a bill, not a bug report.
 ## Why it is not straightforward
 
 **The trigger has to classify the failure, not just notice it.** The consensus is sharp and
-consistent: `404`, `429` and `5xx` are _availability_ errors — try the next provider. A `400`
-is a _bad request_ — stop the chain, because your payload is malformed and the next provider
-will reject it identically. A failover that treats all failures alike turns one bad request
+consistent: timeouts (`408`), `429` and `5xx` — and no status at all, the transport failure —
+are _availability_ errors: try the next provider. A `400` is a _bad request_ — stop the chain,
+because your payload is malformed and the next provider will reject it identically. A failover that treats all failures alike turns one bad request
 into N bad requests, N bills, and an aggregate error that hides the actionable one.
 
 Then the shape-specific hazards:

@@ -8,10 +8,11 @@
 //     it, so the allow-list is that object. It has to be built by NAMING what is exposed, and it
 //     has to be checked against `__config.name` too, because `selectStitch` resolves a stitch by
 //     its configured name even when the registry key is different (registry.ts:71-74).
-//   • THE INPUT FILTER (`only`)   — closes C2 and C7. A `Proxy` apply-trap rebuilds the input from
-//     an explicit key list before the stitch ever sees it, so an undeclared slot is not a
-//     passthrough and a stripping schema is not needed (the engine discards a validator's parsed
-//     value — engine.ts:400-408 — so filtering has to happen out here).
+//   • THE INPUT FILTER (`only`)   — closes C2 and C7 (d). A `Proxy` apply-trap rebuilds the input
+//     from an explicit key list before the stitch ever sees it, so an undeclared slot is not a
+//     passthrough. Since #663 a declared schema filters its own slot (engine.ts:415-447), so out
+//     here the key list is defence in depth for declared slots — and the only cover a slot with
+//     no schema has.
 //   • THE METHOD GATE (`readsOnly`) — closes C6 as far as it can be closed. There is no channel
 //     from this process to a human (C6 a), so an irreversible call cannot be confirmed; it can only
 //     be refused. The gate wraps the `Adapter`, which is the last seam before the transport and

@@ -39,7 +39,7 @@ they test the working tree, not the published bundle.
 They typecheck under `packages/core`'s full strict set:
 
 ```sh
-cd packages/core && pnpm exec tsc --noEmit \
+cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
   --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler \
   --esModuleInterop --skipLibCheck --strict --noUncheckedIndexedAccess \
   --exactOptionalPropertyTypes --noImplicitOverride --noPropertyAccessFromIndexSignature \
@@ -99,19 +99,20 @@ spelling is `import { z } from 'zod'`.
   `info|undeclared|settlement_delay_ms|undeclared field (number)`, the call succeeds, `ignore`
   silences it without touching the schema, and 51 added values across a 50-element array collapse
   to **2** findings (`all 50 elements: …` plus a `sample` coordinate). The unwritten half: the
-  engine serves the **validated** value (engine.ts:1224) and a Zod object strips unknown keys, so
+  engine serves the **validated** value (engine.ts:1264) and a Zod object strips unknown keys, so
   `data.settlement_delay_ms` is `undefined`. **Drift tells you a field appeared and simultaneously
   guarantees you cannot read it.** The trade is exact — with a schema you get the finding and lose
   the value; without one you get the value and no finding.
 - **C2's level distinction is real and it is not a property of the removal.** `error|invalid|
-currency|Required` against C1's `info|undeclared` is three levels and a different kind. But the
+currency|Invalid input: expected string, received undefined` against C1's `info|undeclared` is
+  three levels and a different kind. But the
   same wire body against `.optional()` produces a successful call and **zero findings**, and against
   `.default("usd")` produces `verbose|defaulted` **plus a currency the vendor never sent**. One
   vendor change, four declarations, four answers. "Removal is breaking" is something you have to
   have already declared.
 - **C3 refutes the capture on the mechanism and confirms it on the outcome.** `z.number()` on
-  `"12345"` is `error|invalid|transaction_id|Expected number, received string` and the call fails
-  with `data: null`. `z.coerce.number()` on `"abc"` **also** fails — `Number("abc")` is `NaN` and
+  `"12345"` is `error|invalid|transaction_id|Invalid input: expected number, received string` and
+  the call fails with `data: null`. `z.coerce.number()` on `"abc"` **also** fails — `Number("abc")` is `NaN` and
   Zod rejects `NaN`. StitchAPI does not manufacture a $0 charge on its own.
 - **Two ordinary spellings do, and one of them needs no `.catch()`.** `z.coerce.number().catch(0)`
   on `"abc"` hands the caller literal `0`. And `z.coerce.number()` on **`null`** hands the caller
@@ -145,7 +146,7 @@ currency|Required` against C1's `info|undeclared` is three levels and a differen
   the docs say fatality is the schema's job — c5(e) asserts the rejection with `@ts-expect-error`.
   Cast past the type and the runtime honours it: `severity: { coerced: 'error' }` produced
   `error|coerced|transaction_id` and **failed the call** (`levelOf` at drift.ts:100 →
-  `finding.level === 'error'` at engine.ts:1215). Off-contract; the documented route is a strict
+  `finding.level === 'error'` at engine.ts:1256). Off-contract; the documented route is a strict
   schema, which also gives a better message.
 - **C6 refutes the capture's central prediction. `trace` is a real aggregation seam.** A `TraceSink`
   is configured once, receives every event of every call, and `ctx.spanId` identifies the logical
@@ -158,17 +159,17 @@ currency|Required` against C1's `info|undeclared` is three levels and a differen
   say: `10/10, 5 landed 0` — same finding, half of them zeros.
 - **Three counting traps, all measured.** (1) **Findings are not calls**: two drifted fields on one
   response is two findings, so a naive `findings / calls` reads 200%. (2) **A cache hit divides your
-  rate by the hit ratio**: a hit emits `start` and `result` but no drift (engine.ts:1605-1613), so 5
+  rate by the hit ratio**: a hit emits `start` and `result` but no drift (engine.ts:1668-1680), so 5
   calls against a **100%**-drifting vendor measured **20%**, with every line of code correct.
   (3) **`.report()` pollutes both sides of the fraction**: it is a fresh run, so it added a request
   _and_ a tick to the denominator.
 - **C7: the field path is always there; expected/actual is only half there.** A hard finding carries
-  both types (`Expected number, received string` — Zod's message). A soft one carries
+  both types (`Invalid input: expected number, received string` — Zod's message). A soft one carries
   `kindOf(old) -> kindOf(new)` and no values, on any accessor except `.inspect().raw`.
 - **`.safe()` is the worst accessor and it is the one everybody uses.** On a soft finding it carries
   **nothing** — `{ok: true, data, error: null}` and a `transaction_id` of `0`. On a hard one it
   carries `contract violation (drift)`; `StitchError` has `{status, attempts, body, url}` and **no
-  `findings`** (types.ts:1656-1690), while the trace sink for the _same run, same instant_ named the
+  `findings`** (types.ts:1857-1891), while the trace sink for the _same run, same instant_ named the
   field and both types.
 - **`.stream()` is the cheap live accessor and `.inspect()` is the diagnostic one.** `.stream()`
   gives every finding plus the validated value in **one** request (`start, progress, drift, drift,
