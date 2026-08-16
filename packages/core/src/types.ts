@@ -573,6 +573,43 @@ export type MultipartOnlyOnMultipartBody<C> =
               }
         : unknown;
 /**
+ * Compile-time guard: `url` is the COMPLETE endpoint, so a `baseUrl`/`path` authored beside it in
+ * the SAME config literal is dead config — `buildRequest` (`engine.ts`) takes the `url` branch and
+ * neither sibling is ever read. Intersecting the config with this makes the offending slot
+ * unsatisfiable (CONTRACT.md P24 carve-out (b), which requires a flat group kept flat to make its
+ * dead combinations unrepresentable). The endpoint slot is exactly such a group — one capability,
+ * two spellings — and **R8 never flagged it**: `url`/`baseUrl`/`path` share no leading-word prefix,
+ * the lint's documented gap (§7).
+ *
+ * Until this guard the JSDoc on {@link StitchConfig.url} was the only thing saying `url` wins:
+ * `stitch({ url: 'https://a.test/x', baseUrl: 'https://b.test' })` typechecked and silently dropped
+ * the base. The engine's own diagnostic only fires when the JOINED result is not absolute, so the
+ * absolute-`url` case — the one that quietly aims at the wrong host — passed with nothing said
+ * anywhere. That asymmetry is the whole reason this belongs in the type: the runtime can only catch
+ * the spelling that fails loudly on its own.
+ *
+ * LITERAL-ONLY, and deliberately NOT the {@link AnyLayer}/{@link Layers} composed read its siblings
+ * use. Across fragments the two spellings are a SUPPORTED last-writer-wins override — `stitch.ts`'s
+ * endpoint-slot reconcile clears an inherited `baseUrl`/`path` when a child writes `url`, and
+ * clears an inherited `url` when a child writes either sibling. A seam supplying `baseUrl` while
+ * one member supplies an absolute `url` is the ordinary way to point a single endpoint off-origin,
+ * and a composed read would reject it. Only the single-literal pairing, where no override can be
+ * meant, is dead.
+ *
+ * RESIDUAL LIMIT, shared with the sibling guards: a fragment typed as `Partial<StitchConfig>`
+ * rather than inferred from its literal has optional properties, which satisfy no probe, so it
+ * reads as supplying nothing. The literal-level case, which is the one people write, errors
+ * precisely.
+ */
+export type OneEndpointSpelling<C> = C extends { url: unknown }
+    ? C extends { baseUrl: unknown } | { path: unknown }
+        ? {
+              baseUrl?: ConfigError<'`url` is the COMPLETE endpoint and is NOT joined to `baseUrl` — this `baseUrl` is ignored. Drop it, or drop `url` and address the endpoint as `baseUrl` + a relative `path`'>;
+              path?: ConfigError<'`url` is the COMPLETE endpoint and carries its own path — this `path` is ignored. Fold it into `url`, or replace `url` with `baseUrl` + `path`'>;
+          }
+        : unknown
+    : unknown;
+/**
  * Compile-time guard: `document` and `operationName` are read ONLY by the graphql surface's
  * `buildRequest` (`surface.ts`), so authoring either without selecting that surface is silently
  * dead config — the document is dropped and a plain request goes out. Intersecting a config with
@@ -1645,17 +1682,18 @@ export interface StitchConfig {
      * endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware
      * like `path`; may be a thunk for lazy/env resolution.
      *
-     * ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl` — setting `url` makes
-     * `baseUrl` ignored. To address an endpoint *relative to* a shared `baseUrl` (e.g. a
-     * seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the
-     * un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually
-     * exclusive with `baseUrl`/`path`: when both are set `url` wins, and across composed
-     * fragments the last fragment to write either spelling wins the whole slot.
+     * ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl`. To address an endpoint
+     * *relative to* a shared `baseUrl` (e.g. a seam/fragment origin), use `path`, not a relative
+     * `url`: `url: '/users'` resolves to the un-fetchable `/users`, whereas `path: '/users'`
+     * resolves to `${baseUrl}/users`. Mutually exclusive with `baseUrl`/`path`, enforced at two
+     * different depths: pairing the spellings in ONE config literal is a **compile error**
+     * ({@link OneEndpointSpelling}), while across composed fragments they stay a legal
+     * last-writer-wins override — the last fragment to write either spelling wins the whole slot.
      */
     url?: string | (() => string);
-    /** Origin that `path` is appended to, as a string or a thunk resolved at call time. Ignored when `url` is set (which carries its own origin). */
+    /** Origin that `path` is appended to, as a string or a thunk resolved at call time. Cannot sit beside `url` in one literal ({@link OneEndpointSpelling}); a `url` from a later fragment overrides it (which carries its own origin). */
     baseUrl?: string | (() => string);
-    /** Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set. */
+    /** Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Cannot sit beside `url` in one literal ({@link OneEndpointSpelling}); a `url` from a later fragment overrides it. */
     path?: string;
     /** Static default headers merged into every request. */
     headers?: Record<string, string>;
@@ -2333,6 +2371,7 @@ export interface Seam {
         config: C &
             NoUnknownConfigKeys<C> &
             NoUnknownNestedKeys<C> &
+            OneEndpointSpelling<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -2342,7 +2381,8 @@ export interface Seam {
     /**
      * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
      * {@link StitchFn}). `C` is captured only to re-apply the dead-config guards
-     * ({@link NoUnknownConfigKeys}, {@link MultipartOnlyOnMultipartBody},
+     * ({@link NoUnknownConfigKeys}, {@link OneEndpointSpelling},
+     * {@link MultipartOnlyOnMultipartBody},
      * {@link GraphqlOnlyOnGraphqlSurface}, {@link WireBodyFixedByGraphql},
      * {@link RequestShapeFixedByDownload}) — see {@link StitchFn}'s fallback for why.
      */
@@ -2354,6 +2394,7 @@ export interface Seam {
         config: C &
             NoUnknownConfigKeys<C> &
             NoUnknownNestedKeys<C> &
+            OneEndpointSpelling<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -2372,6 +2413,7 @@ export interface Seam {
         config: C &
             NoUnknownConfigKeys<C> &
             NoUnknownNestedKeys<C> &
+            OneEndpointSpelling<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             NoWireBodyOnGraphql<C>,

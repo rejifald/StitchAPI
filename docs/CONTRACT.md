@@ -718,6 +718,14 @@ the envelope, and `MultipartOnlyOnMultipartBody` makes `wire.multipart` unsatisf
 `wire.body` is `'multipart'` — so `wire: { body: 'json', multipart: 'dot' }` is a compile error
 rather than silently inert config.
 
+_Second case for (b) (2026-08-16):_ the **endpoint slot** — `url` vs `baseUrl` + `path`. It stays
+flat because its members do not share a level (`SeamConfig` omits `url`/`path`, so `baseUrl` is
+seam vocabulary and the other two are per-endpoint) and because a dominant-field shorthand would
+mean two different things on the two surfaces, a P2 collision. `OneEndpointSpelling` supplies the
+(b) obligation the slot was missing: `baseUrl`/`path` beside a `url` in the SAME literal is a
+compile error, while across `extends` fragments the spellings stay a legal last-writer-wins
+override. See the migration record for the silent case that motivated it.
+
 Applied on every surface that authors a stitch (`stitch`, `graphql`, `Seam.stitch`,
 `Seam.graphql` — both the inferring and the fallback overload, or a rejected config falls through
 to the loose one and typechecks after all). **`seam()` itself is exempt and stays non-generic:**
@@ -1137,6 +1145,35 @@ shape, not as today's surface: nothing on the surface carries an alias.
     `fingerprint: { transform: 3 }` ≡ `{ transform: { version: 3 } }`) — the only two-level fold on
     the surface, and `NestedEnvelopes` carries it to that depth so a misspelling inside either
     envelope is a compile error. Genuine breaking flat→envelope, no alias.
+
+- **P24 carve-out (b) (endpoint slot, 2026-08-16)** the endpoint spellings — `url` vs
+  `baseUrl` + `path` — are one capability wearing two spellings, and they **stay flat**, because
+  they do not share a level: `SeamConfig` is `Omit<StitchConfig, 'path' | 'url' | …>`, so `baseUrl`
+  is cross-cutting seam vocabulary while `url`/`path` are per-endpoint, and that boundary is a
+  declarative one-line `Omit` an envelope would turn into a hand-written nested override on both
+  types. A P12 shorthand would also read as two different things
+  (`endpoint: 'https://api.example.com'` = the whole URL on a stitch, the base on a seam) — the
+  [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one) collision an envelope
+  is supposed to avoid, not create. What was **missing** is (b)'s own obligation: the dead
+  combinations were representable. `stitch({ url: 'https://a.test/x', baseUrl: 'https://b.test' })`
+  typechecked and silently dropped the base — the engine's diagnostic fires only when the JOINED
+  result is not absolute, so the absolute-`url` case (a fetchable URL aimed at the wrong host)
+  passed with nothing said anywhere. **Fixed** — `OneEndpointSpelling<C>` brands `baseUrl`/`path`
+  with a `ConfigError` when `url` sits beside them in the same literal, the mutual-exclusion shape
+  R8 already recognises, applied on every surface that authors a stitch (`stitch`, `graphql`,
+  `download` and their `Seam` members, both overloads). Additive: no rename, no runtime bytes, and a
+  repo-wide sweep found zero existing sites to fix.
+
+    Deliberately **literal-only**, unlike its `AnyLayer`/`Layers` siblings: across fragments the two
+    spellings are a supported last-writer-wins override (`stitch.ts`'s endpoint-slot reconcile), and
+    a seam supplying `baseUrl` while one member supplies an absolute `url` is the ordinary way to
+    point a single endpoint off-origin — a composed read would reject it. **R8 never flagged this
+    group**: `url`/`baseUrl`/`path` share no leading-word prefix, the same gap recorded above for
+    `total`/`perAttempt` and the cache-transform pair. One consequence is recorded with it:
+    `PathVarsOf`'s `path`-wins-over-`url` tie-break reads the literal `C`, so the pairing it
+    arbitrates is no longer reachable through any authoring surface — it survives for configs
+    arriving by cast or widened fragment, and its assertion moved onto `InputOf` directly
+    (`path-vars.test-d.ts` case 8).
 
 - **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
   now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
