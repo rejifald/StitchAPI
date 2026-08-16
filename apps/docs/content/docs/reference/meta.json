@@ -3,6 +3,7 @@
     "icon": "Code",
     "pages": [
         "stitch",
+        "seam",
         "auth-strategies",
         "config-types",
         "surfaces",
