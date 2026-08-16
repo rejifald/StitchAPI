@@ -148,6 +148,12 @@ lib
 # See docs/proposals/search-docs.md.
 apps/docs/.search-index/
 
+# Vendored embedding-model files (search_docs P3 cold-start fix): fetched from
+# HuggingFace by scripts/fetch-embed-model.mts as a deploy build step, never
+# committed — same rationale as apps/docs/.search-index/ above. See
+# apps/docs/lib/search-index/embed.ts.
+apps/docs/.model-cache/
+
 # @stitchapi/docs-mcp's bundled docs snapshot: copied in from apps/docs's
 # .search-index by scripts/copy-bundle.mjs at package build time, not committed —
 # same rationale as apps/docs/.search-index/ above.

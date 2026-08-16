@@ -22,6 +22,7 @@
         "build:docs-pages": "pnpm run build:typed-deps && fumadocs-mdx && node --import tsx/esm scripts/build-docs-pages.mjs",
         "build:mcp-bundle": "pnpm run build:search-index && node --import tsx/esm scripts/build-docs-pages.mjs",
         "check:search-relevance": "pnpm run build:search-index && node --import tsx scripts/search-eval.mts --assert",
+        "smoke:mcp": "node --import tsx scripts/smoke-mcp.mts",
         "test": "vitest run",
         "test:e2e": "playwright test",
         "test:e2e:install": "playwright install chromium"
