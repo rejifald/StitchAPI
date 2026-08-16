@@ -71,22 +71,55 @@ const config = {
     // Bundle the build-time search index into the serverless functions that
     // restore the Orama dump at runtime — the human search route (P2) and the MCP
     // server (P3). The file is generated at deploy by scripts/prebuild-search-index.mjs
-    // (never committed); runtime model loading / cold-start is the P3 watch-item.
-    // Each function gets the build-time Orama index (restored at runtime) AND
-    // onnxruntime-node's native shared library. Next traces the require'd
-    // `onnxruntime_binding.node` but NOT the `libonnxruntime.so.1` it dlopen's at
-    // load — so the function 500s with "libonnxruntime.so.1: cannot open shared
-    // object file". Ship the whole linux native dir so the .so lands beside the
-    // .node. The package lives in the pnpm store at the workspace root (../../ from
-    // apps/docs; outputFileTracingRoot bounds the trace to that root).
+    // (never committed); ditto the embedding model itself (./.model-cache/**,
+    // scripts/fetch-embed-model.mts) — bundling it is the P3 cold-start fix:
+    // without it, transformers.js fetches the ~90 MB model from the HuggingFace
+    // CDN on the first search per warm instance, sometimes past the 60s
+    // maxDuration ceiling (see lib/search-index/embed.ts for the matching
+    // localModelPath / allowRemoteModels=false runtime config).
+    // Each function also gets onnxruntime-node's native shared library. Next
+    // traces the require'd `onnxruntime_binding.node` but NOT the
+    // `libonnxruntime.so.1` it dlopen's at load — so the function 500s with
+    // "libonnxruntime.so.1: cannot open shared object file". Ship the whole linux
+    // native dir so the .so lands beside the .node. The package lives in the pnpm
+    // store at the workspace root (../../ from apps/docs; outputFileTracingRoot
+    // bounds the trace to that root).
     outputFileTracingIncludes: {
         '/api/search-docs': [
             './.search-index/**',
+            './.model-cache/**',
             '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
         ],
         '/api/mcp': [
             './.search-index/**',
+            './.model-cache/**',
             '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
+        ],
+    },
+    // Drop `sharp` from the deployed function entirely. @huggingface/transformers
+    // pulls it in for image pipelines; search_docs/get_doc only ever do text
+    // feature-extraction, so it's dead weight — and a dangerous kind: sharp's
+    // Node entry (dist/sharp.cjs) does an unconditional, synchronous native-
+    // binding load at require time and THROWS if none of its platform binaries
+    // resolve. That's the exact shape of the Jul 31–Aug 10 2026 outage (~946
+    // "Could not load the 'sharp' module using the linux-x64 runtime /
+    // ERR_DLOPEN_FAILED" errors on this route). Excluding sharp's files only
+    // trades that failure for a guaranteed one (require('sharp') throwing
+    // MODULE_NOT_FOUND instead) UNLESS the import is safe to fail — which it now
+    // is: embed.ts imports @huggingface/transformers lazily, inside the
+    // search_docs call path, specifically so a load failure (this one included)
+    // stays scoped to that one call instead of crashing the whole route at
+    // module load. With that containment in place, dropping sharp is a clean
+    // win — smaller bundle, one less fragile native dependency — instead of a
+    // regression.
+    outputFileTracingExcludes: {
+        '/api/search-docs': [
+            '../../node_modules/.pnpm/sharp@*/node_modules/**',
+            '../../node_modules/.pnpm/@img+sharp-*/node_modules/**',
+        ],
+        '/api/mcp': [
+            '../../node_modules/.pnpm/sharp@*/node_modules/**',
+            '../../node_modules/.pnpm/@img+sharp-*/node_modules/**',
         ],
     },
     // Keep the runtime embedder OUT of the server bundle. Those same two routes
@@ -96,7 +129,8 @@ const config = {
     // — which 500s every request (even paths that never embed, like the MCP
     // `initialize` handshake or an empty query), not just searches. Marking these
     // external leaves them as a plain runtime require, resolved from the traced
-    // node_modules, so the binary loads. Next externalizes `sharp` by default.
+    // node_modules, so the binary loads. Next externalizes `sharp` by default too
+    // (see outputFileTracingExcludes above for why this route ships none of it).
     serverExternalPackages: ['@huggingface/transformers', 'onnxruntime-node'],
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.

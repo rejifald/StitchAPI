@@ -49,3 +49,14 @@ export const MAX_QUERY_LEN = 512;
 export const INDEX_DIR = '.search-index';
 export const INDEX_FILE = 'docs-index.json';
 export const MANIFEST_FILE = 'manifest.json';
+
+// Vendored copy of EMBED_MODEL's files, relative to apps/docs. scripts/
+// fetch-embed-model.mts populates it as a deploy build step; embed.ts's
+// Vercel-only env.localModelPath reads from it at runtime (no HuggingFace CDN
+// fetch, no cold-start-vs-maxDuration race); next.config.mjs's
+// outputFileTracingIncludes ships it into the serverless functions. Same
+// "regenerated every deploy, never committed" treatment as INDEX_DIR above —
+// see .gitignore. Kept here, next to EMBED_MODEL/EMBED_DTYPE, so the fetch
+// script, the runtime, and the bundler config can't drift apart on where the
+// model lives.
+export const MODEL_DIR = '.model-cache';
