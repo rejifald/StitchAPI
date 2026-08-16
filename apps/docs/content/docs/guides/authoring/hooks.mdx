@@ -7,8 +7,10 @@ prerequisites: ['/docs/concepts/the-stitch']
 Hooks are observation points on a stitch's lifecycle: small callbacks that run as a
 call progresses, for logging, metrics, or tracing. They never change what a stitch
 returns — a call's only result is its response — so reach for a hook when you want
-to _watch_ a call, and for [`transform`](/docs/guides/data/transform) when you want
-to _reshape_ its output.
+to _watch_ a call, for [`transform`](/docs/guides/data/transform) when you want to
+_reshape_ its output, and for the
+[`input` schema](/docs/guides/data/transform#reshaping-the-request) when you want to
+reshape what it sends.
 
 ## Example
 
@@ -65,6 +67,19 @@ populated on a network failure or `res` populated on a retryable status.
 <Callout type="info">
     Hooks run on **every attempt**, not once per call: a stitch that retries
     twice fires `onRequest` three times. Use `attempt` to tell them apart.
+</Callout>
+
+<Callout type="warn">
+    **Observe the request; don't reshape it.** `ctx.req` is the live object the
+    transport is about to send, so mutating it in `onRequest` does change the
+    call — but step 3 puts you _after_ `auth.apply`, and a strategy that signs
+    the payload (AWS SigV4 with `signBody`, or any HMAC scheme) has already
+    hashed the body you are replacing. The signature then covers bytes that
+    never went out, and the API rejects the call with a 403 that points at
+    nothing. Reshape the request in its [`input`
+    schema](/docs/guides/data/transform#reshaping-the-request), which resolves
+    before auth signs anything — and before the cache key is derived from the
+    request, which hook mutation also misses.
 </Callout>
 
 ## Order across composed layers

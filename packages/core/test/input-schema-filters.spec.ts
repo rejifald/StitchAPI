@@ -188,6 +188,80 @@ describe('a declared input schema shapes the request (issue #648)', () => {
     });
 });
 
+// The documented consequence of the same write-back: a slot schema that TRANSFORMS is the
+// request-side counterpart of `transform` (which is response-only — it runs before `pick`, anchors
+// drift's `diff(raw, validated)`, and is a fingerprint-visible opacity, none of which has a request
+// analogue). These pin the two properties the guide promises, so neither can regress silently.
+describe('a transforming input schema is the request-side transform', () => {
+    test('body: the caller passes the house shape, the API shape goes on the wire', async () => {
+        server.route('POST', '/users', { body: { ok: true } });
+        const createUser = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/users',
+            input: {
+                body: z
+                    .object({ userName: z.string(), joinedAt: z.date() })
+                    .transform((b) => ({
+                        user_name: b.userName,
+                        joined_at: b.joinedAt.toISOString(),
+                    })),
+            },
+        });
+
+        // No cast: the call argument is typed from the schema's INPUT side, so the pre-transform
+        // shape is what typechecks here (a `user_name` literal is a compile error).
+        await createUser({
+            body: { userName: 'mango', joinedAt: new Date(0) },
+        });
+
+        expect(server.calls('/users')[0]!.body).toEqual({
+            user_name: 'mango',
+            joined_at: '1970-01-01T00:00:00.000Z',
+        });
+    });
+
+    test('auth signs the TRANSFORMED body — the ordering that makes `input` the seam and `onRequest` the wrong one', async () => {
+        server.route('POST', '/signed', { body: { ok: true } });
+        const seenByAuth: unknown[] = [];
+        const seenByHook: unknown[] = [];
+
+        const send = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/signed',
+            input: {
+                body: z
+                    .object({ amount: z.number() })
+                    .transform((b) => ({ amount_cents: b.amount * 100 })),
+            },
+            // Stands in for a payload-signing strategy (`@stitchapi/aws-sigv4` with `signBody`, or
+            // any HMAC scheme): it hashes `req.body`, so it must see the post-transform value or
+            // the signature covers bytes that never go out.
+            auth: {
+                apply: (req) => {
+                    seenByAuth.push(req.body);
+                    req.headers['x-signed-body'] = JSON.stringify(req.body);
+                },
+            },
+            hooks: { onRequest: ({ req }) => void seenByHook.push(req?.body) },
+        });
+
+        await send({ body: { amount: 5 } });
+
+        const call = server.calls('/signed')[0]!;
+        expect(call.body).toEqual({ amount_cents: 500 });
+        // Auth ran AFTER the transform, so the signature matches the bytes on the wire.
+        expect(seenByAuth).toEqual([{ amount_cents: 500 }]);
+        expect(call.headers['x-signed-body']).toBe(
+            JSON.stringify({ amount_cents: 500 }),
+        );
+        // And `onRequest` is downstream of both — it observes the signed request, which is exactly
+        // why reshaping there would invalidate the signature above.
+        expect(seenByHook).toEqual([{ amount_cents: 500 }]);
+    });
+});
+
 // The one path the issue flagged to check first: `variables` is a validated slot, but the value is
 // consumed by the graphql surface's `buildRequest` (`{ query, variables }`), not by the generic
 // request builder. The engine hands the surface the same input object it validated, so the parsed

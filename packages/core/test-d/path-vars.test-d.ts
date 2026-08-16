@@ -10,6 +10,7 @@
 // `stitch({ path: '…' })` forms (no `as const`) exercise that capture too.
 import { seam, stitch } from '..';
 import type { StitchInput } from '..';
+import type { InputOf } from '../src/infer';
 import { type CallArg } from './_util';
 
 import { expectAssignable, expectError, expectType } from 'tsd';
@@ -80,11 +81,17 @@ expectType<{ tenant: string | number | bigint }>(
 expectError(host());
 
 // 8) `path` wins the var source when both `path` and `url` are literals (the engine never expands both;
-//    reading `path` first is the stable choice).
-const both = stitch({ path: '/p/{p}', url: 'https://x/u/{u}' });
+//    reading `path` first is the stable choice). That pairing is now a compile error at every
+//    authoring surface (`OneEndpointSpelling` — the engine reading only one of them is exactly what
+//    makes it dead config), so the rule is asserted on `InputOf` DIRECTLY: `PathVarsOf` reads the
+//    literal `C` rather than the composed layers, so no `extends` spelling reaches this branch, and
+//    a call site is the one place it can no longer be observed. The tie-break stays the
+//    deterministic answer for a config that arrives via a cast or a widened fragment.
+type BothSpellings = { path: '/p/{p}'; url: 'https://x/u/{u}' };
 expectType<{ p: string | number | bigint }>(
-    null as unknown as NonNullable<CallArg<typeof both>>['params'],
+    null as unknown as NonNullable<InputOf<BothSpellings>>['params'],
 );
+expectError(stitch({ path: '/p/{p}', url: 'https://x/u/{u}' }));
 
 // 9) a non-templated stitch is byte-for-byte Phase 2: no `{…}` → loose, OPTIONAL argument (backward compat).
 const plain = stitch({ path: '/ping' });

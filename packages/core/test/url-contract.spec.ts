@@ -1,4 +1,5 @@
 import { stitch } from '../src';
+import type { StitchConfig } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -45,13 +46,21 @@ test('url may be a function (lazy/env resolution)', async () => {
 });
 
 // Precedence: when both spellings are present, `url` wins (resolved away at compose time).
+//
+// `OneEndpointSpelling` makes this pairing a compile error at every authoring surface (see
+// endpoint-spelling.test-d.ts), so the config is laundered through `Partial<StitchConfig>` — the
+// shape the guard cannot see, and exactly the shape a runtime config takes when it did not come
+// from a TS literal: a deserialised `__config`, `fromCurl`, or plain JS with no types at all. The
+// precedence must stay deterministic for those callers rather than going unspecified along with
+// the authoring spelling, which is why this test survives the guard instead of being deleted by it.
 test('url takes precedence over baseUrl + path', async () => {
     server.route('GET', '/right', { body: { hit: 'url' } });
-    const s = stitch({
+    const rebuilt: Partial<StitchConfig> = {
         url: `${server.url}/right`,
         baseUrl: 'https://wrong.example.com',
         path: '/wrong',
-    });
+    };
+    const s = stitch(rebuilt);
     expect(s.__config.url).toBe(`${server.url}/right`);
     expect(s.__config.baseUrl).toBeUndefined();
     expect(s.__config.path).toBeUndefined();

@@ -19,6 +19,7 @@ import {
     type NoRequestShapeOnDownload,
     type NoUnknownConfigKeys,
     type NoUnknownNestedKeys,
+    type OneEndpointSpelling,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -180,6 +181,7 @@ export interface DownloadSeamApi {
         config: C &
             NoUnknownConfigKeys<C> &
             NoUnknownNestedKeys<C> &
+            OneEndpointSpelling<C> &
             NoRequestShapeOnDownload<C> &
             NoKindOnDownload<C>,
     ) => Stitch<DownloadResult, InputOf<C>>;
@@ -204,6 +206,7 @@ const downloadStitch = <
     config: C &
         NoUnknownConfigKeys<C> &
         NoUnknownNestedKeys<C> &
+        OneEndpointSpelling<C> &
         NoRequestShapeOnDownload<C> &
         NoKindOnDownload<C>,
 ): Stitch<DownloadResult, InputOf<C>> =>

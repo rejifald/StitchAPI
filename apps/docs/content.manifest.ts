@@ -695,6 +695,13 @@ export const pages: Page[] = [
         kind: 'reference',
     },
     {
+        path: 'reference/seam',
+        title: 'seam()',
+        description:
+            'SeamOptions — every prop a seam takes, the eight per-endpoint keys it refuses — plus the Seam handle and the lifecycle-free PrincipalSeam that seam.as() returns.',
+        kind: 'reference',
+    },
+    {
         path: 'reference/auth-strategies',
         title: 'Auth strategies',
         description:

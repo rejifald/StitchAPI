@@ -45,7 +45,7 @@ const user = await getUser({ params: { id: 7 } });
 
 ## Options
 
-A seam takes the same fields a stitch does — `baseUrl`, `auth`, `retry`, `throttle`, `timeout`, `store`, `trace`, and the rest — as the base its members extend, plus a `secretStore` for a hardened auth vault. See [Reference → Config types](/docs/reference/config-types) for every field.
+A seam takes the same fields a stitch does — `baseUrl`, `auth`, `retry`, `throttle`, `timeout`, `store`, `trace`, and the rest — as the base its members extend, plus a `secretStore` for a hardened auth vault. The eight per-endpoint keys (`path`, `url`, `method`, `document`, `name`, `input`, `output`, `kind`) belong to a member, not the seam. See [Reference → seam()](/docs/reference/seam) for every prop and both handles.
 
 **Members extend the base; a member's own throttle stacks on the seam's.** Anything a member declares layers on top of the shared config — and a member's own `throttle` is _tighten-only_: it gates only that stitch on top of the shared bucket, so it can be stricter than the seam's budget but never escape it.
 
@@ -82,6 +82,7 @@ await api.close(); // flush the trace sink, close the shared store
 ## See also
 
 <Cards>
+    <Card title="Reference: seam()" href="/docs/reference/seam" />
     <Card title="Concept: the seam" href="/docs/concepts/the-seam" />
     <Card title="extends" href="/docs/guides/authoring/extends" />
     <Card

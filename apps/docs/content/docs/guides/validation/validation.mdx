@@ -43,6 +43,12 @@ caller tacked onto a declared slot never reaches the API — which matters most
 when the caller is untrusted, such as a model calling through
 [the MCP surface](/docs/surfaces/mcp).
 
+A schema that _transforms_ therefore reshapes the request. This is how a stitch
+maps your field names onto the API's — the call argument is typed from the
+schema's input side, so callers keep the house shape while the wire gets the
+API's. See
+[Reshaping the request](/docs/guides/data/transform#reshaping-the-request).
+
 <Callout type="warn">
     A schema constrains **one slot**. An undeclared slot stays a full
     passthrough, so declaring `params` does nothing about `query`. And a query
@@ -78,6 +84,7 @@ See [Reference → Config types](/docs/reference/config-types) for every field o
         href="/docs/guides/validation/standard-schema"
     />
     <Card title="Schema drift detection" href="/docs/guides/validation/drift" />
+    <Card title="Guide: transform" href="/docs/guides/data/transform" />
     <Card title="STITCH_VALIDATION" href="/docs/errors/stitch-validation" />
     <Card title="Reference: Config types" href="/docs/reference/config-types" />
 </Cards>

@@ -49,6 +49,7 @@ import {
     type NoUnknownConfigKeys,
     type NoUnknownNestedKeys,
     type NoWireBodyOnGraphql,
+    type OneEndpointSpelling,
     type RedactedStitchConfig,
     type RequestShapeFixedByDownload,
     type ResolvedStitchConfig,
@@ -1229,6 +1230,7 @@ export interface StitchFn {
         config: C &
             NoUnknownConfigKeys<C> &
             NoUnknownNestedKeys<C> &
+            OneEndpointSpelling<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -1241,7 +1243,8 @@ export interface StitchFn {
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
      *
      * `C` is captured here ONLY to re-apply the dead-config guards
-     * ({@link NoUnknownConfigKeys}, {@link MultipartOnlyOnMultipartBody},
+     * ({@link NoUnknownConfigKeys}, {@link OneEndpointSpelling},
+     * {@link MultipartOnlyOnMultipartBody},
      * {@link GraphqlOnlyOnGraphqlSurface}, {@link WireBodyFixedByGraphql},
      * {@link RequestShapeFixedByDownload}); the result stays `Stitch<T>`. Without it a config
      * rejected by the inferring overload would silently fall through to this one and typecheck
@@ -1257,6 +1260,7 @@ export interface StitchFn {
         config: C &
             NoUnknownConfigKeys<C> &
             NoUnknownNestedKeys<C> &
+            OneEndpointSpelling<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -1302,6 +1306,7 @@ export function graphql<
     config: C &
         NoUnknownConfigKeys<C> &
         NoUnknownNestedKeys<C> &
+        OneEndpointSpelling<C> &
         MultipartOnlyOnMultipartBody<C> &
         FlagPathInOutput<C> &
         NoWireBodyOnGraphql<C>,

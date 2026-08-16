@@ -45,19 +45,19 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "url",
             type: "property",
             detail: "string | (() => string)",
-            info: "Full request endpoint as one string — the atomic spelling, when a stitch is exactly one endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware like `path`; may be a thunk for lazy/env resolution. ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl` — setting `url` makes `baseUrl` ignored. To address an endpoint *relative to* a shared `baseUrl` (e.g. a seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually exclusive with `baseUrl`/`path`: when both are set `url` wins, and across composed fragments the last fragment to write either spelling wins the whole slot.",
+            info: "Full request endpoint as one string — the atomic spelling, when a stitch is exactly one endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware like `path`; may be a thunk for lazy/env resolution. ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl`. To address an endpoint *relative to* a shared `baseUrl` (e.g. a seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually exclusive with `baseUrl`/`path`, enforced at two different depths: pairing the spellings in ONE config literal is a **compile error** (OneEndpointSpelling), while across composed fragments they stay a legal last-writer-wins override — the last fragment to write either spelling wins the whole slot.",
         },
         {
             label: "baseUrl",
             type: "property",
             detail: "string | (() => string)",
-            info: "Origin that `path` is appended to, as a string or a thunk resolved at call time. Ignored when `url` is set (which carries its own origin).",
+            info: "Origin that `path` is appended to, as a string or a thunk resolved at call time. Cannot sit beside `url` in one literal (OneEndpointSpelling); a `url` from a later fragment overrides it (which carries its own origin).",
         },
         {
             label: "path",
             type: "property",
             detail: "string",
-            info: "Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set.",
+            info: "Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Cannot sit beside `url` in one literal (OneEndpointSpelling); a `url` from a later fragment overrides it.",
         },
         {
             label: "headers",
@@ -81,7 +81,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "input",
             type: "property",
             detail: "AtLeastOne<InputSchemas>",
-            info: "Schemas validating params, query, body, headers, and (GraphQL) variables before the request. At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20).",
+            info: "Schemas validating params, query, body, headers, and (GraphQL) variables before the request. At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20). A declared slot also SHAPES the request: it is built from the value the schema returned, so a schema that coerces, defaults, strips — or transforms — is what goes on the wire. That makes this the request-side counterpart of StitchConfig.transform (map your field names onto the API's here), and the call argument is typed from the schema's INPUT side, so callers keep the pre-transform shape. It resolves before the request is built, so the reshaped value is what `auth` signs and what the cache key is derived from.",
         },
         {
             label: "output",
@@ -99,7 +99,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "transform",
             type: "property",
             detail: "(body: unknown) => unknown",
-            info: "Reshape the raw body before `pick` and validation (e.g. scrape HTML to structured data).",
+            info: "Reshape the raw RESPONSE body before `pick` and validation (e.g. scrape HTML to structured data). Response-only by design: it runs before `pick` (so `pick` addresses the reshaped body), it is the left side of drift's `diff(raw, validated)`, and it is a declared opacity the cache fingerprint can see (ADR 0004 rung 2) — three guarantees a transform buried inside the `output` schema would defeat. None has a request-side counterpart, so reshaping the REQUEST is StitchConfig.input's job: a slot's schema shapes what goes on the wire, before auth signs it and before the cache key is derived from it.",
         },
         {
             label: "paginate",
