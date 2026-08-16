@@ -187,6 +187,39 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE (types only): a `baseUrl`/`path` beside a `url` in ONE config literal is now a
+  compile error.**
+  ([CONTRACT.md P24 carve-out (b)](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
+  The endpoint slot has two spellings — the atomic `url`, and the `baseUrl` + `path` pair — and the
+  engine reads exactly one of them: when `url` is set it **is** the whole endpoint, no base is
+  joined, and neither sibling is ever read. Pairing them in one literal was dead config that the
+  type system nonetheless accepted.
+
+    **The bug this fixes.** `stitch({ url: 'https://a.test/x', baseUrl: 'https://b.test' })`
+    typechecked and silently discarded the base — the request went to `a.test`. The engine's own
+    diagnostic fires only when the **joined** result is not absolute, so it caught the relative-`url`
+    slip (`url: '/users'` alongside a `baseUrl`) and nothing else; the absolute-`url` case resolved to
+    a perfectly fetchable URL aimed at the wrong host, with nothing said anywhere. Only the JSDoc
+    recorded that `url` wins. `OneEndpointSpelling` now brands the inert sibling with a `ConfigError`
+    naming it, on every surface that authors a stitch (`stitch`, `graphql`, `download`, and their
+    `Seam` members).
+
+    Migration — the rejected pairing had no working meaning, so there is nothing to preserve. Drop
+    the field that was being ignored, or keep it and drop `url`:
+
+    ```ts
+    // before: compiled, silently ignored `baseUrl` — the request went to a.test
+    stitch({ url: 'https://a.test/users', baseUrl: 'https://b.test' });
+    // after: say which one you meant
+    stitch({ url: 'https://a.test/users' });
+    stitch({ baseUrl: 'https://b.test', path: '/users' });
+    ```
+
+    **Composition is unchanged.** The guard reads the config literal only, so across `extends`
+    fragments the two spellings remain a last-writer-wins override: a seam's shared `baseUrl` with
+    one member's absolute `url` — the ordinary way to point a single endpoint off-origin — still
+    compiles and still behaves exactly as before.
+
 - **BREAKING CHANGE: `RateLimitError` now extends `StitchError`.**
   ([CONTRACT.md P10](docs/CONTRACT.md#p10--error-class-taxonomy-parity)) The two classes were
   siblings, and P10 held them in parity by having `RateLimitError` re-declare `status` / `attempts` /

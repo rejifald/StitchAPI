@@ -45,19 +45,19 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "url",
             type: "property",
             detail: "string | (() => string)",
-            info: "Full request endpoint as one string — the atomic spelling, when a stitch is exactly one endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware like `path`; may be a thunk for lazy/env resolution. ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl` — setting `url` makes `baseUrl` ignored. To address an endpoint *relative to* a shared `baseUrl` (e.g. a seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually exclusive with `baseUrl`/`path`: when both are set `url` wins, and across composed fragments the last fragment to write either spelling wins the whole slot.",
+            info: "Full request endpoint as one string — the atomic spelling, when a stitch is exactly one endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware like `path`; may be a thunk for lazy/env resolution. ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl`. To address an endpoint *relative to* a shared `baseUrl` (e.g. a seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually exclusive with `baseUrl`/`path`, enforced at two different depths: pairing the spellings in ONE config literal is a **compile error** (OneEndpointSpelling), while across composed fragments they stay a legal last-writer-wins override — the last fragment to write either spelling wins the whole slot.",
         },
         {
             label: "baseUrl",
             type: "property",
             detail: "string | (() => string)",
-            info: "Origin that `path` is appended to, as a string or a thunk resolved at call time. Ignored when `url` is set (which carries its own origin).",
+            info: "Origin that `path` is appended to, as a string or a thunk resolved at call time. Cannot sit beside `url` in one literal (OneEndpointSpelling); a `url` from a later fragment overrides it (which carries its own origin).",
         },
         {
             label: "path",
             type: "property",
             detail: "string",
-            info: "Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set.",
+            info: "Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Cannot sit beside `url` in one literal (OneEndpointSpelling); a `url` from a later fragment overrides it.",
         },
         {
             label: "headers",
