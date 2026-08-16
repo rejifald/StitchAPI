@@ -26,7 +26,11 @@
 // populate the same directory for testing the route with
 // allowRemoteModels=false:
 //   pnpm --filter @stitchapi/docs exec node --import tsx/esm scripts/fetch-embed-model.mts
-import { EMBED_DTYPE, EMBED_MODEL, MODEL_DIR } from '../lib/search-index/config';
+import {
+    EMBED_DTYPE,
+    EMBED_MODEL,
+    MODEL_DIR,
+} from '../lib/search-index/config';
 
 import { env, pipeline } from '@huggingface/transformers';
 import { readdirSync, statSync } from 'node:fs';

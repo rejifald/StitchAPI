@@ -83,7 +83,12 @@ async function rpc(
             Accept: 'application/json, text/event-stream',
             ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
         },
-        body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
+        body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: Date.now(),
+            method,
+            params,
+        }),
     });
     const ms = Date.now() - started;
 
@@ -132,9 +137,15 @@ console.log(`\nMCP smoke → ${endpoint}\n`);
     if (error) {
         fail('initialize', String(error));
     } else if (!result?.serverInfo?.name) {
-        fail('initialize', `no serverInfo in response: ${JSON.stringify(result)?.slice(0, 200)}`);
+        fail(
+            'initialize',
+            `no serverInfo in response: ${JSON.stringify(result)?.slice(0, 200)}`,
+        );
     } else {
-        pass('initialize', `${result.serverInfo.name} v${result.serverInfo.version} (${ms}ms)`);
+        pass(
+            'initialize',
+            `${result.serverInfo.name} v${result.serverInfo.version} (${ms}ms)`,
+        );
         checkBudget('initialize', ms);
     }
 }
@@ -168,7 +179,10 @@ console.log(`\nMCP smoke → ${endpoint}\n`);
     if (error) {
         fail('search_docs', String(error));
     } else if (result?.isError) {
-        fail('search_docs', `tool reported an error: ${JSON.stringify(result.content)?.slice(0, 300)}`);
+        fail(
+            'search_docs',
+            `tool reported an error: ${JSON.stringify(result.content)?.slice(0, 300)}`,
+        );
     } else {
         let hits: any[] = [];
         try {
@@ -182,9 +196,15 @@ console.log(`\nMCP smoke → ${endpoint}\n`);
                 'returned zero results for a query that must match the retry guide — the index is missing, empty, or not bundled into the function',
             );
         } else if (!hits[0]?.url?.startsWith('http')) {
-            fail('search_docs', `result shape changed — first hit has no absolute url: ${JSON.stringify(hits[0])?.slice(0, 200)}`);
+            fail(
+                'search_docs',
+                `result shape changed — first hit has no absolute url: ${JSON.stringify(hits[0])?.slice(0, 200)}`,
+            );
         } else {
-            pass('search_docs', `${hits.length} hits, top: ${hits[0].title} (${ms}ms)`);
+            pass(
+                'search_docs',
+                `${hits.length} hits, top: ${hits[0].title} (${ms}ms)`,
+            );
             checkBudget('search_docs', ms);
         }
     }
@@ -199,11 +219,17 @@ console.log(`\nMCP smoke → ${endpoint}\n`);
     if (error) {
         fail('get_doc', String(error));
     } else if (result?.isError) {
-        fail('get_doc', `tool reported an error: ${JSON.stringify(result.content)?.slice(0, 300)}`);
+        fail(
+            'get_doc',
+            `tool reported an error: ${JSON.stringify(result.content)?.slice(0, 300)}`,
+        );
     } else {
         const md: string = result?.content?.[0]?.text ?? '';
         if (md.length < 200) {
-            fail('get_doc', `returned ${md.length} chars — expected a full Markdown page`);
+            fail(
+                'get_doc',
+                `returned ${md.length} chars — expected a full Markdown page`,
+            );
         } else {
             pass('get_doc', `${md.length} chars of Markdown (${ms}ms)`);
             checkBudget('get_doc', ms);
@@ -213,7 +239,9 @@ console.log(`\nMCP smoke → ${endpoint}\n`);
 
 console.log('');
 if (failures > 0) {
-    console.error(`MCP smoke FAILED — ${failures} check(s) failed against ${endpoint}\n`);
+    console.error(
+        `MCP smoke FAILED — ${failures} check(s) failed against ${endpoint}\n`,
+    );
     process.exit(1);
 }
 console.log(`MCP smoke passed — ${endpoint} is healthy\n`);
