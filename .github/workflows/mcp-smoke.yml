@@ -1,0 +1,62 @@
+# Production health guard for the hosted docs MCP server (stitchapi.dev/api/mcp).
+#
+# This runs against the DEPLOYMENT, not the repo, and that is the whole point.
+# From 2026-07-31 to 2026-08-10 the endpoint errored on every request (~946
+# "Could not load the 'sharp' module using the linux-x64 runtime" across 89
+# clients) and nothing caught it for ten days. No test in `verify.yml` could
+# have: the fault was in Vercel's function file tracing, so the source was fine
+# and CI — running the search library out of a complete node_modules — passed
+# throughout. A tracing bug is only observable by talking to the deployed
+# artifact over the wire.
+#
+# The schedule matters as much as the probe. Running every six hours means most
+# runs land on a COLD instance, which is the only condition under which the
+# cold-start regression (25 "Task timed out after 60 seconds" errors through
+# 2026-08-16) is visible at all. A post-deploy-only check would usually hit a
+# warm function and miss it.
+#
+# A failure here opens no PR and blocks no merge — it fails a scheduled run,
+# which is what surfaces the notification. Treat a red run as production being
+# down for every agent that has this server configured.
+name: MCP smoke
+
+on:
+    schedule:
+        # Every 6 hours. Offset off the hour so this does not pile onto the
+        # top-of-hour scheduling spike on GitHub's shared runners.
+        - cron: '17 */6 * * *'
+    workflow_dispatch:
+        inputs:
+            base_url:
+                description: 'Base URL to probe (defaults to production)'
+                required: false
+                default: 'https://stitchapi.dev'
+    # Also probe whenever this guard or the route it covers changes, so a broken
+    # probe or a regressed route is caught in the PR rather than six hours later.
+    pull_request:
+        paths:
+            - 'apps/docs/scripts/smoke-mcp.mts'
+            - 'apps/docs/app/api/mcp/**'
+            - 'apps/docs/lib/search-index/**'
+            - 'apps/docs/next.config.mjs'
+            - '.github/workflows/mcp-smoke.yml'
+
+permissions:
+    contents: read
+
+jobs:
+    smoke:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            # The probe is pure fetch + tsx — no docs build, no model load, no
+            # Playwright. It needs nothing from the repo except the script.
+            - name: Probe the deployed MCP endpoint
+              run: pnpm --filter @stitchapi/docs smoke:mcp ${{ github.event.inputs.base_url || 'https://stitchapi.dev' }}
