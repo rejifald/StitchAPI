@@ -54,6 +54,17 @@ const baseUrl = (
 ).replace(/\/$/, '');
 const endpoint = `${baseUrl}/api/mcp`;
 
+// Preview deployments are SSO-protected (the project runs Vercel Authentication
+// with deploymentType `all_except_custom_domains`, so stitchapi.dev is open and
+// every *.vercel.app URL is gated). A protected deployment answers 401 with
+// `{"error":{"code":"401","message":"Protected deployment"}}` — a real response,
+// not a redirect, so it has to be recognised rather than followed.
+//
+// Vercel's "Protection Bypass for Automation" secret lifts that for a single
+// request via this header. Set VERCEL_AUTOMATION_BYPASS_SECRET to probe a preview;
+// production needs nothing, since the custom domain is not protected.
+const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
 let sessionId: string | undefined;
 let failures = 0;
 
@@ -82,6 +93,9 @@ async function rpc(
             'Content-Type': 'application/json',
             Accept: 'application/json, text/event-stream',
             ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
+            ...(bypassSecret
+                ? { 'x-vercel-protection-bypass': bypassSecret }
+                : {}),
         },
         body: JSON.stringify({
             jsonrpc: '2.0',
@@ -99,6 +113,19 @@ async function rpc(
 
     const body = await res.text();
     if (!res.ok) {
+        // Distinguish "the deployment is gated" from "the endpoint is broken".
+        // Without this they look identical — a non-2xx with an unhelpful body —
+        // and a missing bypass secret would read as a production outage.
+        if (res.status === 401 && body.includes('Protected deployment')) {
+            return {
+                error:
+                    'deployment is SSO-protected and the bypass secret was not accepted. ' +
+                    (bypassSecret
+                        ? 'VERCEL_AUTOMATION_BYPASS_SECRET is set but rejected — regenerate it in Vercel → Project → Settings → Deployment Protection → Protection Bypass for Automation.'
+                        : 'Set VERCEL_AUTOMATION_BYPASS_SECRET to probe a preview URL (production needs no secret — its custom domain is not protected).'),
+                ms,
+            };
+        }
         return { error: `HTTP ${res.status}: ${body.slice(0, 300)}`, ms };
     }
 

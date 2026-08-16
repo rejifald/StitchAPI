@@ -31,21 +31,31 @@ on:
                 description: 'Base URL to probe (defaults to production)'
                 required: false
                 default: 'https://stitchapi.dev'
-    # Also probe whenever this guard or the route it covers changes, so a broken
-    # probe or a regressed route is caught in the PR rather than six hours later.
-    pull_request:
-        paths:
-            - 'apps/docs/scripts/smoke-mcp.mts'
-            - 'apps/docs/app/api/mcp/**'
-            - 'apps/docs/lib/search-index/**'
-            - 'apps/docs/next.config.mjs'
-            - '.github/workflows/mcp-smoke.yml'
+    # Probe each deployment as it goes live — Vercel reports one of these to GitHub
+    # per deployment, with the URL to hit in `environment_url`.
+    #
+    # This replaces a `pull_request` trigger, which was wrong twice over. It probed
+    # PRODUCTION rather than the change under review, so it went red on every PR
+    # while production was broken — including, on #752, the PR that fixed it. And
+    # it fired when the PR opened, minutes before Vercel had built anything, so
+    # even pointed at the right host it would have raced the deployment.
+    #
+    # `deployment_status` fixes both: it fires AFTER a deployment is live, and
+    # carries that deployment's own URL. It also covers a case the PR trigger never
+    # did — a production deploy is verified the moment it promotes, which is
+    # exactly how the #748 sharp regression reached users unnoticed.
+    deployment_status:
 
 permissions:
     contents: read
 
 jobs:
     smoke:
+        # Vercel reports several deployment_status events per deployment (pending,
+        # in_progress, then a terminal one). Only probe a deployment that is live.
+        if: >-
+            github.event_name != 'deployment_status' ||
+            github.event.deployment_status.state == 'success'
         runs-on: ubuntu-latest
         timeout-minutes: 5
         steps:
@@ -56,7 +66,58 @@ jobs:
                   node-version-file: .nvmrc
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
+
+            # Which host to hit:
+            #   deployment_status → that deployment's own environment_url
+            #   schedule          → production (the cold-start check)
+            #   workflow_dispatch → whatever was asked for, production by default
+            #
+            # A preview URL is SSO-protected (Vercel Authentication, deploymentType
+            # `all_except_custom_domains`), so probing one needs the automation
+            # bypass secret. When it is absent we SKIP rather than fail: the
+            # production paths need no secret and must stay meaningful on their own,
+            # and a repo without the secret configured should not see a permanently
+            # red check it cannot fix from the repo. Configuring
+            # VERCEL_AUTOMATION_BYPASS_SECRET (Vercel → Project → Settings →
+            # Deployment Protection → Protection Bypass for Automation) turns the
+            # preview half on.
+            - name: Resolve target
+              id: target
+              env:
+                  EVENT: ${{ github.event_name }}
+                  ENV_URL: ${{ github.event.deployment_status.environment_url }}
+                  DEPLOY_ENV: ${{ github.event.deployment_status.environment }}
+                  DISPATCH_URL: ${{ github.event.inputs.base_url }}
+                  HAS_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET != '' }}
+              run: |
+                  set -euo pipefail
+                  if [ "$EVENT" = "deployment_status" ]; then
+                    url="$ENV_URL"
+                    if [ -z "$url" ]; then
+                      echo "::notice::deployment_status carried no environment_url — nothing to probe."
+                      echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+                    fi
+                    # Production is reachable on its unprotected custom domain; a
+                    # preview is only reachable with the bypass secret.
+                    case "$url" in
+                      *stitchapi.dev*) ;;
+                      *) if [ "$HAS_BYPASS" != "true" ]; then
+                           echo "::warning::Skipping preview probe for $url — VERCEL_AUTOMATION_BYPASS_SECRET is not configured, so the deployment answers 401 Protected deployment. Add it to enable per-preview MCP smoke checks."
+                           echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+                         fi ;;
+                    esac
+                    echo "Probing $DEPLOY_ENV deployment: $url"
+                  else
+                    url="${DISPATCH_URL:-https://stitchapi.dev}"
+                    echo "Probing $url"
+                  fi
+                  echo "url=$url" >> "$GITHUB_OUTPUT"
+                  echo "skip=false" >> "$GITHUB_OUTPUT"
+
             # The probe is pure fetch + tsx — no docs build, no model load, no
             # Playwright. It needs nothing from the repo except the script.
             - name: Probe the deployed MCP endpoint
-              run: pnpm --filter @stitchapi/docs smoke:mcp ${{ github.event.inputs.base_url || 'https://stitchapi.dev' }}
+              if: steps.target.outputs.skip == 'false'
+              env:
+                  VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+              run: pnpm --filter @stitchapi/docs smoke:mcp "${{ steps.target.outputs.url }}"
