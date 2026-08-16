@@ -149,8 +149,13 @@ test.describe('playground examples', () => {
             PLAYGROUND_SURFACE_NAMES as readonly string[],
         );
 
+        // `!== 'undefined'`, NOT `=== 'function'`: the failure this guards is a
+        // re-export resolving to nothing. Those coincided only while every surface
+        // name was callable — the surface now also carries plain objects
+        // (`httpSurface`, `graphqlSurface`, `systemClock`), which a function-only
+        // check would reject for being exactly right.
         const missing = PLAYGROUND_SURFACE_NAMES.filter(
-            (name) => surface[name] !== 'function',
+            (name) => (surface[name] ?? 'undefined') === 'undefined',
         ).map((name) => `${name} (${surface[name] ?? 'undefined'})`);
 
         expect(
