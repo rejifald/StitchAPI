@@ -44,7 +44,18 @@ let extractor: Promise<FeatureExtractionPipeline> | undefined;
  * too, not just the pipeline construction. */
 export function getEmbedder(): Promise<FeatureExtractionPipeline> {
     if (!extractor) {
-        extractor = loadEmbedder();
+        extractor = loadEmbedder().catch((error: unknown) => {
+            // Memoizing the *rejection* would give back exactly what deferring
+            // the import bought. Per the module header, a failed
+            // @huggingface/transformers load is scoped to the one call that
+            // needed it — but parking that rejected promise in `extractor`
+            // re-widens it to every later query on this warm instance, with
+            // nothing to dislodge it but a recycle. That is the module-load
+            // failure mode again by another route. Drop the slot so the next
+            // call retries.
+            extractor = undefined;
+            throw error;
+        });
     }
     return extractor;
 }
