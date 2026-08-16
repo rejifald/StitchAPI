@@ -81,7 +81,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "input",
             type: "property",
             detail: "AtLeastOne<InputSchemas>",
-            info: "Schemas validating params, query, body, headers, and (GraphQL) variables before the request. At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20).",
+            info: "Schemas validating params, query, body, headers, and (GraphQL) variables before the request. At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20). A declared slot also SHAPES the request: it is built from the value the schema returned, so a schema that coerces, defaults, strips — or transforms — is what goes on the wire. That makes this the request-side counterpart of StitchConfig.transform (map your field names onto the API's here), and the call argument is typed from the schema's INPUT side, so callers keep the pre-transform shape. It resolves before the request is built, so the reshaped value is what `auth` signs and what the cache key is derived from.",
         },
         {
             label: "output",
@@ -99,7 +99,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "transform",
             type: "property",
             detail: "(body: unknown) => unknown",
-            info: "Reshape the raw body before `pick` and validation (e.g. scrape HTML to structured data).",
+            info: "Reshape the raw RESPONSE body before `pick` and validation (e.g. scrape HTML to structured data). Response-only by design: it runs before `pick` (so `pick` addresses the reshaped body), it is the left side of drift's `diff(raw, validated)`, and it is a declared opacity the cache fingerprint can see (ADR 0004 rung 2) — three guarantees a transform buried inside the `output` schema would defeat. None has a request-side counterpart, so reshaping the REQUEST is StitchConfig.input's job: a slot's schema shapes what goes on the wire, before auth signs it and before the cache key is derived from it.",
         },
         {
             label: "paginate",

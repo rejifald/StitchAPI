@@ -1443,11 +1443,36 @@ export interface AuthStrategy {
 export interface HookContext {
     name: string;
     attempt: number;
+    /**
+     * The live request this attempt is about to send — for READING (log the method/url, count a
+     * retry). It is the same object handed to the transport, so a mutation does take effect, but
+     * see {@link Hooks.onRequest}: by the time a hook sees it, auth has already signed it.
+     */
     req?: AdapterRequest;
     res?: AdapterResponse;
     error?: unknown;
 }
+/**
+ * Observation points on a call's lifecycle — logging, metrics, tracing. A hook cannot change what
+ * a stitch returns (its return value is discarded); reshaping the RESPONSE is `transform`, and
+ * reshaping the REQUEST is the `input` schema (see {@link Hooks.onRequest}).
+ */
 export interface Hooks {
+    /**
+     * Fires per attempt, just before the request goes out — and deliberately AFTER `auth.apply`,
+     * so it observes the fully-shaped, post-auth request (headers included).
+     *
+     * ⚠️ That ordering makes it the wrong place to RESHAPE the request. `ctx.req` is the live
+     * object, so mutating `req.body` here does reach the wire, but an auth strategy that signs the
+     * payload (`@stitchapi/aws-sigv4` with `signBody`, or any HMAC scheme) has already hashed the
+     * body being replaced — the signature then covers bytes that were never sent, and the API
+     * rejects the call with a 403 that points at nothing. The cache key is likewise derived from
+     * the request BEFORE this hook runs, so a mutation here is invisible to it too.
+     *
+     * Reshape the request in {@link StitchConfig.input} instead: input schemas resolve before the
+     * request is built, so the reshaped value is what auth signs and what the key is derived from
+     * (the request-side counterpart of {@link StitchConfig.transform}).
+     */
     onRequest?: (ctx: HookContext) => void | Promise<void>;
     onResponse?: (ctx: HookContext) => void | Promise<void>;
     onError?: (ctx: HookContext) => void | Promise<void>;
@@ -1670,6 +1695,13 @@ export interface StitchConfig {
     /**
      * Schemas validating params, query, body, headers, and (GraphQL) variables before the request.
      * At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20).
+     *
+     * A declared slot also SHAPES the request: it is built from the value the schema returned, so
+     * a schema that coerces, defaults, strips — or transforms — is what goes on the wire. That
+     * makes this the request-side counterpart of {@link StitchConfig.transform} (map your field
+     * names onto the API's here), and the call argument is typed from the schema's INPUT side, so
+     * callers keep the pre-transform shape. It resolves before the request is built, so the
+     * reshaped value is what `auth` signs and what the cache key is derived from.
      */
     input?: AtLeastOne<InputSchemas>;
     /**
@@ -1683,7 +1715,15 @@ export interface StitchConfig {
     output?: SchemaLike | DriftSpec;
     /** Dot-path picking the part of the response to return (e.g. `'data.items'`). */
     pick?: string;
-    /** Reshape the raw body before `pick` and validation (e.g. scrape HTML to structured data). */
+    /**
+     * Reshape the raw RESPONSE body before `pick` and validation (e.g. scrape HTML to structured
+     * data). Response-only by design: it runs before `pick` (so `pick` addresses the reshaped
+     * body), it is the left side of drift's `diff(raw, validated)`, and it is a declared opacity
+     * the cache fingerprint can see (ADR 0004 rung 2) — three guarantees a transform buried inside
+     * the `output` schema would defeat. None has a request-side counterpart, so reshaping the
+     * REQUEST is {@link StitchConfig.input}'s job: a slot's schema shapes what goes on the wire,
+     * before auth signs it and before the cache key is derived from it.
+     */
     transform?: (body: unknown) => unknown;
     /** Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page. */
     paginate?: PaginateOptions;

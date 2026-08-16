@@ -1,6 +1,6 @@
 ---
 title: 'transform'
-description: 'Reshape a response before pick and validation — for example, scrape HTML into structured data.'
+description: 'Reshape a response before pick and validation — and reshape a request on the way out, through its input schema.'
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
@@ -47,6 +47,76 @@ and return any reshaped value. See
     surfaces later as drift. Name the path with `pick` instead, which is
     declarative, round-trips as JSON, and feeds validation and drift directly.
     See [pick](/docs/guides/data/pick).
+</Callout>
+
+## Reshaping the request
+
+`transform` is a response slot. To reshape a body on the way _out_ — your
+field names in, the API's on the wire — put the mapping in the `input` schema.
+A declared slot doesn't only validate: the request is built from the value the
+schema **returned**, so a schema that transforms is a request transform.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const createUser = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    input: {
+        // Callers pass the house shape; the API's shape goes on the wire.
+        body: z
+            .object({ userName: z.string(), joinedAt: z.date() })
+            .transform((b) => ({
+                user_name: b.userName,
+                joined_at: b.joinedAt.toISOString(),
+            })),
+    },
+});
+
+await createUser({ body: { userName: 'mango', joinedAt: new Date() } });
+```
+
+The call argument is typed from the schema's **input** side, so callers keep
+`{ userName, joinedAt }` and never see `{ user_name, joined_at }`. The mapping
+lives on the stitch once, instead of at every call site.
+
+It runs in the right place, too: input schemas resolve before the request is
+built, so the reshaped body is what `auth` signs and what the cache key is
+derived from. Every slot works this way — `params`, `query`, `body`, `headers`,
+and GraphQL `variables` — and each is transformed independently.
+
+## Why `transform` is response-only
+
+An `output` schema can reshape too, by the same rule: the stitch serves the
+value the schema returned. So why does `transform` exist as its own slot — and
+why only on the response?
+
+Because on the response side the reshaping has to happen somewhere a schema
+can't reach, and has to stay visible to machinery a schema would hide it from:
+
+- **Ordering.** `transform` runs before [`pick`](/docs/guides/data/pick), so
+  `pick` addresses the reshaped body. A schema's own transform runs _at_
+  validation — after `pick` has already read the raw shape.
+- **Drift.** [Drift](/docs/guides/validation/drift) is anchored on the
+  difference between the raw body and the validated value. A transform inside a
+  `drift()` schema sits on the validated side, so every field it renames is
+  reported as drift.
+- **Caching.** A `transform` is a declared opacity: a stitch that has one
+  refuses to cache until you set `cache.fingerprint.transform`, because
+  re-validation cannot detect that the transform itself changed. A transform
+  buried inside `output` is invisible to that check, so it silently defeats it.
+
+None of the three has a request-side counterpart. There is no request `pick` and
+no request drift, and the cache key is derived from the request _after_ the input
+schema shaped it, so the reshaping is already folded in. A request `transform`
+slot would add a second spelling and no guarantee — which is why there isn't one.
+
+<Callout type="info">
+    The corollary for the response side: prefer `transform` over a transform
+    inside `output`. Keeping the two apart is what keeps `pick`, drift, and the
+    cache fingerprint honest about what reshaped the body.
 </Callout>
 
 ## See also
