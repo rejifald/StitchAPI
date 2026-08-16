@@ -28,21 +28,28 @@ const FUNCTIONS = [
     'compile',
     'isStitch',
     'isSeam',
-    // The three house token grammars (CONTRACT.md P17/P25). Each is public for one reason — a peer
-    // package that takes an authored duration / size / rate parses it the way core does instead of
-    // mirroring the grammar and drifting from it — and that reason only holds while they stay on
-    // the barrel, which nothing pinned until now. `parseRate` joined them in the same pass that
-    // wrote the reason into P17/P25; the other two had been exported on that argument for releases
-    // without a test holding them there.
-    'parseDuration',
-    'parseBytes',
-    'parseRate',
     // The verdict (ADR 0022 Decision 2), public because a surface author must compose it: an
     // `interpret` hook REPLACES the default rather than layering on it, so a surface with its own
     // body rules needs this to keep the caller's `verdict` config working. The one composition
     // point — its narrower and wider siblings are pinned ABSENT below.
     'verdictOf',
 ] as const;
+
+// The three house token grammars (CONTRACT.md P17/P25, ADR 0023), one namespace per dimension.
+// Each is public for one reason — a peer package that takes an authored duration / size / rate
+// handles it the way core does instead of mirroring the grammar and drifting from it — and that
+// reason only holds while they stay on the barrel.
+//
+// Pinned as a PAIR, not as two independent members. A namespace that kept `parse` and lost
+// `format` would still pass a "is it exported?" check while silently dropping half the contract,
+// and the encode direction is the half with no other caller inside core to notice it missing.
+const TOKEN_GRAMMARS = ['duration', 'size', 'rate'] as const;
+
+// The verb-prefixed functions these namespaces REPLACED, pinned absent so they cannot drift back.
+// `parseDuration` / `parseBytes` / `parseRate` were the whole grammar surface until the pair
+// landed; re-adding one as an alias would put two spellings of one call on the barrel, which is
+// the same "three names for one decision" trap the verdict scopes below are pinned against.
+const REMOVED_PARSERS = ['parseDuration', 'parseBytes', 'parseRate'] as const;
 
 // The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the
 // status alone) answers the engine's transport-health question and has no surface-author use;
@@ -70,6 +77,31 @@ describe('public API surface (src/index.ts)', () => {
     test.each(FUNCTIONS)('exports %s as a function', (name) => {
         expect(typeof (api as Record<string, unknown>)[name]).toBe('function');
     });
+
+    test.each(TOKEN_GRAMMARS)('exports %s as a parse/format pair', (name) => {
+        const ns = (api as Record<string, unknown>)[name] as
+            Record<string, unknown> | undefined;
+        expect(typeof ns).toBe('object');
+        expect(typeof ns?.['parse']).toBe('function');
+        expect(typeof ns?.['format']).toBe('function');
+    });
+
+    // The property suite proves the round-trip across the whole input space; this pins that the
+    // exported pair is the one that has it, so a barrel wired to some other encoder fails here.
+    test('the exported pairs round-trip through the barrel', () => {
+        expect(api.duration.parse(api.duration.format(90_000))).toBe(90_000);
+        expect(api.size.parse(api.size.format(1536))).toBe(1536);
+        expect(
+            api.rate.parse(api.rate.format({ count: 2, per: 1000 })),
+        ).toEqual({ count: 2, per: 1000 });
+    });
+
+    test.each(REMOVED_PARSERS)(
+        'does NOT export %s — the namespace pair replaced it',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
 
     test.each(INTERNAL_VERDICT_SCOPES)(
         'does NOT export %s — one composition point, not three',

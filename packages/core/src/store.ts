@@ -221,7 +221,7 @@ export function createStoreThrottle(
     clock: Clock = systemClock,
 ): Throttle {
     const limit = opts?.concurrency;
-    const rate = opts?.rate ? parseRate(opts.rate) : undefined;
+    const paced = opts?.rate ? parseRate(opts.rate) : undefined;
     // The lease pair is all-or-nothing (ADR 0025); resolved once so the hot path is one check.
     const leases =
         store.lease && store.release
@@ -313,8 +313,8 @@ export function createStoreThrottle(
                 if (blocked) waited = clock.now() - blockStart;
             }
         }
-        if (rate) {
-            const spacing = rate.per / rate.count; // ms between grants
+        if (paced) {
+            const spacing = paced.per / paced.count; // ms between grants
             if (store.reserve) {
                 // The GCRA cell (ADR 0024). One atomic read-compute-write over a shared cursor
                 // gives the fleet what neither half of the fallback below can: the cursor carries
@@ -329,7 +329,7 @@ export function createStoreThrottle(
                     `rl:${key}`,
                     spacing,
                     clock.now(),
-                    rate.per + 100,
+                    paced.per + 100,
                 );
                 const wait = at - clock.now();
                 if (wait > 0) {
@@ -347,7 +347,7 @@ export function createStoreThrottle(
             // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
             // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
             // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
-            const windowStart = Math.floor(clock.now() / rate.per) * rate.per;
+            const windowStart = Math.floor(clock.now() / paced.per) * paced.per;
             // Track the window we minted a key for; when it rolls over, DELETE the previous
             // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
             // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves a
@@ -358,7 +358,7 @@ export function createStoreThrottle(
             s.lastWindow = windowStart;
             const n = await store.increment(
                 `rl:${key}:${windowStart}`,
-                rate.per + 100,
+                paced.per + 100,
             );
             // The slot is a FLOOR on the grant, not the grant time itself. A process that joins
             // mid-window finds every slot up to `n` already scheduled in the PAST, and granting

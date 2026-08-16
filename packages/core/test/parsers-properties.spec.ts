@@ -7,12 +7,7 @@
 // The expectations below are computed from scale tables restated independently of the
 // implementation, never by re-running its own arithmetic. A wrong exponent in `src/util.ts` has
 // to fail one of these rather than be mirrored by it.
-import {
-    parseBytes,
-    parseDuration,
-    parseRate,
-    stripTrailingSlashes,
-} from '../src/util';
+import { duration, rate, size, stripTrailingSlashes } from '../src/util';
 
 import fc from 'fast-check';
 
@@ -49,10 +44,10 @@ const magnitude = fc.integer({ min: 0, max: 1000 });
 // The parsers return `number | undefined`; every input generated here is inside the grammar, so
 // `undefined` is a failure. Folding it to NaN makes that failure loud in whichever assertion
 // follows instead of needing a non-null assertion at each call site.
-const bytes = (s: string): number => parseBytes(s) ?? Number.NaN;
-const ms = (s: string): number => parseDuration(s) ?? Number.NaN;
+const bytes = (s: string): number => size.parse(s) ?? Number.NaN;
+const ms = (s: string): number => duration.parse(s) ?? Number.NaN;
 
-describe('parseBytes (property)', () => {
+describe('size.parse (property)', () => {
     it('scales each unit by its documented power of 1024', () => {
         fc.assert(
             fc.property(
@@ -133,13 +128,13 @@ describe('parseBytes (property)', () => {
     it('passes a number through as already-bytes', () => {
         fc.assert(
             fc.property(fc.integer(), (n) => {
-                expect(parseBytes(n)).toBe(n);
+                expect(size.parse(n)).toBe(n);
             }),
         );
     });
 });
 
-describe('parseDuration (property)', () => {
+describe('duration.parse (property)', () => {
     it('scales each unit by its documented factor', () => {
         fc.assert(
             fc.property(magnitude, fc.constantFrom(...MS_UNITS), (n, unit) => {
@@ -186,14 +181,14 @@ describe('parseDuration (property)', () => {
     it('passes a number through as already-milliseconds', () => {
         fc.assert(
             fc.property(fc.integer(), (n) => {
-                expect(parseDuration(n)).toBe(n);
+                expect(duration.parse(n)).toBe(n);
             }),
         );
     });
 });
 
-describe('parseRate (property)', () => {
-    // A bare unit is its one-unit token, over the SAME unit set as `parseDuration` — `'2/h'` and
+describe('rate.parse (property)', () => {
+    // A bare unit is its one-unit token, over the SAME unit set as `duration.parse` — `'2/h'` and
     // `'2/d'` are the units the old three-entry grammar could not spell.
     it('reads a bare unit as one of that unit, across every duration unit', () => {
         fc.assert(
@@ -201,13 +196,13 @@ describe('parseRate (property)', () => {
                 fc.integer({ min: 1, max: 10_000 }),
                 fc.constantFrom(...MS_UNITS),
                 (count, unit) => {
-                    expect(parseRate(`${count}/${unit}`)).toEqual({
+                    expect(rate.parse(`${count}/${unit}`)).toEqual({
                         count,
                         per: MS_SCALE[unit],
                     });
                     // …and the bare unit is exactly the 1-unit token, not a near-miss of it.
-                    expect(parseRate(`${count}/1${unit}`)).toEqual(
-                        parseRate(`${count}/${unit}`),
+                    expect(rate.parse(`${count}/1${unit}`)).toEqual(
+                        rate.parse(`${count}/${unit}`),
                     );
                 },
             ),
@@ -226,7 +221,7 @@ describe('parseRate (property)', () => {
                 (count, n, unit) => {
                     const per = n * MS_SCALE[unit];
                     fc.pre(per / count <= MAX_SPACING); // past the ceiling is its own property below
-                    expect(parseRate(`${count}/${n}${unit}`)).toEqual({
+                    expect(rate.parse(`${count}/${n}${unit}`)).toEqual({
                         count,
                         per,
                     });
@@ -241,31 +236,31 @@ describe('parseRate (property)', () => {
                 fc.integer({ min: 1, max: 10_000 }),
                 fc.constantFrom(...MS_UNITS),
                 (count, unit) => {
-                    expect(parseRate(`  ${count} / ${unit}  `)).toEqual(
-                        parseRate(`${count}/${unit}`),
+                    expect(rate.parse(`  ${count} / ${unit}  `)).toEqual(
+                        rate.parse(`${count}/${unit}`),
                     );
                 },
             ),
         );
     });
 
-    // The claim Decision 3 rests on: the denominator's grammar IS `parseDuration`'s, so a
+    // The claim Decision 3 rests on: the denominator's grammar IS `duration.parse`'s, so a
     // denominator that parser rejects (or reads as non-positive) is a rate this one rejects.
-    // Using `parseDuration` here is the property, not a mirror of `parseRate`'s own arithmetic —
+    // Using `duration.parse` here is the property, not a mirror of `rate.parse`'s own arithmetic —
     // it asserts the two agree, which is the whole point of deleting the second scale table.
-    it('rejects exactly the denominators parseDuration will not read as a positive window', () => {
+    it('rejects exactly the denominators duration.parse will not read as a positive window', () => {
         fc.assert(
             fc.property(
                 fc
                     .string()
                     // Bare units are the documented exception — `'s'` means `'1s'`, and
-                    // `parseDuration('s')` alone is undefined.
+                    // `duration.parse('s')` alone is undefined.
                     .filter(
                         (d) =>
                             !(MS_UNITS as readonly string[]).includes(d.trim()),
                     )
                     .filter((d) => {
-                        const per = parseDuration(d.trim());
+                        const per = duration.parse(d.trim());
                         return (
                             per === undefined ||
                             !Number.isFinite(per) ||
@@ -273,7 +268,7 @@ describe('parseRate (property)', () => {
                         );
                     }),
                 (d) => {
-                    expect(() => parseRate(`1/${d}`)).toThrow(/bad rate/);
+                    expect(() => rate.parse(`1/${d}`)).toThrow(/bad rate/);
                 },
             ),
         );
@@ -285,7 +280,7 @@ describe('parseRate (property)', () => {
                 fc.constantFrom('0', '00', '0.5', '-1', '1.5', '', ' ', 'x'),
                 fc.constantFrom(...MS_UNITS),
                 (count, unit) => {
-                    expect(() => parseRate(`${count}/${unit}`)).toThrow(
+                    expect(() => rate.parse(`${count}/${unit}`)).toThrow(
                         /bad rate/,
                     );
                 },
@@ -304,7 +299,7 @@ describe('parseRate (property)', () => {
                 (count, days) => {
                     const per = days * MS_SCALE.d;
                     fc.pre(per / count > MAX_SPACING);
-                    expect(() => parseRate(`${count}/${days}d`)).toThrow(
+                    expect(() => rate.parse(`${count}/${days}d`)).toThrow(
                         /bad rate/,
                     );
                 },
@@ -312,7 +307,7 @@ describe('parseRate (property)', () => {
         );
         // …and the largest spacing that CAN be honoured still parses, so the bound is the timer's
         // and not an off-by-one of our own.
-        expect(parseRate('1/24d')).toEqual({ count: 1, per: 24 * MS_SCALE.d });
+        expect(rate.parse('1/24d')).toEqual({ count: 1, per: 24 * MS_SCALE.d });
     });
 
     // The sibling of the `stripTrailingSlashes` property below, with one honest difference: there
@@ -331,8 +326,8 @@ describe('parseRate (property)', () => {
                 (before, after, unit) => {
                     const pad = (k: number) => ' '.repeat(k);
                     expect(
-                        parseRate(`2${pad(before)}/${pad(after)}${unit}`),
-                    ).toEqual(parseRate(`2/${unit}`));
+                        rate.parse(`2${pad(before)}/${pad(after)}${unit}`),
+                    ).toEqual(rate.parse(`2/${unit}`));
                 },
             ),
         );
@@ -344,7 +339,7 @@ describe('parseRate (property)', () => {
             `${' '.repeat(4096)}/s`,
             `2/${' '.repeat(2048)}x${' '.repeat(2048)}`,
         ])
-            expect(() => parseRate(bad)).toThrow(/bad rate/);
+            expect(() => rate.parse(bad)).toThrow(/bad rate/);
     });
 
     // The only thing either limiter consumes is `per / count`, so any two rates with the same
@@ -354,7 +349,7 @@ describe('parseRate (property)', () => {
         fc.assert(
             fc.property(fc.integer({ min: 1, max: 1000 }), (n) => {
                 const spacing = (r: string) => {
-                    const { count, per } = parseRate(r);
+                    const { count, per } = rate.parse(r);
                     return per / count;
                 };
                 expect(spacing(`${n * 60}/m`)).toBe(spacing(`${n}/s`));
@@ -362,6 +357,158 @@ describe('parseRate (property)', () => {
                 expect(spacing(`${n * 2}/2s`)).toBe(spacing(`${n}/s`));
                 expect(spacing(`${n * 3600}/h`)).toBe(spacing(`${n}/s`));
             }),
+        );
+    });
+});
+
+// ---- the encode direction (`format`) --------------------------------------------------------
+// `format` is specified as the EXACT inverse of `parse`, which is a property over the whole
+// numeric range rather than a table of pretty cases — exactly the shape this file exists for.
+// The round-trip is the contract a caller relies on to read a value back after writing it, and
+// it is the clause that separates the house pair from `ms`, whose `ms(90_000)` is `'2m'` and
+// parses back to 120_000.
+//
+// The expectations here are NOT computed from the formatter's own arithmetic: each asserts on
+// `parse(format(n)) === n`, where `parse` is the independently-tested decoder above. A formatter
+// that picked the wrong exponent, rounded, or emitted an exponential form fails the round-trip
+// rather than being mirrored by a re-implementation of its own bug.
+
+describe('duration.format (property)', () => {
+    it('round-trips every non-negative magnitude exactly', () => {
+        fc.assert(
+            fc.property(
+                fc.oneof(
+                    fc.nat({ max: Number.MAX_SAFE_INTEGER }),
+                    fc.double({ min: 0, max: 1e12, noNaN: true }),
+                ),
+                (n) => {
+                    expect(duration.parse(duration.format(n))).toBe(n);
+                },
+            ),
+        );
+    });
+
+    // The base unit is always available (its quotient IS the value and its scale is 1), so no
+    // finite input can fall through to a form the grammar rejects. A `format` that returned an
+    // un-parseable token would surface here as `undefined` rather than a wrong number.
+    it('always emits a token the grammar accepts', () => {
+        fc.assert(
+            fc.property(fc.nat({ max: Number.MAX_SAFE_INTEGER }), (n) => {
+                expect(duration.parse(duration.format(n))).not.toBeUndefined();
+            }),
+        );
+    });
+
+    // `Number('0') || undefined` is `undefined`, so a bare `'0'` is the one integer the numeric
+    // -string arm cannot read back. Zero must therefore carry a unit — the single case where the
+    // "largest exact unit" rule is not what makes the round-trip work.
+    it('gives zero a unit, since a bare "0" does not parse', () => {
+        expect(duration.format(0)).toBe('0ms');
+        expect(duration.parse('0')).toBeUndefined();
+        expect(duration.parse(duration.format(0))).toBe(0);
+    });
+
+    it('prefers the largest unit that stays exact and readable', () => {
+        expect(duration.format(3_600_000)).toBe('1h');
+        expect(duration.format(86_400_000)).toBe('1d');
+        expect(duration.format(1500)).toBe('1.5s');
+        expect(duration.format(90_000)).toBe('1.5m');
+        // 90_001 divides into no unit cleanly — `1.5000166…m` is exact but unreadable, so the
+        // base unit wins rather than a rounded `'2m'`.
+        expect(duration.format(90_001)).toBe('90001ms');
+    });
+
+    // A duration core produces is a raw-ms number and a non-finite one is a bug upstream, not a
+    // config typo, so this is the one direction that throws rather than degrading quietly.
+    it('rejects a non-finite magnitude', () => {
+        expect(() => duration.format(NaN)).toThrow(TypeError);
+        expect(() => duration.format(Infinity)).toThrow(TypeError);
+    });
+});
+
+describe('size.format (property)', () => {
+    it('round-trips every non-negative byte count exactly', () => {
+        fc.assert(
+            fc.property(fc.nat({ max: Number.MAX_SAFE_INTEGER }), (n) => {
+                expect(size.parse(size.format(n))).toBe(n);
+            }),
+        );
+    });
+
+    it('gives zero a unit, since a bare "0" does not parse', () => {
+        expect(size.format(0)).toBe('0b');
+        expect(size.parse('0')).toBeUndefined();
+        expect(size.parse(size.format(0))).toBe(0);
+    });
+
+    // The readability guard matters more for sizes than durations: 1024 is a power of two, so a
+    // byte count's kb quotient is almost always exact — and almost always unreadable. Exactness
+    // alone would emit `'1.5009765625kb'` here.
+    it('falls to the base unit rather than emit an exact but unreadable quotient', () => {
+        expect(size.format(1536)).toBe('1.5kb');
+        expect(size.format(1537)).toBe('1537b');
+        expect(size.format(1_048_576)).toBe('1mb');
+        expect(size.format(10 * 1024 * 1024)).toBe('10mb');
+    });
+
+    it('rejects a non-finite byte count', () => {
+        expect(() => size.format(NaN)).toThrow(TypeError);
+        expect(() => size.format(Infinity)).toThrow(TypeError);
+    });
+});
+
+describe('rate.format (property)', () => {
+    it('round-trips every legal { count, per } exactly', () => {
+        fc.assert(
+            fc.property(
+                fc.integer({ min: 1, max: 1_000_000 }),
+                fc.integer({ min: 1, max: 86_400_000 * 40 }),
+                (count, per) => {
+                    // The spacing ceiling is part of the grammar, so a pair past it is not a
+                    // legal rate in either direction — `format` rejects it exactly as `parse` does.
+                    fc.pre(per / count <= 2_147_483_647);
+                    expect(rate.parse(rate.format({ count, per }))).toEqual({
+                        count,
+                        per,
+                    });
+                },
+            ),
+        );
+    });
+
+    // A one-unit window drops the `1`, because `parse` reads a bare unit as its one-unit token
+    // and the short spelling is the one the docs and house defaults are written in.
+    it('writes a one-unit window as a bare unit', () => {
+        expect(rate.format({ count: 2, per: 1000 })).toBe('2/s');
+        expect(rate.format({ count: 10, per: 60_000 })).toBe('10/m');
+        expect(rate.format({ count: 1000, per: 3_600_000 })).toBe('1000/h');
+        expect(rate.format({ count: 100, per: 900_000 })).toBe('100/15m');
+    });
+
+    // `'2/500ms'` ≡ `'4/s'` is the design (ADR 0023), but `format` returns the pair it was handed
+    // rather than a reduced representative — `count` is the number the consumer wrote, and the
+    // round-trip above is equality, not equivalence.
+    it('does not reduce a rate to an equivalent one', () => {
+        expect(rate.format({ count: 2, per: 500 })).toBe('2/500ms');
+        expect(rate.format({ count: 4, per: 1000 })).toBe('4/s');
+        // Same limiter, different tokens — and each parses back to its own pair.
+        expect(rate.parse('2/500ms')).toEqual({ count: 2, per: 500 });
+        expect(rate.parse('4/s')).toEqual({ count: 4, per: 1000 });
+    });
+
+    // `format` enforces the same three rejections `parse` does, so a pair that could not have
+    // come from `parse` fails at the encode step instead of producing a token that throws on the
+    // way back in.
+    it('rejects what parse would reject', () => {
+        expect(() => rate.format({ count: 0, per: 1000 })).toThrow(/bad rate/);
+        expect(() => rate.format({ count: 1.5, per: 1000 })).toThrow(
+            /bad rate/,
+        );
+        expect(() => rate.format({ count: 1, per: 0 })).toThrow(/bad rate/);
+        expect(() => rate.format({ count: 1, per: -500 })).toThrow(/bad rate/);
+        // 30 days at one grant is past the setTimeout ceiling, the same token `parse` rejects.
+        expect(() => rate.format({ count: 1, per: 86_400_000 * 30 })).toThrow(
+            /timer ceiling/,
         );
     });
 });

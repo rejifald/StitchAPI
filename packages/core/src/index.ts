@@ -63,19 +63,28 @@ export { memoryStore } from './store';
 // The default Clock (ADR 0010) — wall-clock + global timers. Inject a custom `Clock` (or a
 // `manualClock()` from `stitchapi/testing`) via a stitch/seam `clock` to control time.
 export { systemClock } from './util';
-// The one shared duration parser (CONTRACT.md P17): `5_000`, `'5s'`, `'1m'` → ms.
-// Exported so a peer package that takes a consumer-authored duration parses it the
-// same way core does, instead of mirroring the grammar and drifting from it.
-export { parseDuration } from './util';
-// Its size analogue: `4096`, `'64kb'`, `'1mb'` → bytes (powers of 1024). Same reason it is
-// public — a peer package with a `*Bytes` cap parses it the way core does. NOT for the
-// `Chars` family, which counts UTF-16 code units rather than bytes.
-export { parseBytes } from './util';
-// The third house token grammar: `'2/s'`, `'10/m'` → `{ count, per }` (window length in ms).
+// The three house token grammars, one namespace each, every one a `parse`/`format` pair. The
+// shape is `bytes`'s (`bytes.parse` / `bytes.format`): one name per dimension, the direction
+// named at the call site, rather than a barrel of six verb-prefixed functions. `format` is the
+// EXACT inverse of `parse` — `parse(format(v))` returns `v` unchanged, never a rounded
+// approximation the way `ms(90_000)` → `'2m'` does — so a value may be encoded and read back.
+//
+// `duration` (CONTRACT.md P17): `5_000`, `'5s'`, `'1m'` → ms, and `90_000` → `'1.5m'`.
+// Exported so a peer package that takes a consumer-authored duration parses it the same way
+// core does, instead of mirroring the grammar and drifting from it.
+export { duration } from './util';
+// `size` (CONTRACT.md P25), the size analogue: `4096`, `'64kb'`, `'1mb'` → bytes (powers of
+// 1024), and `1536` → `'1.5kb'`. Same reason it is public — a peer package with a byte cap
+// parses it the way core does. NOT for the `Chars` family, which counts UTF-16 code units
+// rather than bytes; the old `parseBytes` name carried that warning and this one does not, so
+// it is stated on the namespace's own JSDoc instead.
+export { size } from './util';
+// `rate` (ADR 0023): `'2/s'`, `'10/m'` → `{ count, per }` (window length in ms), and back.
 // Public for the same reason as the two above — a peer package with an authored rate (a
-// distributed limiter) parses it the way core does. It THROWS on a bad token where those two
-// fall back, because `undefined` for a rate means "unlimited": see its JSDoc.
-export { parseRate } from './util';
+// distributed limiter) parses it the way core does. Its `parse` THROWS on a bad token where
+// those two fall back, because `undefined` for a rate means "unlimited": see its JSDoc.
+export { rate } from './util';
+export type { Rate } from './util';
 // `compact({ ...obj, key: value })` — a shallow copy with `undefined`-valued keys removed, typed so
 // undefined-admitting keys come back optional. Pairs with `exactOptionalPropertyTypes`: it omits an
 // absent optional without the `...(key !== undefined ? { key } : {})` spread dance.

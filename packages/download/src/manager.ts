@@ -12,7 +12,7 @@ import type {
     ItemResult,
 } from './types';
 
-import { parseDuration, systemClock } from 'stitchapi';
+import { duration, systemClock } from 'stitchapi';
 import type {
     AdapterProgress,
     Clock,
@@ -74,7 +74,7 @@ export class DownloadManager {
     constructor(opts: BatchOptions = {}) {
         this.#concurrency = Math.max(1, opts.concurrency ?? 4);
         this.#defaults = opts.defaults ?? {};
-        this.#idle = parseDuration(opts.idle);
+        this.#idle = duration.parse(opts.idle);
         this.#dedupe = opts.dedupe ?? false;
         this.#clock = opts.clock ?? systemClock;
         this.#opts = opts;

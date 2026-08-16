@@ -83,7 +83,7 @@ export interface BatchOptions {
      * WALL-CLOCK — `{ total, perAttempt }` fire on elapsed time regardless of progress — and it is
      * configurable right here, under `defaults`. Two different clocks must not share one word, so
      * this one is named for what it measures (a stream that has gone idle), not for what it does.
-     * `number | string`, parsed by core's shared `parseDuration` like every other authored duration
+     * `number | string`, parsed by core's shared `duration.parse` like every other authored duration
      * (P17).
      */
     idle?: number | string;

@@ -1,5 +1,5 @@
 // Issue #651 §3 — a `backoff` the retry loop cannot read must THROW at construction, the way an
-// unparseable `throttle.rate` already does (`bad rate: …`, util.ts `parseRate`), rather than
+// unparseable `throttle.rate` already does (`bad rate: …`, util.ts `rate.parse`), rather than
 // degrading to a default nobody asked for. The message names the slot the way that precedent
 // does — `bad backoff` — but stops there rather than quoting the value: the entry's gzip gate had
 // one byte left for this whole check, and the interpolation cost five. The offending value is in
