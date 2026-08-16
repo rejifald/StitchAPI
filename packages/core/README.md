@@ -8,7 +8,7 @@
 
 **Turn any REST, GraphQL, SSE, or LLM API into a typed, resilient function.** Its one primitive — a **stitch** — takes a single endpoint and hands you back a callable: declare the endpoint's contract once (input, output, auth, resilience) and call it like a local function. No server, no codegen, no config files — only explicit composition. The same definition your code calls, the CLI runs and an AI agent can invoke without ever touching a credential.
 
-**Full documentation, guides, and a live playground live at [stitchapi.dev](https://stitchapi.dev?from=npm).**
+**Full documentation, guides, and a live playground live at [stitchapi.dev](https://stitchapi.dev?utm_source=npm).**
 
 ## Table of Contents
 
@@ -76,7 +76,7 @@ There are plenty of ways to get a typed API client — spec-based generators, ha
 
 - **A library, not a platform.** Zero runtime dependencies, embeds in your project, nothing to operate. Workflow platforms (Windmill, n8n, …) solve integration with a server and a visual builder; StitchAPI keeps it a code primitive — stitches compose in plain TypeScript.
 
-- **Composes with your data layer.** Already using TanStack Query, SWR, or RTK Query? A stitch _is_ the `queryFn` — it owns the call's resilience (retries, throttle, validation, drift); your query layer owns view state (subscriptions, cache, invalidation). They stack; they do not compete. See the [TanStack Query guide](https://stitchapi.dev/docs/integrations/tanstack-query?from=npm).
+- **Composes with your data layer.** Already using TanStack Query, SWR, or RTK Query? A stitch _is_ the `queryFn` — it owns the call's resilience (retries, throttle, validation, drift); your query layer owns view state (subscriptions, cache, invalidation). They stack; they do not compete. See the [TanStack Query guide](https://stitchapi.dev/docs/integrations/tanstack-query?utm_source=npm).
 
 - **First-party framework integrations.** Thin peer-dependency packages wire a stitch into the framework you already run — server frameworks, client/UI bindings, state stores, observability sinks, and more — each adding no capability of its own (core stays untouched). See the full [Ecosystem](#ecosystem) below.
 
@@ -124,7 +124,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 
 ## Documentation
 
-The full documentation site lives at **[stitchapi.dev](https://stitchapi.dev?from=npm)** — start with the [Quickstart](https://stitchapi.dev/docs/getting-started/quickstart?from=npm), then the per-feature guides, [Concepts](https://stitchapi.dev/docs/concepts/the-stitch?from=npm), [Surfaces](https://stitchapi.dev/docs/surfaces/function?from=npm), [For agents](https://stitchapi.dev/docs/agents?from=npm), and the generated [Reference](https://stitchapi.dev/docs/reference/stitch?from=npm).
+The full documentation site lives at **[stitchapi.dev](https://stitchapi.dev?utm_source=npm)** — start with the [Quickstart](https://stitchapi.dev/docs/getting-started/quickstart?utm_source=npm), then the per-feature guides, [Concepts](https://stitchapi.dev/docs/concepts/the-stitch?utm_source=npm), [Surfaces](https://stitchapi.dev/docs/surfaces/function?utm_source=npm), [For agents](https://stitchapi.dev/docs/agents?utm_source=npm), and the generated [Reference](https://stitchapi.dev/docs/reference/stitch?utm_source=npm).
 
 Design notes and positioning live in the repo:
 
@@ -862,7 +862,7 @@ $ stitch from-curl 'curl https://api.example.com/users/7 -H "authorization: Bear
 # credentials replaced with env()
 ```
 
-For reasoning over docs, the docs build emits an auto-generated [`llms.txt`](https://stitchapi.dev/llms.txt) and a per-page `llms.mdx`, so an agent pulls just the page it needs into context. Full guide: [Use from an agent](https://stitchapi.dev/docs/agents?from=npm).
+For reasoning over docs, the docs build emits an auto-generated [`llms.txt`](https://stitchapi.dev/llms.txt) and a per-page `llms.mdx`, so an agent pulls just the page it needs into context. Full guide: [Use from an agent](https://stitchapi.dev/docs/agents?utm_source=npm).
 
 ## Errors & pitfalls
 
@@ -894,7 +894,7 @@ Prefer to branch rather than wrap in `try`/`catch`? `.safe()` never throws — i
 | `STITCH_GRAPHQL`      | a GraphQL response came back `200` but carried an `errors` array    |
 | `RateLimitError`      | a delegate-backoff stitch surfaced a rate-limit for an outer gate   |
 
-Full catalog with one page per code: [Errors & pitfalls](https://stitchapi.dev/docs/errors?from=npm).
+Full catalog with one page per code: [Errors & pitfalls](https://stitchapi.dev/docs/errors?utm_source=npm).
 
 ## Ecosystem
 

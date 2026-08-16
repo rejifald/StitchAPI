@@ -17,32 +17,47 @@
    redirect (`/r/npm` → destination) records nothing at all, because Web Analytics is
    a client script and a 308 never renders a page to run it.
 
-   What IS available on every plan is the page path. So a tagged link (`?from=npm`)
-   is folded into a synthetic path — `/from/npm/docs/agents` — which lands in the
-   ordinary Pages panel with the destination still legible in the path.
+   What IS available on every plan is the page path. So a tagged link
+   (`?utm_source=npm`) is folded into a synthetic path — `/utm/npm/docs/agents` —
+   which lands in the ordinary Pages panel with the destination still legible.
+
+   The param is spelled `utm_source` rather than something private like `from`
+   because that is the name Vercel's own `utmSource` dimension reads (see the
+   `by`/`filter` vocabulary on /docs/rest-api/web-analytics/aggregates-page-views),
+   and the name every other analytics tool reads too. That makes the upgrade path
+   free: ON WEB ANALYTICS PLUS, DELETE THIS FOLD — Vercel then captures `utmSource`
+   natively and the READMEs need no edit at all. Leaving the fold in place after an
+   upgrade would be actively harmful, since it strips the param before Vercel sees it.
 
    Two consequences worth knowing when reading the dashboard:
-     - Only the LANDING pageview carries `?from=`; soft navigations after it are
+     - Only the LANDING pageview carries the tag; soft navigations after it are
        recorded normally. So these rows count referred sessions, not referred views.
-     - A referred landing is recorded under `/from/…` INSTEAD of the bare path. To
+     - A referred landing is recorded under `/utm/…` INSTEAD of the bare path. To
        rank pages by true popularity, sum `/docs/x` with every
-       `/from/<source>/docs/x`. */
+       `/utm/<source>/docs/x`. */
 
-/* Known sources. An unrecognized value has its param stripped but is NOT folded, so
-   a crawler or a spammed `?from=` cannot inflate the Pages panel's cardinality. */
+/* Known sources, named as conventional `utm_source` values so they carry over
+   unchanged if the fold is ever removed in favour of native UTM capture.
+
+   These do NOT need to match `referrerHostname` (github.com, …): the tag earns its
+   keep precisely where a referrer hostname is absent, so there is nothing to join
+   against on the rows that matter.
+
+   An unrecognized value has its param stripped but is NOT folded, so a crawler or a
+   spammed `?utm_source=` cannot inflate the Pages panel's cardinality. */
 export const REFERRAL_SOURCES: ReadonlySet<string> = new Set([
-    'gh', // repo README on github.com
+    'github', // repo README on github.com
     'npm', // package page on npmjs.com
-    'hn', // Show HN
+    'hackernews', // Show HN
     'reddit',
     'x', // X / Bluesky posts
-    'ph', // Product Hunt
+    'producthunt',
     'dou', // dou.ua article
     'newsletter',
 ]);
 
-/** Rewrite a pageview URL so a tagged referral lands on its own `/from/<source>` path.
- *  Returns the URL unchanged when there is no `from` param. */
+/** Rewrite a pageview URL so a tagged referral lands on its own `/utm/<source>` path.
+ *  Returns the URL unchanged when there is no `utm_source` param. */
 export function foldReferralSource(rawUrl: string): string {
     let url: URL;
     try {
@@ -52,14 +67,14 @@ export function foldReferralSource(rawUrl: string): string {
         return rawUrl;
     }
 
-    const from = url.searchParams.get('from');
-    if (!from) return rawUrl;
+    const source = url.searchParams.get('utm_source');
+    if (!source) return rawUrl;
 
-    url.searchParams.delete('from');
-    if (REFERRAL_SOURCES.has(from)) {
-        // `/` would otherwise fold to `/from/npm/` — keep the root row unsuffixed.
+    url.searchParams.delete('utm_source');
+    if (REFERRAL_SOURCES.has(source)) {
+        // `/` would otherwise fold to `/utm/npm/` — keep the root row unsuffixed.
         const path = url.pathname === '/' ? '' : url.pathname;
-        url.pathname = `/from/${from}${path}`;
+        url.pathname = `/utm/${source}${path}`;
     }
     return url.toString();
 }
