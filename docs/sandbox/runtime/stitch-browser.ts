@@ -17,17 +17,34 @@ import type { TraceSink } from 'stitchapi';
  * build-stitch-browser.mjs and B1-README.md). This file deals only with the API
  * SURFACE: re-export the browser-safe core exports, shim the Node-only ones.
  *
+ * This re-export list must COVER core's runtime barrel: the snippet scope is the
+ * spread of whatever this module exports (worker-main.ts), so a core export
+ * missing here is simply not a binding, and a snippet naming it dies with
+ * `X is not defined`. That is not hypothetical — the auth strategies hit it
+ * (#545, see below) and ten more names were found already shipped that way
+ * (`StitchError` in nine doc snippets, `xhrAdapter` in five, …). The coverage is
+ * now enforced: docs/sandbox/tests/playground-surface-coverage.test.ts fails when
+ * core grows an export this file has not considered.
+ *
  * Surface map (SANDBOX §3 table):
  *   Browser-safe (re-exported verbatim from core):
  *     stitch, seam, drift, graphql,
  *     validate, compile,
- *     fetchAdapter, memoryStore, multiplex, toOtlpJson, + all types
+ *     fetchAdapter, memoryStore, multiplex, toOtlpJson,
+ *     StitchError, RateLimitError,
+ *     isStitch, isSeam, isSecretKey, verdictOf,
+ *     httpSurface, graphqlSurface,
+ *     xhrAdapter, axiosAdapter,
+ *     duration, size, rate, compact,
+ *     redactSecretsDeep, registerSecretKey,
+ *     loggerSink, systemClock, + all types
  *   Browser-safe, from the `stitchapi/auth` entry (ADR 0021):
  *     bearer, apiKey, basic, oauth2
  *   Node-only, runs SHIMMED here (with a RunNotice):
  *     env                      → ./shims/node-surfaces  (demo values)
  *     cookieSession            → ./shims/node-surfaces  (in-memory jar)
  *     createTrace              → shimmed below          (JSONL is a no-op)
+ *     consoleSink, fileSink    → shimmed below          (routed through createTrace)
  *     otlpSink, otlpHttpExporter → ./shims/otlp-browser (no-op exporter, no egress)
  *   Server-tier only, THROWS here:
  *     cli, serve, mcp          → ./shims/server-tier-stubs
@@ -50,6 +67,41 @@ export {
     multiplex,
     // `toOtlpJson` is a pure span→JSON mapper (no Node) — safe verbatim.
     toOtlpJson,
+    // Error classes. A snippet that does `catch (e) { if (e instanceof StitchError) }`
+    // — the shape the errors docs teach — needs these bound or it throws
+    // `StitchError is not defined`. Pure classes, no Node.
+    StitchError,
+    RateLimitError,
+    // Type guards and the verdict reader. Pure predicates over plain objects.
+    isStitch,
+    isSeam,
+    isSecretKey,
+    verdictOf,
+    // Surface descriptors. Plain objects describing a protocol, no transport.
+    httpSurface,
+    graphqlSurface,
+    // Adapters. `xhrAdapter` is BROWSER-only by construction (XMLHttpRequest), so
+    // it belongs here more than anywhere; `axiosAdapter` takes a caller-supplied
+    // axios instance (core is zero-dependency and never imports axios), so it is a
+    // pure wrapper — a snippet supplies the client via the module registry.
+    xhrAdapter,
+    axiosAdapter,
+    // Token grammars and the secret registry. `duration`/`size`/`rate` are the
+    // parse/format namespace pairs (#753, formerly parseDuration/parseBytes/
+    // parseRate) — plain objects, no Node; the redaction pair is what the
+    // trace-privacy snippets reach for.
+    duration,
+    size,
+    rate,
+    compact,
+    redactSecretsDeep,
+    registerSecretKey,
+    // `loggerSink` writes to a CALLER-supplied logger — unlike `consoleSink` it
+    // never re-enables core's own console path, so it is safe verbatim (see the
+    // shimmed pair below).
+    loggerSink,
+    // Injectable clock — pure, and what the testing snippets pass to `stitch`.
+    systemClock,
 } from 'stitchapi';
 
 /* ---- Browser-safe auth surface (its own entry since ADR 0021) ------------ */
@@ -105,6 +157,52 @@ export function createTrace(
     // Force console off: core's console path would otherwise `console.error` each line
     // (no process.stderr in a Worker); trace is surfaced via StitchTraceEntry instead.
     return coreCreateTrace({ ...(opts ?? {}), console: false });
+}
+
+/**
+ * `consoleSink` / `fileSink`: core's two convenience sinks, routed through the
+ * browser `createTrace` above rather than re-exported verbatim.
+ *
+ * Neither is Node-unsafe — core is browser-isomorphic and its `node:fs` lookup is
+ * guarded — but re-exporting them raw would defeat the policy `createTrace`
+ * enforces two functions up:
+ *   - `consoleSink()` is literally `createTrace({ console: true, file: false })`
+ *     (trace.ts), i.e. it turns core's console path back ON. That is the exact
+ *     thing the R1 must-know forbids in the browser: trace belongs in
+ *     StitchTraceEntry, not in the captured `console.*` stream.
+ *   - `fileSink(path)` is `createTrace({ console: false, file: path })`, which in
+ *     a Worker resolves no `node:fs` and silently writes nowhere. Silent is the
+ *     problem: a snippet from the trace-sinks guide would look like it worked.
+ *
+ * Both therefore delegate to the local `createTrace` — same neutered sink — and
+ * say so via a RunNotice, matching how `env` / `cookieSession` / the OTLP pair
+ * already behave.
+ */
+export function consoleSink(): TraceSink {
+    emitShimNotice(
+        'consoleSink',
+        'Console trace is disabled in the browser sandbox — trace events are ' +
+            'surfaced via StitchTraceEntry (the run panel) instead of the ' +
+            'captured console stream (SANDBOX §5.7).',
+    );
+    return createTrace({ console: false, file: false });
+}
+
+export function fileSink(
+    path?: string,
+    opts?: Omit<
+        Parameters<typeof coreCreateTrace>[0] & object,
+        'console' | 'file'
+    >,
+): TraceSink {
+    emitShimNotice(
+        'fileSink',
+        `JSONL trace files are a no-op in the browser sandbox${
+            path ? ` (${path} is not written)` : ''
+        } — the trace is surfaced via StitchTraceEntry instead (SANDBOX §5.7). ` +
+            'Run on the server tier to write a real file.',
+    );
+    return createTrace({ ...(opts ?? {}), console: false, file: false });
 }
 
 /* ---- Server-tier surfaces, throwing stubs -------------------------------- */

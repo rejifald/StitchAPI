@@ -64,6 +64,37 @@ export const PLAYGROUND_SURFACE_NAMES = [
     'otlpSink',
     'otlpHttpExporter',
     'toOtlpJson',
+    // Trace sinks. `loggerSink` is core's verbatim; `consoleSink`/`fileSink` are
+    // routed through the browser `createTrace` (see stitch-browser.ts) so they
+    // cannot re-enable core's console path or write silently to nowhere.
+    'loggerSink',
+    'consoleSink',
+    'fileSink',
+    // Error classes — the errors docs teach `e instanceof StitchError`.
+    'StitchError',
+    'RateLimitError',
+    // Guards + verdict reader.
+    'isStitch',
+    'isSeam',
+    'isSecretKey',
+    'verdictOf',
+    // Surface descriptors.
+    'httpSurface',
+    'graphqlSurface',
+    // Adapters beyond fetch (`xhrAdapter` is browser-native; `axiosAdapter` takes
+    // a caller-supplied client).
+    'xhrAdapter',
+    'axiosAdapter',
+    // Token-grammar namespaces (parse/format pairs, #753), object helper, and the
+    // secret-redaction pair.
+    'duration',
+    'size',
+    'rate',
+    'compact',
+    'redactSecretsDeep',
+    'registerSecretKey',
+    // Injectable clock.
+    'systemClock',
 ] as const;
 
 /** Union of the surface-name literals. */

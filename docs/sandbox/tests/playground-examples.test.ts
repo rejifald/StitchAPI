@@ -156,14 +156,19 @@ async function runTests(): Promise<void> {
     );
 
     const surface = (probeResult.value ?? {}) as Record<string, string>;
+    // The failure this guards is "the re-export resolved to nothing", so the test
+    // is `!== 'undefined'`, NOT `=== 'function'`. Those were the same assertion
+    // only while every surface name happened to be callable; the surface now also
+    // carries plain objects (`httpSurface`, `graphqlSurface`, `systemClock`), and
+    // a function-only check would reject them for being the right thing.
     const missing = PLAYGROUND_SURFACE_NAMES.filter(
-        (name) => surface[name] !== 'function',
+        (name) => (surface[name] ?? 'undefined') === 'undefined',
     );
     assert(
         `all ${PLAYGROUND_SURFACE_NAMES.length} PLAYGROUND_SURFACE_NAMES are bound in the snippet scope`,
         missing.length === 0,
         missing.length > 0
-            ? `not a function: ${missing
+            ? `unbound: ${missing
                   .map((n) => `${n} (${surface[n] ?? 'undefined'})`)
                   .join(', ')}`
             : '',

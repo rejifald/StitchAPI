@@ -49,6 +49,10 @@ const SUITES = [
     // Playground presets + surface allow-list, over the BUILT node Worker
     // (dist/node-worker.mjs — `test:smoke` builds it first).
     'docs/sandbox/tests/playground-examples.test.ts',
+    // Coverage half of the pair above: asserts the DECLARED surface is complete
+    // against core's barrel, so a new core export cannot go silently unbound.
+    // Pure list comparison — no Worker, no build.
+    'docs/sandbox/tests/playground-surface-coverage.test.ts',
 ];
 
 // ---------------------------------------------------------------------------
