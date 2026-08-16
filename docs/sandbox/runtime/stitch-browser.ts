@@ -35,7 +35,7 @@ import type { TraceSink } from 'stitchapi';
  *     isStitch, isSeam, isSecretKey, verdictOf,
  *     httpSurface, graphqlSurface,
  *     xhrAdapter, axiosAdapter,
- *     parseBytes, parseDuration, parseRate, compact,
+ *     duration, size, rate, compact,
  *     redactSecretsDeep, registerSecretKey,
  *     loggerSink, systemClock, + all types
  *   Browser-safe, from the `stitchapi/auth` entry (ADR 0021):
@@ -86,11 +86,13 @@ export {
     // pure wrapper — a snippet supplies the client via the module registry.
     xhrAdapter,
     axiosAdapter,
-    // Value parsers and the secret registry. Pure string/object helpers; the
-    // redaction pair is what the trace-privacy snippets reach for.
-    parseBytes,
-    parseDuration,
-    parseRate,
+    // Token grammars and the secret registry. `duration`/`size`/`rate` are the
+    // parse/format namespace pairs (#753, formerly parseDuration/parseBytes/
+    // parseRate) — plain objects, no Node; the redaction pair is what the
+    // trace-privacy snippets reach for.
+    duration,
+    size,
+    rate,
     compact,
     redactSecretsDeep,
     registerSecretKey,

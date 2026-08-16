@@ -85,10 +85,11 @@ export const PLAYGROUND_SURFACE_NAMES = [
     // a caller-supplied client).
     'xhrAdapter',
     'axiosAdapter',
-    // Value parsers, object helper, and the secret-redaction pair.
-    'parseBytes',
-    'parseDuration',
-    'parseRate',
+    // Token-grammar namespaces (parse/format pairs, #753), object helper, and the
+    // secret-redaction pair.
+    'duration',
+    'size',
+    'rate',
     'compact',
     'redactSecretsDeep',
     'registerSecretKey',
