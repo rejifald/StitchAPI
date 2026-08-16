@@ -72,6 +72,7 @@ export const sections: Section[] = [
     },
     { path: 'getting-started', title: 'Getting started', icon: 'Rocket' },
     { path: 'recipes', title: 'Recipes', icon: 'ChefHat' },
+    { path: 'scenarios', title: 'Scenarios', icon: 'Map' },
     { path: 'concepts', title: 'Concepts', icon: 'Lightbulb' },
     { path: 'guides', title: 'Guides', icon: 'BookOpen' },
     { path: 'guides/authoring', title: 'Authoring & composition' },
@@ -265,6 +266,169 @@ export const pages: Page[] = [
         title: 'Call one stitch as a function, a CLI command, and an agent tool',
         description:
             'One definition, four front doors — in-process, shell, HTTP, and MCP — with nothing about the stitch changing.',
+        kind: 'guide',
+    },
+
+    // ── Scenarios ───────────────────────────────────────────────────────────
+    {
+        path: 'scenarios/index',
+        title: 'Scenarios',
+        description:
+            'Real integration problems that have no one-line answer anywhere — what the usual fixes cost, what StitchAPI changes, and what it leaves to you.',
+        kind: 'landing',
+    },
+    {
+        path: 'scenarios/oauth2-refresh-token-rotation',
+        title: 'OAuth2 refresh tokens that rotate',
+        description:
+            'A single-use refresh token plus two concurrent workers revokes the whole account. What the usual fixes cost, and what a custom auth strategy buys you.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/cost-based-rate-limits',
+        title: 'Rate limits priced in query cost',
+        description:
+            'Shopify bills per query cost, answers 200 OK when you overspend, and puts the wait in the body. Why status-code retry and rate-per-second both miss, and what does work.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/batch-partial-failure',
+        title: 'Batch writes that fail one item at a time',
+        description:
+            'A bulk endpoint returns 200 and reports that 7 of your 100 items did not land. Retrying the request re-writes the 93 that did — so the retry unit has to be the body, not the call.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/async-job-polling',
+        title: 'Submit, poll, download — the async job triangle',
+        description:
+            'A 202 with a Location header, a status endpoint that reports failure at HTTP 200, and a single-use result URL. Three endpoints and a loop, and you have to pick which guarantee you keep.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/mid-stream-failure',
+        title: 'A stream that fails after 800 tokens',
+        description:
+            'The 200 was spent on the first token, so the failure arrives in-band or not at all. When a stream can be resumed this is one flag; when it cannot — every LLM API — the flag has nothing to resume from, and the real answer is two small seams of user code.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/conditional-requests-304',
+        title: 'The free poll — ETag revalidation and the bodyless 304',
+        description:
+            'A 304 means "use what you have", carries no body, and is not a 2xx. Turning it back into the resource takes one seam — and the cache primitive cannot help.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/multipart-upload',
+        title: 'The upload you must clean up after',
+        description:
+            'Multipart upload is four steps, and the fourth — abort on failure — is the one no HTTP client models. Skip it and the parts bill forever, invisibly.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/webhook-receipt',
+        title: 'Receiving a signed webhook',
+        description:
+            'StitchAPI does not receive webhooks — that is your server. Here is exactly where the line falls, measured, and what the library does own on the far side of it.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/multi-tenant-blast-radius',
+        title: "One customer's revoked token, everyone's outage",
+        description:
+            'Tokens and caches isolate per tenant automatically. Rate budgets and circuit breakers do not — they isolate only by a string you have to remember to write.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/provider-failover',
+        title: 'Failing over to the backup provider',
+        description:
+            'Everything per-provider is free and declarative. The routing between them is entirely yours — and the combinator named for this job bills you twice on every successful call.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/unstable-pagination',
+        title: 'The page that moved while you were reading it',
+        description:
+            'Offset pagination over a live collection silently returns wrong lists. A client cannot fix that — but it should not report a clean run over data it lost.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/intermittent-drift',
+        title: 'The vendor changed the shape for 5% of responses',
+        description:
+            'Leveled drift catches a canary rollout precisely and refuses to invent a value. What it cannot do is tell a harmless coercion from a destructive one.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/large-response-memory',
+        title: 'The export that eats the heap',
+        description:
+            'The NDJSON decoder is genuinely O(1) — and the engine retains every chunk one line later, so neither await nor .stream() is memory-bounded.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/expiring-signatures',
+        title: 'The signature that expired in your own queue',
+        description:
+            'A rate-limited queue cannot age a SigV4 signature here — the wait happens before signing, by construction. Clock drift still needs 26 lines.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/unconfirmed-write',
+        title: "The charge you can't confirm",
+        description:
+            'A timeout tells you nothing about the server. idempotency.keyOf fixes the restart and the race in configuration alone — the default key does not, and it double-charged a re-driven job.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/n-plus-one-fanout',
+        title: 'One list, a hundred follow-up calls',
+        description:
+            'cache.coalesce collapses in-flight duplicates — 100 concurrent calls over 30 ids made 30 requests. A coalesced failure is not shared, and that is where it loses.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/deprecation-headers',
+        title: 'The vendor told you for six months, in a header',
+        description:
+            'Deprecation and Sunset arrive on responses that succeeded, so nothing fails and nothing retries. Response headers are reachable in exactly three places — here is the table.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/agent-holds-the-tool',
+        title: 'The agent picks the arguments',
+        description:
+            'Exposing a vendor API to an LLM over MCP. The credential boundary held under 30 payload scans — the argument boundary is yours, and an input slot with no schema is a full passthrough.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/stale-fixture',
+        title: 'The mock that passed for six months',
+        description:
+            'Your fake goes stale and the suite keeps saying green. Resilience and streams test perfectly offline — here is the definitive table of which time-driven features manualClock actually drives.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/precision-loss',
+        title: 'The ID that changed on the way in',
+        description:
+            'JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/pii-in-the-logs',
+        title: "The customer data you didn't mean to log",
+        description:
+            'Response bodies reach 13 destinations and metadata reaches 11 — with nothing in between. An output allowlist takes it to zero; sensitive: true does not, and only gates the cache.',
+        kind: 'guide',
+    },
+    {
+        path: 'scenarios/dual-run-migration',
+        title: 'The migration you have to run twice',
+        description:
+            'Dual-running a vendor v1 and v2 when you own neither endpoint. One of five isolation channels is safe by default, and the combinator that looks built for this broadcasts one input to both.',
         kind: 'guide',
     },
 

@@ -1,0 +1,156 @@
+---
+title: 'Receiving a signed webhook'
+description: 'StitchAPI does not receive webhooks — that is your server. Here is exactly where the line falls, measured, and what the library does own on the far side of it.'
+prerequisites:
+    ['/docs/concepts/the-stitch', '/docs/guides/state/pluggable-store']
+---
+
+## The problem
+
+Stripe, GitHub, Slack push events at an endpoint you host. You verify the signature, decide
+it's genuine, and act. This is the only scenario in this section where **someone is calling
+you** — and the [stitch is a per-call primitive, not a
+server](/docs/concepts/the-stitch): inbound webhooks are your application's job.
+
+So this page is about **where the line falls**, and what's on each side of it.
+
+What makes the receipt half hard:
+
+- **Signature verification needs the exact bytes.** The provider signs the raw payload; any
+  JSON round-trip yields logically identical bytes that don't match. This is the famous
+  `express.raw()`-before-`express.json()` rule, and the most-reported webhook bug there is.
+- **At-least-once means duplicates are normal.** Dedup on the event id, with a TTL longer than
+  the provider's retry window (Stripe: 3 days).
+- **Order cannot be trusted.** `subscription.updated` can arrive before `.created`.
+- **Ack fast.** Providers time out in seconds and retry on slowness.
+
+## The common solutions
+
+| Approach                                 | Where it breaks                                                                     |
+| ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| Provider SDK verifier (`constructEvent`) | Correct, and the right answer per vendor. One per provider.                         |
+| Framework raw-body middleware            | The standard fix, and entirely about ordering — get it wrong and it fails silently. |
+| Hand-rolled HMAC                         | Fine, and easy to get subtly wrong: constant-time compare, timestamp tolerance.     |
+| Webhook gateway (Svix, Hookdeck)         | Most complete at scale. A third party in the path, and a bill.                      |
+| Dedup on the event id                    | Necessary. The TTL is the trap — it must outlive the retry window.                  |
+| Fetch-on-receipt                         | Makes payload order irrelevant. Costs an API call per event.                        |
+
+## Where the line falls
+
+**`serve` is not a webhook endpoint**, and the measurements are unambiguous. A real `serve()`
+process answered **404** to a correctly signed Stripe POST at `/webhooks/stripe`, `/webhook`,
+`/`, `/stitch` and `/hooks/v1/billing` — the route table is exactly `GET /` and
+`POST /stitch/:name`. On the one route that reaches user code:
+
+- the body has already been through `JSON.parse`, and the deepest user-reachable seam got a
+  parsed object with **no raw string anywhere**;
+- **the inbound headers are dropped entirely** — `stripe-signature` reaches nothing, so there
+  is no signature to verify even if you had the bytes;
+- a form-encoded provider (Slack) is rejected `400 invalid JSON body` before any of it.
+
+The byte gap is real and measured: the provider signed **162 bytes**; a parse→stringify
+round-trip produces **153** logically identical bytes, and verification returns
+`bad-signature`.
+
+There is also **no inbound-signature primitive anywhere** in the packages. Enumerating all 72
+runtime exports, the four that match `/verif|hmac|…/` are BYO-plugin conformance suites. The
+one HMAC in the repo is `@stitchapi/aws-sigv4`, whose key is imported with
+`usages: ['sign']` — it structurally cannot verify.
+
+## What StitchAPI does own
+
+Everything after the ack, and it is worth having:
+
+```ts
+const billing = seam({
+    baseUrl: 'https://api.example.com',
+    auth: bearer(env('API_KEY')),
+    throttle: { rate: '10/s' },
+});
+
+// Fetch-on-receipt: the payload is a hint; the API is the truth.
+const getSubscription = billing.stitch({
+    path: '/subscriptions/{id}',
+    retry: { attempts: 3 },
+    timeout: { total: '10s' },
+});
+```
+
+**Measured:** acting on payload order with a reversed pair left the app believing
+`trialing/free` while the server said `active/pro` — a silent, self-inflicted downgrade.
+Fetch-on-receipt converged both events on `active/pro` at a cost of 2 calls for 2 events, and
+the call survived two 503s in 3 attempts with the retry, backoff, auth and deadline all as
+config rather than handler code.
+
+The **dedup ledger** is also first-class, and the store is yours to supply — `redisStore`,
+`cloudflareKvStore` and `denoKvStore` all implement the same interface, so durability is a
+one-line change and `verifyStoreContract` proves a BYO one conforms (measured: all 11 rules, 0
+violations).
+
+<Callout type="warn">
+    **Use `increment`, not `get`-then-`set`, to claim an event id.** Measured
+    with 3 concurrent deliveries of one id: `get`+`set` returned `[true, true,
+    true]` — three charges — while `increment(key, ttl)` returned `[true, false,
+    false]`, exactly one. The default `memoryStore` is also not durable:
+    `close()` clears it, so a deploy inside the retry window re-processes
+    everything still in flight.
+</Callout>
+
+## The boundary, as a number
+
+A complete, honest implementation — a `node:http` server you own, plus StitchAPI downstream —
+rejects forged signatures (`400 bad-signature`), rejects a genuine MAC on a 10-minute-old
+timestamp (`400 stale`, zero side effects), converges a reversed pair, and acks a duplicate at
+**zero API calls**.
+
+| half         | lines                                  | what it is                                                        |
+| ------------ | -------------------------------------- | ----------------------------------------------------------------- |
+| **Receipt**  | **154** (96 server + 58 `node:crypto`) | imports _nothing_ from `stitchapi` at runtime — one `import type` |
+| **Reaction** | **63**                                 | almost all config: one seam, two stitches, a 4-line version guard |
+
+**71% of the code by line, 100% by concern, is the half StitchAPI does not participate in.**
+That is the honest shape of this scenario, and it is by design.
+
+## What StitchAPI does not solve here
+
+1. **Route ownership, raw bytes, and the inbound headers.** All three are absent from `serve`.
+2. **HMAC verification and constant-time comparison.** No primitive exists. `xxh128` is
+   **unkeyed** and non-cryptographic — it will produce a plausible digest that authenticates
+   nobody.
+3. **Replay/timestamp tolerance.** Yours.
+4. **Non-JSON bodies.** `serve` rejects them before any user code.
+5. **Any queue, outbox, dead-letter or backpressure.** `pipelineStages` on a maximally
+   configured stitch shows no stage matching queue/detach/defer — `result` is last, and the
+   pipeline never releases a caller early.
+6. **The ack/work split.** Worse: `serve` consumes the run to completion before writing a
+   byte, so with `retry: { attempts: 3 }` and a 5 s backoff the ack went out only at attempt 3,
+   after **exactly 10 virtual seconds** — Stripe's timeout to the second. The retry policy
+   manufactures the duplicate it was meant to survive.
+7. **Write-order conflict.** Fetch-on-receipt fixes _payload_ order, not _write_ order: two
+   concurrent handlers with snapshots v2 and v3 landed on v2 under last-write-wins. A version
+   guard recovered it — four lines the library does not express.
+8. **`.deleted` events.** The fetch returns 404, indistinguishable from "never existed", so the
+   event type stays load-bearing.
+
+<Callout type="error">
+    **`void call(input)` is a no-op, not fire-and-forget.** It is the spelling anyone reaches
+    for to ack-then-continue, and it made **0 HTTP calls and raised 0 errors** — a stitch call
+    is a lazy thenable that starts on `.then`, so the work is silently dropped *after* the
+    provider was told 200. `void call(input).then(…)` does run it, and is then unsupervised:
+    unhandled it surfaced as an `unhandledRejection`, and `.safe()` reported the failure
+    nowhere.
+
+    **And `serve` is unauthenticated by design.** An unsigned, forged body under the size cap
+    ran the stitch and returned 200. Anyone who can reach the port can run your stitches — it
+    is a local front door, not an internet-facing endpoint.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="The stitch" href="/docs/concepts/the-stitch" />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+    <Card title="Idempotency keys" href="/docs/guides/resilience/idempotency" />
+    <Card title="HTTP serve" href="/docs/surfaces/http-serve" />
+</Cards>

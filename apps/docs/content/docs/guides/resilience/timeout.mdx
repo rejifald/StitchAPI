@@ -36,7 +36,10 @@ ignored — and the call fails with a timeout.
 
 With [retry](/docs/guides/resilience/retry), the two timeouts compose: `each`
 gates one try, while `total` caps the sum of all tries plus their backoff waits,
-so a long enough `total` is what lets a slow attempt be retried at all.
+so a long enough `total` is what lets a slow attempt be retried at all. Neither
+scope spans separate calls, so a submit-then-poll job needs its deadline built a
+level up — [submit, poll, download](/docs/scenarios/async-job-polling) works
+through the three-call version and what each choice costs.
 
 <Callout type="warn">
     **Anti-pattern:** with retry enabled, don't rely on `each` alone to bound

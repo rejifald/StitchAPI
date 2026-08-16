@@ -65,7 +65,11 @@ before reading a property, as the `createOrder` example does.
 
 Why it matters: idempotency pairs most naturally with [retries](/docs/guides/resilience/retry) —
 a retried write replays the same key, so the server recognizes the duplicate and
-skips the side effect, and safe retries don't double-charge. It isn't only for
+skips the side effect, and safe retries don't double-charge. A timeout is the
+hard version of this — it tells you nothing about whether the server applied the
+write, and
+[the charge you can't confirm](/docs/scenarios/unconfirmed-write) measures what
+the default key does to a re-driven job. It isn't only for
 retries, though: the same key also covers a duplicate the stitch never issued (a
 proxy or the transport resending the request), and a derived `keyOf` dedupes two
 separate submissions with no retry at all.

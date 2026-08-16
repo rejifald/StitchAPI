@@ -1,0 +1,129 @@
+---
+title: 'Scenarios'
+description: 'Real integration problems that have no one-line answer anywhere — what the usual fixes cost, what StitchAPI changes, and what it leaves to you.'
+---
+
+A scenario is a problem people actually hit against a real API, picked because the
+honest answer is _not_ a one-liner in any library. Each page states the problem,
+lays out the solutions the ecosystem has converged on and what each one costs,
+shows the StitchAPI shape next to them — and then says plainly what StitchAPI
+does **not** solve, so you can see the remaining work before you commit to it.
+
+Where a [recipe](/docs/recipes) shows a task with a known good answer, a scenario
+shows a problem where the answer is a trade-off.
+
+Every claim on these pages is backed by a script that was run offline against the
+real runtime, not by reading the source.
+
+<Cards>
+    <Card
+        title="OAuth2 refresh tokens that rotate"
+        href="/docs/scenarios/oauth2-refresh-token-rotation"
+        description="A single-use refresh token plus two workers revokes the whole account. Why the obvious fixes are narrower races, not fixes."
+    />
+    <Card
+        title="Rate limits priced in query cost"
+        href="/docs/scenarios/cost-based-rate-limits"
+        description="Shopify bills per query cost, answers 200 OK when you overspend, and puts the wait in the body — so status-code retry never fires."
+    />
+    <Card
+        title="Batch writes that fail one item at a time"
+        href="/docs/scenarios/batch-partial-failure"
+        description="7 of your 100 items didn't land. Retrying the request re-writes the 93 that did — so the retry unit has to be the body, not the call."
+    />
+    <Card
+        title="Submit, poll, download — the async job triangle"
+        href="/docs/scenarios/async-job-polling"
+        description="A 202 with a Location header, a status endpoint that reports failure at HTTP 200, and a single-use result URL — and you have to pick which guarantee you keep."
+    />
+    <Card
+        title="A stream that fails after 800 tokens"
+        href="/docs/scenarios/mid-stream-failure"
+        description="The 200 was spent on the first token, so failure arrives in-band or not at all — and a retry duplicates what the user already read."
+    />
+    <Card
+        title="The free poll — ETag revalidation and the bodyless 304"
+        href="/docs/scenarios/conditional-requests-304"
+        description='A 304 means "use what you have", carries no body, and is not a 2xx. Turning it back into the resource takes one seam — and the cache primitive cannot help.'
+    />
+    <Card
+        title="The upload you must clean up after"
+        href="/docs/scenarios/multipart-upload"
+        description="Multipart upload is four steps, and the fourth — abort on failure — is the one no HTTP client models. Skip it and the parts bill forever, invisibly."
+    />
+    <Card
+        title="Receiving a signed webhook"
+        href="/docs/scenarios/webhook-receipt"
+        description="StitchAPI does not receive webhooks — that is your server. Where the line falls, measured, and what the library owns on the far side of it."
+    />
+    <Card
+        title="One customer's revoked token, everyone's outage"
+        href="/docs/scenarios/multi-tenant-blast-radius"
+        description="Tokens and caches isolate per tenant automatically. Rate budgets and circuit breakers isolate only by a string you have to remember to write."
+    />
+    <Card
+        title="Failing over to the backup provider"
+        href="/docs/scenarios/provider-failover"
+        description="Everything per-provider is free and declarative. The routing between them is yours — and the combinator named for the job bills you twice on every successful call."
+    />
+    <Card
+        title="The page that moved while you were reading it"
+        href="/docs/scenarios/unstable-pagination"
+        description="Offset pagination over a live collection silently returns wrong lists — and every damaged run reports success."
+    />
+    <Card
+        title="The vendor changed the shape for 5% of responses"
+        href="/docs/scenarios/intermittent-drift"
+        description="Leveled drift catches a canary rollout precisely and refuses to invent a value — but cannot tell a harmless coercion from a destructive one."
+    />
+    <Card
+        title="The export that eats the heap"
+        href="/docs/scenarios/large-response-memory"
+        description="The NDJSON decoder is genuinely O(1) — and the engine retains every chunk one line later, so neither await nor .stream() is bounded."
+    />
+    <Card
+        title="The signature that expired in your own queue"
+        href="/docs/scenarios/expiring-signatures"
+        description="A rate-limited queue cannot age a SigV4 signature here — the wait happens before signing, by construction. Clock drift still needs 26 lines."
+    />
+    <Card
+        title="The charge you can't confirm"
+        href="/docs/scenarios/unconfirmed-write"
+        description="A timeout tells you nothing about the server. keyOf fixes the restart and the race in config alone — the default key double-charged a re-driven job."
+    />
+    <Card
+        title="One list, a hundred follow-up calls"
+        href="/docs/scenarios/n-plus-one-fanout"
+        description="cache.coalesce collapses in-flight duplicates — 100 concurrent calls over 30 ids made 30 requests. A coalesced failure is not shared."
+    />
+    <Card
+        title="The vendor told you for six months, in a header"
+        href="/docs/scenarios/deprecation-headers"
+        description="Deprecation and Sunset arrive on responses that succeeded, so nothing fails and nothing retries. Response headers are reachable in exactly three places."
+    />
+    <Card
+        title="The agent picks the arguments"
+        href="/docs/scenarios/agent-holds-the-tool"
+        description="The credential boundary held across 30 payload scans. The argument boundary is yours — an input slot with no schema is a full passthrough."
+    />
+    <Card
+        title="The mock that passed for six months"
+        href="/docs/scenarios/stale-fixture"
+        description="Resilience and streams test perfectly offline. But manualClock drives six time-driven features and not the other six — and a vendor drifting behind a still fixture is invisible."
+    />
+    <Card
+        title="The ID that changed on the way in"
+        href="/docs/scenarios/precision-loss"
+        description="JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines."
+    />
+    <Card
+        title="The customer data you didn't mean to log"
+        href="/docs/scenarios/pii-in-the-logs"
+        description="13 destinations carry the whole body, 11 carry none, nothing in between. An output allowlist reaches zero — sensitive: true only gates the cache."
+    />
+    <Card
+        title="The migration you have to run twice"
+        href="/docs/scenarios/dual-run-migration"
+        description="Dual-running a vendor v1 and v2 when you own neither endpoint. One of five isolation channels is safe by default — and all() can cancel the primary."
+    />
+</Cards>

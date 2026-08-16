@@ -33,6 +33,11 @@ Here the inner `input` is the stitch input — `{ params?, query?, body?,
 headers? }` — and the stitch runs against `api.example.com` behind the
 capability boundary. The agent never sees the credential.
 
+The credential boundary is not the only one, though: the agent is choosing those
+argument values. An input slot you leave unconstrained is a passthrough the model
+fills in — [the agent picks the arguments](/docs/scenarios/agent-holds-the-tool)
+tests both boundaries and shows which one is yours to close.
+
 ## describe_stitch
 
 Before running a name, an agent can ask for its shape. `describe_stitch` takes

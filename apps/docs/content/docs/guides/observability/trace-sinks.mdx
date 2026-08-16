@@ -254,7 +254,10 @@ default cap is **2048 characters**; `0` keeps only the marker, no preview.
 
 Truncation bounds _size_ — it is not field-level redaction, and a preview can
 still contain a body-embedded secret. Header and URL secrets are redacted (above)
-regardless of the cap.
+regardless of the cap. Customer data in a response body is the case this leaves
+open: [the customer data you didn't mean to log](/docs/scenarios/pii-in-the-logs)
+counts which destinations carry a whole body and which carry none, and why there
+is nothing in between.
 
 Opt into **full capture** — the whole body, untruncated — when you need it, with
 `body: { chars: false }` on the file sink:

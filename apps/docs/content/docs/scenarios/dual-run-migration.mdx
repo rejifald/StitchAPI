@@ -1,0 +1,149 @@
+---
+title: 'The migration you have to run twice'
+description: 'Dual-running a vendor v1 and v2 when you own neither endpoint. One of five isolation channels is safe by default, and the combinator that looks built for this broadcasts one input to both.'
+prerequisites:
+    ['/docs/guides/authoring/seam', '/docs/guides/resilience/circuit-breaker']
+---
+
+## The problem
+
+Your vendor is retiring v1. [Scenario 17](/docs/scenarios/deprecation-headers) is how you found
+out; this is what you do next. You cannot flip on faith, so you run both against real traffic,
+compare, and cut over when the diff goes quiet.
+
+**Every shadow-traffic guide in the field is written for the service owner.** The canonical
+architecture mirrors at the gateway — client → proxy → primary, with a copy to the shadow and a
+shadow database beside it. You own the gateway, both services and both datastores.
+
+As the **consumer** of a third-party API you own none of that, and every term changes:
+
+- **There is no proxy to mirror at.** The duplication happens in your own client code, on the
+  call path, which is exactly where you cannot afford it to go wrong.
+- **The shadow spends the vendor's meter.** "Sample heavily" is cost control, not statistics.
+- **You cannot shadow a write.** A mirrored `POST /charges` charges twice — so the technique is
+  read-only, and writes are the calls you are most afraid of migrating.
+- **Telling a real diff from a benign one is the actual work.** A v2 that renames `created` to
+  `created_at`, returns ISO instants instead of epochs and orders an array differently is
+  **correct**, and diffs on every call.
+
+## The common solutions
+
+| Approach                      | What it is                                   | Where it breaks                                                                  |
+| ----------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Mirror at the gateway**     | Proxy duplicates the request.                | The standard answer, unavailable when the endpoint is someone else's.            |
+| **Dual-call in the client**   | Issue both, return v1, log the diff.         | Available to you — and now the shadow is inside your latency and failure budget. |
+| **Offline replay**            | Capture v1 traffic, replay against v2 later. | No user impact, and no live comparison.                                          |
+| **Diff in a batch job**       | Log both, compare nightly.                   | Cheap and slow. A regression lives a day.                                        |
+| **Trust the changelog**       | Read the migration guide, flip.              | Free, and the reason this scenario exists.                                       |
+| **Sample a small percentage** | Shadow 1–5% of reads.                        | The cost control that makes it viable. Needs a spelling.                         |
+
+## What StitchAPI does
+
+### The safe dual-run is 69 lines across 5 seams
+
+Replayed against the same vendor and the same flaky v2, the naive construction and the safe one
+differ **0-of-4 versus 4-of-4** user-facing calls succeeding. The naive version —
+`all([v1, v2])` under one seam, both versions on `/customers` — propagated v2's 500 to the caller
+twice, then fast-failed v1 on **v2's** breaker twice, and along the way put a 90 ms shadow on a
+10 ms call's critical path and sent v2's parameter name to v1.
+
+The safe version needed no fork and no new config key:
+
+- **`readsOnly` on the shadow's adapter only** — an 8-line wrapper. Three shadow write attempts
+  (a plain POST, an `llm`-surface call, a `.with()`-bound handle) reached the wire **0 times**,
+  while the primary's own POST still succeeded.
+- **A seam-level `throttle`** — one bucket by default, because `seamBucket` re-keys every acquire
+  onto the seam id, so the meter adds up across both versions.
+- **Distinct `circuit.key` strings** — the shadow tripped its own breaker and the primary never
+  noticed.
+- **A hand-written normalizer** — 7 raw diff ops per call became exactly 1, the planted
+  regression, reported with both values.
+- **A floated `.safe()` at the call site** — the one spelling that is simultaneously off the
+  critical path, unable to reject, unable to cancel the primary, and eager enough to actually
+  run.
+
+### A `url` thunk moves more than the base URL
+
+`url` is `string | (() => string)`, it carries the **complete endpoint**, and `{param}`
+interpolation still applies to a thunk-supplied URL. One flag moved `/v1/customers/{id}` to
+`/v2/customers` between calls with no redeploy.
+
+## What StitchAPI does not solve
+
+### One of five isolation channels is safe by default
+
+| channel          | safe by default?                              | what it takes                                        |
+| ---------------- | --------------------------------------------- | ---------------------------------------------------- |
+| **retry budget** | **yes** — a per-call loop counter             | —                                                    |
+| **latency**      | no — `all()` cost **+109 ms** on a 13 ms call | don't await the shadow; no combinator does this      |
+| **thrown error** | no — `all()` threw `StitchError`              | `void v2.safe(input)`                                |
+| **cancellation** | no — the primary measured `aborted: true`     | never put the shadow in `all()`                      |
+| **circuit**      | no — see below                                | distinct `circuit.key`; never unkeyed `pool: 'host'` |
+
+The cancellation channel was not on our list of things to check, and it is the most dangerous:
+`all()` aborts the in-flight **primary** when the shadow settles first.
+
+### The circuit is a key collision, not a shared default
+
+More precise than "resilience state is shared." Identity is
+`(store) × ('circuit:' + (circuit.key ?? name ?? path ?? 'stitch'))`. Across five configurations
+the primary got `1, 1, 0, 0, 1` requests — isolated standalone and under a seam with distinct
+paths, **broken** with a seam and the same path, and **broken** under `pool: 'host'`.
+
+Both failing cases are ordinary dual-run shapes: v1 and v2 usually share a path and differ by
+base URL, and they are usually on the same host.
+
+<Callout type="warn">
+    **The `pool: 'host'` trap.** It is the setting that makes cost accounting
+    correct across two stitches — and it silently re-keys the **breaker** onto
+    the host too, which is exactly the configuration measured fast-failing the
+    primary on the shadow's breaker. Use a seam-level throttle instead: it pools
+    correctly and leaves the circuit keyed per path.
+</Callout>
+
+### The rest
+
+1. **The combinators broadcast one input.** `all`/`any` build every member's input from the one
+   group input, so the shadow received `/v2/customers` — **no id**. Adding the id for v2 made v1
+   send `/v1/customers/cus_7Q2?customer_id=cus_7Q2`. This is
+   [#643](https://github.com/rejifald/StitchAPI/issues/643), and a dual-run is the case that
+   needs the opposite.
+2. **`.with()` survives the broadcast but binds a constant.** A group built once and called twice
+   left the shadow pinned to `cus_7Q2` while the primary followed `cus_ZZZ`.
+3. **A bare `void v2(input)` sends zero requests.** `StitchResult` extends `PromiseLike`
+   (`types.ts:2007`), so nothing runs until `.then`. No request, no rejection, no
+   `unhandledRejection` — the dual-run silently compares nothing. Same root cause as
+   [#660](https://github.com/rejifald/StitchAPI/issues/660); `void v2.safe(input)` is the spelling
+   that works.
+4. **No response-vs-response comparator is reachable.** Of 33 root exports the only
+   comparison-shaped one is `drift()`, which takes a _schema_. The real primitives exist —
+   `diff(before, after)` and `classifyDiff(a, b, opts)` — and neither is exported from any of the
+   17 subpaths. A hand-written replacement is 23 lines, and is **better** for this: `classifyDiff`
+   renders the planted regression as `"number -> number"`, a type delta with no numbers in it.
+5. **`DriftOptions.ignore` is suppression, not relevancy.** Four clauses take 7 diff ops to 1 —
+   and measured, the clause silencing a benign tag reorder also silences a real tag change, and
+   the one silencing the rename also silences a v2 reporting the wrong instant. There is no
+   aliasing, no unordered-array comparison, no coercion hook and no tolerance anywhere in the
+   tree, so a filter that still catches what it should is 24 lines of user code.
+6. **Sampling is not expressible.** No sample/ratio/percent slot exists on any subpath. The
+   shadow doubles consumption exactly — 20 logical calls became 40 vendor requests, **2.000×** —
+   and 5 lines of user code took that to 1.05×.
+7. **No write guard exists.** An unguarded dual-run of `POST /charges` sent **2 charges** with no
+   config key, type error or runtime nudge objecting. The only method-shaped option is
+   `cache.methods`, which gates cacheability and let the POST through. A construction-time gate on
+   `__config.method` is also not enough: the `llm` surface reports `method === undefined`, passes
+   the gate, and POSTs. The guard has to sit at the `Adapter`, below every authoring surface.
+8. **Cutover cannot be one flag.** A thunk moves the URL, but the input mapping is caller-side
+   (after the flag, a v1-shaped input against the v2 URL silently produced `/v2/customers` with no
+   id and nothing threw) and `output` is resolved once at construction (the same stitch went from
+   `ok: true` to `ok: false` against a v1-shaped schema). The real cutover is a 4-line selector
+   over two whole stitches.
+
+## See also
+
+- [Scenario: the vendor told you for six months, in a header](/docs/scenarios/deprecation-headers)
+  — how you learn the migration is coming
+- [Scenario: failing over to the backup provider](/docs/scenarios/provider-failover) — where the
+  one-input broadcast was first measured
+- [Scenario: one tenant's revoked token, everyone's outage](/docs/scenarios/multi-tenant-blast-radius)
+  — the keying problem this scenario runs into again

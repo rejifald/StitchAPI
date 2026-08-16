@@ -1,0 +1,135 @@
+---
+title: 'The vendor changed the shape for 5% of responses'
+description: 'Leveled drift catches a canary rollout precisely and refuses to invent a value. What it cannot do is tell a harmless coercion from a destructive one.'
+prerequisites:
+    ['/docs/guides/validation/validation', '/docs/concepts/event-stream']
+---
+
+## The problem
+
+A vendor ships a response-shape change — but not all at once. A canary at 5% of traffic, then
+25, then 50. Or not a rollout at all: the shape varies _by data_, like a geocoder that returns
+`null` for `formatted_address` only on ambiguous queries.
+
+**Intermittent breakage is harder than total breakage.** A change that breaks every call is
+found in minutes and rolled back. A change that breaks 5% looks like flakiness, sits in the
+backlog for a week, and gets fixed once someone spots the pattern.
+
+Four change classes, and treating them alike is the mistake — addition is non-breaking by every
+published policy, removal and type change are breaking, and a field becoming nullable is
+warning-level and the most intermittent of all.
+
+The dangerous one is the type change, because a naive cast produces a **plausible** value: a
+payment provider moves `transaction_id` from `12345` to `"12345"`, your code casts to int, gets
+`0`, and processes a **$0 transaction**.
+
+## The common solutions
+
+| Approach                        | Where it breaks                                                                   |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| Strict schema validation        | Catches everything — including the added field that broke nothing. Alarm fatigue. |
+| Parse loosely, cast defensively | Never alarms, and manufactures the `$0` transaction.                              |
+| Contract tests in CI            | Can't see a canary that started after your deploy.                                |
+| Level the findings              | The right model — needs a vocabulary most validators lack.                        |
+| Log and aggregate               | The only way to see 5% → 25%. Needs the finding to name the field.                |
+| Pin a vendor API version        | The real fix where offered; useless against data-dependent nulls.                 |
+
+## What StitchAPI does
+
+**The default is safe, and that is the headline.** Against `z.number()`, a `transaction_id` that
+arrives as `"12345"` produces `error | invalid | transaction_id | Invalid input: expected
+number, received string` and the **call fails** with `data: null`. Even `z.coerce.number()` on
+`"abc"` fails — Zod rejects `NaN`. StitchAPI does not manufacture a $0 charge on its own.
+
+**The precision is excellent.** Over 100 calls where a geocoder returned `null` on 5 of them,
+drift fired on **exactly** calls `[20, 40, 60, 80, 100]` — matching the vendor's own ledger,
+zero false positives on the other 95, each finding naming `formatted_address` with
+`null -> string`.
+
+**And aggregation is a real seam**, which is what makes an intermittent change actionable. A
+`TraceSink` sees every event of every call, and `ctx.spanId` lets you hold per-call state
+honestly:
+
+```ts
+const charges = stitch({
+    url: 'https://api.vendor.com/charges/{id}',
+    output: drift(StrictCharge, { severity: { undeclared: 'verbose' } }),
+    trace: new DriftRate({ window: '15m' }),
+});
+```
+
+**Measured:** `5.0% of calls: warn|coerced|transaction_id|null -> number (5/100, 5 landed 0)`,
+and on a rolling window the same field widening **5.0% → 25.0%** as the canary expanded. Across
+six workloads at 100 calls each: silent on a 100% _addition_ rollout, one alert line per
+breaking class at 5%, and **zero $0 charges**. The same six workloads against the soft schema
+teams write for availability kept 100% of calls and produced **ten** $0 charges.
+
+## What StitchAPI does not solve here
+
+1. **A `coerced` finding cannot say whether the coercion was destructive.** `"12345" → 12345`
+   and `"abc" → 0` emit **byte-identical** findings — `warn | coerced | transaction_id | string
+-> number` — because `detail` is `kindOf(old) -> kindOf(new)` and values never appear in a
+   finding. Only joining `drift` to `result` on `ctx.spanId` in a sink separates them.
+2. **The nullable class is inexpressible.** "Nullable is a warning, value intact" — the fourth
+   industry class — has no spelling. `.nullable()` produces **nothing at all**, so the 5%
+   rollout is invisible; the strict schema turns it into a 5% error rate that also discards the
+   four fields that were fine. A hand-rolled classifier beats `DriftOptions` on exactly this row.
+3. **`severity` is keyed by mechanism, not by change class.** It takes
+   `undeclared`/`coerced`/`defaulted` — of which only _addition_ maps 1:1 to an industry class.
+   Removal, type change and nullability each land on a kind decided by **your schema**, so their
+   loudness is a schema decision rather than a severity one.
+4. **No per-path severity.** `ignore` is the only path-aware lever and it is on/off. "Coercion on
+   `transaction_id` pages, coercion on `description` doesn't" has no spelling.
+5. **A soft finding cannot be promoted to fatal through the type.** `error` isn't in
+   `DriftSeverity` (a cast past it does work at runtime).
+6. **Soft findings are invisible on the awaited path.** `await` and `.safe()` carry nothing —
+   `StitchError` has no `findings`, and a hard failure gives only a generic `contract violation
+(drift)`. The trace sink for the _same_ run named the field and both types. `drift()` with
+   only `.safe()` does nothing for you.
+7. **A schema strips what it doesn't declare.** The added field in the addition case is
+   `undefined` on `data`; reading it needs `.inspect().raw`, which is a fresh request.
+
+<Callout type="error">
+    **Two ordinary spellings manufacture the $0 charge.**
+
+    `z.coerce.number()` maps **`null` → `0`** with no `.catch()` involved, because
+    `Number(null) === 0`. Measured: `null`, `""`, `"  "`, `false` and `[]` all coerce to exactly
+    `0`; only `"abc"` rejects. And `.catch(0)` hands the caller `0` for *anything*.
+
+    `.default('usd')` on a **removed** field is the same shape — it fabricates a value the vendor
+    never sent, at `verbose`. On money, prefer a failed call to a plausible number.
+
+</Callout>
+
+<Callout type="warn">
+    **A cache hit emits no drift, so caching divides your drift rate by the miss ratio.**
+    Measured: 5 calls against a vendor drifting on **100%** of responses reported **20%**.
+
+    Two smaller counting traps: findings are not calls (2 findings on one response reads as 200%
+    unless you collapse on `ctx.spanId`), and `.report()`/`.inspect()` are **fresh probes** —
+    they cost a request, tick your denominator, and answer about a different response. `.report()`
+    called right after a drifting call reported **zero** findings.
+
+</Callout>
+
+## StitchAPI vs the common solution
+
+**A wash on size — 93 lines against 92.** But the halves are not alike: detection is **9
+declarative lines against ~35**, while aggregation is ~84 lines of user code either way, because
+the library counts nothing.
+
+What the hand-rolled 92 lack is the resilience stack, measured here as one `retry` line
+absorbing 8 × `503` across the canary while the rate still counted **100 logical calls out of
+108 wire requests**.
+
+## See also
+
+<Cards>
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="STITCH_DRIFT" href="/docs/errors/stitch-drift" />
+    <Card
+        title="Catch a breaking API change"
+        href="/docs/recipes/catch-a-breaking-api-change"
+    />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

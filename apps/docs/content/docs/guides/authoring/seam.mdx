@@ -49,6 +49,8 @@ A seam takes the same fields a stitch does — `baseUrl`, `auth`, `retry`, `thro
 
 **Members extend the base; a member's own throttle stacks on the seam's.** Anything a member declares layers on top of the shared config — and a member's own `throttle` is _tighten-only_: it gates only that stitch on top of the shared bucket, so it can be stricter than the seam's budget but never escape it.
 
+Sharing a runtime is what you usually want, and occasionally exactly what you don't. Running a vendor's v1 and v2 side by side to compare them means deciding which channels stay shared and which must not — [the migration you have to run twice](/docs/scenarios/dual-run-migration) counts the five and finds that only one is safe by default.
+
 **Per-principal sessions — `seam.as(id)`.** Derive a handle whose members carry a principal. The handle binds that principal in the closure, never in the call's input, so a caller can't name another one. Each principal gets its own sessions; the throttle bucket stays shared.
 
 ```ts twoslash

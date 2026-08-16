@@ -49,7 +49,11 @@ because `wire.body` is `'form'`.
   (≡ `multipart: { nesting: 'dot' }`) switches to dot-path field names.
   Multipart has its own grammar, so `wire.array` does not apply to it — and
   `multipart` may only be set alongside `wire: { body: 'multipart' }`, since the slot
-  is ignored on any other body.
+  is ignored on any other body. Note this is multipart _encoding_ of one
+  request, a different thing from S3-style **multipart upload** — a four-step
+  protocol whose last step, aborting on failure, no HTTP client models for you;
+  [the upload you must clean up after](/docs/scenarios/multipart-upload) covers
+  what the orphaned parts cost when you skip it.
 
 <Callout type="info">
     Body encoding is **not** a surface — it composes with one. `wire.body` says

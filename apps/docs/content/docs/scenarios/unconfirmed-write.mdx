@@ -1,0 +1,131 @@
+---
+title: "The charge you can't confirm"
+description: 'A timeout tells you nothing about the server. idempotency.keyOf fixes the restart and the race in configuration alone — the default key does not, and it double-charged a re-driven job.'
+prerequisites:
+    ['/docs/guides/resilience/idempotency', '/docs/recipes/idempotent-writes']
+---
+
+## The problem
+
+You POST a charge. The connection times out. **You have no idea whether the money moved.**
+
+A timeout does not distinguish "the request never arrived" from "it was processed and the
+response was lost". No client-side care removes that — you can only make the _retry_ safe. And
+idempotency keys, which do, bring their own edges: the replay returns the **original** outcome
+including a failure, the key has a **TTL shorter than your job queue**, and the same key with a
+different body is an **error**.
+
+## The common solutions
+
+| Approach                           | Where it breaks                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| Retry blindly                      | Double-charges. The failure the whole scenario exists to prevent.                     |
+| Never retry a write                | Safe and expensive — every blip becomes a support ticket.                             |
+| Key minted per call                | Correct for retries _inside_ the call; useless across a restart.                      |
+| Key derived from the business fact | The right answer — stable across processes, restarts and queues.                      |
+| Query-then-decide                  | The standard recovery, and it must run **first** — after the write it can't un-write. |
+| Persist intent first               | Durable, and now you own a two-phase workflow.                                        |
+
+## What StitchAPI does
+
+**`idempotency.keyOf` fixes the restart _and_ the concurrency race in configuration alone.**
+
+```ts
+const charge = stitch({
+    method: 'POST',
+    url: 'https://api.vendor.com/charges',
+    // Derived from the business fact — stable across processes, restarts and queues.
+    idempotency: {
+        keyOf: (input) => `charge:${(input.body as Charge).invoiceRef}`,
+    },
+    retry: { attempts: 3 },
+});
+```
+
+**Measured**, across six workloads including a crash-and-re-drive, a lost response, a TTL
+expiry and two concurrent runs:
+
+|                                                | charges created            | intended |
+| ---------------------------------------------- | -------------------------- | -------- |
+| `idempotency: true` (the default), no recovery | **8** — two duplicates     | 6        |
+| derived `keyOf` + a query-first recovery       | **5** (the sixth declined) | 6        |
+
+Two things work well and are worth naming. The **same key is carried on every attempt** of a
+call — 3 attempts, 1 key, 1 charge — so a response lost _after_ the charge was processed is
+**recovered** by the retry replaying the stored `200`. And a **cached failure is not retried by
+default**: a stored `500` produced exactly 1 request under `attempts: 4`, because 500 isn't in
+the default `retry.on`.
+
+<Callout type="error">
+    **`idempotency: true` is per call, not per intent.** The default key is a `randomUUID()`
+    minted when the request is built, so a queue re-driving a job after a crash mints a *new*
+    key. Measured: **2 distinct keys, 2 charges, for 1 intended payment.**
+
+    And the library warns about exactly this — unless you follow the advice. The nudge fires only
+    when there is a random key *and* no `retry`, on the reasoning that a retry is the thing a
+    random key does protect. True, and narrower than most readers will assume: **adding `retry`
+    silences the warning while leaving the restart case wide open.**
+
+</Callout>
+
+## The recovery has to run first
+
+A query-then-decide recovery only works **before** the write. Running it after a failure still
+double-charged on the TTL workload — because a recovery that runs after the write cannot
+un-write it. That is 19 of the 43 lines, and no hook can do it: a hook cannot change the
+outcome.
+
+## What StitchAPI does not solve here
+
+1. **Restart safety by default** — see the callout. `keyOf` is the fix and it is opt-in.
+2. **TTL expiry.** A prune turns a correct, stable key into a second charge — measured **2
+   charges at a 25 h delay against a 24 h TTL**, 1 charge at 23 h. The duplicate arrives as a
+   clean `200` with **no replay marker**, so nothing client-side can notice. `timeout.total` is
+   per call and cannot bound the gap.
+3. **Timeout disambiguation.** A dropped request (**0 charges**) and a lost response (**1
+   charge**) produced **field-for-field identical** errors: `StitchError`, `status: undefined`,
+   `attempts: 1`, `timed out after 5000ms`, `body: undefined` — and the same live `TimeoutError`
+   on `error.cause`. The class stays unexported, but the instance rides `cause`, so "was this a
+   timeout?" is the structural check `err.cause?.constructor.name === 'TimeoutError'`, not a
+   message match. What it cannot tell you is whether the money moved.
+4. **"Don't retry into the unknown."** `retry.on` gates statuses only — a transport failure is
+   retried even with `on: []`. The only lever is `attempts: 1`.
+5. **"Don't retry a replayed failure."** Inexpressible declaratively: `interpret` runs _after_
+   the retry check, and `retry.on`'s predicate sees only the status. The vendor's replay marker
+   is visible to `hooks.onResponse` and absent from `StitchError`, which carries no headers.
+6. **No event carries the idempotency key** — so with the random default, a query-by-key
+   recovery is impossible: you cannot ask about a key you never learned.
+7. **Nothing expresses "sticky for a decline, fresh for a blip."** A stable key makes a recorded
+   failure sticky for the whole TTL — measured, a declined card stayed declined — while the
+   random key never reaches the record and simply charges again on the second run. Both
+   behaviours are defensible; neither is selectable.
+
+<Callout type="warn">
+    **`keyOf: (i) => JSON.stringify(i.body)` fails by charging twice, not by erroring.** Key
+    order alone moved the hash — measured **2 keys, 2 charges, statuses `[200, 200, 200]`**, no
+    `409` anywhere, because the vendor never saw the same key twice. Derive from a business
+    reference, canonicalise before hashing — or declare a coercing input **schema**: `keyOf` now
+    reads the **validated** body (#648, closed by #663), so a schema that normalises the body
+    stabilises the key. Measured: the same three renderings under one → 1 key, 1 charge.
+
+    Two smaller ones: **pagination mints a key per page** (3 pages, 3 keys), and
+    **`verdict: { accept: [409], flag: 'ok' }` swallows an idempotency conflict**, returning the
+    error payload as data — the same trap as
+    [the signature scenario](/docs/scenarios/expiring-signatures).
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Idempotency keys" href="/docs/guides/resilience/idempotency" />
+    <Card
+        title="Retry a write without double-charging"
+        href="/docs/recipes/idempotent-writes"
+    />
+    <Card title="Timeouts" href="/docs/guides/resilience/timeout" />
+    <Card
+        title="The signature that expired in your own queue"
+        href="/docs/scenarios/expiring-signatures"
+    />
+</Cards>

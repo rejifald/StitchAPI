@@ -381,7 +381,10 @@ api.callCount('/token'); // 2 — refreshed, with zero real waiting
 The clock owns **control-flow** time — the waiting and the deciding — not
 bookkeeping. That boundary is deliberate, and knowing where it falls is the
 difference between a test that asserts something and one that only looks like it
-does:
+does — a distinction
+[the mock that passed for six months](/docs/scenarios/stale-fixture) works
+through, along with the drift a fixture can never show you because it never
+changes:
 
 | Feature                | Under `manualClock`                                 |
 | ---------------------- | --------------------------------------------------- |

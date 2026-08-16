@@ -1,0 +1,160 @@
+---
+title: 'The free poll — ETag revalidation and the bodyless 304'
+description: 'A 304 means "use what you have", carries no body, and is not a 2xx. Turning it back into the resource takes one seam — and the cache primitive cannot help.'
+prerequisites:
+    ['/docs/reference/surfaces', '/docs/guides/state/pluggable-store']
+---
+
+## The problem
+
+You poll for changes and nothing has changed. HTTP has a way to make that free: keep the
+`ETag`, send it back as `If-None-Match`, and the server answers **`304 Not Modified`** with no
+body. On GitHub a 304 **doesn't count against your primary rate limit** — 600 polls, 90%
+unchanged, cost 60 requests.
+
+The awkwardness is that a 304 is a _status_ meaning "use what you have", and both obvious
+readings are wrong. Treat it as a failure and every unchanged poll is an error; treat it as a
+success and the caller gets `undefined` where the resource should be. The only correct
+behaviour is to **substitute the previously cached body**, which means the cache and the
+request path have to know about each other.
+
+Four constraints most clients get wrong:
+
+- **ETags are per-credential.** GitHub caches them per token. A store keyed only by URL will
+  replay one principal's validator for another.
+- **ETags are per-page, not per-collection.** A 304 on page 1 of 5 says nothing about 2–5.
+- **Weak validators compare weakly.** `W/"abc"` and `"abc"` are not interchangeable, and the
+  comparison is the _server's_ to make — so the client must not normalize the tag.
+- **Some servers never match.** Apache's default ETag embeds the file inode, so behind a load
+  balancer revalidation never succeeds and the feature silently does nothing.
+
+## The common solutions
+
+| Approach                        | Where it breaks                                                                                                        |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| TTL cache only                  | Never revalidates. Every refresh is billed **and** the data is stale up to the TTL — you pay full price for staleness. |
+| Hand-rolled ETag store          | Correct, and what most teams write. Easy to key wrong; the swap must happen below parsing and validation.              |
+| An HTTP caching proxy           | The most standards-correct answer. Adds a dependency or a hop.                                                         |
+| Treat 304 as an error and retry | Actively wrong — turns the success case into an error and re-sends the same validator.                                 |
+| Ignore conditional requests     | What most integrations do. On GitHub it costs 10× the rate-limit budget for identical data.                            |
+
+## What StitchAPI does
+
+There is no conditional-request feature — `If-None-Match` and `304` appear nowhere in the core.
+What there is, is the one seam that owns a request _and its own response_ in a single function:
+**`Surface.execute`**. It is a one-argument `Adapter` the engine calls _in place of_ the
+transport — a surface with `execute` ignores `StitchConfig.adapter` — so the real transport is
+handed to the surface's factory and closed over (`transport` below), next to the store.
+
+```ts
+execute: async (req) => {
+    const key = `${req.method} ${req.url} ${credentialOf(req.headers)}`; // per-credential, see below
+    const cached = store.get(key);
+    if (cached) req.headers['If-None-Match'] = cached.etag; // byte-exact, never normalized
+    else clearValidator(req.headers); // a re-attempt must be able to DROP it
+
+    const res = await transport(req);
+    if (res.status === 304 && cached) return { ...res, body: cached.body };
+
+    const etag = res.headers['etag'];
+    if (res.status === 200 && etag) store.set(key, { etag, body: res.body });
+    return res;
+},
+```
+
+The `status === 200` gate on the write is load-bearing. Servers mint ETags on responses you
+must not learn from — Express fingerprints error bodies too, and CDNs validate error objects —
+and without the gate one ETagged error writes `{ etag, body: error }` into the store, which
+every later 304 then serves as `ok: true` data. The full 87-line version this abridges adds
+the rule the gate can't cover: a 304 with **no** stored body (an orphaned validator — a
+restarted process, an evicted entry) is refetched unconditionally instead of returned bare,
+which would rebuild the empty-304 trap by hand. It also bounds the store and keeps the
+counters (`revalidated` / `stored` / `orphans` / `unvalidatable`) the callout below asserts on.
+
+It needs **no custom `interpret`**. The substituted body rides back on a response whose status
+is still 304, and `classifyStatus` only fails at `>= 400` — so `.inspect().status` honestly
+reports 304 while `.data` is the resource.
+
+**Measured**, ten polls at one-minute intervals with the resource changing once before poll 6:
+
+|                    | billed | versions seen                                               |
+| ------------------ | ------ | ----------------------------------------------------------- |
+| no caching         | 10/10  | correct, never stale                                        |
+| TTL cache (30 min) | 1/10   | `[1,1,1,1,1,1,1,1,1,1]` — **never sees the change**         |
+| revalidation       | 2/10   | `[1,1,1,1,1,2,2,2,2,2]` — picked up on the poll it happened |
+
+Eight of ten polls became free with **zero** staleness. That middle row is the argument: a TTL
+cache is cheaper _and_ wrong, serving a superseded version on 5 of 10 polls.
+
+<Callout type="info">
+    `interpret` **does** run on a 304 — measured with a counter across `[200,
+    304, 404]`. The engine interprets every response, not just 2xx. (The
+    "`interpret` never runs" finding on [the streaming
+    page](/docs/scenarios/mid-stream-failure) is specific to streams.) So
+    `Surface.interpret` + `hooks.onRequest` is a valid second route; `execute`
+    is just fewer moving parts.
+</Callout>
+
+## StitchAPI vs the common solution
+
+**The StitchAPI version is longer — 87 lines against 79** for a feature-matched hand-rolled
+twin, and both produce identical versions, statuses and billed counts on all four shapes
+(quiet, changed, weak validators, never-matching). So the extra lines are not buying
+behaviour.
+
+They attribute exactly: `credentialOf` and `clearValidator`, two helpers that exist only
+because the engine hands a surface a shared header record it never case-folds. What the
+hand-rolled twin lacks is everything that stayed _configuration_ on the stitch — `auth`,
+`output`, `retry`, `timeout`, `seam.as()` and the trace spine. Every one of those would have to
+be written into the hand-rolled file to match.
+
+## What StitchAPI does not solve here
+
+1. **`cache` cannot revalidate — at all.** It is a _value_ store, not a response store: the
+   entry is `{ v, s, vary }` and what gets written is the post-`interpret`, post-validation
+   value. No response header, and therefore no ETag, can reach it.
+2. **`revalidateOnHit` is a false friend.** It re-checks the stored value against the `output`
+   **schema**, never the network.
+3. **A cache hit short-circuits everything below it.** Measured over 3 calls: hooks fired once,
+   `interpret` ran once, one request. The hit spine is `[start, cache:hit, result, done]` — no
+   `request` phase at all — so revalidation can't run under a hit.
+4. **The cache cannot store a 304 either.** Forced into its own key, three conditional calls
+   measured `[undefined, undefined, undefined]` — a stored `undefined` reads as a permanent miss.
+5. **The one workaround turns caching off.** Folding the ETag into the value via `transform`
+   makes the stitch un-fingerprintable, so it fails closed and refuses to cache.
+6. **A surface cannot see the bound principal.** `ResolvedStitchConfig` has no `principal`, and
+   `buildRequest` runs _before_ `auth.apply` — so it can't even read the credential header. Only
+   `hooks.onRequest` and `Surface.execute` are downstream of auth.
+7. **`buildRequest` runs once per run, not per attempt.** A validator set there is baked into
+   every retry — measured 3 identical validators across 3 attempts and a failed run.
+8. **Adding an `output` schema to a bare conditional poll breaks it.** The empty 304 body fails
+   the contract: `ok: false`, `contract violation (drift)`. With substitution in place the
+   schema is handed the real body and never sees `undefined`.
+9. **`cache.ttl` ignores an injected `clock`** — it reads `Date.now()`. Measured: one request
+   after advancing a `manualClock` by a virtual hour against a 1-second TTL.
+
+<Callout type="error">
+    **The cross-principal leak, and why it hides.** Against a server with content-derived
+    validators, an ETag store keyed on `METHOD URL` alone leaked: one store entry, and **bob
+    received alice's data** (`viewer: tok-alice`). The reason it survives review is that the
+    rate-limit metrics *improve* while it happens — a 50% 304 rate is exactly what a working
+    revalidator looks like. `cache.tenancy` does not protect a store you wrote yourself. Put
+    the credential in the key, as above.
+
+    **And the silent no-op.** Against a server minting a fresh validator per response (the
+    load-balancer inode case), 10 polls billed 10, got **zero** 304s, and raised nothing.
+    Assert on it: `revalidated === 0` while `stored === 10` is the only signal you get.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+    <Card
+        title="Rate limits priced in query cost"
+        href="/docs/scenarios/cost-based-rate-limits"
+    />
+    <Card title="Hooks" href="/docs/guides/authoring/hooks" />
+</Cards>

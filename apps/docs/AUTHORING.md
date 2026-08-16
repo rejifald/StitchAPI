@@ -42,16 +42,23 @@ machine-readable `llms.mdx`.
 
 ## Information architecture
 
-Seven top-level groups, ordered for a first read:
+Ten top-level groups, ordered for a first read (the order in the root
+`meta.json`):
 
-**Getting started → Concepts → Guides → Surfaces → For agents → Reference →
-Errors & pitfalls.**
+**Getting started → Recipes → Scenarios → Concepts → Guides → Surfaces →
+Integrations → For agents → Reference → Errors & pitfalls.**
 
 Guides are **fine-grained** — one page per feature — grouped into capability
 subfolders (`authoring`, `auth`, `resilience`, `data`, `validation`,
 `observability`, `state`). Fine-grained is deliberate: one page per feature means
 one focused `llms.mdx` per feature, so an agent pulls just the `cookieSession`
 page into context, not the whole auth manual.
+
+**Scenarios** (`content/docs/scenarios`) sit inside the docs tree and inside the
+manifest, but answer a different question than a guide does: a guide teaches a
+feature, a scenario takes one integration problem end-to-end across several
+features and says what the library does _not_ solve. They carry their own
+inbound-linking rule. See [Scenarios](#scenarios).
 
 The **blog** (`content/blog`, served at `/blog`) is a **separate collection** with
 its own rules — flat files, dated frontmatter, prose-first, and its own
@@ -615,6 +622,57 @@ Errors & pitfalls is keyed to a registry of stable codes (`STITCH_VALIDATION`,
   new page and redirect the old one.
 - The registry of codes will live in `packages/core` and be the shared source of
   truth for both the runtime (which throws the code + url) and these pages.
+
+---
+
+## Scenarios
+
+A scenario (`content/docs/scenarios`, `kind: guide` in the manifest) takes one
+real integration problem from symptom to working shape. Where a **recipe** shows a
+task with a known good answer and a **guide** teaches one feature, a scenario
+covers a problem whose honest answer is a trade-off — so it crosses several
+features, names the solutions the ecosystem converged on and what each costs, and
+ends by stating plainly what StitchAPI does **not** solve there.
+
+The page shape is the guide template plus two sections that are mandatory here:
+
+- **The common solutions** — a table of the approaches people actually reach for
+  and where each breaks. A scenario without this reads as marketing.
+- **What StitchAPI does not solve here** — the numbered list of remaining work.
+  This is the section that makes the page trustworthy; never trim it to look
+  better.
+
+**Every claim is measured, not read off the source.** A scenario's numbers come
+from a runnable probe under `docs/scenarios/proofs/<slug>/`, and the finding
+ledger (`docs/scenarios/LEDGER.md`) records what was filed and what fixed it. When
+core behavior changes, re-run the probes before trusting a page — a scenario
+describing behavior that has since been fixed is worse than no page.
+
+**Every scenario needs an inbound link from outside the section.** A scenario is a
+deep-dive hung off a primitive the docs already teach, so the page teaching that
+primitive is what must point at it — inline, at the sentence where the limitation
+comes up, never as a bare "see also" dump:
+
+> `on` … defaults to `[429, 502, 503, 504]`. The predicate receives the status and
+> nothing else, so a vendor that reports throttling in the body of a `200` is
+> invisible to every policy you can write here —
+> [rate limits priced in query cost](/docs/scenarios/cost-based-rate-limits) works
+> that case through a surface instead.
+
+`test/scenario-interlinking.spec.ts` is the gate: it fails on a scenario nothing
+links to, on a dangling `/docs/scenarios/<slug>` link anywhere in `content`, and
+on one host page hoarding the section's inbound links (which just rebuilds the
+cul-de-sac a level up). Spread them — the right host is the page whose primitive
+the scenario stresses.
+
+**Writing a new scenario — the checklist:**
+
+1. Write the probes first; the page reports what they measured.
+2. Fill the template, including both mandatory sections above.
+3. Add the page to `content.manifest.ts` and `content/docs/scenarios/meta.json`.
+4. Add the inbound link from the guide/reference/post that teaches the primitive.
+5. Add the scenario to the `<Cards>` grid on `scenarios/index.mdx`.
+6. Run `pnpm test` in `apps/docs` — the interlinking gate must stay green.
 
 ---
 

@@ -1,0 +1,126 @@
+// Ask the COMPILER which fan-out spellings exist, instead of grepping for them.
+//
+// "The combinators can't express this" and "I couldn't find the spelling" are different findings,
+// and only one of them is the library's problem. So the honest way to establish that there is no
+// `all(stitch, inputs)`, no `map`, and no `allSettled` is to hand the compiler each candidate and
+// read back its diagnostics. A line that compiles is a spelling that EXISTS; a line that doesn't is
+// one the vocabulary refuses.
+//
+// The fixture is written to a temp dir (not into the repo) and deleted afterwards, so this leaves
+// nothing behind and never lands in `prettier --check`. It imports core by ABSOLUTE path, which is
+// why it can live outside the tree.
+//
+// `typescript` is loaded through a `require` ANCHORED AT `packages/core`, which is the workspace
+// package that declares it. A bare `import ts from 'typescript'` resolves under `tsx` and NOT under
+// plain Node from this directory (pnpm gives `docs/` no `node_modules`), so the bare form would be
+// a script that runs one way and typechecks another. The compiler surface used is tiny, so it is
+// declared structurally here rather than imported as a type.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** Absolute path to core's barrel, so the fixture can be compiled from anywhere. */
+export const CORE = join(HERE, '../../../../packages/core/src/index');
+/** Absolute path to the `stitchapi/pipe` module — where the combinators live. */
+export const PIPE = join(HERE, '../../../../packages/core/src/pipe');
+
+/** The slice of the TypeScript compiler API this probe uses. */
+interface TsCompiler {
+    readonly ScriptTarget: Record<string, number>;
+    readonly ModuleKind: Record<string, number>;
+    readonly ModuleResolutionKind: Record<string, number>;
+    createProgram(
+        rootNames: readonly string[],
+        options: Record<string, unknown>,
+    ): unknown;
+    getPreEmitDiagnostics(program: unknown): readonly {
+        code: number;
+        start?: number | undefined;
+        file?:
+            | {
+                  fileName: string;
+                  getLineAndCharacterOfPosition(pos: number): { line: number };
+              }
+            | undefined;
+    }[];
+}
+
+const ts = createRequire(join(HERE, '../../../../packages/core/package.json'))(
+    'typescript',
+) as TsCompiler;
+
+export interface Candidate {
+    /** What a reader would call this spelling — printed in the report. */
+    label: string;
+    /** One statement. Compiles ⇒ the spelling exists. */
+    code: string;
+}
+
+export interface ProbeResult extends Candidate {
+    compiles: boolean;
+    /** First diagnostic code, e.g. 2769 (no overload matches) or 2345 (argument not assignable). */
+    diagnostic?: number;
+}
+
+/**
+ * Typecheck each candidate as its own statement in one program and report which compile.
+ * Diagnostics are attributed by LINE, so each candidate must be a single line.
+ *
+ * The header declares the props a fan-out candidate needs — a stitch, a runtime-length id list, and
+ * an array of stitches built from it — so a candidate line is only ever about the COMBINATOR.
+ */
+export function probeSpellings(
+    candidates: readonly Candidate[],
+): ProbeResult[] {
+    const dir = mkdtempSync(join(tmpdir(), 'stitch-fanout-probe-'));
+    const file = join(dir, 'probe.ts');
+    const header = [
+        `import { stitch } from ${JSON.stringify(CORE)};`,
+        `import { all, any, linked, race } from ${JSON.stringify(PIPE)};`,
+        `const one = stitch<{ id: string }>({ url: 'https://x.test/customers/{id}' });`,
+        `const ids: string[] = ['a', 'b'];`,
+        `const many = ids.map((id) => stitch<{ id: string }>({ url: \`https://x.test/customers/\${id}\` }));`,
+        `void [all, any, race, linked, one, ids, many];`,
+    ];
+    try {
+        writeFileSync(
+            file,
+            [...header, ...candidates.map((c) => c.code)].join('\n'),
+        );
+        const program = ts.createProgram([file], {
+            target: ts.ScriptTarget['ES2022'],
+            module: ts.ModuleKind['ESNext'],
+            moduleResolution: ts.ModuleResolutionKind['Bundler'],
+            strict: true,
+            noEmit: true,
+            skipLibCheck: true,
+            exactOptionalPropertyTypes: true,
+            noUncheckedIndexedAccess: true,
+        });
+        const byLine = new Map<number, number>();
+        for (const d of ts.getPreEmitDiagnostics(program)) {
+            if (d.file?.fileName !== file || d.start === undefined) continue;
+            const { line } = d.file.getLineAndCharacterOfPosition(d.start);
+            if (!byLine.has(line)) byLine.set(line, d.code);
+        }
+        return candidates.map((c, i) => {
+            const diagnostic = byLine.get(header.length + i);
+            return diagnostic === undefined
+                ? { ...c, compiles: true }
+                : { ...c, compiles: false, diagnostic };
+        });
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+}
+
+/** The spellings that compiled — the vocabulary that actually exists. */
+export const accepted = (results: readonly ProbeResult[]): string[] =>
+    results.filter((r) => r.compiles).map((r) => r.label);
+
+/** The spellings the compiler refused. */
+export const rejected = (results: readonly ProbeResult[]): string[] =>
+    results.filter((r) => !r.compiles).map((r) => r.label);

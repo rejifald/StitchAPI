@@ -1,0 +1,168 @@
+---
+title: 'The mock that passed for six months'
+description: 'Your fake goes stale and the suite keeps saying green. Resilience and streams test perfectly offline — here is the definitive table of which time-driven features manualClock actually drives.'
+prerequisites: ['/docs/guides/testing/mocking', '/docs/guides/validation/drift']
+---
+
+## The problem
+
+You integrate a vendor API. You write tests. You cannot call the real API on every CI run — it
+is slow, rate-limited, costs money and mutates state — so you test against something fake.
+
+Then the vendor changes the API, and **your tests keep passing.**
+
+This is the one scenario in this pass where the failure mode is the test suite actively lying to
+you. Every approach trades one wrongness for another: a recording goes stale silently (the
+classic shape is a cassette holding a session token that later expires, so the failure surfaces
+somewhere unrelated); a hand-written mock encodes your misunderstanding faithfully, because the
+same person wrote the mock and the code from the same reading of the docs; a vendor sandbox
+exists for initial development rather than regression and lags production. The consensus is that
+no single approach suffices — you need virtualisation for volume _and_ live verification for
+accuracy.
+
+Which narrows the question for a client library to: **can it tell you your fake has drifted from
+the real thing?**
+
+## The common solutions
+
+| Approach                     | What it is                                | Where it breaks                                                                        |
+| ---------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Record/replay cassettes**  | Record real traffic once, replay forever. | Goes stale silently. Re-recording is a process, not a check.                           |
+| **Hand-written mocks**       | Fixtures you write from the docs.         | Encode your misunderstanding faithfully. Cannot catch what you got wrong.              |
+| **Vendor sandbox**           | The vendor's test environment.            | Lags production, misses edge cases, slow, rate-limited. Not built for regression runs. |
+| **Contract testing (Pact)**  | Both sides verify a shared contract.      | Needs vendor participation. Not available for a third party.                           |
+| **Hit production in CI**     | The only truly accurate option.           | Slow, costly, mutating, and flaky for reasons unrelated to your code.                  |
+| **Schema/contract snapshot** | Validate responses against a schema.      | The honest middle ground — but only if the _same_ schema guards prod and the fixtures. |
+
+## What StitchAPI does
+
+### Resilience tests need no vendor and no waiting
+
+This is the strongest result. With `mockAdapter` + `manualClock` + `collectStitchEvents`, retry,
+throttle and circuit behaviour is assertable to the millisecond with zero real time elapsed:
+
+- **Attempt counts**, three independent ways: `mockAdapter.callCount()` → `3`,
+  `result.attempts` → `3`, and five `progress` events phased
+  `request, retry, request, retry, request`.
+- **Circuit transitions** — the whole closed → open → half-open → closed trace reads off
+  `callCount()` as `1, 2, 2 (blocked), 3, 4`, because an open circuit doesn't move the transport
+  count.
+- **Throttle spacing**, exact and self-reporting: requests at virtual `0 / 500 / 1000` for
+  `'2/s'`, with `progress{phase:"throttled"}.waited` reading `500` then `1000`.
+- **Backoff curves** are exact under the clock — requests at virtual `0 / 1000 / 3000` for an
+  `expo` base-1000 curve.
+
+### Streams are fully deterministic
+
+`streamThenError` over an `sse` stitch produced `start, progress, delta, delta, delta, error,
+done` with all three deltas intact, `error.message: "socket reset"`, `done.ok: false` — and
+**five repeat runs produced one distinct outcome, byte-identical.** `gatedStream` holds a
+connection open on a promise you resolve; `sseStream` writes well-formed frames.
+
+### A shared schema catches a fixture that drifts from the contract
+
+Point the same `output` schema at production and at the fixture, and all four mutations fail the
+call — a field removed, renamed, retyped, and nulled — with `drift()` naming each:
+`error|invalid|paid|Expected boolean, received string`.
+
+### Targeting three environments is one config slot
+
+`extends: { baseUrl, adapter }` aims one endpoint object at fixture, sandbox and production, and
+the difference is visible through the same schema: `ok`, `ok`, `contract violation (drift)`. A
+`baseUrl` thunk (`string | (() => string)`) retargets between calls without rebuilding.
+
+## What StitchAPI does not solve
+
+1. **The scenario's actual direction is invisible offline.** Everything above catches the
+   _fixture_ drifting from the schema. The scenario is the _vendor_ drifting while the fixture
+   sits still — measured, that run is **test `ok: true` with zero findings, production
+   `ok: false`, five keys different**. Nothing offline closes it, because offline the only bytes
+   are the fixture's. The comparison that catches it is 8 lines and every seam it needs already
+   exists; what is missing is a place to put a call you are only allowed to make sometimes.
+2. **`manualClock` drives eight time-driven features and not the other four.** The table below is
+   the one to keep. A test written against a wall-clock row **passes without asserting
+   anything**.
+3. **`mockAdapter` validates almost nothing.** It defaults `status` to 200 and lowercases header
+   names; beyond that it served statuses `999, -1, 0, 1.5, 200.7` and bodies of type `Date`,
+   `Map`, class instance, `undefined`, `function`, `bigint` and Symbol-keyed — all verbatim,
+   through the full engine. The consequence is a green test for code that cannot work: a fixture
+   built from `new Invoice(...)` gives the caller `data.total === 42` from a **prototype
+   getter**, where the same object over a JSON wire is `{"id":"inv_1"}` and `data.total` is
+   `undefined`.
+4. **`stubStitch` runs none of the `input` schemas.** One line of calling code passing `42` where
+   the schema says `z.string()`: the real stitch errors and no request leaves the process; the
+   stub **resolves** and records `{"params":{"id":42}}`. There is no slot to hand it the
+   contract — `StubStitchOptions` is `{name,status,config,events}`, and `config` is the redacted
+   read-out shape, which carries no schema.
+5. **A fixture cannot say when it was recorded.** Of all exported names across the main entry and
+   `stitchapi/testing`, exactly one matches `/fixture|cassette|record|snapshot|stale|fresh|expire/`
+   — `adapterContractFixture`, the transport echo contract for plugin authors. `__config` has no
+   metadata slot, so "recorded on 2026-02-04" is not expressible.
+6. **Retry backoff delays are absent from the event stream.** `progress{phase:"retry"}` carries
+   `detail: "status 503"` and `waited: undefined`, where the throttle and reconnect paths both
+   set `waited`. You can assert the backoff, but only by reading `clock.now()` yourself.
+
+### Which features `manualClock` actually drives
+
+| Feature                         | Driven by         | Measured                                                                         |
+| ------------------------------- | ----------------- | -------------------------------------------------------------------------------- |
+| `retry` backoff                 | **`manualClock`** | `advance(5000)` → 3 calls; `advance(0)` → 1 call, pending                        |
+| `throttle` rate                 | **`manualClock`** | `advance(3000)` → 3 calls                                                        |
+| `throttle` concurrency          | **`manualClock`** | holder releases on virtual time → queued callers proceed                         |
+| `circuit.cooldown`              | **`manualClock`** | `advance(60_000)` past a 30s cooldown → half-open probe reaches the vendor       |
+| `timeout` (per-attempt)         | **`manualClock`** | `advance(2000)` past a 1s timeout → error                                        |
+| `Retry-After`                   | **`manualClock`** | reads the injected clock — **and that is the trap**, see below                   |
+| OAuth2 token expiry             | **`manualClock`** | `advance(600_000)` past a 60s `expires_in` → a fresh token fetch                 |
+| AWS SigV4 signing date          | **`manualClock`** | `x-amz-date` reads the clock; a default `manualClock()` signs `19700101T000000Z` |
+| **`timeout.total`**             | wall clock        | a 1000ms budget survived **2700 virtual ms** across 3 attempts, `ok: true`       |
+| **`cache.ttl`**                 | wall clock        | `advance(600_000)` past a 60s TTL still served the cached entry                  |
+| **`memoryStore` TTL**           | wall clock        | a 1s entry survived 60,000 virtual ms                                            |
+| **event `at` / `done.elapsed`** | wall clock        | `at = 1785941469178` while `clock.now() = 0`; `done.elapsed` reads `0`           |
+| `paginate`                      | no time           | no inter-page delay knob; 3 pages fetched at `clock.now() = 0`                   |
+
+The OAuth2 and SigV4 rows are new arrivals in the driven half: both read the wall clock when this
+audit measured them — 600,000 virtual ms past a 60s `expires_in` refetched nothing, and no clock
+reached the signer. Filed as [#650](https://github.com/rejifald/StitchAPI/issues/650) and
+[#658](https://github.com/rejifald/StitchAPI/issues/658), fixed by
+[#664](https://github.com/rejifald/StitchAPI/pull/664) and
+[#667](https://github.com/rejifald/StitchAPI/pull/667): token freshness and `x-amz-date` now read
+the same injected clock that drives retry and throttle. The four rows still on the wall are
+deliberate scope — the clock owns control-flow time, not bookkeeping.
+
+<Callout type="warn">
+    **`Retry-After` is a trap precisely because it honours the clock.**
+    `parseRetryAfter` computes `httpDateEpoch - clock.now()`, and
+    `manualClock()` starts at `0` — so an HTTP-date header meaning "5 seconds"
+    becomes a wait of roughly **20,000 days**. Start the clock at a realistic
+    epoch if a fixture carries a dated `Retry-After`.
+</Callout>
+
+<Callout type="info">
+    **`timeout.total` does not "ignore" the clock — it resets.** The per-attempt
+    clamp _does_ fire on virtual time; the wall-anchored part is the deadline
+    (`wallT0 + total`). Virtual sleeps never drain it, so each attempt gets the
+    full budget back. On a real clock it behaves correctly. This is specifically
+    a testing unsoundness, and it was the pass's own prediction that got the
+    mechanism wrong.
+</Callout>
+
+## The best available setup
+
+**98 executable lines across 5 seams**, closing four of the five gaps: a wire-shape guard
+(rejects the class-instance fixture with `fixture is not a wire shape ($: LiveInvoice)`), a
+`contractStub` that runs the input schema, a config lint that refuses to pair a `manualClock`
+with `cache` or `timeout.total`, and a fixture datestamp
+(`getInvoice recorded 2026-02-04 (182d old)`).
+
+The fifth does not close offline. Dating a fixture fails your suite on the **calendar**, not on
+the drift. The only thing that actually detects the drift is a live comparison — measured
+returning `DISAGREE live=contract violation (drift) fake=ok` — and it needs a real call.
+
+## See also
+
+- [Mocking guide](/docs/guides/testing/mocking) — `mockAdapter`, `stubStitch`, `manualClock`
+- [Drift](/docs/guides/validation/drift) — what `output` findings mean
+- [Scenario: a canary rollout of a response-shape change](/docs/scenarios/intermittent-drift) —
+  detecting vendor drift in production, which is the half this scenario cannot do offline
+- [Scenario: a stream that fails after 800 tokens](/docs/scenarios/mid-stream-failure) — the
+  behaviour `streamThenError` reproduces deterministically

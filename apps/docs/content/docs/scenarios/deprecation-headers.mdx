@@ -1,0 +1,132 @@
+---
+title: 'The vendor told you for six months, in a header'
+description: 'Deprecation and Sunset arrive on responses that succeeded, so nothing fails and nothing retries. Response headers are reachable in exactly three places — here is the table.'
+prerequisites: ['/docs/reference/surfaces', '/docs/guides/authoring/hooks']
+---
+
+## The problem
+
+A vendor is retiring the endpoint you depend on. They announced it in a blog post, sent one
+email, and — if they follow the standards — have been telling you **on every single response**
+for six months, via `Deprecation` (RFC 9745) and `Sunset` (RFC 8594).
+
+**The signal arrives on responses that succeeded.** Nothing failed, nothing retried, no status
+changed — so every mechanism a client has for noticing trouble points the wrong way. As one
+write-up puts it: _"The clients that broke never read the blog post — but their code reads your
+HTTP responses on every single request."_
+
+Three specifics make it awkward: **two headers, two formats** (`Deprecation` is a
+structured-field date `@1735689600`, `Sunset` is an HTTP-date); **it is a hint, not a
+guarantee**, so failing the call is wrong and ignoring it is also wrong; and **the useful unit
+is the fleet** — "which of my forty endpoints are deprecated, and which sunsets first" — which
+no per-call log line can answer.
+
+## Where a response header is reachable
+
+This is the table worth keeping. Measured across every accessor on a **successful** call:
+
+|                                                         | carries response headers                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `adapter`                                               | **yes** — it built the response, but knows no stitch name and can't change the result |
+| `hooks.onResponse`                                      | **yes** — the whole `AdapterResponse`, plus `ctx.name`                                |
+| **`Surface.interpret(res, cfg)`**                       | **yes** — and it returns the value the call resolves to                               |
+| `await` / `.unwrap()` / `.safe()`                       | no                                                                                    |
+| `.inspect()` (5 keys) / `.report()` (9 keys)            | no — `status`, but no headers                                                         |
+| `StitchError` (5 keys)                                  | no                                                                                    |
+| `transform`                                             | no — its one parameter is the body                                                    |
+| the **entire event spine** — 4 events, 15 distinct keys | **no**                                                                                |
+
+That last row is the one with consequences: because no event carries a header, a `TraceSink`
+inherits the same hole. It can only aggregate what a `Surface` folded into the value.
+
+`Surface.interpret` is the only seat where a header **and** the returned value are in scope
+together, which makes it the answer to this scenario and to any other "the signal is in a
+header" problem.
+
+## What StitchAPI does
+
+**Not one config key knows what a `Deprecation` header is.** The answer is three seams and
+about 112 lines: `Surface.interpret` reads the headers and renders a verdict, a seam-level
+`trace` sink aggregates by `ctx.name`, and the injected `clock` makes the sunset crossing
+deterministic.
+
+**The fleet view works, and the [scenario-12](/docs/scenarios/intermittent-drift) shape
+transfers.** One sink configured once on a seam, 500 calls across 5 endpoints:
+
+```
+3 endpoints deprecated (users, search, orders), earliest sunset in 12 days: users
+```
+
+One row per endpoint however many calls arrive — and with traffic skewed **200:1** toward the
+healthy endpoints the report was unchanged, which is exactly what a per-call log line cannot do.
+
+**And the tripwire is elegant.** `interpret`'s `{ ok: false }` arm plus `cfg.clock` makes the
+crossing deterministic to the millisecond — `[sunset−1ms, sunset, sunset+1ms]` measured
+`["ok", "FAILED", "FAILED"]`. Two things make it safe to deploy, both measured: it does **not**
+burn retry attempts (5 configured, 1 request made) and it does **not** open the circuit breaker
+(5 consecutive trips past `failures: 2`, every message still the real one), because
+`classifyStatus` rules on the status and the transport was healthy.
+
+## What StitchAPI does not solve here
+
+1. **No config key, and no reachable parser.** `parseRetryAfter` handles delta-seconds **or** an
+   HTTP-date against an injectable clock and returns ms-until — precisely the `Sunset`
+   requirement — and it is not on any of the 17 published subpaths. The public barrel exports
+   `parseDuration`, `parseBytes`, `parseRate`; none parses a date.
+2. **No event carries headers**, so a `TraceSink` sees `null` for a response that carried both —
+   unless a `Surface` folded them into the value. And then an ordinary `output` contract that
+   doesn't declare the folded field **deletes it again** before the `result` event fires, with no
+   warning.
+3. **No API mints a levelled finding.** A `Validator` returns a value or _issues_, and an issue
+   is fatal. The one door onto the drift channel is folding a field into the value and letting an
+   `output` contract report it `info | undeclared` — which is non-fatal and re-levellable, but
+   **carries neither the header value nor the endpoint**. (Smuggling the date into the _path_
+   works — `_sunset_2026-01-01` — at the cost of a new finding path per date.)
+4. **No de-duplication primitive.** 600 calls produced **360 log lines carrying 3 distinct
+   facts**; the built-in `loggerSink` is louder at 2400. `levelOf` can drop events but cannot
+   answer "have I said this already" — it's a pure function of one event. A 3-line `Set` latch
+   fixed it; nothing on the barrel latches, samples or de-duplicates an observation.
+5. **The line count goes against the library** — **132 lines against 81** hand-rolled for
+   identical output. Wiring alone favours it (20 vs 52); the total doesn't, because reaching
+   `res.headers` costs a `Surface` object and holding the per-endpoint map costs a `TraceSink`
+   object, where a hand-rolled client does both inline in the method that already had the
+   response.
+
+<Callout type="error">
+    **`hooks.onResponse` can rewrite the call, and the hooks guide says it
+    cannot.** The guide's "hooks never change what a stitch returns" is true
+    only of the *return value*. `ctx.res` is the engine's live object, read
+    again by `interpret` afterwards — so mutating `res.body` added a key to the
+    caller's value, mutating `res.status` turned the vendor's **200 into a
+    thrown `HTTP 503`**, and mutating `res.headers` made a surface read
+    `"REWRITTEN BY HOOK"` instead of the real `Sunset`.
+</Callout>
+
+<Callout type="warn">
+    **A seam-level `kind` is a compile error that works perfectly at runtime.** `TS2353: 'kind'
+    does not exist in type 'SeamOptions'` — yet members inherited the surface and folded
+    correctly. A typed codebase writes the surface on all 40 members for a capability that
+    already works from one.
+
+    **`ctx.name` defaults to the literal `"stitch"`**, so two unnamed endpoints silently merge
+    into one row at the sink. **A cache hit re-serves a notice captured on the one wire
+    response** — 9 of 10 rows were a replayed header, and a long TTL will report a passed sunset
+    as "in 12 days". And **`Date.parse("@1735689600")` is `NaN`**, so the naive parser reads
+    `Sunset` correctly and reports *no deprecation* for the format RFC 9745 actually mandates.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="Hooks" href="/docs/guides/authoring/hooks" />
+    <Card
+        title="The vendor changed the shape for 5% of responses"
+        href="/docs/scenarios/intermittent-drift"
+    />
+    <Card
+        title="The free poll — ETag revalidation"
+        href="/docs/scenarios/conditional-requests-304"
+    />
+</Cards>
