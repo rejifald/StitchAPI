@@ -105,8 +105,8 @@ export function createThrottle(
     release(key: string): void;
 } {
     const limit = opts?.concurrency;
-    const rate = opts?.rate ? parseRate(opts.rate) : undefined;
-    const spacing = rate ? rate.per / rate.count : 0; // ms between grants
+    const paced = opts?.rate ? parseRate(opts.rate) : undefined;
+    const spacing = paced ? paced.per / paced.count : 0; // ms between grants
     const hostPooled = opts?.pool === 'host';
     const states = hostPooled ? hostStates : new Map<string, KeyState>();
 

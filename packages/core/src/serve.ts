@@ -43,7 +43,7 @@ export interface ServeBodyOptions {
     /**
      * Ceiling on the buffered request body; past it the request is rejected with 413. A raw byte
      * count or a size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024), parsed by the shared
-     * {@link parseBytes}. An unparseable token falls back to the default cap, never to
+     * {@link size}. An unparseable token falls back to the default cap, never to
      * "unbounded". Default {@link MAX_REQUEST_BODY_BYTES}.
      */
     max?: number | string;

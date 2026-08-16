@@ -218,7 +218,7 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     //
     // **And the fold is where an unusable curve dies** (issue #651 §3), on the value it just
     // produced — `bad backoff`, the same slot-named message and the same construction-time timing
-    // `parseRate` has for an unparseable `throttle.rate`. Silently degrading a resilience
+    // `rate.parse` has for an unparseable `throttle.rate`. Silently degrading a resilience
     // policy is the one place a fallback is worse than a crash, and this one degraded in the
     // PERMISSIVE direction: `backoff: () => 6000` cast past its type folded to `{ curve: <fn> }`,
     // matched neither branch of `backoffDelay`, and walked the plain `expo` curve on the default
@@ -245,7 +245,7 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         //   • `'expo-jitter'` FIRST, so the `'expo'` literal after it compresses as a
         //     back-reference into the one already emitted (4 B; alphabetising costs them back);
         //   • a `!==` chain rather than `['expo', …].includes(…)` (the array measured 4 B worse);
-        //   • a message with no interpolated value (5 B). `parseRate` can afford `bad rate: ${r}`
+        //   • a message with no interpolated value (5 B). `rate.parse` can afford `bad rate: ${r}`
         //     and this cannot — the offending value is in the caller's own `stitch({…})` literal,
         //     which is the one consolation. Restore it the moment the budget has room.
         if (

@@ -1,6 +1,12 @@
 # ADR 0023 — A rate is a minimum spacing, not a window budget; the two limiters must agree before the grammar grows
 
 - **Status:** Accepted and implemented (2026-08-04) — Decision 2 landed as shape **(a)**, and Decision 3's extension landed behind it in the same PR, in that order. Decision 1 ratifies existing behaviour, Decision 4 is a decision not to change anything, and Decision 5 shipped with [#618](https://github.com/rejifald/StitchAPI/pull/618). All four open questions resolved; implementing surfaced two defects this ADR had not predicted, recorded under _Found while implementing_. Opened by the question "does the P17/P25 `number | string` widening extend to a rate?" (#618); the answer is no, but establishing why surfaced a live defect in the store-backed limiter that this ADR treated as the blocking issue. Touches the pluggable store ([DESIGN.md §13](../DESIGN.md), which has no ADR of its own) and builds on [ADR 0010](./0010-injectable-clock.md) (the injectable `Clock`, whose tags already include `throttle` — the fix's tests need it).
+- **Renamed, not revisited (2026-08-16):** every decision below stands unchanged; only the
+  spelling moved. `parseRate` is now `rate.parse`, and the grammar gained an inverse,
+  `rate.format({ count, per })`, when the three house token parsers became `parse`/`format`
+  namespace pairs (CONTRACT.md §6). Decision 3's "the denominator is a `parseDuration` token"
+  reads `duration.parse` today. The prose and snippets below are left as the 2026-08-04
+  record; `packages/core/src/util.ts` is the current spelling.
 - **Date:** 2026-08-04
 - **Tags:** resilience, throttle, store, api-surface, correctness, P1, P12, P16, P17, P25
 

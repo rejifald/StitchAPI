@@ -325,7 +325,7 @@ describe('serve caps the request body (413), so an unauthenticated server cannot
     });
 });
 
-describe('the body cap also accepts a size token (`parseBytes`)', () => {
+describe('the body cap also accepts a size token (`size.parse`)', () => {
     // `'1kb'` must resolve to 1024 bytes. The probe body is ~1.1 KB — over a parsed `'1kb'`
     // but far under the 2 MiB default, so a 413 here can only mean the token was honoured
     // (an ignored/unparsed token would fall back to the default and answer 200).

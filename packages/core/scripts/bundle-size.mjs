@@ -348,19 +348,55 @@ const KB = 1024;
 // this change lands on the far side of it — the eight-site propagation the first revision of this
 // PR proposed had already happened by the time it landed. Verified with the
 // `bundle-advertised-size` tether, not assumed.
+// Budgets raised for the token grammars' encode direction (24.25→24.80 / 21.70→22.00 KB; measured
+// 24.59 / 21.82 against a `main` at 24.18 / 21.62, so the capability is +0.41 / +0.20). The three
+// house grammars became `parse`/`format` namespace pairs (`duration`, `size`, `rate`, replacing
+// `parseDuration`/`parseBytes`/`parseRate` — CONTRACT.md §6). Making them public gave them callers
+// who need to WRITE a token, not only read one, and every such caller would otherwise hand-roll an
+// encoder — the drift the export exists to prevent, running backwards.
+//
+// The bytes are the encoder itself: `formatScaled` (the shared largest-exact-and-readable unit
+// walk), `decimals`, and the three `format` bodies with their unit tables. It cannot move behind a
+// subpath without splitting a pair that only makes sense together — `duration.parse` on the root
+// and `duration.format` on a subpath is the API this change exists to stop being.
+//
+// Two thirds of the naive cost was recovered rather than budgeted for, both measured, not assumed:
+//   • the internals call the plain `parseDuration`/`parseBytes`/`parseRate` functions and the
+//     public `duration`/`size`/`rate` objects are a thin facade over them, so a consumer's bundle
+//     is not routed through the namespace and the encoder can shake out (auth 5.44→5.22, back to
+//     ITS baseline and inside the unchanged 5.35 ceiling; `import { stitch }` 21.94→21.82);
+//   • each `format`'s unit table lives INSIDE the function. At module scope the minifier merges
+//     adjacent tables into one `var` statement, where the parse-side lookup being live pinned the
+//     encoder's table for every consumer of `stitch`. Deriving one table from the other with
+//     `Object.fromEntries` measured worse still, for the same reason.
+//
+// What is left on the `import { stitch }` path is ~0.1 KB: `formatDuration` is referenced by the
+// `duration` facade object, whose other half (`parse`) is live on that path, and esbuild will not
+// split an object literal to drop the dead half. Shaking it would mean not shipping the pair as an
+// object, which is the shape of the API. Recorded because it is a real cost of the namespace form,
+// not an oversight — a consumer who never formats a duration still carries the formatter.
+//
+// The ADVERTISED whole-entry figure MOVES: 25183 B is 24.59 KB, which rounds to 25 where `main`'s
+// 24.18 rounded to 24, so every site quoting it goes ~24 → ~25 kB. Six sites under the
+// `bundle-advertised-size` tether — both READMEs, the installation and principles pages, the
+// home-page metrics component, and the docs' own source blurb. `import { stitch }` is unchanged at
+// 22 (21.82 rounds the same way 21.62 did). Verified against the tether rather than assumed.
+//
+// The conventional ~0.2 KB step, not a minimum one: this is a new capability on the public
+// surface, not a fix squeezing past a ceiling. Headroom lands at 0.21 / 0.18.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.25 * KB,
+        budget: 24.8 * KB,
         advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 21.7 * KB,
+        budget: 22.0 * KB,
         advertised: true,
     },
     {
