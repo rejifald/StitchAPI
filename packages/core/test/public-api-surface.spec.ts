@@ -28,6 +28,10 @@ const FUNCTIONS = [
     'compile',
     'isStitch',
     'isSeam',
+    // The `exactOptionalPropertyTypes` companion: public because config authoring under that flag
+    // otherwise needs the `...(key !== undefined ? { key } : {})` spread dance at every call site,
+    // and a peer package building a `StitchConfig` hits it as often as core does.
+    'compact',
     // The verdict (ADR 0022 Decision 2), public because a surface author must compose it: an
     // `interpret` hook REPLACES the default rather than layering on it, so a surface with its own
     // body rules needs this to keep the caller's `verdict` config working. The one composition
