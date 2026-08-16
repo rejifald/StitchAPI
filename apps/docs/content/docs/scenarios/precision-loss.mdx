@@ -1,0 +1,162 @@
+---
+title: 'The ID that changed on the way in'
+description: 'JSON.parse turns a 64-bit snowflake into a different number, silently. wire.response text plus transform recovers the exact digits in 16 lines.'
+prerequisites: ['/docs/reference/config-types', '/docs/guides/validation/drift']
+---
+
+## The problem
+
+You integrate an API whose IDs are 64-bit integers — Discord and Twitter/X snowflakes, database
+primary keys. The vendor sends them as JSON numbers. Measured through StitchAPI's real default
+transport:
+
+| sent                  | received              |                 |
+| --------------------- | --------------------- | --------------- |
+| `1234567890123456789` | `1234567890123456768` | off by 21       |
+| `9007199254740993`    | `9007199254740992`    | 2⁵³+1           |
+| `9223372036854775807` | `9223372036854775808` | int64 max       |
+| `9007199254740991`    | `9007199254740991`    | control, intact |
+
+`JSON.parse` produces IEEE 754 doubles, so integers above 2⁵³ are not all representable. No
+throw, no warning.
+
+Three things make it hard rather than merely annoying. **The damage happens before your code
+runs** — by the time any hook or schema sees the value it is a `Number` and the digits are gone.
+**It is data-dependent, so it arrives on a date**: IDs below 2⁵³ round-trip perfectly, and
+snowflakes are time-ordered, so the failure lands fleet-wide at once. And **the fix is not
+local** — not using `JSON.parse` means values become `BigInt` or `string`, which breaks
+`JSON.stringify`, cache serialisers, arithmetic and every validator expecting `number`.
+
+It is also a cross-language interop bug specifically: Python and Java parse the same payload
+exactly, so the vendor's tests pass and it is entirely on your side of the wire.
+
+<Callout type="info">
+    **Money is a different problem wearing the same hat.** `19.99` round-trips
+    through the wire fine, because the nearest double's shortest form _is_
+    `"19.99"`. The value is still inexact (`19.98999999999999843681`), so
+    decimals fail in **arithmetic**, not in **transport**. Only integers above
+    2⁵³ are a wire-fidelity bug.
+</Callout>
+
+## The common solutions
+
+| Approach                          | What it is                         | Where it breaks                                                                 |
+| --------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
+| **Use the vendor's string field** | Read `id_str` instead of `id`.     | Correct and free — when the vendor provides one. Most do not.                   |
+| **`json-bigint` / custom parser** | Replace `JSON.parse` wholesale.    | Correct at the boundary; now every consumer must handle `BigInt`.               |
+| **Reviver on `JSON.parse`**       | `JSON.parse(text, reviver)`.       | **Does not work** — the reviver receives the already-parsed `Number`.           |
+| **Regex the raw text**            | Quote big integers before parsing. | Works, and is a JSON parser written in regex. Breaks on numbers inside strings. |
+| **Keep everything as strings**    | Treat IDs as opaque text.          | The most robust answer, enforced by convention across every layer.              |
+
+## What StitchAPI does
+
+### The repair is config, not a custom adapter — 16 lines
+
+`wire: { response: 'text' }` is an `else if` branch at `http-adapter.ts:123` that returns
+**before** the JSON branch at `:135`. So the stock `fetchAdapter` hands you the verbatim bytes
+and `transform` runs pre-parse:
+
+```ts
+const getThing = stitch({
+    url: 'https://api.vendor.test/v1/things/{id}',
+    wire: { response: 'text' }, // stop the transport parsing
+    transform: parseBigIntsAsStrings, // parse it yourself
+    output: z.object({ id: z.coerce.string() }),
+});
+```
+
+Measured end to end, this delivered the **exact sent digits** `1234567890123456789`, with zero
+findings and a result that `JSON.stringify`s with no replacer. The `transform` is a
+single-pass scanner — correct where a regex is not, leaving
+`"order 1234567890123456789 shipped"` and escaped-quote strings untouched.
+
+### A detector that stays loud without failing the call — 15 lines
+
+```ts
+output: drift(
+    z.object({
+        id: z
+            .number()
+            .transform((n) => (Number.isSafeInteger(n) ? n : String(n))),
+    }),
+);
+```
+
+produces `warn|coerced|id|number -> string`, inserts a `drift` event into the spine, and the call
+still resolves `ok: true`. So it reaches `.inspect().findings`, `.report()`, any `TraceSink`, and
+`loggerSink` at warn level — because a finding's level _is_ its log level.
+
+Over 20,000 random Discord-range snowflakes: **zero false negatives**, 0.535% false positives
+(roughly the spacing of representable doubles at 1.1×10¹⁸). Walking the boundary shows
+`lossless=false` never co-occurs with `flagged=false`, so **false negatives are impossible**, not
+merely unobserved.
+
+### Three lossless paths, and two that are not
+
+Splitting by **decoder**, not by surface. `stream` with the default `decode: 'bytes'`,
+`decode: 'lines'`, and `download` all bypass the JSON branch entirely and deliver verbatim bytes.
+`decode: 'ndjson'`, `decode: 'json'` and `sse` all corrupt, because each calls `JSON.parse` in
+its own file. Note a bare 19-digit SSE payload _is_ valid JSON, so even an unstructured `data:`
+line corrupts.
+
+### Two places the library already got this right
+
+`cache.ts:43` tags bigint cache keys deliberately, so `42n` cannot collide with the string
+`"42n"` — two identical bigint queries coalesced to one call. And `trace.ts` ships a `bigintSafe`
+replacer so tracing cannot break the call it observes, which makes a `fileSink` the one
+diagnostic surface in this whole scenario that ends up holding the vendor's real digits.
+
+## What StitchAPI does not solve
+
+1. **The default path corrupts, and says nothing.** The whole spine is `start`, `progress`,
+   `result`, `done` — **four events, zero drift, zero error, zero info** — and the sent digits
+   appear nowhere in it. `.report()` adds nine keys and no findings. Nothing downstream is
+   withholding a warning it could have given: `hooks.onResponse`, `Surface.interpret`,
+   `.inspect().raw`, `.report()` and a `TraceSink` all hold the already-parsed number. `raw`
+   means pre-**validation**, not pre-parse.
+2. **A `bigint` in `params` silently vanished — this audit found it, and it is fixed.**
+   `expandTemplateVar` branched on `string | number | boolean`, so a bigint produced
+   `…/v1/things/` — no error, no event — while the sibling `query` slot handled bigint
+   **exactly**: the two URL positions disagreed with each other.
+   [#661](https://github.com/rejifald/StitchAPI/pull/661) fixed it before the issue draft was
+   even filed — `bigint` joined the scalar arm (`util.ts:421`) and the folded `params` slot is
+   typed `string | number | bigint` — so path and query now agree, measured as the exact digits
+   in the URL. Of four outbound positions bigint works in three and throws in one (JSON body —
+   loud, and correct).
+3. **Reading an id and handing it straight back is eight lines and wrong.** A number in `params`
+   goes out as `1234567890123456800` — a **third** distinct digit string, and not the one a
+   debugger shows you. That is the `Unknown Channel` shape, with nothing reported.
+4. **`wire.response` and `transform` are independent keys.** Set the first and forget the second
+   and the call silently returns a **string** instead of an object. They are independent at the
+   type level too: `transform` is `(body: unknown) => unknown`, so a parser written
+   `(text: string)` does not typecheck in the slot even though `wire.response: 'text'` guarantees
+   a string at runtime.
+5. **`transform` is redacted from `__config`**, so "is this stitch repaired?" is only half
+   auditable — `wire` shows, `transform` does not.
+6. **`wire.response` is an HTTP key** and does nothing for `sse` or `stream({ decode: 'ndjson' })`,
+   which parse in their own files.
+7. **The seam that solves this has no guide page.** `wire.response` appears in the docs only in
+   passing, in the GraphQL guide's list of what `wire.body` does _not_ do. The one config key
+   that recovers a corrupted ID is effectively undiscoverable.
+8. **The detector buys visibility, not correctness.** The value it reports,
+   `1234567890123456800`, is still not the value the vendor sent.
+
+<Callout type="warn">
+    Under a BigInt repair, `JSON.stringify(report)` throws `Do not know how to
+    serialize a BigInt` — and `.report()` is documented as safe to log. A
+    JSON-backed `store` throws on the write and the throw is **fatal** (`ok:
+    false`), not a silent cache miss. `memoryStore` survives, because it holds
+    values by reference and never encodes. Adding a bigint replacer to a JSON
+    store fixes the throw and introduces a subtler bug: `typeof data.id` is
+    `bigint` on a cache miss and `string` on a hit — a type that depends on
+    cache state, which a cold-cache test suite never sees.
+</Callout>
+
+## See also
+
+- [Config types](/docs/reference/config-types) — where `wire.response` lives
+- [Drift](/docs/guides/validation/drift) — the channel the detector reports through
+- [Scenario: the export that eats the heap](/docs/scenarios/large-response-memory) — the other
+  scenario decided by which decoder runs
+- [Scenario: a canary rollout of a response-shape change](/docs/scenarios/intermittent-drift) —
+  `drift()` used for its intended purpose

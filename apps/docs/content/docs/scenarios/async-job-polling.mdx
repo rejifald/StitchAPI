@@ -1,0 +1,157 @@
+---
+title: 'Submit, poll, download — the async job triangle'
+description: 'A 202 with a Location header, a status endpoint that reports failure at HTTP 200, and a single-use result URL. Three endpoints and a loop, and you have to pick which guarantee you keep.'
+prerequisites: ['/docs/reference/surfaces', '/docs/guides/resilience/timeout']
+---
+
+## The problem
+
+You ask for something slow — a Salesforce Bulk export, a report render, a transcode. The API
+answers **`202 Accepted`** with a `Location`, and you come back later. That is the
+[asynchronous request–reply pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/asynchronous-request-reply),
+and it is not one call but three endpoints with a loop between them:
+
+1. `POST /jobs` → `202`, `Location: /jobs/{id}`, often `Retry-After`
+2. `GET /jobs/{id}` → repeatedly, until the state is terminal
+3. `GET <resultUrl>` → the payload, often a pre-signed link that expires or is single-use
+
+Each step brings its own difficulty. **The next URL is in a response header**, not the body.
+**Terminal state is in-band** — Salesforce runs `InProgress → JobComplete | Failed`, all at
+HTTP 200, so failure arrives as a successful response. **The wait is the server's to set**,
+via `Retry-After`, over minutes to hours. **The budget spans the whole triangle**, not one
+call. And **a restart loses the job**, which is still running server-side — resubmitting
+duplicates hours of work.
+
+<Callout type="warn">
+    The tell that this has no easy answer: in
+    [jsforce#298](https://github.com/jsforce/jsforce/issues/298) the poll
+    timeout is **hardcoded**, and the documented workaround is to turn the
+    helper off and write the loop yourself. Same request in
+    [go-salesforce#139](https://github.com/k-capehart/go-salesforce/issues/139)
+    and
+    [salesforcer#13](https://github.com/StevenMMortimer/salesforcer/issues/13).
+</Callout>
+
+## The common solutions
+
+| Approach                      | Where it breaks                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| The SDK's built-in waiter     | Hardcoded timeout. Fine until the job is big, then unfixable without abandoning the helper.                 |
+| Hand-rolled `while` + `sleep` | Correct and universal. Timeout, circuit breaking and tracing see three unrelated calls, not one operation.  |
+| Fixed-interval polling        | Hammers the API for hour-long jobs and ignores `Retry-After`.                                               |
+| Exponential backoff           | The right default with no `Retry-After` — but uncapped, the last gap overshoots the finish by minutes.      |
+| Webhook callback              | Strictly better where offered, and _additional_ work: you still need a fallback poll for missed deliveries. |
+| Queue + separate worker       | The production answer for hour-long jobs, and the only one that survives a restart. Costs infrastructure.   |
+
+## What StitchAPI does
+
+There is no poll primitive. Polling is spelled as **retry, where the failure is "not done
+yet"** — a custom [surface](/docs/reference/surfaces) whose `interpret` reads the in-band
+state:
+
+```ts
+export function jobPollSurface(clock: Clock): Surface {
+    return {
+        id: 'job-poll',
+        interpret: (res, cfg) => {
+            // verdictOf FIRST, or a 404 comes back as a successful poll.
+            const failed = verdictOf(res, cfg);
+            if (failed) return failed;
+
+            const state = stateOf(res.body);
+            if (state === 'InProgress') {
+                const after = retryAfterMs(res.headers['retry-after'], clock);
+                return after === undefined
+                    ? { ok: false, retry: true, message: 'InProgress' } // capped expo fallback
+                    : { ok: false, retry: true, message: 'InProgress', after };
+            }
+            if (state === 'Failed')
+                return {
+                    ok: false,
+                    message: `job failed: ${errorMessageOf(res.body)}`,
+                };
+            return { ok: true, data: res.body };
+        },
+    };
+}
+```
+
+Three stitches then run under [`linked`](/docs/reference/helpers), which chains them into one
+trace, with a caller-owned `AbortSignal` as the operation deadline.
+
+**Measured:** 1 submit → 5 polls at the server's own 300 s pacing → 1 download, 20 virtual
+minutes, `Failed` terminating on the first terminal body with 17 of 20 poll attempts unspent.
+`linked` produced **one traceId across three spans**, each parented to the last. A crash
+mid-poll resumed after 3 polls with **1 submit total**.
+
+## The trade you have to make
+
+This is the part worth knowing before you start. There are two constructions, and **you can
+have one deadline over the whole triangle, or per-hop retry policies — not both.**
+
+|                            | One stitch (hook rewrites the URL)                    | Three stitches under `linked`                      |
+| -------------------------- | ----------------------------------------------------- | -------------------------------------------------- |
+| Deadline over the triangle | **`timeout.total`** — measured 253 ms                 | caller-owned `AbortSignal` on every `input.signal` |
+| Per-hop retry policy       | **no** — one stitch is one `retry` block              | **yes** — 20 poll attempts, 1 download attempt     |
+| Single-use result URL      | burned all 8 shared attempts on the dead link         | download retried exactly once                      |
+| Trace                      | 1 span, `attempts: 5` — the three endpoints invisible | 3 spans, `submit → poll → download`                |
+| Concurrency                | **unsafe** — see below                                | safe                                               |
+
+The one-stitch form buys the config-level deadline and loses the per-hop split; `linked` keeps
+both of those and replaces the deadline with a signal you own.
+
+## StitchAPI vs the common solution
+
+The hand-rolled `while` loop produces a **byte-identical** request sequence and pacing, in
+**49 lines against 110**. What the extra lines buy was measured, not asserted: one `start` and
+one `done` per hop with the polls folded in as `attempts: 3` rather than three unrelated calls,
+one traceId chaining `job-submit → job-poll → job-download`, and a per-hop retry policy. All of
+the _semantics_ — the state machine, the pacing, the resume — are still yours either way.
+
+If you don't need the trace or the per-hop policies, the `while` loop is the honest answer.
+
+## What StitchAPI does not solve here
+
+1. **No poll or until primitive.** Nothing in the config vocabulary waits for a state.
+2. **`retry.respect` does not reach the body-driven path.** With the server asking for 30 s,
+   the measured gaps were **7 ms** — the computed backoff. The engine reads `Retry-After` only
+   on the status-driven path; a surface must pick the header up itself.
+3. **`parseRetryAfter` is not exported.** The HTTP-date form has to be re-implemented by every
+   surface author, and if you don't, the server's pacing is discarded silently.
+4. **No operation-scoped deadline field.** `linked` takes a body and nothing else. The budget
+   is an `AbortSignal` you build and thread through every `input.signal`; when it fires, the
+   rejection carries your own abort `reason`.
+5. **No operation-level span.** `linked` emits nothing of its own, so a mid-operation failure
+   is attributable to the _step_, never to "the export failed".
+6. **Nothing persists the job id.** The store is engine state — throttle, auth, cache. Resume
+   is entirely yours.
+7. **Every failure arrives as `StitchError`, and only the deadline is typed underneath.** The
+   engine's live `TimeoutError` rides `error.cause` (the class is unexported — check
+   `cause?.constructor.name`), so "deadline fired" is structurally separable. "Poll budget
+   exhausted" and "the job failed" carry no cause, `status` is `undefined` on all three, and
+   telling those two apart is still string matching.
+8. **`paginate` cannot do this** — and not for the reason you'd guess. It _does_ loop (the
+   default `items` wraps a non-array body as one item, so the empty-page break never fires),
+   but it cannot **wait**: measured gaps of `0, 0, 0`, with no delay field. A paginated poll
+   also cannot fail — `Failed` is aggregated as just another value.
+
+<Callout type="error">
+    **Two concurrency traps, both measured.** A stitch that rewrites its own URL
+    in a hook is **not safe to call twice at once**: two concurrent calls
+    submitted two jobs, polled the second one twice, and handed *both* callers
+    the second job's result — the first job ran to completion, unread. And a
+    poll surface without a `hooks.onRequest` guard **re-submits**: 4 POSTs, 4
+    duplicate jobs, under `attempts: 4`. Build one stitch per in-flight job.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="Timeouts" href="/docs/guides/resilience/timeout" />
+    <Card title="Hooks" href="/docs/guides/authoring/hooks" />
+    <Card
+        title="Batch writes that fail one item at a time"
+        href="/docs/scenarios/batch-partial-failure"
+    />
+</Cards>

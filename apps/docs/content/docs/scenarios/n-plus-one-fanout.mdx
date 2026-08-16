@@ -1,0 +1,137 @@
+---
+title: 'One list, a hundred follow-up calls'
+description: 'cache.coalesce collapses in-flight duplicates — 100 concurrent calls over 30 ids made 30 requests. A coalesced failure is not shared, and that is where it loses.'
+prerequisites:
+    ['/docs/guides/resilience/throttle', '/docs/guides/data/pagination']
+---
+
+## The problem
+
+`GET /orders` returns 100. Each carries a `customerId`, so you make 100 more calls. It is the
+most common composition shape in API integration, and every part of it is a decision.
+
+**N is unknown until runtime**, and every call needs a _different_ input. Then:
+
+- **Concurrency** — all 100 at once trips a rate limit; one at a time wastes the afternoon. And
+  vendor governance is often concurrency-based, so a requests-per-second cap doesn't protect you.
+- **Partial failure** — `Promise.all` rejects on the first error **and discards the successes**.
+- **The thundering herd** — 100 calls that 429 together and back off by the same amount retry
+  together. Deterministic backoff _re-clusters_ the burst.
+- **Duplicates** — 100 orders commonly reference far fewer customers.
+
+## The common solutions
+
+| Approach                         | Where it breaks                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `Promise.all(ids.map(fetch))`    | Unbounded concurrency, and one failure discards every success.                                               |
+| `Promise.allSettled` + `p-limit` | Correct — two dependencies and a hand-rolled join.                                                           |
+| Sequential loop                  | Safe, N× the latency.                                                                                        |
+| A batch endpoint                 | Best where offered, and then you inherit [partial-failure semantics](/docs/scenarios/batch-partial-failure). |
+| Cache / dedupe by id             | Free quota — only if **in-flight** duplicates collapse too.                                                  |
+| `?expand=` on the list           | The real fix. Rarely offered.                                                                                |
+
+## What StitchAPI does
+
+**`cache.coalesce` collapses in-flight duplicates, and that is the headline.** 100 concurrent
+calls over 30 distinct ids made **30 requests** — one per id, exactly the floor — with every
+call in flight and **not one response landed**. Seventy callers were served without a request of
+their own, from a single `cache: { ttl }` block and no user code. The same cache with
+`coalesce: false` made **100**.
+
+Three more things are configuration:
+
+```ts
+const customer = stitch({
+    url: 'https://api.vendor.com/customers/{id}',
+    throttle: { concurrency: 8 }, // measured: peak 8 exactly, against 100 unbounded
+    cache: { ttl: '60s' }, // the dedupe
+    retry: { attempts: 3 }, // jittered by default
+});
+```
+
+**Measured:** bounded concurrency held **peak 8** exactly. And the retry default genuinely
+de-clusters a herd — 100 calls 429'd in the same instant retried across **~98 distinct
+milliseconds** under `expo-jitter`, where `'fixed'` **and** `'expo'` both put all 100 into **one
+millisecond** (doubling a constant is still a constant on attempt 2).
+
+`linked` gives the fan-out **one trace** — 1 traceId, 1 root, 101 spans covering the list and
+every lookup, with per-call inputs. Assembled: **45 executable lines against 87** hand-rolled,
+the difference being the FIFO pool, the retry loop, the retryable-status set and URL assembly,
+all of which became config.
+
+## Where it loses: a coalesced failure is not shared
+
+The leader's _failure_ releases its joiners to re-run. Measured: 100 concurrent calls for one
+id that 404s made **100 requests in two waves** — 1 leader, then 99 followers each re-running
+the whole chain.
+
+Every joiner gets its own honest `HTTP 404`, never a leader artefact — the right _error_ at the
+wrong _price_. End to end this is the one place the hand-rolled version wins: **44 customer
+requests against 32**, and a deleted customer cost **4 requests against 1**. A `Map<id, Promise>`
+shares the rejection; the library spends a wasted request per duplicate reference to a broken
+id — which is exactly the shape a dead foreign key takes.
+
+## What StitchAPI does not solve here
+
+1. **The combinators cannot express this** — and not for the reason you'd guess. The runtime
+   length is fine (`all(ids.map(…))` compiles). **The input is the wall**: `all()` spreads one
+   `StitchInput` into every member, so 100 members made **100 requests for one distinct id**.
+   It also bounded nothing (peak 100) and fail-fast **discarded 99 successful fetches** while
+   still paying for them — the auto-cancel prevented **zero** requests.
+2. **`allSettled` semantics are absent**, and the documented workaround — compose `.safe()`
+   members by hand — does not typecheck, because `Member` is brand-gated.
+3. **In-flight dedupe of failures**, above.
+4. **A fan-shaped trace over per-call inputs.** You get a fan (`all()`, wrong inputs) or per-call
+   inputs (`linked`, which chains each call under the previous — measured **depth 101, fan-out
+   1** for calls that ran at peak 100 concurrently). Not both.
+5. **Deep-copying joined results** — see the aliasing callout.
+6. **A batch endpoint.** Nothing can invent one.
+
+<Callout type="error">
+    **A declared concurrency budget silently multiplies across stitch objects.** One stitch called
+    100 times at `concurrency: 8` → peak **8**. One hundred *separate* stitches each declaring 8 →
+    peak **100**, because the limiter is per stitch. `pool: 'host'` repairs it, and a lease-capable
+    `store` keeps the repair — measured peak **8** — and makes it fleet-wide: the store holds
+    **one** budget under the same host key, so eight in flight means eight across every worker on
+    that store. The remaining trap is a store *without* the lease verbs (an eventually-consistent
+    KV, a minimal custom store): concurrency falls back to per-process there, and the multiplied
+    budget returns with the config unchanged. A seam-level `concurrency` survives the
+    stitch-per-id shape on its own.
+
+    Related: **a backing-off call holds its slot.** With a bound of 4 and a 1 s backoff, ~95% of
+    the budget sat idle on sleeping calls, and the retry re-queued at the **back** of the FIFO.
+
+</Callout>
+
+<Callout type="warn">
+    **`cache: { ttl: 0 }` caches forever.** It is the obvious spelling for "dedupe but don't
+    cache", and `expires === 0` reads as live — a later fan-out added **0 requests**. There is no
+    coalesce-only spelling.
+
+    **`Retry-After` defeats the jitter by default.** `retry.respect` is on, so a 429 carrying
+    `Retry-After: 2` put all 100 retries back into **one millisecond** with `expo-jitter` still
+    declared. `respect: false` restores the spread and is all-or-nothing.
+
+    **Coalesced and cached callers share one object by reference.** 20 rows over 5 customers gave
+    **5 distinct objects** — mutating row 0 changed row 5. The aliasing arrives with the
+    optimisation.
+
+    Two smaller ones: **`sensitive: true` silently disables coalescing**, and coalescing is
+    GET/HEAD only until you name `methods`.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+    <Card title="Retry &amp; backoff" href="/docs/guides/resilience/retry" />
+    <Card
+        title="Batch writes that fail one item at a time"
+        href="/docs/scenarios/batch-partial-failure"
+    />
+    <Card
+        title="Run API calls in parallel"
+        href="/blog/run-api-calls-in-parallel"
+    />
+</Cards>

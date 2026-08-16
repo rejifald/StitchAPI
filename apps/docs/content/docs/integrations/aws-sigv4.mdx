@@ -115,6 +115,12 @@ await call(); // signs x-amz-date: 20150830T124600Z
     plausible: `manualClock(Date.now())`.
 </Callout>
 
+Signing at the last moment is also what keeps a signature from going stale in
+your own backlog: because a throttle waits _before_ the request is signed, a
+queued call cannot age out of its own signature window here.
+[The signature that expired in your own queue](/docs/scenarios/expiring-signatures)
+measures that ordering, and what real clock drift still costs you.
+
 ## Low-level signer
 
 `signRequestV4(params)` is the pure signing function the strategy wraps — exported

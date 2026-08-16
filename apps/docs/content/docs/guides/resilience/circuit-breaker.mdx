@@ -48,7 +48,13 @@ two would have to behave exactly like one of them.
 `key` is a store namespace: give two stitches the same `key` plus a shared
 [`store`](/docs/guides/state/pluggable-store) to share one breaker, so a failing
 host opens the circuit for every stitch that talks to it. The default key is the
-stitch/host key.
+stitch/host key — which also means a multi-tenant fleet shares one breaker until
+you say otherwise, and
+[one customer's revoked token, everyone's outage](/docs/scenarios/multi-tenant-blast-radius)
+measures which isolation channels are automatic and which are a string you have
+to remember to write. When the point of the breaker is to hand traffic to a
+second vendor, [failing over to the backup provider](/docs/scenarios/provider-failover)
+covers the routing it does not do for you.
 
 <Callout type="warn">
     **Anti-pattern:** don't lean on the default in-memory breaker across

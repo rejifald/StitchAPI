@@ -4,6 +4,7 @@
     "pages": [
         "getting-started",
         "recipes",
+        "scenarios",
         "concepts",
         "guides",
         "surfaces",

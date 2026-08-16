@@ -1,0 +1,168 @@
+---
+title: 'Failing over to the backup provider'
+description: 'Everything per-provider is free and declarative. The routing between them is entirely yours — and the combinator named for this job bills you twice on every successful call.'
+prerequisites:
+    ['/docs/reference/helpers', '/docs/guides/resilience/circuit-breaker']
+---
+
+## The problem
+
+You depend on a provider that will eventually be down — an LLM API, an SMS gateway, a payment
+processor — so you line up a second one of the same shape.
+
+Two techniques wear similar clothes:
+
+- **Failover** — try the primary; on failure, try the backup. **One** call on the happy path.
+- **Hedging** — fire both immediately, take the first. **Two** calls, always, for better tail
+  latency.
+
+Picking the wrong one is a bill, not a bug report.
+
+And the trigger has to **classify**, not just notice. The industry consensus is consistent:
+timeouts (`408`), `429` and the whole `5xx` family are availability errors — and so is no
+status at all, the connection that never got an answer. Try the next provider. A `400` is a
+bad request — **stop**, because your payload is malformed and the backup will reject it
+identically.
+
+<Callout type="error">
+    **`any()` is named for failover and priced as a hedge.** Its docstring says *"failover across
+    interchangeable sources — a primary and a mirror, two regions, two providers"*, over an
+    implementation that starts **every** member eagerly.
+
+    Measured: ten calls where the primary succeeded every time cost **10 primary + 10 backup
+    requests — 20 requests for 10 answers**, 100% amplification against a provider that never
+    failed. The same providers under `try`/`catch`: `[10, 0]`.
+
+    **"The losers are auto-cancelled" is not "the losers are free."** The abort runs in a
+    `finally` *after* the winner settles, so the loser's request always arrives: 10/10 backup
+    requests completed, **zero** aborted. And `any` has **no preferred member** — a healthy
+    primary that was merely 10 ms slower *lost*, and was aborted mid-flight.
+
+</Callout>
+
+## The common solutions
+
+| Approach                   | Where it breaks                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Sequential fallback        | The correct default — one call in the happy path. Adds the primary's timeout to the failure path.    |
+| Concurrent "first success" | Best latency, **double spend on every call** — including the 99% that didn't need it.                |
+| Hedge after a delay        | The nuanced answer. Needs a threshold, and amplifies an outage exactly when you can least afford it. |
+| Gateway / router           | Complete, and a third party in the path plus a bill.                                                 |
+| Retry, not failover        | Right for a `429`; useless when the provider is genuinely down.                                      |
+| Classify then route        | What everyone converges on, and what hand-rolled failover usually skips.                             |
+
+## What StitchAPI does
+
+**Everything per-provider is free and declarative — and that's most of the work.** Two
+providers with different origins, paths, auth strategies, retry policies, breakers, timeouts
+and response shapes compose with zero glue:
+
+```ts
+const primary = stitch({
+    url: 'https://primary.example.com/v1/complete',
+    auth: bearer(env('PRIMARY_KEY')),
+    retry: { attempts: 2, on: [429, 503] },
+    circuit: { failures: 3, cooldown: '30s', key: 'llm:primary' },
+    pick: 'choices.0.text',
+    transform: (v) => ({ provider: 'primary', value: v }), // attribution
+});
+// …and a `backup` with a different path, `x-api-key` auth, and `pick: 'output'`.
+```
+
+Measured: neither credential appeared on the other provider, and per-stitch `pick` normalised
+two different response envelopes into one string.
+
+**The routing between them is yours** — about 30 lines, on `linked`:
+
+```ts
+import type { StitchError } from 'stitchapi';
+import { linked } from 'stitchapi/pipe';
+
+// `0` stands in for "no status at all": `StitchError.status` is `undefined`
+// when the transport never answered — DNS, refused connection, timeout — which
+// is exactly the "provider is down" this page is about. `?? 0` routes it here.
+const FAILOVER_ON = new Set([0, 408, 425, 429, 500, 502, 503, 504]);
+
+const answer = await linked(async (run) => {
+    try {
+        return await run(primary, input);
+    } catch (err) {
+        // A 400 means the REQUEST is broken — the backup will reject it too.
+        // (A breaker-open fast-fail carries status 503, so it does fail over.)
+        if (!FAILOVER_ON.has((err as StitchError).status ?? 0)) throw err;
+        return run(backup, input);
+    }
+});
+```
+
+**Measured:** 10 successful calls sent `[10, 0]`, every one credited to the primary. A `400`
+stopped the chain at `[1, 0]` with a real `StitchError` 400 and the provider's `invalid_request`
+body intact. A `503` retried the primary twice, then failed over — `[2, 1]` — in **one trace
+tree** with the spine `primary ← root, backup ← primary`. With both providers down the caller
+got the **last real error**, not an aggregate.
+
+**30 lines against 104** hand-rolled for the same feature set: the library carries ~71%, all of
+it per-member, and **zero** of the routing.
+
+<Callout type="warn">
+    Use `linked` rather than a bare `try`/`catch`. Both produce the same request
+    counts, but `linked` measured **one** traceId with a `primary → backup`
+    spine, while the bare version produced **two unrelated root traces** — the
+    failover becomes invisible to an on-call engineer at exactly the moment it
+    matters.
+</Callout>
+
+## What StitchAPI does not solve here
+
+1. **No sequential-fallback combinator.** `all`, `any` and `race` are one eager implementation
+   with three different joins — each measured `[1, 1]` on a single call. `linked` is sequential
+   but returns a Promise, not a node, so the flow can't be nested, handed to a seam, or
+   introspected.
+2. **No failure classification for routing.** `retry.on` is exactly the right vocabulary, scoped
+   to the wrong target — it re-hits the _same_ endpoint.
+3. **`AggregateError` drops everything you'd route on.** `status` and `body` are both
+   `undefined`; the actionable `400` survives only inside `.errors[0]`, which no `StitchError`
+   API points at.
+4. **No winner identity.** The result is the winner's raw body, and the `pick` that normalises
+   two envelopes destroys the only attribution. The group emits **zero** events of its own —
+   a composition is not a span — so the trace can't break the tie either. Fix it with
+   `transform`, one line per member.
+5. **A cancelled member emits nothing terminal** — `start`, `progress`, then silence. Zero
+   `error`, zero `done`. A span-based backend reads that as a leak.
+6. **No hedge delay or threshold anywhere.** `race` measured **2.00×** amplification healthy
+   _and_ degraded — the doubling is the steady state, not an outage behaviour. The delayed
+   hedge everyone actually recommends took ~11 lines of raw `AbortController` and got the right
+   profile: `[10, 0]` healthy, `[10, 10]` degraded.
+7. **A breaker is a health gate, not a budget gate** — 10 healthy calls with `circuit` on both
+   members still measured `[10, 10]`.
+8. **`Composable` is not user-authorable.** `makeComposable` is unexported and the member gate
+   checks only the brand, so a hand-branded node **compiles** and then throws `TypeError`.
+
+<Callout type="error">
+    **A per-call header reaches every provider.** Config headers merge *under* input headers, and
+    each auth strategy only overwrites its own header name — so a per-call
+    `headers: { authorization: 'Bearer …' }` intended for the primary was measured **arriving at
+    the backup verbatim**. One vendor is handed another vendor's credential, silently, with no
+    type error. Keep per-provider credentials in each stitch's `auth`, never in the call input.
+
+    **And two `url`-only stitches share one breaker.** With neither `name` nor `path` they both
+    key on the literal string `'stitch'` — measured, the primary's outage opened the *backup's*
+    breaker and fast-failed 3 of 5 healthy calls. Setting `name` fixes it completely, which
+    makes a diagnostic label load-bearing.
+
+</Callout>
+
+## See also
+
+<Cards>
+    <Card
+        title="Circuit breaker"
+        href="/docs/guides/resilience/circuit-breaker"
+    />
+    <Card title="Retry &amp; backoff" href="/docs/guides/resilience/retry" />
+    <Card
+        title="One customer's revoked token, everyone's outage"
+        href="/docs/scenarios/multi-tenant-blast-radius"
+    />
+    <Card title="Transform" href="/docs/guides/data/transform" />
+</Cards>

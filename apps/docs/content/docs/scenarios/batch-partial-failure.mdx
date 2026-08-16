@@ -1,0 +1,150 @@
+---
+title: 'Batch writes that fail one item at a time'
+description: 'A bulk endpoint returns 200 and reports that 7 of your 100 items did not land. Retrying the request re-writes the 93 that did — so the retry unit has to be the body, not the call.'
+prerequisites: ['/docs/guides/resilience/retry', '/docs/reference/surfaces']
+---
+
+## The problem
+
+You write in bulk — DynamoDB `BatchWriteItem`, Elasticsearch `_bulk`, SQS `SendMessageBatch`,
+Salesforce sObject Collections. One request carries 25 or 1,000 items, the API answers **HTTP
+200**, and inside the body it says some of them didn't land.
+
+**The retry unit is smaller than the request.** Every HTTP client retries by replaying the
+identical request, which here re-applies the writes that already succeeded. The correct
+behaviour is to rewrite the body to the failed subset, resend, wait longer each round, and
+report whatever never landed.
+
+Three things make it worse than it sounds: backoff is **mandatory** (AWS is explicit — the
+cause is capacity, so an immediate resend throttles again), failures are **not uniform**
+(a `429` item should be resent, a `400` mapping error must not be), and the loop needs to
+hand back **the residue** — the caller needs the items, not just an error.
+
+<Callout type="warn">
+    This is the failure mode behind
+    [`elastic/logstash#1631`](https://github.com/elastic/logstash/issues/1631) —
+    "rejected docs in bulk indexing partial failure are **silently lost**" — and
+    [`elasticsearch-py#1004`](https://github.com/elastic/elasticsearch-py/issues/1004),
+    where errors are aggregated *without their data*, so you cannot tell which
+    items to resend.
+</Callout>
+
+## The common solutions
+
+| Approach                    | Where it breaks                                                                                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| The client's built-in retry | Replays **all** items. Fixes 7 by re-writing 93 — duplicate side effects on a non-idempotent endpoint.                            |
+| Hand-rolled `while` loop    | Correct, and what most teams write. Lives outside the client, so timeout, circuit breaking and tracing stop seeing the real call. |
+| Vendor SDK helper           | Only where an SDK exists, and the policy is theirs — `streaming_bulk` retries `429` only, and drops the failed items' data.       |
+| Check the status, move on   | The Logstash bug. Silent data loss, found later by absence.                                                                       |
+| One request per item        | Trivially retryable, at 100× the requests the batch endpoint existed to avoid.                                                    |
+
+## What StitchAPI does
+
+<Callout type="error">
+    **Not `paginate`, however much it looks like the answer.** `paginate.next`
+    genuinely expresses the residue resend — measured: 3 requests for 6 items,
+    **zero** duplicate writes. Then it loses your data. A round in which
+    *nothing* lands aggregates zero items, and the loop treats that as the end:
+    measured **4 of 6 rows never written, `ok: true`, no error**. That is the
+    ordinary response from a table that is out of capacity. Hitting the `pages`
+    cap also returns `ok: true`, so "finished" and "gave up" are the same value
+    — and a residue ledger built inside `next` is stale by one round, naming an
+    item that already landed.
+</Callout>
+
+The seam that works is `Surface.interpret` — which reads the 200 body and asks for another
+attempt with a wait that grows — paired with **`hooks.onRequest`, the only place in the library
+that can change a request between attempts**:
+
+```ts
+const kind: Surface = {
+    id: 'batch-residue',
+    interpret: (res, cfg): SurfaceOutcome => {
+        // A 500 is a transport failure before it is a batch envelope — and must still
+        // open the circuit. Let the declarative verdict compose first.
+        const failed = verdictOf(res, cfg);
+        if (failed) return failed;
+
+        ledger.rounds += 1;
+        ledger.landed.push(...landedOf(res.body));
+        ledger.terminal.push(...terminalOf(res.body)); // 400s — never resent
+        ledger.residue = residueOf(res.body); // 429s / UnprocessedItems
+
+        if (ledger.residue.length === 0) return { ok: true, data: ledger };
+        if (ledger.rounds >= rounds) {
+            // Out of rounds. Resolve SUCCESSFULLY with the residue in the payload —
+            // an error would throw the landed items away, and dropping it is the Logstash bug.
+            ledger.gaveUp = true;
+            return { ok: true, data: ledger };
+        }
+        // `message` is required on the retry arm — it becomes the `retry`
+        // event's detail, so the trace says WHY the round is being re-run.
+        return {
+            ok: false,
+            retry: true,
+            message: `${ledger.residue.length} unprocessed after round ${ledger.rounds}`,
+            after: backoff(ledger.rounds),
+        };
+    },
+};
+
+const hooks = {
+    onRequest: (ctx) => {
+        if (!ctx.req || ctx.attempt === 1) return;
+        // Assign, never mutate: each attempt's request is a shallow clone of one baseReq,
+        // so an in-place edit of `body` rewrites the caller's own array too.
+        ctx.req.body = bodyOf(ledger.residue);
+    },
+};
+```
+
+**Measured** against a capacity-limited table: 4 rounds at t = 0, 1000, 3000, 7000 —
+`abcdef → cdef → def → f` — **zero duplicate writes**, every item landed, and the wait is
+the engine's own sleep rather than a hidden one. It survives three consecutive zero-progress
+rounds, which is precisely the case `paginate` drops.
+
+## StitchAPI vs the common solution
+
+**It is more code, not less** — 50 lines against 28 for the hand-rolled `while` loop. The
+trade is what the hand-rolled loop gives up, and this was measured rather than assumed:
+
+|                                   | hand-rolled loop      | on the surface seam                               |
+| --------------------------------- | --------------------- | ------------------------------------------------- |
+| `start` events for one logical op | 3                     | **1**                                             |
+| reported `attempts`               | 1, three times over   | **3**                                             |
+| `retry` events                    | 0                     | **2**, with detail                                |
+| circuit breaker                   | never sees the rounds | **opens after 2 × 500**                           |
+| `timeout: { total: 100 }`         | bounds each round     | **bounds the operation** — cut at round 2, 101 ms |
+
+If you don't need any of that, the `while` loop is honestly the smaller answer. Reach for this
+when the batch call has to behave like one call to everything else in your system.
+
+## What StitchAPI does not solve here
+
+1. **There is no batch-residue concept.** Nothing in the config vocabulary expresses "the retry
+   unit is smaller than the request". Everything above is assembled.
+2. **`retry` is blind to per-item failure, and harmful when forced.** The status is 200, and
+   `retry.on` receives only the status. `retry.on: 200` typechecks, fires — and made **10
+   duplicate writes on a batch that never failed at all**.
+3. **`paginate` has no wait and no field to declare one.** Six rounds fired at t=0. `throttle`
+   paces them, but as one fixed ratio with no curve — and it paces every other call through
+   that stitch (`pool: 'host'` pushes unrelated reads too).
+4. **A growing backoff is user code the engine can't see.** A sleep in `onRequest` works, but
+   2.5 s of real waiting produced **0 `throttled` events** and no `waited` in the run report.
+5. **`SurfaceOutcome` cannot see the request or the attempt number**, so a surface can neither
+   rewrite what it retries nor know it is on its last round. The count has to be kept by hand.
+6. **The engine owns no residue channel.** Not the result, the error, `.inspect()`, `.report()`,
+   the event stream, or a trace sink. If you don't capture it yourself, it is gone.
+7. **The ledger is per-stitch, not per-call.** Two concurrent calls through one such stitch
+   corrupt each other — measured: both callers told everything landed, two rows written by
+   nobody. Build one stitch per in-flight batch, or add your own scoping.
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="Retry &amp; backoff" href="/docs/guides/resilience/retry" />
+    <Card title="Hooks" href="/docs/guides/authoring/hooks" />
+    <Card title="Pagination" href="/docs/guides/data/pagination" />
+</Cards>

@@ -1,0 +1,172 @@
+---
+title: 'The agent picks the arguments'
+description: 'Exposing a vendor API to an LLM over MCP. The credential boundary held under 30 payload scans — the argument boundary is yours, and an input slot with no schema is a full passthrough.'
+prerequisites: ['/docs/surfaces/mcp', '/docs/reference/auth-strategies']
+---
+
+## The problem
+
+You already call a vendor API from your code. Now an agent needs to call it too, over MCP. The
+model picks **which** call and **what arguments** — from a prompt that may contain text you did
+not write.
+
+That inverts the usual trust story. An agent tool is an API exposed to an untrusted caller, but
+it is almost always written as if it were an internal function. Three hazards, all measured in
+the wild:
+
+- **The credential must never reach the model.** A survey of over 10,000 public MCP servers
+  found credentials, keys and PII leaking at rates
+  [exceeding 10%](https://checkmarx.com/learn/mcp-security-risks-real-world-incidents-and-security-controls/).
+  A token in a schema, an argument, a result or an error message is a token in the model's
+  context — and therefore in its output, its logs, and any downstream tool it calls.
+- **The arguments are attacker-influenced.** A scan of popular MCP servers found 43% with
+  command-injection flaws, 22% allowing path traversal and 30% exploitable via SSRF. The input
+  schema stops being ergonomics and becomes the security boundary.
+- **The loop is the cost.** One agent scanning a network reached a
+  [$6,531 bill](https://www.nexgismo.com/blog/ai-agent-budget-guards-stop-runaway-api-costs) in
+  days with no hard limits.
+
+## The common solutions
+
+| Approach                         | What it is                                       | Where it breaks                                                                                                      |
+| -------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| **One MCP server per vendor**    | Hand-write a server wrapping the API.            | Full control — and you write the auth, validation and limits yourself. That is what the >10% leak rate is measuring. |
+| **One tool per endpoint**        | Narrow, typed tools the model picks between.     | The safest shape: the schema _is_ the allow-list. Costs a tool definition per endpoint, and a lot of context.        |
+| **One generic "run it" tool**    | The model names the call and passes arguments.   | Compact, and far more dangerous: the argument object becomes the attack surface.                                     |
+| **Gateway in front**             | Policy, quotas and egress rules outside the app. | The enterprise answer. Another hop, and it cannot see intent.                                                        |
+| **Human confirmation on writes** | Ask before anything irreversible.                | The one control that survives prompt injection. Needs a place to hook it.                                            |
+
+## What StitchAPI does
+
+`stitch mcp` is **code-mode**: three generic tools — `run_stitch`, `list_stitches`,
+`describe_stitch` — rather than one tool per endpoint. That is the compact-and-dangerous row of
+the table above, so the two boundaries are worth separating, because they landed differently.
+
+### The credential boundary held
+
+This is the product's central promise and it survived the sharpest test available. Across **34
+JSON-RPC exchanges and 30 payload scans (14,529 bytes)** — `initialize`, `tools/list`,
+`describe_stitch` on all ten stitches, successful calls on `bearer`, `apiKey` in header, query
+and cookie form, `cookieSession`, a vendor 401 whose **body contained a credential-shaped
+string**, a validation failure, an unknown stitch, an unknown tool, a malformed JSON-RPC method,
+and the same run over stdio — **not one of the five held credentials appeared, by value,
+anywhere.**
+
+The controls confirm the calls were real: the same exchanges put `Bearer sk_live_…`,
+`X-API-Key: ak_live_…`, `api_key=ak_live_…` and `Cookie: SESSION=sess_live_…` on the wire, and
+the vendor authenticated every one.
+
+**And the model cannot forge a header at all.** `sanitizeAgentInput` deletes `input.headers`
+unless the stitch explicitly declares an `input.headers` schema: six model-supplied headers
+including `authorization`, `cookie` and `host` reached the vendor as **zero** headers. Even
+where an operator opts in, the credential header specifically is unforgeable, because `auth` is
+applied to a clone _after_ the merge — a model-set `authorization` was overwritten with the real
+token on every attempt.
+
+<Callout type="info">
+    This refuted our own starting hypothesis. `engine.ts` does merge input
+    headers over config headers — but on the MCP path the agent's headers are
+    removed before that merge ever runs.
+</Callout>
+
+### The argument boundary is yours
+
+Everything else in `input` reaches the request. Five levers, measured on an **ordinary stitch** —
+one that declares no input schemas:
+
+| Lever                                                        | Measured                                                                                                                     |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| **A query parameter pinned in the path is a _default_**      | `path: '/v1/orders?tenant=acme'` → the model sent `tenant=globex`, **and the vendor returned the other tenant's data**       |
+| **The whole request body of a write**, when no `body` schema | a 999,999 refund                                                                                                             |
+| **Reserved expansion traverses endpoints**                   | `{+id}` reached `/v1/api-keys` **with the bearer token attached**; ordinary `{id}` correctly encoded it to `..%2F..%2F`      |
+| **A templated endpoint reaches anywhere**                    | `url: '{+endpoint}'` → `https://metadata.internal/latest`                                                                    |
+| **`cookieSession` joins where `apiKey` replaces**            | with headers opted in: `SESSION=attacker; SESSION=sess_live_…` — a vendor reading the first pair runs as the model's session |
+
+The first row is the sharpest, because `?tenant=acme` in a configured path reads like an
+operator invariant and is spelled like one. It is `{ ...predefined, ...input.query }`.
+
+**A declared input schema now closes it.** When this audit first ran, `validateInput` threw on
+failure but **discarded the parsed value** — a schema was a check, not a filter, and a `query`
+validator that returned `{ limit: 10 }` still put `?tenant=globex&limit=10` on the wire. We filed
+that as [#648](https://github.com/rejifald/StitchAPI/issues/648);
+[#663](https://github.com/rejifald/StitchAPI/pull/663) fixed it. A declared slot now sends **what
+its schema returns** — coerced, defaulted, stripped — so the same validator puts
+`?tenant=acme&limit=10` on the wire: the model's `tenant=globex` gone, the operator's pin
+restored. Our probe keeps that pinned as a regression check.
+
+The surviving caveat is the real security point: **a slot with no schema is untouched.** A schema
+filters the one slot it is declared on, and an undeclared slot stays the full passthrough the
+table above measures — declaring `params` says nothing about `query`, and nothing requires a slot
+to be declared.
+
+### The safe exposure is 47 lines across 3 seams
+
+No fork, no config key. Replayed against the same vendor, the naive exposure sent
+`?tenant=globex`, `?include=internal_notes` and a 999,999 refund; the safe one sent
+`?tenant=acme&limit=5` and nothing else, refused the POST with a reason the model can read, and
+still authenticated every read.
+
+```ts
+const server = createMcpServer(
+    expose({ getOrder: only(getOrder, { params: ['id'], query: ['limit'] }) }),
+    { adapter: readsOnly(fetchAdapter) },
+);
+```
+
+- **`expose`** — the registry object you hand `createMcpServer` _is_ the allow-list. It also has
+  to reject a stitch whose configured `name` differs from its key, because `selectStitch` falls
+  back to that name: a renamed stitch stays callable while vanishing from `list_stitches`.
+- **`only`** — a `Proxy` apply-trap that **rebuilds** the input from an explicit key list before
+  the engine sees it. Since [#663](https://github.com/rejifald/StitchAPI/pull/663) a declared
+  schema filters its own slot, so `only` is no longer forced — it earns its place covering the
+  slots a stitch leaves undeclared, in one line, and as defence in depth on the rest.
+- **`readsOnly`** — an `Adapter` wrapper, the last seam before the transport, refusing non-GET.
+
+`throttle` and `circuit` both apply on the MCP path, because `run_stitch` calls the stitch and
+the stitch _is_ the engine: `throttle: '50/s'` paced ten tool calls; `circuit: { failures: 3 }`
+turned twenty tool calls into three vendor requests and seventeen fast-fails.
+
+## What StitchAPI does not solve
+
+1. **An error message can carry a credential out.** `run_stitch` renders `(e as Error).message`
+   unfiltered, so any text the _transport_ writes reaches the model verbatim. With
+   `apiKey({ in: 'query' })` on the default adapter, a DNS failure put
+   `…/v1/metrics?api_key=ak_live_…` into the model's context — **from zero lines of user code**.
+   The fix is `apiKey({ in: 'header' })`; the [auth guide](/docs/reference/auth-strategies) already
+   warns that a key in a URL leaks wherever URLs go, and the model's context is one more place
+   URLs go.
+2. **There is no confirmation seam, in either direction.** The server advertises only
+   `capabilities: { tools }` and cannot originate a message, so it cannot ask. The tool
+   descriptors carry no `annotations`, so `readOnlyHint`/`destructiveHint` are absent and the
+   host cannot decide to prompt — and because code-mode puts every endpoint behind one tool
+   name, reading an order and issuing a 25,000 refund arrive at the host as the same
+   `run_stitch` call. User code can **refuse** (`hooks.onRequest` throws; the vendor got zero
+   requests, and `retry: { attempts: 3 }` asked the gate exactly once) but never **ask**.
+3. **One tool call is not one request.** `retry: { attempts: 5 }` made five; `paginate` made
+   twelve, with a default ceiling of 50 — and neither is signalled in the tool result. A host
+   that budgets 20 tool calls has budgeted up to 1,000 vendor requests.
+4. **No bound expresses cost.** Every limiter is a count (`throttle.rate`, `retry.attempts`,
+   `paginate.pages`, `circuit.failures`) or a duration (`timeout`, `circuit.cooldown`). Nothing
+   expresses tokens, bytes or money — the axis the runaway-bill incidents actually ran along.
+5. **`describe_stitch` is a map.** Per stitch it discloses the full internal endpoint URL, the
+   surface, the auth _scheme_, which resilience features are on, and a Mermaid diagram — about
+   1 KB. Not the credential, not your configured request headers, not the env var name. Whether
+   that is disclosure or documentation depends on who is connected.
+6. **`stitch mcp --module ./stitches.ts` exposes everything.** `collectStitches` sweeps up every
+   exported stitch — in our fixture, a write and a login stitch alongside the intended read. The
+   registry filter is a real seam, but the documented starter does not use it.
+
+<Callout type="warn">
+    Nothing in `StitchConfig`'s 32 top-level slots excludes a stitch from MCP.
+    The nearest-looking key, `sensitive: true`, is a **cache** opt-out — a
+    stitch carrying it was still listed and still ran.
+</Callout>
+
+## See also
+
+- [The MCP surface](/docs/surfaces/mcp) — the three tools and the registry
+- [Auth strategies](/docs/reference/auth-strategies) — why `{ in: 'header' }` beats `{ in: 'query' }`
+- [Scenario: the webhook you cannot verify](/docs/scenarios/webhook-receipt) — the other surface
+  where the caller is untrusted
+- [Scenario: one tenant takes the others down](/docs/scenarios/multi-tenant-blast-radius) —
+  keying limiters, which is the containment half of this problem

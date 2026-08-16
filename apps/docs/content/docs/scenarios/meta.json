@@ -1,0 +1,28 @@
+{
+    "title": "Scenarios",
+    "icon": "Map",
+    "pages": [
+        "oauth2-refresh-token-rotation",
+        "cost-based-rate-limits",
+        "batch-partial-failure",
+        "async-job-polling",
+        "mid-stream-failure",
+        "conditional-requests-304",
+        "multipart-upload",
+        "webhook-receipt",
+        "multi-tenant-blast-radius",
+        "provider-failover",
+        "unstable-pagination",
+        "intermittent-drift",
+        "large-response-memory",
+        "expiring-signatures",
+        "unconfirmed-write",
+        "n-plus-one-fanout",
+        "deprecation-headers",
+        "agent-holds-the-tool",
+        "stale-fixture",
+        "precision-loss",
+        "pii-in-the-logs",
+        "dual-run-migration"
+    ]
+}
