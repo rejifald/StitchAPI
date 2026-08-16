@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://stitchapi.dev"><strong>📚 stitchapi.dev</strong></a> — documentation, guides &amp; live playground
+  <a href="https://stitchapi.dev?from=gh"><strong>📚 stitchapi.dev</strong></a> — documentation, guides &amp; live playground
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@
 </p>
 
 <p align="center">
-  <a href="https://stitchapi.dev/demo">
+  <a href="https://stitchapi.dev/demo?from=gh">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/media/demo-dark.webp 1x, docs/media/demo-dark@2x.webp 2x" />
       <img src="docs/media/demo.webp" srcset="docs/media/demo.webp 1x, docs/media/demo@2x.webp 2x" width="1280" alt="StitchAPI demo — a stitch streaming a reply, validating output, retrying a 502, and answering an agent tool call" />
@@ -51,7 +51,7 @@
 </p>
 
 <p align="center">
-  <sub><a href="https://stitchapi.dev/demo">Watch more</a></sub>
+  <sub><a href="https://stitchapi.dev/demo?from=gh">Watch more</a></sub>
 </p>
 
 > [!NOTE]
@@ -172,7 +172,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 npm install stitchapi@rc   # or: pnpm add stitchapi@rc · yarn add stitchapi@rc
 ```
 
-Validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator; none is bundled. The examples below use Zod for familiarity, and `api.example.com` as an illustrative host — point them at your own API to run them, or try them as-is in the [playground](https://stitchapi.dev/#playground), which serves that host from an in-browser simulator.
+Validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator; none is bundled. The examples below use Zod for familiarity, and `api.example.com` as an illustrative host — point them at your own API to run them, or try them as-is in the [playground](https://stitchapi.dev/?from=gh#playground), which serves that host from an in-browser simulator.
 
 ## Quick start
 
@@ -238,7 +238,7 @@ const getUser = api.stitch({
 });
 ```
 
-For lighter reuse, `extends: [fragment | stitch]` merges config left→right (own fields win), and `.with()` pre-binds part of the input while reusing the same runtime. Full guide: [Authoring](https://stitchapi.dev/docs/guides/authoring/stitch).
+For lighter reuse, `extends: [fragment | stitch]` merges config left→right (own fields win), and `.with()` pre-binds part of the input while reusing the same runtime. Full guide: [Authoring](https://stitchapi.dev/docs/guides/authoring/stitch?from=gh).
 
 ## Validation & leveled drift
 
@@ -268,7 +268,7 @@ const listOrders = stitch({
 });
 ```
 
-Drift is schema-anchored — no snapshot to manage. Severity lives in the schema: a required field missing/incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift on the event stream. Declared variance (an optional field, a nullable, an empty array) validates clean, so it's never a false alarm; `ignore` silences known-but-unconsumed fields and `severity` filters or re-levels the soft signals. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift).
+Drift is schema-anchored — no snapshot to manage. Severity lives in the schema: a required field missing/incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift on the event stream. Declared variance (an optional field, a nullable, an empty array) validates clean, so it's never a false alarm; `ignore` silences known-but-unconsumed fields and `severity` filters or re-levels the soft signals. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift?from=gh).
 
 ## Resilience: retry, throttle, timeout
 
@@ -284,7 +284,7 @@ const listUsers = stitch({
 });
 ```
 
-`throttle` is proactive (keeps you under a limit before it bites; `pool: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`verdict`** declares what counts as success — `accept` treats a non-2xx (e.g. `404`) as a normal result instead of a throw, `flag` fails a `200` whose body says it failed. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
+`throttle` is proactive (keeps you under a limit before it bites; `pool: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`verdict`** declares what counts as success — `accept` treats a non-2xx (e.g. `404`) as a normal result instead of a throw, `flag` fails a `200` whose body says it failed. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry?from=gh).
 
 ## Caching
 
@@ -328,7 +328,7 @@ const getUser = stitch({
 });
 ```
 
-`bearer`, `apiKey`, and `basic` are header strategies; `oauth2()` runs the client-credentials grant and caches/refreshes the token; and `cookieSession` runs a login, captures the cookie, replays it, and re-logs-in when the wall returns — the caller never sees the password or writes the cookie dance. Full guide: [Auth](https://stitchapi.dev/docs/guides/auth/bearer).
+`bearer`, `apiKey`, and `basic` are header strategies; `oauth2()` runs the client-credentials grant and caches/refreshes the token; and `cookieSession` runs a login, captures the cookie, replays it, and re-logs-in when the wall returns — the caller never sees the password or writes the cookie dance. Full guide: [Auth](https://stitchapi.dev/docs/guides/auth/bearer?from=gh).
 
 ## Surfaces: any request style
 
@@ -345,7 +345,7 @@ A **surface** is the request _style_ a stitch speaks. `http` is the default; the
 | `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin             | the command's stdout           |
 | `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call  | the typed RPC response         |
 
-Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces).
+Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces?from=gh).
 
 ## Four front doors
 
@@ -358,7 +358,7 @@ The same typed unit is reachable four ways, so humans and agents call exactly th
 | **HTTP endpoint**       | `stitch serve`  | `GET /list-users`         |
 | **MCP / agent tool**    | `stitch mcp`    | `tool: list_users`        |
 
-`stitch run` streams every event as one JSON line on stdout (ready for `jq`); `stitch trace` summarizes the run log — runs, failures, retries, drift, and latency percentiles. Full guide: [Surfaces → CLI](https://stitchapi.dev/docs/surfaces/cli).
+`stitch run` streams every event as one JSON line on stdout (ready for `jq`); `stitch trace` summarizes the run log — runs, failures, retries, drift, and latency percentiles. Full guide: [Surfaces → CLI](https://stitchapi.dev/docs/surfaces/cli?from=gh).
 
 ## Agent-native
 
@@ -371,7 +371,7 @@ $ stitch from-curl 'curl https://api.example.com/users/7 -H "authorization: Bear
 # prints a ready-to-commit stitch: id-like segments lifted to {params}, secrets → env()
 ```
 
-`stitch init` writes the “declare a stitch, don't hand-roll `fetch`” rule into the files coding agents read (`AGENTS.md`, Cursor/Windsurf/Cline rules, a `CLAUDE.md` section), and the docs build emits an auto-generated [`llms.txt`](https://stitchapi.dev/llms.txt). Full guide: [Use from an agent](https://stitchapi.dev/docs/agents).
+`stitch init` writes the “declare a stitch, don't hand-roll `fetch`” rule into the files coding agents read (`AGENTS.md`, Cursor/Windsurf/Cline rules, a `CLAUDE.md` section), and the docs build emits an auto-generated [`llms.txt`](https://stitchapi.dev/llms.txt). Full guide: [Use from an agent](https://stitchapi.dev/docs/agents?from=gh).
 
 ## Errors & pitfalls
 
@@ -387,7 +387,7 @@ A failed stitch throws a `StitchError` — an `Error` subclass carrying `.status
 | `STITCH_GRAPHQL`      | a GraphQL response came back `200` but carried an `errors` array  |
 | `RateLimitError`      | a delegate-backoff stitch surfaced a rate-limit for an outer gate |
 
-Full catalog: [Errors & pitfalls](https://stitchapi.dev/docs/errors).
+Full catalog: [Errors & pitfalls](https://stitchapi.dev/docs/errors?from=gh).
 
 ## Zero-infra observability
 
@@ -399,7 +399,7 @@ STITCH_TRACE_FILE=./run.jsonl node app.js   # append JSONL to a path
 STITCH_EXPORT=otlp node app.js              # also fan events to an OTLP collector
 ```
 
-Built-in sinks scrub secrets at the sink boundary (the live request is never touched). `stitch trace` summarizes the JSONL; [`@stitchapi/pino`](https://stitchapi.dev/docs/integrations/pino) ships the same events as structured logs.
+Built-in sinks scrub secrets at the sink boundary (the live request is never touched). `stitch trace` summarizes the JSONL; [`@stitchapi/pino`](https://stitchapi.dev/docs/integrations/pino?from=gh) ships the same events as structured logs.
 
 ## Packages
 
@@ -462,7 +462,7 @@ This repository is a [pnpm](https://pnpm.io) workspace. The published library is
 
 ## Documentation
 
-The full documentation site lives at **[stitchapi.dev](https://stitchapi.dev)** — [Quickstart](https://stitchapi.dev/docs/getting-started/quickstart), per-feature [Guides](https://stitchapi.dev/docs/guides/authoring/stitch), [Concepts](https://stitchapi.dev/docs/concepts/the-stitch), [Surfaces](https://stitchapi.dev/docs/surfaces/function), [For agents](https://stitchapi.dev/docs/agents), and the generated [Reference](https://stitchapi.dev/docs/reference/stitch).
+The full documentation site lives at **[stitchapi.dev](https://stitchapi.dev?from=gh)** — [Quickstart](https://stitchapi.dev/docs/getting-started/quickstart?from=gh), per-feature [Guides](https://stitchapi.dev/docs/guides/authoring/stitch?from=gh), [Concepts](https://stitchapi.dev/docs/concepts/the-stitch?from=gh), [Surfaces](https://stitchapi.dev/docs/surfaces/function?from=gh), [For agents](https://stitchapi.dev/docs/agents?from=gh), and the generated [Reference](https://stitchapi.dev/docs/reference/stitch?from=gh).
 
 The published library's own README (what npm renders) is in [`packages/core/README.md`](packages/core/README.md). Design notes live in [`docs/`](docs): [Feature Lenses](docs/FEATURE-LENSES.md), [Overview](docs/OVERVIEW.md), [Design](docs/DESIGN.md).
 

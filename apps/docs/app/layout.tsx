@@ -1,10 +1,10 @@
+import { AnalyticsWithReferrals } from './analytics';
 import './global.css';
 
 import { jsonLdHtml } from '@/lib/json-ld';
 import { releaseVersion } from '@/lib/release';
 import { appName, gitConfig, siteUrl } from '@/lib/shared';
 
-import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import 'fumadocs-twoslash/twoslash.css';
 import { Banner } from 'fumadocs-ui/components/banner';
@@ -184,7 +184,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                     </Banner>
                     {children}
                 </RootProvider>
-                <Analytics />
+                <AnalyticsWithReferrals />
                 <SpeedInsights />
             </body>
         </html>
