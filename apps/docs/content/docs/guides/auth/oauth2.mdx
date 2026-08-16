@@ -51,6 +51,13 @@ Give two stitches the same `key` plus a shared `store` and one token serves them
 all — across stitches and across workers, surviving restarts. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
+This strategy covers `client_credentials`, where the token is yours to re-fetch
+at will. A provider that issues **single-use refresh tokens** is a different
+problem — two workers refreshing at once can revoke the whole grant, and the
+obvious guards turn out to be narrower races rather than fixes.
+[OAuth2 refresh tokens that rotate](/docs/scenarios/oauth2-refresh-token-rotation)
+builds the strategy that holds.
+
 ## Client authentication
 
 By default the client authenticates with `client_secret_post`: `client_id` and

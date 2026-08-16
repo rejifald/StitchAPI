@@ -31,6 +31,12 @@ Each page reads `nextCursor` off the raw body and asks for the next page; when
 the body has no cursor, `next` returns `undefined` and the loop stops. `prevBody`
 and `value` arrive as `unknown` — narrow them before you reach in.
 
+A cursor is the shape to prefer here. Paging by offset over a collection that is
+still being written returns a silently wrong list — items skipped, items
+duplicated, every damaged run reporting success — which
+[the page that moved while you were reading it](/docs/scenarios/unstable-pagination)
+demonstrates and works around.
+
 ## Options
 
 `next(prevBody, pagesFetched)` receives the previous page's raw body plus the

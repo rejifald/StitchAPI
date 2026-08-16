@@ -40,6 +40,11 @@ The server binds to `127.0.0.1:8787` by default. Responses are the final
 validated result as JSON; send `Accept: text/event-stream` (or add `?stream=1`)
 to receive the live event stream as SSE instead.
 
+This front door runs stitches you name; it is not a webhook endpoint, and
+StitchAPI does not receive webhooks at all — that is your server's job.
+[Receiving a signed webhook](/docs/scenarios/webhook-receipt) draws exactly where
+the line falls and what the library still owns on the far side of it.
+
 <Callout type="warn">
     **Anti-pattern:** don't move the bind off the `127.0.0.1` loopback default
     to a public interface so a remote caller can reach it directly — the front

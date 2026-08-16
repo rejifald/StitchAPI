@@ -77,6 +77,14 @@ same events, which is how console logs, JSONL, and
 [OTLP spans](/docs/guides/observability/otlp) all come from one source without
 the call site knowing.
 
+Streaming responses are where the terminal matters most. A call that has already
+emitted 800 tokens spent its `200` on the first one, so failure has to arrive
+in-band or not at all —
+[a stream that fails after 800 tokens](/docs/scenarios/mid-stream-failure) works
+through what a retry means once the user has read half the answer, and
+[the export that eats the heap](/docs/scenarios/large-response-memory) measures
+what the stream actually retains while you consume it.
+
 ## See also
 
 <Cards>

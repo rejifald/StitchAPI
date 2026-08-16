@@ -55,7 +55,10 @@ you couldn't do so exactly anyway (it's 16.67/m).
     this is a pacer rather than a token bucket, there is no capacity for a
     longer window to grant: calls are spaced, never released in a burst. If you
     need to spend a real quota the way the vendor accounts for it, hand the
-    backoff to an outer gate with `delegate` instead.
+    backoff to an outer gate with `delegate` instead — and when the vendor
+    prices each call differently, as Shopify's point bucket does, [rate limits
+    priced in query cost](/docs/scenarios/cost-based-rate-limits) shows why no
+    single rate is the right one.
 </Callout>
 
 A rate that can't be honored is rejected when the stitch is built, rather than

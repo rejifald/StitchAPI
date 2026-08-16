@@ -155,6 +155,14 @@ const getUser = stitch({
 The flip side: drift watches the surface you _declare_. What the provider changes
 in a field you do not model is, by definition, change you do not consume.
 
+Real change rarely arrives all at once, either. A vendor rolling a new shape to a
+slice of traffic produces findings on a fraction of calls and none on the rest —
+[the vendor changed the shape for 5% of responses](/docs/scenarios/intermittent-drift)
+measures what a leveled policy catches there, and the one distinction it cannot
+draw. A field that survives validation can still be wrong before drift ever sees
+it: [the ID that changed on the way in](/docs/scenarios/precision-loss) covers
+the 64-bit id that `JSON.parse` rounds off.
+
 ## Detecting new fields
 
 A brand-new field the schema does not declare shows up as an `undeclared` finding

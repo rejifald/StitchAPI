@@ -33,7 +33,11 @@ retrying.
 `on` selects the response status codes that trigger a retry — a `StatusMatch`: a
 single status, a list, or a predicate `(status) => boolean` (`on: 429` ≡
 `on: [429]`). It defaults to `[429, 502, 503, 504]` — the usual transient set —
-and you narrow or widen it per stitch.
+and you narrow or widen it per stitch. The predicate receives the status and
+nothing else, so a vendor that reports throttling in the body of a `200` is
+invisible to every policy you can write here —
+[rate limits priced in query cost](/docs/scenarios/cost-based-rate-limits) works
+that case through a surface instead.
 
 `backoff` chooses how long to wait between attempts. A bare curve is the whole
 policy — `backoff: 'expo-jitter'` — and the object form adds the two bounds that
@@ -75,6 +79,9 @@ re-attempt. For the exhaustive field list and defaults, see
     a re-attempt after a timeout or `503` can silently apply the side effect
     twice; pair retries with an idempotency key so the server collapses the
     duplicate instead. See [Idempotency](/docs/guides/resilience/idempotency).
+    When the write is a batch and only some of its items failed, the whole
+    request is the wrong retry unit — [batch writes that fail one item at a
+    time](/docs/scenarios/batch-partial-failure) walks that case through.
 </Callout>
 
 ## See also
