@@ -29,6 +29,15 @@ docs/sandbox/dist/
 # scope. See lefthook.yml's pre-push `format` job.
 .claude/worktrees/
 
+# Claude Code's per-machine permission file. Written by the tool, gitignored (in
+# most setups globally, via ~/.config/git/ignore, so it is not in this repo's
+# .gitignore and is easy to miss), and never committed — but `prettier --check .`
+# walks the working tree, not the index, so an unformatted one blocks the
+# pre-push `format` gate for anyone who has ever granted a permission. Note this
+# is `settings.local.json` only: the tracked `.claude/settings.json` and
+# `.claude/launch.json` stay in scope, per the block above.
+.claude/settings.local.json
+
 # Playwright run artifacts (apps/docs, written by test:e2e). Already gitignored,
 # so CI checks out clean and never sees them — but `prettier --check .` (the
 # pre-push format gate) walks the working tree, not the index, and Playwright
