@@ -96,32 +96,29 @@ const config = {
             '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
         ],
     },
-    // Drop `sharp` from the deployed function entirely. @huggingface/transformers
-    // pulls it in for image pipelines; search_docs/get_doc only ever do text
-    // feature-extraction, so it's dead weight — and a dangerous kind: sharp's
-    // Node entry (dist/sharp.cjs) does an unconditional, synchronous native-
-    // binding load at require time and THROWS if none of its platform binaries
-    // resolve. That's the exact shape of the Jul 31–Aug 10 2026 outage (~946
-    // "Could not load the 'sharp' module using the linux-x64 runtime /
-    // ERR_DLOPEN_FAILED" errors on this route). Excluding sharp's files only
-    // trades that failure for a guaranteed one (require('sharp') throwing
-    // MODULE_NOT_FOUND instead) UNLESS the import is safe to fail — which it now
-    // is: embed.ts imports @huggingface/transformers lazily, inside the
-    // search_docs call path, specifically so a load failure (this one included)
-    // stays scoped to that one call instead of crashing the whole route at
-    // module load. With that containment in place, dropping sharp is a clean
-    // win — smaller bundle, one less fragile native dependency — instead of a
-    // regression.
-    outputFileTracingExcludes: {
-        '/api/search-docs': [
-            '../../node_modules/.pnpm/sharp@*/node_modules/**',
-            '../../node_modules/.pnpm/@img+sharp-*/node_modules/**',
-        ],
-        '/api/mcp': [
-            '../../node_modules/.pnpm/sharp@*/node_modules/**',
-            '../../node_modules/.pnpm/@img+sharp-*/node_modules/**',
-        ],
-    },
+    // NO `outputFileTracingExcludes` for `sharp` here — #748 added one and it broke
+    // production. Recording why, because the reasoning is genuinely tempting:
+    // @huggingface/transformers pulls sharp in for image pipelines that
+    // search_docs/get_doc never use, so it looks like free dead weight to drop.
+    //
+    // It is not. transformers' Node bundle has an unconditional top-level
+    // `import sharp from 'sharp'`. Excluding sharp's files does not remove that
+    // import — it only makes it unresolvable, so the module graph fails with
+    // ERR_MODULE_NOT_FOUND instead of the ERR_DLOPEN_FAILED it failed with during
+    // the Jul 31 – Aug 10 2026 outage. Both are the same bug wearing a different
+    // error code, and the second one is worse: it fails 100% of the time rather
+    // than only when a native binary is missing.
+    //
+    // #748 shipped the exclusion on the theory that embed.ts's lazy import made
+    // the failure survivable. It does contain the blast radius — `initialize`,
+    // `tools/list` and `get_doc` kept working — but `search_docs`, the tool the
+    // endpoint exists for, failed on every call. Contained is not fixed. The
+    // smoke guard caught it against production within minutes of the deploy.
+    //
+    // sharp is already `serverExternalPackages` (Next externalizes it by default),
+    // so it stays a plain runtime require resolved from the traced node_modules.
+    // Leave it traced in. Its cost is disk, and disk is not the failure mode here.
+    //
     // Keep the runtime embedder OUT of the server bundle. Those same two routes
     // load transformers.js (@huggingface/transformers), whose Node backend is the
     // native `onnxruntime-node` addon (`.node` binaries). Bundling a native addon
@@ -129,8 +126,8 @@ const config = {
     // — which 500s every request (even paths that never embed, like the MCP
     // `initialize` handshake or an empty query), not just searches. Marking these
     // external leaves them as a plain runtime require, resolved from the traced
-    // node_modules, so the binary loads. Next externalizes `sharp` by default too
-    // (see outputFileTracingExcludes above for why this route ships none of it).
+    // node_modules, so the binary loads. Next externalizes `sharp` by default too,
+    // and it must stay traced in — see the block above.
     serverExternalPackages: ['@huggingface/transformers', 'onnxruntime-node'],
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
