@@ -368,13 +368,19 @@ const store = memoryStore();
 
 ## Duration, size, and rate tokens
 
-Three parsers, one per house token grammar. A stitch reads its own config through
-them; they are exported so a peer package that takes an authored token — a
-distributed limiter's rate, a command runner's buffer cap — resolves it to the
-same number a stitch would, instead of mirroring the grammar in a second regexp
-that then drifts from it.
+Three grammars, one namespace each, every one a `parse`/`format` pair. A stitch
+reads its own config through `parse`; the pair is exported so a peer package that
+takes an authored token — a distributed limiter's rate, a command runner's buffer
+cap — resolves it to the same number a stitch would, instead of mirroring the
+grammar in a second regexp that then drifts from it.
 
-### parseDuration
+`format` is the **exact** inverse, not a pretty-printer: `parse(format(v))`
+returns `v` unchanged for every value `parse` can produce. That is what makes it
+safe to write a token back — into a config file, a CLI flag, an error message
+quoting the limit it enforced — and it is where these differ from `ms`, whose
+`ms(90_000)` is `'2m'` and reads back as 120 000.
+
+### duration
 
 `5_000`, `'5s'`, `'1m'` → milliseconds. This is the grammar behind every authored
 duration on a stitch: `timeout.total`, `timeout.each`, `cache.ttl`,
@@ -382,16 +388,33 @@ duration on a stitch: `timeout.total`, `timeout.each`, `cache.ttl`,
 number is already ms; `<number><unit>` takes `ms` | `s` | `m` | `h` | `d`, with
 fractions allowed.
 
-```ts twoslash
-import { parseDuration } from 'stitchapi';
+`duration.format` picks the largest unit that stays exact **and** readable, and
+falls back to plain milliseconds when no unit divides the value cleanly.
 
-parseDuration('1.5s'); // 1500
-parseDuration('2m'); // 120_000
-parseDuration(5_000); // 5000 — a number is already ms
-parseDuration('soon'); // undefined
+```ts twoslash
+import { duration } from 'stitchapi';
+
+duration.parse('1.5s'); // 1500
+duration.parse('2m'); // 120_000
+duration.parse(5_000); // 5000 — a number is already ms
+duration.parse('soon'); // undefined
+
+duration.format(90_000); // '1.5m'
+duration.format(3_600_000); // '1h'
+duration.format(90_001); // '90001ms' — no unit divides it exactly
 ```
 
-### parseBytes
+<Callout type="warn">
+    **Anti-pattern:** don't format a duration StitchAPI emitted into a field
+    something else will read — keep it a number. Every emitted duration
+    (`event.waited`, a result's `elapsed`, `retryAfter`) is raw milliseconds,
+    and that is the contract a consumer parses against. `format` is for values a
+    _person_ reads, or for writing a token back into config; putting one in an
+    emitted payload turns a number every reader can use into a string each of
+    them has to parse.
+</Callout>
+
+### size
 
 `4096`, `'64kb'`, `'1mb'` → bytes, in **powers of 1024** — the npm-`bytes`
 convention every Node config parser already speaks, so `'1mb'` is `1_048_576`.
@@ -400,38 +423,58 @@ spellings (`kib`, `mib`, …) name the same values for callers who want the base
 explicit. It backs the byte caps — `serve.body.max`, and `buffer.max` on
 `@stitchapi/shell`.
 
-```ts twoslash
-import { parseBytes } from 'stitchapi';
+`size.format` emits the short spelling, and prefers the base unit over an exact
+but unreadable quotient — 1024 is a power of two, so almost every byte count
+divides into `kb` exactly and almost none of them divide into it _legibly_.
 
-parseBytes('64kb'); // 65_536
-parseBytes('1mb'); // 1_048_576
-parseBytes(4096); // 4096 — a number is already bytes
-parseBytes('big'); // undefined
+```ts twoslash
+import { size } from 'stitchapi';
+
+size.parse('64kb'); // 65_536
+size.parse('1mb'); // 1_048_576
+size.parse(4096); // 4096 — a number is already bytes
+size.parse('big'); // undefined
+
+size.format(1_048_576); // '1mb'
+size.format(1536); // '1.5kb'
+size.format(1537); // '1537b' — '1.5009765625kb' is exact and useless
 ```
 
 <Callout type="warn">
     **Anti-pattern:** don't reach for this on a `chars` field —
     [`stream.buffer.chars`](/docs/reference/surfaces#streambuffer) and
     `trace.body.chars` count UTF-16 code units of decoded text, not bytes off
-    the socket, so a `'64kb'` token there measures the wrong thing. The `Bytes`
-    / `Chars` half of a field's name is what tells you which parser reads it.
+    the socket, so a `'64kb'` token there measures the wrong thing. Those fields
+    take a bare number and reject a string at compile time. Worth holding onto
+    now that the name is `size` rather than `parseBytes` — the call site no
+    longer says "bytes" out loud, so the type is the only thing left warning
+    you.
 </Callout>
 
-### parseRate
+### rate
 
 `'2/s'`, `'1000/h'` → `{ count, per }`, where `per` is the window length in ms.
-The denominator is a `parseDuration` token and a bare unit means one of that unit
+The denominator is a `duration` token and a bare unit means one of that unit
 (`'2/s'` ≡ `'2/1s'`), so this is the grammar behind
 [`throttle.rate`](/docs/guides/resilience/throttle#the-rate-grammar), in-process
-and store-backed alike.
+and store-backed alike. `rate.format` writes the pair back, using the bare-unit
+spelling for a one-unit window.
 
 ```ts twoslash
-import { parseRate } from 'stitchapi';
+import { rate } from 'stitchapi';
 
-parseRate('2/s'); // { count: 2, per: 1000 }
-parseRate('1000/h'); // { count: 1000, per: 3_600_000 }
-parseRate('100/15m'); // { count: 100, per: 900_000 }
+rate.parse('2/s'); // { count: 2, per: 1000 }
+rate.parse('1000/h'); // { count: 1000, per: 3_600_000 }
+rate.parse('100/15m'); // { count: 100, per: 900_000 }
+
+rate.format({ count: 2, per: 1000 }); // '2/s'
+rate.format({ count: 100, per: 900_000 }); // '100/15m'
 ```
+
+A rate declares a minimum spacing rather than a bucket, so `'2/500ms'`, `'4/s'`
+and `'240/m'` all describe the same limiter. `format` returns the token for the
+pair it was handed rather than reducing it to one canonical member of that set —
+`{ count: 2, per: 500 }` comes back as `'2/500ms'`, the numbers the author wrote.
 
 **An unreadable token throws here, where the other two resolve to `undefined`.**
 The divergence runs with their fallback rather than against it. For a cap,
@@ -439,7 +482,9 @@ falling back to the field's default leaves the ceiling where it was, so a typo
 can never widen it to "unbounded". A rate has no such safe default —
 `undefined` means _no rate limit at all_ — so a fallback would let a typo
 silently remove the limit instead of narrowing it. `'fast'`, `'0/s'`, and
-`'1/30d'` (a spacing past the ~24.8-day timer ceiling) all throw.
+`'1/30d'` (a spacing past the ~24.8-day timer ceiling) all throw, and
+`rate.format` rejects the same three rather than writing a token that would
+throw on the way back in.
 
 ## See also
 

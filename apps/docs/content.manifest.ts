@@ -890,7 +890,7 @@ export const pages: Page[] = [
         path: 'reference/helpers',
         title: 'Helpers',
         description:
-            'fetchAdapter, createTrace, multiplex, the OTLP exporters, memoryStore, the secret-redaction hooks, and the duration, size, and rate parsers.',
+            'fetchAdapter, createTrace, multiplex, the OTLP exporters, memoryStore, the secret-redaction hooks, and the duration, size, and rate token grammars.',
         kind: 'reference',
     },
     {
