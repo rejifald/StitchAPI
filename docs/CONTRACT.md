@@ -35,7 +35,7 @@ Five forks were decided by the maintainer; the rules below assume them.
 | --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                  | [P5](#p5--one-success-field-one-failure-field)                            |
 | D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                       | [P4](#p4--one-cap-vocabulary)                                             |
-| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `parseDuration`.                                 | [P17](#p17--one-canonical-duration-form)                                  |
+| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `duration.parse`.                                | [P17](#p17--one-canonical-duration-form)                                  |
 | D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                    | [§7](#7-enforcement)                                                      |
 | D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major. | [P19](#p19--breaking-changes-sanctioned-pre-ga-deprecation-cycle-from-ga) |
 
@@ -428,7 +428,7 @@ spellings (nor the interim `payload` name).
 Per **D3**, **ms is the single house time unit** and **no duration field carries the
 `Ms` suffix** — input or emitted. Every **consumer-authored** duration additionally
 **MUST** accept **`number | string`** (raw ms or a token like `'5s'`/`'1m'`), parsed by
-one shared `parseDuration`. Every **emitted** duration is a raw-ms `number`; its unit is
+one shared `duration.parse`. Every **emitted** duration is a raw-ms `number`; its unit is
 stated in its JSDoc, not its name.
 
 **The test is the value, not the slot.** Read the widening forwards, as the one question
@@ -453,12 +453,23 @@ a value core passes _into_ a contract the consumer implements (`StitchStore.set`
 there would be a shape the reader must handle and the writer can never send.
 
 **A widened type is only half the rule; the parse is the other half.** The value **MUST**
-reach `parseDuration` before any arithmetic or sleep site. Widening a type without
+reach `duration.parse` before any arithmetic or sleep site. Widening a type without
 widening its read site is _worse_ than not widening it: the token then arrives where a
 number is assumed, and JS coerces rather than throws — `remaining <= '700ms'` is `false`
 and `setTimeout('700ms')` fires immediately, so the wait silently collapses to ~0 with no
 error anyone can see. That is the failure `SurfaceOutcome.after` shipped with until #609,
 and the reason this clause names the parser rather than only the type.
+
+**The parser is one half of a pair.** As of 2026-08-16 the grammar is exposed as a
+`duration` namespace with `parse` and `format`, replacing the free `parseDuration` (the
+`bytes` library's shape: one name per dimension, the direction named at the call site).
+`format` is the **exact** inverse — `duration.parse(duration.format(ms)) === ms` for every
+finite `ms`, never a rounded approximation — because a lossy encode could widen the value it
+round-trips, and this rule's whole point is that a cap only ever moves where the author put
+it. **The complement above is unchanged and `format` does not soften it:** an emitted
+duration is still a raw-ms `number`. Rendering one for a CLI table, an error message, or a
+config file a human will re-author is display; writing a formatted token into an emitted
+field is the same violation it always was.
 
 _Why:_ every JS-native time API (`Date.now()`, `setTimeout`, `performance.now()`) is
 **already ms**, so ms is the unambiguous default and the suffix is redundant noise
@@ -473,7 +484,7 @@ too, then **removed** in the 2026-08-04 P1 fix below — the two named one insta
 `ReconnectOptions.delay` (was `backoffMs`, de-suffixed to `backoff` and later renamed
 under P2), `OAuth2Options.refreshSkew` (now `refresh.skew`), `CookieSessionOptions.ttl`,
 and `verifyStoreContract`'s `ttl` knob — all `number | string` via the one shared
-`parseDuration`.
+`duration.parse`.
 _Resolved (seam-authored, 2026-08):_ the two positions where a **`Surface`** supplies a
 duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return — take
 `number | string` and are parsed at the engine's sleep site. Both were missed by the
@@ -763,7 +774,7 @@ plugin-extension-hook bag, are all real shapes this rule does not reach.
 
 **Bytes are the house size unit.** Every **consumer-authored** byte cap **MUST** accept
 **`number | string`** — a raw byte count or a token like `'64kb'`/`'1mb'` — parsed by one
-shared `parseBytes`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
+shared `size.parse`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
 **emitted** size is a raw-byte `number`.
 
 **Same test as [P17](#p17--one-canonical-duration-form), same four positions: if a
@@ -773,7 +784,7 @@ are one rule over two dimensions, so read this section and P17's widening clause
 question is only whether a consumer can choose the value. The complement holds too: a
 size **core produces** (`AdapterProgress.total`, a resolved internal like `execFile`'s
 `maxBuffer`) is a raw-byte `number` and takes no string arm. And the widening is only
-real once the value passes through `parseBytes` — an unparsed `'1mb'` compared against a
+real once the value passes through `size.parse` — an unparsed `'1mb'` compared against a
 byte count is the size analogue of P17's silently-collapsing sleep.
 
 **The one place the two dimensions diverge is the counterpoint that proves the rule:** a
@@ -812,6 +823,15 @@ envelopes ([§6](#6-migration-record-2026-07-08-hard-break-sweep)): `serve`'s
 `stream`'s `buffer: 4_000_000` ≡ `{ chars: 4_000_000 }`. The contrast the old clause
 protected did not dissolve — it moved into names and types, where the compiler holds it.
 
+**Same pairing as [P17](#p17--one-canonical-duration-form).** The grammar is the `size`
+namespace's `parse`/`format`, replacing the free `parseBytes`, and `format` is the exact
+inverse across every finite byte count. Because 1024 is a power of two a byte count's `kb`
+quotient is nearly always exact and nearly always unreadable, so the encoder uses a unit only
+when the quotient is exact **and** short — `1536` is `'1.5kb'`, `1537` is `'1537b'`, never
+`'1.5009765625kb'` and never a rounded `'2kb'`. The `Chars` carve-out is untouched and now
+matters slightly more: `size` no longer spells `Bytes` in its name, so the one place the
+category error was visible at the call site is gone and the JSDoc carries it alone.
+
 _Why:_ every JS-native size API (`byteLength`, `Buffer.length`, `execFile`'s `maxBuffer`)
 is already bytes, so a bare number needs no unit; and 1024-based `kb`/`mb` is what the
 Node ecosystem's de-facto parser already means by those tokens
@@ -825,13 +845,13 @@ _Canonical case:_ the two **byte** envelopes — `serve`'s `body`
 (`ShellBufferOptions.max`, shorthand `buffer: '2mb'`) — each take `2 * 1024 * 1024` or
 `'2mb'`; the two **chars** envelopes — trace's `body` (`TraceBodyOptions.chars`,
 shorthand `body: 2048`) and `stream`'s `buffer` (`StreamBufferOptions.chars`, shorthand
-`buffer: 4_000_000`) — take a bare count, never a token. `parseBytes` is exported from
+`buffer: 4_000_000`) — take a bare count, never a token. `size` is exported from
 `stitchapi` so a peer package parses the grammar instead of mirroring it.
 
 Enforced by lint **R9** (§7), together with P17 — one rule, one gate, both directions: a
 `max` that takes only `number` and a `chars` that took a `string` are the same finding
 seen from either end. R9 pins the **type**; the other half of the rule — that the value
-reaches `parseBytes`/`parseDuration` before it is compared or slept on — is dataflow, and
+reaches `size.parse`/`duration.parse` before it is compared or slept on — is dataflow, and
 is pinned by test instead.
 
 ---
@@ -954,6 +974,33 @@ against both — the findings sit at the end of the list:
   Everything else the sweep touched was already conformant, and the R9 baseline is
   **zero** — the one match was fixed at the source rather than baselined, the same call
   the P24/R8 addition made.
+
+- **P17/P25 (the encode direction, 2026-08-16)** — both rules named a **parser** and
+  stopped there, which was the whole contract for as long as the only consumer of a token
+  was the engine reading config. Making the grammars public (#746) changed who else needs
+  them: a peer package that parses an authored value the way core does will eventually
+  want to _write_ one back — a CLI printing the cap it enforced, a config round-trip, an
+  error message quoting a limit in the grammar the author used — and had nothing to call.
+  Every such caller would hand-roll an encoder, which is the drift the export existed to
+  prevent, running in the opposite direction. **Fixed** (`parseDuration`/`parseBytes`/
+  `parseRate` replaced by `duration`/`size`/`rate` namespaces, each a `parse`/`format`
+  pair, following `bytes`'s shape rather than adding three more verb-prefixed names to the
+  barrel). Hard break, no alias ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel),
+  `rc` channel); the old names are pinned **absent** in `public-api-surface.spec.ts` so an
+  alias cannot drift back and leave two spellings of one call.
+  _Why not the `ms(…)` one-function overload it resembles:_ `ms` and `bytes` switch on the
+  argument's type — a string decodes, a number encodes. That inversion is unavailable here,
+  because the number arm is already load-bearing in the other direction: P17/P25 widen every
+  authored field to `number | string`, and each read site funnels it through the parser, so
+  `parse(5_000)` **must** return `5_000`. An overload would have broken every call site core
+  makes of its own rule. The explicit pair is the half of those libraries' contract that
+  survives the constraint.
+  _Why `format` is exact where `ms` rounds:_ `ms(90_000)` is `'2m'`, which parses back to
+  120_000. A 33% widening is harmless in a log line and disqualifying in anything that writes
+  a value back — and P25's "a typo can never widen a cap" only holds if the encode direction
+  cannot widen one either. Pinned as a round-trip **property** over the whole numeric range in
+  `parsers-properties.spec.ts`, not a table of pretty cases, and verified non-vacuous by
+  reintroducing `ms`-style rounding and watching all three properties fail.
 
 Everything else this section once listed has **shipped** and moved to the record below —
 the cross-package `StitchStore`/`StitchLike`/`RequestSeam` clashes (qualified per-framework
@@ -1260,7 +1307,7 @@ shape, not as today's surface: nothing on the surface carries an alias.
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
   same-name-different-**shape** detection, default-value inversion (P8), and the
   **parse half** of P17/P25 — R9 pins the type, but whether the widened value actually
-  reaches `parseDuration`/`parseBytes` before a sleep or comparison is dataflow, and a
+  reaches `duration.parse`/`size.parse` before a sleep or comparison is dataflow, and a
   widened type over an unparsed read site is the silent-collapse bug (#609); the parse
   is pinned behaviourally by test instead. Tracked as comments in the lint. R8, R9 and R10
   are also source-text-only in a second sense — they scan exported `interface` bodies,

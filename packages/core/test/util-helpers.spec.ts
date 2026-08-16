@@ -1,5 +1,5 @@
 // Direct unit tests for the dependency-free helpers in src/util.ts. Most of these
-// are exercised only *indirectly* today (parseDuration via cache TTLs, parseRate via
+// are exercised only *indirectly* today (duration.parse via cache TTLs, rate.parse via
 // the throttle, deepMerge via config layering, matchPath/matchAny via drift ignore
 // patterns, dirnameOf/stripTrailingSlashes via the file seams) — so their edge cases
 // (bare-number durations, array-vs-object merge precedence, prefix-without-over-match,
@@ -18,7 +18,7 @@ import {
     stripTrailingSlashes,
 } from '../src/util';
 
-describe('parseDuration', () => {
+describe('duration.parse', () => {
     it('passes a number through unchanged', () => {
         expect(parseDuration(1500)).toBe(1500);
     });
@@ -49,7 +49,7 @@ describe('parseDuration', () => {
     });
 });
 
-describe('parseBytes', () => {
+describe('size.parse', () => {
     it('passes a number through unchanged', () => {
         expect(parseBytes(4096)).toBe(4096);
     });
@@ -107,7 +107,7 @@ describe('parseBytes', () => {
     });
 });
 
-describe('parseRate', () => {
+describe('rate.parse', () => {
     it('parses count and per-unit window', () => {
         expect(parseRate('2/s')).toEqual({ count: 2, per: 1000 });
         expect(parseRate('10/m')).toEqual({ count: 10, per: 60_000 });
@@ -122,7 +122,7 @@ describe('parseRate', () => {
         expect(() => parseRate('fast')).toThrow(/bad rate/);
     });
 
-    // The denominator is a full `parseDuration` token (ADR 0023 Decision 3). These two are the
+    // The denominator is a full `duration.parse` token (ADR 0023 Decision 3). These two are the
     // motivating cases: neither has ANY spelling in the old `<count>/<ms|s|m>` grammar, because
     // both need a fractional count over a bare unit (1000/h is 16.67/m) and counts are integers.
     it('takes a full duration token as the denominator', () => {
@@ -155,7 +155,7 @@ describe('parseRate', () => {
 
     // A window that is zero, negative, or unreadable would leave `spacing <= 0`, which both
     // limiters treat as "no pacing configured" — the same silent-unlimited failure as `'0/s'`.
-    // `parseDuration` reads `'0s'` as a real 0 and `'-500'` through its numeric arm, so neither
+    // `duration.parse` reads `'0s'` as a real 0 and `'-500'` through its numeric arm, so neither
     // arrives as `undefined` and both are checked explicitly.
     it('rejects a non-positive or unreadable window', () => {
         expect(() => parseRate('2/0s')).toThrow(/bad rate/);

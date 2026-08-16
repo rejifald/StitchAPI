@@ -16,7 +16,7 @@
 //
 // Compliance with the store contract is proven against `verifyStoreContract` from
 // `stitchapi/testing` (see test/conformance.spec.ts).
-import { parseDuration } from 'stitchapi';
+import { duration } from 'stitchapi';
 import type {
     AtLeastOne,
     BackoffCurve,
@@ -225,8 +225,8 @@ export function denoKvStore(
     const curve: BackoffOptions | undefined =
         typeof b === 'string' ? { curve: b } : b;
     const backoff = curve?.curve ?? (curve ? 'expo-jitter' : undefined);
-    const base = parseDuration(curve?.base) ?? 5;
-    const max = parseDuration(curve?.max) ?? 250;
+    const base = duration.parse(curve?.base) ?? 5;
+    const max = duration.parse(curve?.max) ?? 250;
     // String key → Deno KV array key. With a prefix it's a two-segment key so the
     // namespace is a real KV sub-range; without, a flat one-segment key.
     const k = (key: string): DenoKvKey =>

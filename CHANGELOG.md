@@ -187,6 +187,58 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: the three token parsers are now `parse`/`format` pairs — `parseDuration`,
+  `parseBytes` and `parseRate` are replaced by `duration`, `size` and `rate`.**
+  ([CONTRACT.md P17](docs/CONTRACT.md#p17--one-canonical-duration-form) /
+  [P25](docs/CONTRACT.md#p25--one-canonical-size-form))
+  The house grammars only ever decoded. Making them public gave them callers who need the other
+  direction too — a CLI printing the cap it enforced, a config round-trip, an error message
+  quoting a limit in the grammar its author wrote — and each of those would have hand-rolled an
+  encoder, which is the drift the export existed to prevent.
+
+    Each dimension is now one namespace with both directions, following `bytes`'s shape
+    (`bytes.parse` / `bytes.format`) rather than adding three more verb-prefixed names:
+
+    | Was                | Now                 | Gained                                           |
+    | ------------------ | ------------------- | ------------------------------------------------ |
+    | `parseDuration(d)` | `duration.parse(d)` | `duration.format(90_000)` → `'1.5m'`             |
+    | `parseBytes(s)`    | `size.parse(s)`     | `size.format(1_048_576)` → `'1mb'`               |
+    | `parseRate(r)`     | `rate.parse(r)`     | `rate.format({ count: 2, per: 1000 })` → `'2/s'` |
+
+    Behaviour of the decode direction is byte-for-byte what it was — same grammars, same 1024-based
+    size units, same `undefined` fallback for a bad duration or size token, same throw for a bad
+    rate. Only the spelling moved. A `Rate` type is now exported for the `{ count, per }` pair.
+
+    **`format` is the exact inverse of `parse`, not a pretty-printer.** `parse(format(v))` returns
+    `v` unchanged for every value `parse` can produce, pinned as a property over the whole numeric
+    range rather than a table of cases. This is the one place the pair deliberately departs from
+    `ms`, whose `ms(90_000)` is `'2m'` and reads back as 120_000: a lossy encode is fine in a log
+    line and disqualifying in anything that writes a value back, and P25's "a typo can never widen
+    a cap" only holds if the encode direction cannot widen one either. Where no unit divides a
+    value cleanly the base unit wins — `90_001` is `'90001ms'`, and `1537` is `'1537b'` rather than
+    the exact-but-unreadable `'1.5009765625kb'`.
+
+    **Migration** is a rename at every call site; there is no alias
+    ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes the alias
+    obligation to the GA channel, and this is `rc`). The old names are pinned **absent** from the
+    barrel, so a stale import fails at build rather than resolving to something else:
+
+    ```diff
+    - import { parseDuration, parseBytes, parseRate } from 'stitchapi';
+    - const ttl = parseDuration(opts.ttl);
+    - const cap = parseBytes(opts.max);
+    - const { count, per } = parseRate(opts.rate);
+    + import { duration, size, rate } from 'stitchapi';
+    + const ttl = duration.parse(opts.ttl);
+    + const cap = size.parse(opts.max);
+    + const { count, per } = rate.parse(opts.rate);
+    ```
+
+    One caveat worth naming: `size` no longer spells `Bytes`, so the `Bytes`/`Chars` distinction is
+    no longer visible at the call site. `stream.buffer.chars` and `trace.body.chars` count UTF-16
+    code units, not bytes, and still reject a token at compile time — but the name no longer warns
+    you before the type does.
+
 - **BREAKING CHANGE (types only): a `baseUrl`/`path` beside a `url` in ONE config literal is now a
   compile error.**
   ([CONTRACT.md P24 carve-out (b)](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))

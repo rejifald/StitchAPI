@@ -81,12 +81,91 @@ export const systemClock: Clock = {
     },
 };
 
+// ---- house token grammars (CONTRACT.md P17/P25, ADR 0023) ------------------
+// Three dimensions a consumer can author as a token — a duration, a size, a rate — each
+// exposed as one namespace with a `parse`/`format` pair rather than a bare parser. The
+// shape is `bytes`'s (`bytes.parse` / `bytes.format`): one name per dimension, the
+// direction named at the call site. Both directions are public because a peer package
+// that takes an authored value should parse it the way core does instead of mirroring
+// the grammar and drifting from it, and a tool that shows one back — a CLI table, a
+// config round-trip, an error message quoting the cap it enforced — should print it in
+// the same grammar the consumer wrote.
+//
+// **`format` is the exact inverse of `parse`, never an approximation.** For every value
+// each `parse` can produce, `parse(format(v))` returns that value unchanged — pinned as a
+// property in `parsers-properties.spec.ts`. This is where the house pair departs from
+// `ms`, whose `ms(90_000)` rounds to `'2m'` and does not survive a round-trip: a lossy
+// encode is fine for a log line and wrong for anything that writes a value back, and P25's
+// "a typo can never widen a cap" only holds if the encode direction cannot widen one either.
+//
+// Exactness alone would still allow unreadable output — `1537 / 1024` is `1.5009765625`,
+// which multiplies back exactly and is useless to a reader. So a unit is used only when the
+// quotient is BOTH exact and short (at most `MAX_UNIT_DECIMALS` decimal places); otherwise
+// the next smaller unit is tried, down to the base unit (`ms` / `b`), where the quotient is
+// the value itself and both tests always pass. `1537` formats as `'1537b'`, not `'1.5009765625kb'`.
+
+/** Decimal places a unit-scaled quotient may carry before the next smaller unit is preferred. */
+const MAX_UNIT_DECIMALS = 2;
+
+/** Decimal places in a number's canonical string form; `0` for an integer or exponential form. */
+function decimals(n: number): number {
+    const s = String(n);
+    const dot = s.indexOf('.');
+    return dot === -1 ? 0 : s.length - dot - 1;
+}
+
 /**
- * Parse a duration into milliseconds. Grammar: a number (already ms), a numeric
- * string (`"1500"` → 1500), or `<number><unit>` with unit `ms` | `s` | `m` | `h` | `d`
- * (`"500ms"`, `"30s"`, `"2m"`, `"1h"`, `"2d"`; fractions like `"1.5s"` allowed).
- * Anything else → `undefined`.
+ * The shared encode step for the two magnitude grammars. Walks `units` largest-scale first and
+ * returns the first `<quotient><unit>` whose quotient is short enough to read, re-parses to the
+ * exact input under `rescale` (the arithmetic that grammar's `parse` performs — a plain multiply
+ * for durations, a multiply-then-floor for sizes), and matches the `\d+(\.\d+)?` the grammar
+ * accepts. That last test is what keeps exponential forms out: `String(1e-7)` is `'1e-7'`, which
+ * no unit pattern matches.
+ *
+ * Returns `undefined` when no unit fits, which happens only for a negative value (no grammar's
+ * unit pattern admits a sign) or an exponential-form magnitude. Callers fall back to the bare
+ * numeric token both grammars accept — with `0` carved out, since `Number('0') || undefined` is
+ * `undefined` and a bare `'0'` is the one integer that does NOT survive the round-trip.
  */
+function formatScaled(
+    n: number,
+    units: readonly (readonly [string, number])[],
+    rescale: (q: number, scale: number) => number,
+): string | undefined {
+    for (const [unit, scale] of units) {
+        if (n < scale) continue;
+        const q = n / scale;
+        if (decimals(q) > MAX_UNIT_DECIMALS) continue;
+        const s = String(q);
+        if (!/^\d+(?:\.\d+)?$/.test(s)) continue;
+        if (rescale(q, scale) !== n) continue;
+        return `${s}${unit}`;
+    }
+    return undefined;
+}
+
+// The decode-side scale lookup. Its encode-side counterpart — the same numbers as an ordered
+// largest-first list — lives INSIDE `formatDuration` rather than beside this, and the duplication
+// is deliberate: measured, the tidier arrangements both cost bundle size on the parse-only path
+// that every consumer of `stitch` is on. Deriving one from the other (`Object.fromEntries`) welds
+// them into one live reference; declaring them as adjacent module-scope tables lets the minifier
+// merge them into a single `var` statement, where this lookup being live pins the encoder's table
+// too. Split across a function boundary, neither reaches a bundle that never formats. Same shape
+// of trade ADR 0024's budget note records for the throttle's wait/sleep tail — the repetition is
+// the cheaper half, and it is measured rather than assumed.
+//
+// Hoisted out of the function body, though: the `parseDuration` this replaced rebuilt its scale
+// object on every single call, and unlike `format`, `parse` is on the hot path.
+const DURATION_SCALE: Record<string, number> = {
+    ms: 1,
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+};
+
+/** Decode half of {@link duration}; the namespace carries the contract. Internal — the
+ * barrel exports the pair, not this. */
 export function parseDuration(
     d: number | string | undefined,
 ): number | undefined {
@@ -95,31 +174,56 @@ export function parseDuration(
     const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/.exec(d.trim());
     if (!m) return Number(d) || undefined;
     const n = parseFloat(m[1] ?? '');
-    const scale: Record<string, number> = {
-        ms: 1,
-        s: 1000,
-        m: 60_000,
-        h: 3_600_000,
-        d: 86_400_000,
-    };
-    return n * (scale[m[2] ?? ''] ?? 1);
+    return n * (DURATION_SCALE[m[2] ?? ''] ?? 1);
+}
+
+/** Encode half of {@link duration}; the namespace carries the contract. Internal — the
+ * barrel exports the pair, not this. */
+export function formatDuration(ms: number): string {
+    if (!Number.isFinite(ms))
+        throw new TypeError(`bad duration: ${ms} is not a finite number of ms`);
+    if (ms === 0) return '0ms';
+    // Declared HERE, not at module scope. Minified, adjacent module-scope tables merge into one
+    // `var` statement, and one used declarator in it (the parse-side lookup, which every consumer
+    // of `stitch` reaches) pins the rest — so a parse-only bundle was carrying both unit tables.
+    // Inside the function they exist only when the encoder does. `format` is a display path, not
+    // a hot one, so the per-call literal costs nothing that matters.
+    const units = [
+        ['d', 86_400_000],
+        ['h', 3_600_000],
+        ['m', 60_000],
+        ['s', 1000],
+        ['ms', 1],
+    ] as const;
+    // A duration's `parse` multiplies and nothing else, so the exactness test is the multiply.
+    return formatScaled(ms, units, (q, scale) => q * scale) ?? String(ms);
 }
 
 /**
- * Parse a size into bytes — the size analogue of {@link parseDuration}. Grammar: a number
- * (already bytes), a numeric string (`"4096"` → 4096), or `<number><unit>` with unit
- * `b` | `kb` | `mb` | `gb` | `tb` (`"512b"`, `"64kb"`, `"1mb"`, `"1.5gb"`; case-insensitive,
- * fractions allowed). Anything else → `undefined`.
+ * The one house duration grammar (CONTRACT.md P17), in both directions.
  *
- * Units are **powers of 1024** — `"1mb"` is 1_048_576, the npm-`bytes` convention every
- * Node config parser in the ecosystem already speaks (CONTRACT.md P22) and the base the
- * house defaults are written in (`10 * 1024 * 1024`). The IEC spellings `kib` | `mib` |
- * `gib` | `tib` are accepted for the same values, for callers who want the base explicit.
+ * `duration.parse` takes a number (already ms), a numeric string (`'1500'` → 1500), or
+ * `<number><unit>` with unit `ms` | `s` | `m` | `h` | `d` (`'500ms'`, `'30s'`, `'2m'`, `'1h'`,
+ * `'2d'`; fractions like `'1.5s'` allowed). Anything else → `undefined`, which lands the field
+ * on its default — a typo can never widen a cap to "unbounded".
  *
- * Only for fields that count **bytes**. The `Chars` family (`stream.buffer.chars`,
- * `trace.body.chars`) counts UTF-16 code units of decoded text, where a byte token would
- * be a category error — that distinction is what the `Bytes`/`Chars` suffixes carry (P1).
+ * `duration.format` is its exact inverse: `duration.parse(duration.format(ms)) === ms` for every
+ * finite `ms`. It picks the largest unit that stays exact and readable, so `90_000` is `'1.5m'`
+ * and `90_001` — which no unit divides cleanly — is `'90001ms'` rather than a rounded `'2m'`.
+ *
+ * **Encoding is for values a consumer will read or re-author, not for emitted ones.** P17's
+ * complement holds: a duration core *produces* — a `StitchEvent` field, a `*Result`, a value
+ * passed into a consumer-implemented contract — stays a raw-ms `number` and never grows a string
+ * arm. Formatting one for a CLI table or an error message is display; writing one into an emitted
+ * field is a P17 violation this pair cannot see and will not stop.
  */
+export const duration = {
+    parse: parseDuration,
+    format: formatDuration,
+} as const;
+
+/** Decode half of {@link size}; the namespace carries the contract. Internal — the
+ * barrel exports the pair, not this. */
 export function parseBytes(s: number | string | undefined): number | undefined {
     if (s == null) return undefined;
     if (typeof s === 'number') return s;
@@ -132,61 +236,74 @@ export function parseBytes(s: number | string | undefined): number | undefined {
     return Math.floor(parseFloat(m[1] ?? '') * 1024 ** pow);
 }
 
+/** Encode half of {@link size}; the namespace carries the contract. Internal — the
+ * barrel exports the pair, not this. */
+export function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes))
+        throw new TypeError(
+            `bad size: ${bytes} is not a finite number of bytes`,
+        );
+    if (bytes === 0) return '0b';
+    // A size's `parse` floors after scaling, so the exactness test must floor too — otherwise
+    // a quotient that scales back to `n + 0.0000001` would pass here and parse back to `n`
+    // anyway, and one that scales to `n - 0.0000001` would pass here and parse back to `n - 1`.
+    const units = [
+        ['tb', 1024 ** 4],
+        ['gb', 1024 ** 3],
+        ['mb', 1024 ** 2],
+        ['kb', 1024],
+        ['b', 1],
+    ] as const;
+    return (
+        formatScaled(bytes, units, (q, scale) => Math.floor(q * scale)) ??
+        String(bytes)
+    );
+}
+
+/**
+ * The size analogue (CONTRACT.md P25), in both directions.
+ *
+ * `size.parse` takes a number (already bytes), a numeric string (`'4096'` → 4096), or
+ * `<number><unit>` with unit `b` | `kb` | `mb` | `gb` | `tb` (`'512b'`, `'64kb'`, `'1mb'`,
+ * `'1.5gb'`; case-insensitive, fractions allowed). Anything else → `undefined`.
+ *
+ * Units are **powers of 1024** — `'1mb'` is 1_048_576, the npm-`bytes` convention every Node
+ * config parser in the ecosystem already speaks (CONTRACT.md P22) and the base the house
+ * defaults are written in (`10 * 1024 * 1024`). The IEC spellings `kib` | `mib` | `gib` | `tib`
+ * are accepted for the same values, for callers who want the base explicit; `format` emits the
+ * short spelling, since the two denote the same number and one canonical output beats a choice.
+ *
+ * `size.format` is the exact inverse: `size.parse(size.format(b)) === b` for every finite `b`.
+ * `1536` is `'1.5kb'`; `1537`, whose kb quotient is the unreadable-but-exact `1.5009765625`, is
+ * `'1537b'`.
+ *
+ * Only for fields that count **bytes**. The `Chars` family (`stream.buffer.chars`,
+ * `trace.body.chars`) counts UTF-16 code units of decoded text, where a byte token would be a
+ * category error — that distinction is what the `Bytes`/`Chars` suffixes carry (P1), and it is
+ * the one hazard this name no longer spells out the way the old `parseBytes` did.
+ */
+export const size = {
+    parse: parseBytes,
+    format: formatBytes,
+} as const;
+
 /**
  * `setTimeout` clamps any delay past the 32-bit signed ceiling to **1ms**, so a spacing beyond
  * this cannot be honoured — the limiter would run *unlimited* instead of very slowly. Rejected
- * at the grammar (see {@link parseRate}) rather than clamped: clamping would silently pace
- * FASTER than asked, which is the direction that hurts.
+ * at the grammar (see {@link rate}) rather than clamped: clamping would silently pace FASTER
+ * than asked, which is the direction that hurts.
  */
 const MAX_SPACING = 2_147_483_647;
 
-/**
- * Parse a rate into `{ count, per }` — the number of grants and the window length in ms.
- * Grammar: `<count>/<duration>` with a POSITIVE INTEGER count and a {@link parseDuration} token
- * for the denominator, where a **bare unit is its one-unit token** (`"2/s"` ≡ `"2/1s"`); so
- * `"2/s"`, `"10/m"`, `"1000/h"`, `"100/15m"` and `"2/500ms"` all parse, and whitespace around
- * the slash is tolerated. The third house token grammar, alongside {@link parseDuration} and
- * {@link parseBytes}, and exported for the same reason: a peer package that takes an authored
- * rate parses it the way core does instead of mirroring it.
- *
- * The denominator is a duration, so it uses the one house duration grammar (CONTRACT.md P17)
- * rather than a scale table of its own — which is what the old `ms|s|m` was, a hand-copied
- * subset that left the value space with holes. An ordinary 1000/hour quota is a 3600ms spacing,
- * and before ADR 0023 Decision 3 **no legal token denoted it**: `60000/count = 3600` needs a
- * fractional count, and counts are integers.
- *
- * **`"2/500ms"` ≡ `"4/s"` ≡ `"240/m"`, and that is the design, not an approximation.** A rate
- * declares a minimum spacing, not a bucket — there is no capacity parameter for the window
- * length to set — so any two rates with the same ratio ARE the same limiter, in-process and
- * store-backed alike. Pinned across three window lengths in `store.spec.ts`.
- *
- * **Unlike those two, an unparseable token THROWS rather than resolving to `undefined`.** The
- * divergence is deliberate, and it runs in the same direction as their fallback rather than
- * against it. For a cap, falling back to the field's default is the SAFE failure — the ceiling
- * stays where it was, which is why CONTRACT.md P25 can say a typo never widens a cap to
- * "unbounded". A rate has no safe fallback: `undefined` here means *no rate limit at all*, so
- * the quiet path is the unbounded one, and a fallback would let a typo silently REMOVE the
- * limit instead of narrowing it. Same goal, opposite mechanism, because the two value-spaces
- * fail in opposite directions. Both callers guard with a presence check, so an omitted `rate`
- * never reaches here — only a non-empty token that could not be read.
- *
- * **Failing loud is necessary and was not sufficient.** Three values sit inside what a looser
- * grammar would ACCEPT and each would silently mean *no limit at all* — the unbounded quiet
- * path reached through the accepting branch rather than the rejecting one — so each is rejected
- * explicitly:
- * - a **zero count** (`"0/s"`, once legal under `\d+`) → spacing `per / 0` = `Infinity`, which
- *   `setTimeout` clamps to 1ms: it read as "block everything" under an injected {@link Clock},
- *   where the test suite sees it, and was unlimited on the system clock;
- * - a **non-positive or non-finite window** (`"2/0s"`, `"2/-500"`) → `parseDuration` returns a
- *   real `0` / `-500` for those rather than `undefined`, and both limiters read `spacing <= 0`
- *   as "no pacing configured";
- * - a spacing past {@link MAX_SPACING} (`"1/30d"`) → the same `setTimeout` clamp as the first.
- *
- * A rate is a string and only a string (no `number | string` widening): it is two quantities,
- * not a magnitude, so a bare `2` would have to invent a default window to denote anything. See
- * CONTRACT.md P17/P25, which widen a magnitude that already carries a house unit — this has none.
- */
-export function parseRate(r: string): { count: number; per: number } {
+/** The `{ count, per }` a rate token denotes: grants per window, window length in ms. */
+export interface Rate {
+    count: number;
+    per: number;
+}
+
+/** Decode half of {@link rate}; the namespace carries the contract. Internal — the
+ * barrel exports the pair, not this. */
+export function parseRate(r: string): Rate {
     // Split on the first slash by hand rather than matching the whole token in one regex. A
     // single pattern for both halves wants `\s*\/\s*(.+)$`, whose trailing `\s*` and `.+` both
     // match a space — the overlap `js/polynomial-redos` flags on caller-supplied input.
@@ -198,7 +315,7 @@ export function parseRate(r: string): { count: number; per: number } {
     // free of the pattern and no harder to read — the same trade {@link stripTrailingSlashes}
     // takes one function below, where the quadratic behaviour IS real. Each half is now checked
     // by an anchored pattern over a bounded slice with nothing to backtrack across; `indexOf` +
-    // `slice` are linear, and `parseDuration` owns the denominator.
+    // `slice` are linear, and `duration.parse` owns the denominator.
     const t = r.trim();
     const slash = t.indexOf('/');
     if (slash === -1) throw new Error(`bad rate: ${r}`);
@@ -206,12 +323,12 @@ export function parseRate(r: string): { count: number; per: number } {
     if (!/^[1-9]\d*$/.test(head)) throw new Error(`bad rate: ${r}`);
     const count = parseInt(head, 10);
     const denom = t.slice(slash + 1).trim();
-    // A bare unit is the one-unit token: `'s'` ≡ `'1s'`. Anything else goes to `parseDuration`
+    // A bare unit is the one-unit token: `'s'` ≡ `'1s'`. Anything else goes to `duration.parse`
     // as written, so `'500ms'`, `'15m'` and the raw-ms `'500'` all mean what they mean everywhere.
-    const per = parseDuration(
+    const per = duration.parse(
         /^(?:ms|s|m|h|d)$/.test(denom) ? `1${denom}` : denom,
     );
-    // `parseDuration` resolves a bad token to `undefined`, but also parses `'0s'` to a real 0 and
+    // `duration.parse` resolves a bad token to `undefined`, but also parses `'0s'` to a real 0 and
     // `'-500'` through its numeric-string arm — both of which would disable pacing rather than
     // fail, so the window is checked here rather than trusted.
     if (per === undefined || !Number.isFinite(per) || per <= 0)
@@ -222,6 +339,90 @@ export function parseRate(r: string): { count: number; per: number } {
         );
     return { count, per };
 }
+
+/** Encode half of {@link rate}; the namespace carries the contract. Internal — the
+ * barrel exports the pair, not this. */
+export function formatRate(r: Rate): string {
+    const { count, per } = r;
+    if (!Number.isInteger(count) || count < 1)
+        throw new Error(
+            `bad rate: a count of ${count} is not a positive integer`,
+        );
+    if (!Number.isFinite(per) || per <= 0)
+        throw new Error(`bad rate: a window of ${per}ms is not positive`);
+    if (per / count > MAX_SPACING)
+        throw new Error(
+            `bad rate: a spacing of ${per / count}ms is past the ${MAX_SPACING}ms timer ceiling`,
+        );
+    // The denominator is a duration token, so the one duration encoder writes it. A window of
+    // exactly one unit drops the `1` — `parse` reads a bare unit as its one-unit token, so
+    // `'2/s'` and `'2/1s'` are the same rate and the shorter is the one the docs and the house
+    // defaults are written in.
+    const window = duration.format(per);
+    return `${count}/${window.replace(/^1(?=[a-z])/, '')}`;
+}
+
+/**
+ * The third house token grammar, in both directions: a rate as `{ count, per }` — the number of
+ * grants and the window length in ms.
+ *
+ * `rate.parse` takes `<count>/<duration>` with a POSITIVE INTEGER count and a {@link duration}
+ * token for the denominator, where a **bare unit is its one-unit token** (`'2/s'` ≡ `'2/1s'`); so
+ * `'2/s'`, `'10/m'`, `'1000/h'`, `'100/15m'` and `'2/500ms'` all parse, and whitespace around the
+ * slash is tolerated. Public for the same reason as the two above — a peer package that takes an
+ * authored rate (a distributed limiter) parses it the way core does.
+ *
+ * The denominator is a duration, so it uses the one house duration grammar (CONTRACT.md P17)
+ * rather than a scale table of its own — which is what the old `ms|s|m` was, a hand-copied
+ * subset that left the value space with holes. An ordinary 1000/hour quota is a 3600ms spacing,
+ * and before ADR 0023 Decision 3 **no legal token denoted it**: `60000/count = 3600` needs a
+ * fractional count, and counts are integers.
+ *
+ * **`'2/500ms'` ≡ `'4/s'` ≡ `'240/m'`, and that is the design, not an approximation.** A rate
+ * declares a minimum spacing, not a bucket — there is no capacity parameter for the window
+ * length to set — so any two rates with the same ratio ARE the same limiter, in-process and
+ * store-backed alike. Pinned across three window lengths in `store.spec.ts`.
+ *
+ * `rate.format` is the exact inverse of the *pair*, not of the spacing: it returns the token for
+ * the `{ count, per }` it was handed, so `rate.parse(rate.format(r))` deep-equals `r`. It does
+ * **not** reduce the ratio to a canonical member of the equivalence class above — `{ count: 2,
+ * per: 500 }` formats as `'2/500ms'`, never as the equivalent `'4/s'`. Reducing would be a
+ * defensible other choice, but it would make the round-trip hold only up to equivalence, and
+ * `count` is the number the consumer wrote and the one an error message should quote back.
+ *
+ * **Unlike the two grammars above, an unparseable token THROWS rather than resolving to
+ * `undefined`.** The divergence is deliberate, and it runs in the same direction as their
+ * fallback rather than against it. For a cap, falling back to the field's default is the SAFE
+ * failure — the ceiling stays where it was, which is why CONTRACT.md P25 can say a typo never
+ * widens a cap to "unbounded". A rate has no safe fallback: `undefined` here means *no rate limit
+ * at all*, so the quiet path is the unbounded one, and a fallback would let a typo silently
+ * REMOVE the limit instead of narrowing it. Same goal, opposite mechanism, because the two
+ * value-spaces fail in opposite directions. Both callers guard with a presence check, so an
+ * omitted `rate` never reaches here — only a non-empty token that could not be read.
+ *
+ * **Failing loud is necessary and was not sufficient.** Three values sit inside what a looser
+ * grammar would ACCEPT and each would silently mean *no limit at all* — the unbounded quiet
+ * path reached through the accepting branch rather than the rejecting one — so each is rejected
+ * explicitly:
+ * - a **zero count** (`'0/s'`, once legal under `\d+`) → spacing `per / 0` = `Infinity`, which
+ *   `setTimeout` clamps to 1ms: it read as "block everything" under an injected {@link Clock},
+ *   where the test suite sees it, and was unlimited on the system clock;
+ * - a **non-positive or non-finite window** (`'2/0s'`, `'2/-500'`) → `duration.parse` returns a
+ *   real `0` / `-500` for those rather than `undefined`, and both limiters read `spacing <= 0`
+ *   as "no pacing configured";
+ * - a spacing past {@link MAX_SPACING} (`'1/30d'`) → the same `setTimeout` clamp as the first.
+ *
+ * `format` enforces the same three, so a `{ count, per }` that could not have come from `parse`
+ * is rejected at the encode step instead of producing a token that would throw on the way back in.
+ *
+ * A rate is a string and only a string (no `number | string` widening): it is two quantities,
+ * not a magnitude, so a bare `2` would have to invent a default window to denote anything. See
+ * CONTRACT.md P17/P25, which widen a magnitude that already carries a house unit — this has none.
+ */
+export const rate = {
+    parse: parseRate,
+    format: formatRate,
+} as const;
 
 /**
  * Strip any trailing `/` from a base URL. Done by hand rather than with `replace(/\/+$/, '')`:

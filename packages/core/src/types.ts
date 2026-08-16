@@ -1124,9 +1124,9 @@ export interface ThrottleOptions {
      * A minimum spacing between successive calls (`interval / count`, applied before any request
      * leaves), not a token bucket. The dominant field: a bare string is the P12 shorthand for
      * `{ rate }` (`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`). The grammar is
-     * `<count>/<duration>` with a POSITIVE INTEGER count and any {@link parseDuration} token for
+     * `<count>/<duration>` with a POSITIVE INTEGER count and any {@link duration} token for
      * the denominator, where a bare unit means one of that unit (`'2/s'` ≡ `'2/1s'`) — read by
-     * the shared {@link parseRate}.
+     * the shared {@link rate}.
      *
      * Because it paces rather than buckets, the only thing it reads is the **ratio**: `'2/500ms'`,
      * `'4/s'` and `'240/m'` all declare a 250ms gap and are the same limiter, in-process and
@@ -1141,7 +1141,7 @@ export interface ThrottleOptions {
      * P15/P20 exist to reject. `'2/s'` is not the sugar form of a number here; it IS the value.
      *
      * An unparseable token **throws** at construction rather than falling back to "no limit" —
-     * the one place a house parser fails loud, for the reason spelled out on {@link parseRate}.
+     * the one place a house parser fails loud, for the reason spelled out on {@link rate}.
      * That covers both degenerate ends of the range too, since each would also mean no limit: a
      * zero count, and a spacing past the ~24.8-day timer ceiling.
      */

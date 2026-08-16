@@ -16,7 +16,7 @@
 //     into a child — pass exactly what's needed (incl. `PATH` for a bare command name, or use an
 //     absolute command path).
 import { execFile } from 'node:child_process';
-import { compact, parseBytes, stitch } from 'stitchapi';
+import { compact, size, stitch } from 'stitchapi';
 import type {
     AdapterRequest,
     AdapterResponse,
@@ -45,11 +45,11 @@ interface ShellDefaults {
 
 // Fold the `buffer` slot's scalar shorthand — `'4mb'` ≡ `{ max: '4mb' }` (CONTRACT.md P12) — and
 // resolve it to the byte count `execFile` wants. An unparseable token yields `undefined` from
-// `parseBytes` and lands on the default, so a typo can never widen the cap to "unbounded" (P25).
+// `size.parse` and lands on the default, so a typo can never widen the cap to "unbounded" (P25).
 function resolveMaxBuffer(buffer: ShellOptions['buffer']): number {
     const max =
         typeof buffer === 'object' && buffer !== null ? buffer.max : buffer;
-    return parseBytes(max) ?? DEFAULT_MAX_BUFFER;
+    return size.parse(max) ?? DEFAULT_MAX_BUFFER;
 }
 
 // Run the static command with the call's argv. The ONLY input is the argv array (`req.body`);
@@ -139,7 +139,7 @@ function shellSurface(d: ShellDefaults): Surface {
 export interface ShellBufferOptions {
     /** Ceiling on the buffered stdout/stderr; exceeding it fails the call. A raw byte count or a
      *  size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024) — parsed by core's shared
-     *  `parseBytes` (CONTRACT.md P25). Default 10 MiB; an unparseable token falls back to that
+     *  `size.parse` (CONTRACT.md P25). Default 10 MiB; an unparseable token falls back to that
      *  default, never to "unbounded". */
     max?: number | string;
 }

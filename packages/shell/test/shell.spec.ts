@@ -166,7 +166,7 @@ test('the envelope form `buffer: { max }` binds the same runtime cap as the shor
 });
 
 test('an unparseable size token lands on the default cap, not on 0/NaN', async () => {
-    // `parseBytes('one gigabyte')` → undefined → the 10 MiB default. A `NaN`/`0` cap would
+    // `size.parse('one gigabyte')` → undefined → the 10 MiB default. A `NaN`/`0` cap would
     // reject even this two-byte write; resolving proves the fallback is the real default.
     const bad = shell(NODE, { buffer: 'one gigabyte' });
     await expect(

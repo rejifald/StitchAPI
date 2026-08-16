@@ -59,7 +59,7 @@ shell(NODE, { buffer: '4mb' }); // ≡ { buffer: { max: '4mb' } }
 shell(NODE, { buffer: 4096 }); // ≡ { buffer: { max: 4096 } }
 ```
 
-Tokens are powers of 1024 (`'1mb'` = 1 048 576), parsed by core's shared `parseBytes`. An
+Tokens are powers of 1024 (`'1mb'` = 1 048 576), parsed by core's shared `size.parse`. An
 unparseable token falls back to the default — never to "unbounded".
 
 ## Contributing

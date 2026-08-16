@@ -574,7 +574,7 @@ function traceCommand(args: string[], io: CliIO): number {
 
     let cutoff: number | undefined;
     if (since !== undefined) {
-        // Shared duration grammar (util.parseDuration): "500ms" | "45s" | "30m" | "1h" | "2d",
+        // Shared duration grammar (util.duration.parse): "500ms" | "45s" | "30m" | "1h" | "2d",
         // or a bare number of milliseconds.
         const sinceMs = parseDuration(since);
         if (sinceMs === undefined) {
