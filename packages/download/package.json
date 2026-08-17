@@ -67,7 +67,7 @@
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
-        "esbuild": "^0.28.1",
+        "esbuild": "^0.28.2",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
