@@ -345,3 +345,15 @@ html .twoslash:hover .twoslash-hover {
 html .twoslash .twoslash-hover:hover {
     border-color: currentColor;
 }
+
+/* --- Twoslash hover affordance: don't flap open while the page is scrolling -
+   Scrolling slides annotated tokens under a stationary cursor; the browser's
+   resulting pointerenter/pointerleave hit-test churn flaps hover popups open
+   and closed (worst on token-dense pages, e.g. reference/helpers.mdx).
+   TwoslashScrollGuard (components/twoslash-scroll-guard.tsx, mounted in
+   app/layout.tsx) stamps this attribute on <html> while a scroll is in
+   flight; killing pointer-events on the trigger for that window stops the
+   spurious events at the source. */
+html[data-scrolling='true'] .twoslash-hover {
+    pointer-events: none;
+}
