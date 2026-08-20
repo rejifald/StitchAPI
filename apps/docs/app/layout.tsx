@@ -1,6 +1,7 @@
 import { AnalyticsWithReferrals } from './analytics';
 import './global.css';
 
+import { TwoslashScrollGuard } from '@/components/twoslash-scroll-guard';
 import { jsonLdHtml } from '@/lib/json-ld';
 import { releaseVersion } from '@/lib/release';
 import { appName, gitConfig, siteUrl } from '@/lib/shared';
@@ -186,6 +187,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                 </RootProvider>
                 <AnalyticsWithReferrals />
                 <SpeedInsights />
+                <TwoslashScrollGuard />
             </body>
         </html>
     );
