@@ -61,10 +61,10 @@
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
-        "hono": "^4.13.1",
+        "hono": "^4.13.3",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.10"
+        "vitest": "^4.1.11"
     }
 }
