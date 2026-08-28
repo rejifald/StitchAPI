@@ -20,12 +20,20 @@
 // safe to run on every Vercel build: after the first deploy it's a fast no-op
 // unless the model repo actually changes.
 //
-// Run as a `next build` prebuild step — see prebuild-search-index.mjs, which
-// gates this the same as the search-index build (Vercel/deploy only, so
-// GitHub CI's `verify` build stays network-free). Locally, run by hand to
-// populate the same directory for testing the route with
+// Two callers run this:
+//   1. The `next build` prebuild step (prebuild-search-index.mjs), gated to
+//      Vercel/deploy so a plain `verify` docs build stays network-free.
+//   2. The `search-relevance` job in .github/workflows/verify.yml, directly and
+//      up front — behind an actions/cache of MODEL_DIR, so the normal case is a
+//      restored copy and this is a no-op. That job then runs the index build and
+//      the eval with VENDORED_EMBED_MODEL set, which locks embed.ts onto this
+//      directory with allowRemoteModels=false. Net effect: the only step in that
+//      job that may touch the network is this one, it is cached, and it retries
+//      — the eval itself can no longer reach the CDN at all, so it cannot flake
+//      on one (PR #758 died exactly that way; see withRetry below).
+// Locally, populate the same directory by hand to test the route with
 // allowRemoteModels=false:
-//   pnpm --filter @stitchapi/docs exec node --import tsx/esm scripts/fetch-embed-model.mts
+//   pnpm --filter @stitchapi/docs fetch:embed-model
 import {
     EMBED_DTYPE,
     EMBED_MODEL,
@@ -47,6 +55,35 @@ const modelDir = resolve(appRoot, MODEL_DIR);
 // fetch here is expected and fine.
 env.cacheDir = modelDir;
 
+// A cold vendor pulls ~83 MB from the HuggingFace CDN, which rate-limits (429)
+// when several runners ask at once — four dependabot runs starting inside 40
+// seconds is enough, and that is precisely how PR #758's `search-relevance` job
+// died (run 33160105565: `Error (429) ... resolve/main/onnx/model.onnx`, after
+// the index had already chunked 140 pages). A 429 is transient and this download
+// is idempotent — transformers.js checks MODEL_DIR per file before fetching, so
+// a retry re-uses whatever already landed and asks only for the rest. Retry with
+// backoff rather than failing a required check on someone else's traffic burst.
+const ATTEMPTS = 4;
+const BACKOFF_MS = [2_000, 8_000, 20_000];
+
+async function withRetry<T>(label: string, run: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await run();
+        } catch (error) {
+            if (attempt >= ATTEMPTS) throw error;
+            const waitMs = BACKOFF_MS[attempt - 1] ?? 20_000;
+            const why = error instanceof Error ? error.message : String(error);
+            console.warn(
+                `[fetch-embed-model] ${label} failed ` +
+                    `(attempt ${attempt}/${ATTEMPTS}): ${why}`,
+            );
+            console.warn(`[fetch-embed-model] retrying in ${waitMs / 1000}s…`);
+            await new Promise((r) => setTimeout(r, waitMs));
+        }
+    }
+}
+
 /** Recursively sum file sizes under `dir` (small tree — a handful of model
  * files: config, tokenizer, ONNX weights). */
 function dirSize(dir: string): number {
@@ -62,17 +99,19 @@ async function main(): Promise<void> {
     console.log(
         `[fetch-embed-model] ${EMBED_MODEL} (${EMBED_DTYPE}) → ${MODEL_DIR}`,
     );
-    const extractor = await pipeline('feature-extraction', EMBED_MODEL, {
-        dtype: EMBED_DTYPE,
-    });
+    const extractor = await withRetry('model download', () =>
+        pipeline('feature-extraction', EMBED_MODEL, { dtype: EMBED_DTYPE }),
+    );
     // Force one real inference, not just pipeline construction: this script's
     // only job is making sure nothing is fetched at request time, so it needs
     // to touch whatever files a real embed call touches — not just the ones
     // pipeline() itself happens to load eagerly.
-    await extractor('warm the vendored cache', {
-        pooling: 'mean',
-        normalize: true,
-    });
+    await withRetry('warm-up inference', () =>
+        extractor('warm the vendored cache', {
+            pooling: 'mean',
+            normalize: true,
+        }),
+    );
 
     const repoDir = resolve(modelDir, EMBED_MODEL);
     const bytes = dirSize(repoDir);
