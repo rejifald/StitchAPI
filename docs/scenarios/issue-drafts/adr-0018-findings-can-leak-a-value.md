@@ -60,7 +60,7 @@ written to the JSONL log in full (3 of 3 measured). A `client_secret` in a **req
 too.
 
 The cause is that the file sink's redactor is a five-name **header** denylist rather than
-`isSecretKey`. The same file already contains the deep secret-key scrubber and applies it to a
+`secrets.has`. The same file already contains the deep secret-key scrubber and applies it to a
 request body for the `serve` SSE transport (`redactEventForTransport`, `trace.ts:85`) — the disk
 sink simply never calls it.
 
