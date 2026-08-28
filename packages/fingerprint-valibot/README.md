@@ -17,9 +17,9 @@ requirements, and injected defaults.
 
 ```ts
 import { valibotFingerprinter } from '@stitchapi/fingerprint-valibot';
-import { registerFingerprinter } from 'stitchapi/fingerprint';
+import { fingerprinters } from 'stitchapi/fingerprint';
 
-registerFingerprinter(valibotFingerprinter);
+fingerprinters.register(valibotFingerprinter);
 ```
 
 Compliance is proven against `verifyFingerprintContract` from `stitchapi/testing`.

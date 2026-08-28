@@ -30,7 +30,7 @@ import type { TraceSink } from 'stitchapi';
  *   Browser-safe (re-exported verbatim from core):
  *     stitch, seam, drift, graphql,
  *     validate, compile,
- *     fetchAdapter, memoryStore, multiplex, toOtlpJson,
+ *     fetchAdapter, memoryStore, multiplex,
  *     StitchError, RateLimitError,
  *     isStitch, isSeam, verdictOf,
  *     httpSurface, graphqlSurface,
@@ -44,7 +44,8 @@ import type { TraceSink } from 'stitchapi';
  *     cookieSession            → ./shims/node-surfaces  (in-memory jar)
  *     createTrace              → shimmed below          (JSONL is a no-op)
  *     consoleSink, fileSink    → shimmed below          (routed through createTrace)
- *     otlpSink, otlpHttpExporter → ./shims/otlp-browser (no-op exporter, no egress)
+ *     otlp (sink/exporter shimmed, json verbatim)
+ *                              → ./shims/otlp-browser (no-op exporter, no egress)
  *   Server-tier only, THROWS here:
  *     cli, serve, mcp          → ./shims/server-tier-stubs
  */
@@ -64,8 +65,6 @@ export {
     memoryStore,
     // `multiplex` is pure JS (B1-SPIKE §5) — safe to re-export verbatim.
     multiplex,
-    // `toOtlpJson` is a pure span→JSON mapper (no Node) — safe verbatim.
-    toOtlpJson,
     // Error classes. A snippet that does `catch (e) { if (e instanceof StitchError) }`
     // — the shape the errors docs teach — needs these bound or it throws
     // `StitchError is not defined`. Pure classes, no Node.
@@ -122,11 +121,12 @@ export type * from 'stitchapi';
 
 /* ---- Node-only surfaces, shimmed (emit a RunNotice) ---------------------- */
 export { env, cookieSession } from './shims/node-surfaces';
-export {
-    otlpSink,
-    otlpHttpExporter,
-    noopOtlpExporter,
-} from './shims/otlp-browser';
+// The OTLP namespace is replaced WHOLESALE (core folded the three names into one
+// object, so there is no per-name override any more): `otlp.sink`/`otlp.exporter`
+// are neutered to guarantee no egress, while `otlp.json` is core's real serializer
+// passed through verbatim — it is pure and was browser-safe before the fold. See
+// shims/otlp-browser.ts for why every member has to be listed explicitly.
+export { otlp, noopOtlpExporter } from './shims/otlp-browser';
 
 /**
  * Browser `createTrace`: core's JSONL/console sink, neutered for the browser.

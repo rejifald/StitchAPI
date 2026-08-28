@@ -1080,6 +1080,75 @@ against both — the findings sit at the end of the list:
   +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
   siblings. None of the six has a size gate and all are server-side, so the trade is accepted
   rather than budgeted — recorded here so it is a decision, not an accident.
+- **Export-surface fold, no rule cited (the fingerprinter registry, 2026-08-28)** — the third
+  verb-prefixed export group to fold, and the one where the repetition was most literal:
+  `registerFingerprinter` / `getFingerprinter` / `listFingerprinters` / `clearFingerprinters` were
+  four names over one `Map`, each spelling out a subject **`stitchapi/fingerprint` already names in
+  the import path**. **Fixed** — one `fingerprinters` namespace (`.register` / `.get` / `.list` /
+  `.clear`), following `secrets` and the `duration`/`size`/`rate` pairs. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the four old
+  spellings are pinned **absent** in `public-api-surface.spec.ts` beside `REMOVED_PARSERS` and
+  `REMOVED_SECRET_FUNCTIONS`.
+  _No numbered principle covers this, and none is claimed._ It resembles a
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) fold, but P24 is about
+  a shared prefix across **flat members of an exported interface** in a house contract, and **R8**
+  enforces it exactly there — neither reaches a module's list of exports. The resemblance is an
+  analogy, not a licence. What this fold actually answers to is precedent plus a stated house shape:
+  the `duration`/`size`/`rate` pairs (#753), `secrets` (#764), and the sentence above the token
+  grammars in `packages/core/src/index.ts` — "one name per dimension, the direction named at the
+  call site, rather than a barrel of six verb-prefixed functions". Whether that sentence should
+  become a numbered rule with a ratchet behind it is a live question this entry does not settle.
+  _And R8 could not have caught it even if it read exports_ — this group names its subject in the
+  **trailing** position, so its leading words are the four verbs and it buckets as
+  "register"/"get"/"list"/"clear", never grouping. That is the known leading-word gap recorded in
+  [§7](#7-enforcement), the same one that hid `transformVersion`+`trustTransform` and
+  `total`/`perAttempt`; per that entry, this class is found by **reading**, and this is one more
+  §6 bullet saying so.
+  _Why the pin is sharper here than for its two siblings:_ both of those fold names off a **barrel**
+  that re-exports from an implementation module, so an old spelling surviving as a module export is
+  invisible to consumers. `src/fingerprint.ts` **is** the subpath entry — there is no barrel in
+  between — so the four implementations had to stop being `export`ed, not merely stop being
+  re-exported, and the absent-pin is the only thing standing between a stray `export` keyword and a
+  second published spelling.
+  _The facade rule, restated with its cost measured:_ a namespace object does not tree-shake —
+  esbuild will not split an object literal to drop a dead property — so the four implementations
+  stay plain module functions and `resolveFingerprint` keeps calling the lookup directly. That
+  keeps the whole fold **free on the budgeted gate** (all three scenarios byte-identical;
+  `import { resolveFingerprint }` unchanged at 1.29 KB gzip) and confines the cost to the one place
+  it is unavoidable: a consumer that wanted `register` alone now carries all four, ~70 B gzip. The
+  same trade the token grammars recorded as "`format` ships wherever `parse` is live" — worth
+  naming as the standing price of this shape rather than rediscovering it per fold.
+- **No numbered principle (the OTLP pipeline on the barrel, 2026-08-28)** — `otlpSink`,
+  `otlpHttpExporter` and `toOtlpJson` were three names on the ROOT barrel for one export path.
+  All three carried the subject (`otlp`/`Otlp`) and varied only the role word: `…Sink`,
+  `…HttpExporter`, `to…Json`. **Fixed** (`otlp.sink` / `otlp.exporter` / `otlp.json`, following
+  `secrets` and the `duration`/`size`/`rate` pairs above rather than adding a fourth set of
+  role-prefixed names). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the three old
+  names are pinned **absent** in `public-api-surface.spec.ts` beside `REMOVED_PARSERS` and
+  `REMOVED_SECRET_FUNCTIONS`, so an alias cannot drift back and leave two spellings of one call.
+  _No rule required this, and none forbade it._ The reasoning is
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)'s — a repeated token
+  is the subject, so each member owes only its **role** — but P24 is written over the _fields of a
+  house contract_ and is gated by **R8** over object types. Neither reaches a barrel's export
+  names, and this entry does not claim otherwise: the fold is a judgement made in P24's spirit, on
+  a surface no principle currently governs. The same is true of the two folds it follows
+  (#753's parsers, #764's `secrets`), which is now three precedents and no rule.
+  _And R8 could not have been pointed at it as written._ R8 needs a shared **leading**-word prefix.
+  `otlpSink` and `otlpHttpExporter` lead with the subject, `toOtlpJson` leads with a verb and
+  carries its subject in the middle — so widening R8 to walk export names would still have grouped
+  at most two of the three, and split the pipeline at its serializer. Same blind spot as the
+  `halfOpenAfter` and `perAttempt` entries above: each name is individually well-formed and
+  accurate, and the defect is only visible across the set.
+  _What the flat names actively hid:_ the three are not siblings at all but three **layers** of one
+  pipeline, each the input to the next — `json` serializes, `exporter` POSTs what `json` produced,
+  `sink` maps events to spans and hands them to `exporter`. Three co-equal barrel entries present
+  them as a menu of interchangeable helpers, which is the reading that makes a caller reach for
+  `toOtlpJson` when they wanted a sink. The namespace orders them without a doc paragraph having to.
+  _Bundle cost, the reason a facade and not an object:_ a namespace object does not tree-shake, so
+  the three implementations stay plain module functions and `otlp` is a thin facade over them;
+  core's own call site (`stitch.ts`) keeps importing `otlpSink` directly. Measured both sides: the
+  whole entry unchanged at 24.60 KB gzip, `import { stitch }` 21.82 → 21.83 KB. No budget raise.
 - **ADR 0012 rule 6 (an adapter package the sweep never reached, 2026-08-28)** —
   `@stitchapi/react-native` exported `assertStreamingPolyfills` and
   `hasStreamingPolyfills`: two bare, non-branded names in an adapter package, which
@@ -1337,6 +1406,94 @@ shape, not as today's surface: nothing on the surface carries an alias.
   envelope at compose time (`multipart: 'dot'` → `{ nesting }`, `stream: 'ndjson'` → `{ decode }`,
   `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
   only ever see the object form. **R6 clears** — the baseline is now **0**.
+
+- **No numbered rule — an export-surface fold (the query key, 2026-08-28)** — this entry cites no
+  principle, because none reaches it.
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) is the closest in
+  spirit — members sharing one subject fold into one envelope — but it governs **config fields**,
+  and R8 enforces it by reading a package's option _types_. A **barrel** is outside both its
+  wording and its lint, so nothing flagged this and nothing would have. What the fold follows is
+  precedent, not a rule: the **P17/P25 encode-direction** entry above
+  (`parseDuration`/`parseBytes`/`parseRate` → `duration`/`size`/`rate`) and core's redaction hatch
+  (`registerSecretKey`/`isSecretKey`/`redactSecretsDeep` → `secrets`). Recorded here so the third
+  instance of a pattern with no rule behind it is at least written down; whether it earns a
+  numbered principle is a separate call.
+
+    `@stitchapi/query-core`'s `deriveQueryKey`/`nameOf`/`keyInputFor` were three verb-prefixed
+    names for one two-segment tuple, and their own JSDoc said as much — "the first segment of a
+    derived query key", "the second segment" — while `deriveQueryKey` wore the exact
+    `parseDuration` shape the grammars had already moved away from. **Fixed** — one `stitchKey`
+    namespace (`of`/`name`/`input`), the segment named at the call site. Hard break, no alias
+    ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the three old
+    names are pinned **absent** in `packages/query-core/test/query.spec.ts`, which is where a
+    fold's pins live for a package with no `public-api-surface.spec.ts` of its own.
+
+    _The re-export surface is the whole point:_ this fold differs from its two predecessors in
+    that the trio did not sit on one barrel. `@stitchapi/react`, `/vue`, `/svelte` and `/angular`
+    each re-exported all three wholesale, so one derivation carried **fifteen** public names, and
+    a rename that reads as a three-name change is a five-package change. Nothing measures that —
+    R8 reads one package's config types, and no gate reads a re-export chain — which is the
+    argument for recording it here. The pin sits in query-core alone and still covers all five:
+    the four bindings re-export **from** this package, so a name absent here cannot reappear on
+    theirs. `@stitchapi/solid` is the fifth binding and re-exports only the adapter; that
+    divergence predates the fold and is left standing.
+    _Why `stitchKey` and not `queryKey`:_
+    [P22](#p22--a-standards-interop-contract-uses-the-standards-field-names) keeps TanStack's own
+    field names verbatim **inside** the options object — `queryKey` and `queryFn` are theirs — which
+    is precisely why the export beside it may not take that word. A bare `queryKey` export sitting
+    next to a `queryKey` field that means something narrower is the
+    [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one) collision that made
+    the adapter `stitchQueryOptions` rather than `queryOptions`
+    ([ADR 0012](adr/0012-integration-symbol-naming.md)). P22's carve-out is scoped to the interop
+    _payload_, not to the vocabulary around it; the absence of a bare `queryKey` is pinned with the
+    fold so the shorter spelling cannot arrive later for symmetry.
+    _The facade obligation, and its measured price:_ a namespace object does not tree-shake, so the
+    three implementations stay plain module functions and the namespace is a thin `as const` facade
+    over them, with query-core's own call sites on the functions. Measured both sides: query-core's
+    entry does not move (1598 → 1597 B gzip) and its `createStitchQuery`-only and
+    `stitchQueryOptions`-only scenarios are byte-identical, but the React and Vue **hook-only**
+    scenarios grow **+43 B gzip each**, because those two bindings sanitise their dep key through
+    the grammar across a package boundary and so retain the whole namespace. Cross-package, a
+    consumer gets the namespace or nothing — the same trade `secrets` made when query-core moved to
+    `secrets.has`. Recorded here rather than rounded to "free".
+
+- **The export-surface analogue of P24 (secret redaction, 2026-08-28)** — P24 folds a shared
+  field-name prefix in a house **contract** into an envelope. The barrel states the same rule for
+  **exports** in prose rather than as a numbered principle — "one name per dimension, the direction
+  named at the call site, rather than a barrel of six verb-prefixed functions" — and #753 acted on
+  it for the token grammars. `registerSecretKey` / `isSecretKey` / `redactSecretsDeep` were the
+  same shape left unswept: three verb-prefixed names on the root barrel for one denylist.
+  **Fixed** (replaced by a single `secrets` namespace — `secrets.register` / `secrets.has` /
+  `secrets.redact` — following the `duration`/`size`/`rate` shape). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the three old
+  names are pinned **absent** in `public-api-surface.spec.ts` beside the parsers, so an alias
+  cannot drift back and leave two spellings of one call.
+
+    **No ratchet could have found this, on two independent counts.** R8 scans exported `interface`
+    bodies for config **members** — a barrel export list is not in its domain at all. And even on
+    its own axis it would have missed the group: the shared subject **trails**
+    (`…SecretKey`/`…SecretsDeep`) while the leading words are three different verbs, which is
+    exactly the documented leading-word gap recorded above for `total`/`perAttempt` and the
+    cache-transform pair. Found by reading, as that note says this class must be.
+
+    _Why a namespace is licensed here_ ([P25](#p25--one-canonical-size-form)'s "an envelope is
+    licensed where it names an unambiguous subject"): `secrets` groups by **category** — every
+    member is an operation on the one secret-key denylist — so the name is exhaustive over its
+    contents, the same test `wire` passes and a phase envelope like `request` fails.
+
+    _The bundle objection, measured:_ a namespace object does not tree-shake — esbuild will not
+    split an object literal to drop a dead property — so the fold is only free if the members are
+    already co-live. They are: `auth.ts`, `trace.ts` and `stitch.ts` import the **functions** from
+    `util.ts`, never the barrel, so the namespace is a thin facade over plain module functions.
+    `import { stitch }` is unchanged at 21.82 KB gzip and the whole entry moves 24.59 → 24.60 KB;
+    no budget raise. The same facade discipline is what recovered the token grammars' regression.
+
+    _One caveat had to move rather than be dropped:_ the old predicate's name implied it answered
+    about headers, and it does not — `secrets.has('authorization')` is `false` even though every
+    built-in sink redacts that header (`redactHeaders` widens that one, at the sink boundary). A
+    verbose name carrying a warning is still a warning that must be repeated at each call site; it
+    now sits once on the namespace's JSDoc and once in the reference page, the same relocation
+    `size` made when it stopped being `parseBytes`.
 
 ## 7. Enforcement
 

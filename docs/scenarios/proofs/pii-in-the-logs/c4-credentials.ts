@@ -13,9 +13,8 @@
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c4-credentials.ts
 import { apiKey, bearer } from '../../../../packages/core/src/auth';
-import { stitch } from '../../../../packages/core/src/index';
+import { otlp, stitch } from '../../../../packages/core/src/index';
 import type { OtelSpan } from '../../../../packages/core/src/otlp';
-import { otlpSink } from '../../../../packages/core/src/otlp';
 import { consoleSink, loggerSink } from '../../../../packages/core/src/trace';
 import {
     BASE,
@@ -272,7 +271,7 @@ async function main(): Promise<void> {
             baseUrl: BASE,
             path: '/v1/customers/1',
             adapter: fakeVendor(),
-            trace: otlpSink({
+            trace: otlp.sink({
                 exporter: { export: (s) => void spans.push(...s) },
             }),
         });
@@ -281,12 +280,12 @@ async function main(): Promise<void> {
             query: { api_key: QUERY_KEY },
         });
         const row = leakRow(
-            'otlpSink — hand-rolled',
+            'otlp.sink — hand-rolled',
             bytesOf(spans),
             CREDENTIALS,
             'the exported spans',
         );
-        check('otlpSink: nothing', row.hits.size, 0);
+        check('otlp.sink: nothing', row.hits.size, 0);
         note(
             '`url.full` after scrubbing',
             (spans[0]?.attributes as Record<string, unknown> | undefined)?.[
@@ -380,7 +379,7 @@ async function main(): Promise<void> {
     {
         // The vendor is a token endpoint (or a debug endpoint echoing the session). The response
         // body is response data, and the JSONL sink's redactor is the five-name HEADER denylist —
-        // `isSecretKey` (which knows `access_token`) is never applied to a `result`.
+        // `secrets.has` (which knows `access_token`) is never applied to a `result`.
         const t = tempFileSink();
         const call = stitch({
             name: 'refreshSession',
@@ -486,7 +485,7 @@ async function main(): Promise<void> {
 
     finish(
         'C4',
-        'PARTIAL — the credential half is genuinely safer than the PII half, and "protected by default" is too strong. What holds: a DECLARATIVE strategy (`bearer`, `apiKey` in query/cookie) never enters the event stream at all, because `auth.apply` runs on a request clone inside the attempt loop while the `start` event was built from the pre-auth `baseReq` — 0 of 3 credentials on the raw spine, even for a naive custom sink. Hand-rolled request credentials are scrubbed by every built-in sink: the JSONL file gets `"authorization":"[REDACTED]"`, `"cookie":"[REDACTED]"`, `"api_key":"REDACTED"` and a scrubbed `url`; console, logger and OTLP print no headers at all; `.inspect()`, `.report()`, the cache (key AND value) and a 401 `StitchError` carry none. What does NOT hold, two ways, both measured: (1) a CUSTOM sink receives the raw event, so hand-rolled `input.headers`/`input.query` reach it in the clear — 3 of 3 — which `trace.ts` documents in prose and this confirms; (2) a credential in a RESPONSE body is written to the JSONL log in full — `access_token`, `refresh_token`, `session_cookie`, 3 of 3 — because the file sink\'s redactor is the five-name HEADER denylist, not `isSecretKey`. The same file already ships the deep secret-key scrubber and applies it to a request body for the `serve` SSE transport (`redactEventForTransport`); the disk sink simply never calls it. A `client_secret` in a REQUEST body is written verbatim for the same reason. So the honest split is: credentials the library PLACES are protected; credentials that ride the payload are treated exactly like customer PII, which is to say not at all',
+        'PARTIAL — the credential half is genuinely safer than the PII half, and "protected by default" is too strong. What holds: a DECLARATIVE strategy (`bearer`, `apiKey` in query/cookie) never enters the event stream at all, because `auth.apply` runs on a request clone inside the attempt loop while the `start` event was built from the pre-auth `baseReq` — 0 of 3 credentials on the raw spine, even for a naive custom sink. Hand-rolled request credentials are scrubbed by every built-in sink: the JSONL file gets `"authorization":"[REDACTED]"`, `"cookie":"[REDACTED]"`, `"api_key":"REDACTED"` and a scrubbed `url`; console, logger and OTLP print no headers at all; `.inspect()`, `.report()`, the cache (key AND value) and a 401 `StitchError` carry none. What does NOT hold, two ways, both measured: (1) a CUSTOM sink receives the raw event, so hand-rolled `input.headers`/`input.query` reach it in the clear — 3 of 3 — which `trace.ts` documents in prose and this confirms; (2) a credential in a RESPONSE body is written to the JSONL log in full — `access_token`, `refresh_token`, `session_cookie`, 3 of 3 — because the file sink\'s redactor is the five-name HEADER denylist, not `secrets.has`. The same file already ships the deep secret-key scrubber and applies it to a request body for the `serve` SSE transport (`redactEventForTransport`); the disk sink simply never calls it. A `client_secret` in a REQUEST body is written verbatim for the same reason. So the honest split is: credentials the library PLACES are protected; credentials that ride the payload are treated exactly like customer PII, which is to say not at all',
     );
 }
 
