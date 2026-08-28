@@ -1231,6 +1231,44 @@ shape, not as today's surface: nothing on the surface carries an alias.
   `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
   only ever see the object form. **R6 clears** — the baseline is now **0**.
 
+- **The export-surface analogue of P24 (secret redaction, 2026-08-28)** — P24 folds a shared
+  field-name prefix in a house **contract** into an envelope. The barrel states the same rule for
+  **exports** in prose rather than as a numbered principle — "one name per dimension, the direction
+  named at the call site, rather than a barrel of six verb-prefixed functions" — and #753 acted on
+  it for the token grammars. `registerSecretKey` / `isSecretKey` / `redactSecretsDeep` were the
+  same shape left unswept: three verb-prefixed names on the root barrel for one denylist.
+  **Fixed** (replaced by a single `secrets` namespace — `secrets.register` / `secrets.has` /
+  `secrets.redact` — following the `duration`/`size`/`rate` shape). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the three old
+  names are pinned **absent** in `public-api-surface.spec.ts` beside the parsers, so an alias
+  cannot drift back and leave two spellings of one call.
+
+    **No ratchet could have found this, on two independent counts.** R8 scans exported `interface`
+    bodies for config **members** — a barrel export list is not in its domain at all. And even on
+    its own axis it would have missed the group: the shared subject **trails**
+    (`…SecretKey`/`…SecretsDeep`) while the leading words are three different verbs, which is
+    exactly the documented leading-word gap recorded above for `total`/`perAttempt` and the
+    cache-transform pair. Found by reading, as that note says this class must be.
+
+    _Why a namespace is licensed here_ ([P25](#p25--one-canonical-size-form)'s "an envelope is
+    licensed where it names an unambiguous subject"): `secrets` groups by **category** — every
+    member is an operation on the one secret-key denylist — so the name is exhaustive over its
+    contents, the same test `wire` passes and a phase envelope like `request` fails.
+
+    _The bundle objection, measured:_ a namespace object does not tree-shake — esbuild will not
+    split an object literal to drop a dead property — so the fold is only free if the members are
+    already co-live. They are: `auth.ts`, `trace.ts` and `stitch.ts` import the **functions** from
+    `util.ts`, never the barrel, so the namespace is a thin facade over plain module functions.
+    `import { stitch }` is unchanged at 21.82 KB gzip and the whole entry moves 24.59 → 24.60 KB;
+    no budget raise. The same facade discipline is what recovered the token grammars' regression.
+
+    _One caveat had to move rather than be dropped:_ the old predicate's name implied it answered
+    about headers, and it does not — `secrets.has('authorization')` is `false` even though every
+    built-in sink redacts that header (`redactHeaders` widens that one, at the sink boundary). A
+    verbose name carrying a warning is still a warning that must be repeated at each call site; it
+    now sits once on the namespace's JSDoc and once in the reference page, the same relocation
+    `size` made when it stopped being `parseBytes`.
+
 ## 7. Enforcement
 
 [`scripts/check-contract.mjs`](../scripts/check-contract.mjs) is a **ratchet**, run as
