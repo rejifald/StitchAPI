@@ -196,7 +196,7 @@ jobs:
     # Browser-sandbox security model (§2.13): the Playwright harness proves the real CSP +
     # Worker egress blocking and that a real RunResult.trace reaches the playground DAG. It
     # builds the docs app and drives a headless Chromium, so it runs as its own job rather
-    # than inside the `verify` gate. Make it a required check once it has settled in CI.
+    # than inside the `verify` gate. Already a required check on `main`.
     e2e:
         runs-on: ubuntu-latest
         timeout-minutes: 15
