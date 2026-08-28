@@ -67,9 +67,9 @@
         "@stitchapi/query-core": "workspace:*",
         "@types/node": "^22.10.0",
         "stitchapi": "workspace:*",
-        "svelte": "^5.56.8",
+        "svelte": "^5.56.10",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.10"
+        "vitest": "^4.1.11"
     }
 }
