@@ -1002,6 +1002,45 @@ against both — the findings sit at the end of the list:
   `parsers-properties.spec.ts`, not a table of pretty cases, and verified non-vacuous by
   reintroducing `ms`-style rounding and watching all three properties fail.
 
+- **Export-surface fold, no rule cited (the fingerprinter registry, 2026-08-28)** — the third
+  verb-prefixed export group to fold, and the one where the repetition was most literal:
+  `registerFingerprinter` / `getFingerprinter` / `listFingerprinters` / `clearFingerprinters` were
+  four names over one `Map`, each spelling out a subject **`stitchapi/fingerprint` already names in
+  the import path**. **Fixed** — one `fingerprinters` namespace (`.register` / `.get` / `.list` /
+  `.clear`), following `secrets` and the `duration`/`size`/`rate` pairs. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the four old
+  spellings are pinned **absent** in `public-api-surface.spec.ts` beside `REMOVED_PARSERS` and
+  `REMOVED_SECRET_FUNCTIONS`.
+  _No numbered principle covers this, and none is claimed._ It resembles a
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) fold, but P24 is about
+  a shared prefix across **flat members of an exported interface** in a house contract, and **R8**
+  enforces it exactly there — neither reaches a module's list of exports. The resemblance is an
+  analogy, not a licence. What this fold actually answers to is precedent plus a stated house shape:
+  the `duration`/`size`/`rate` pairs (#753), `secrets` (#764), and the sentence above the token
+  grammars in `packages/core/src/index.ts` — "one name per dimension, the direction named at the
+  call site, rather than a barrel of six verb-prefixed functions". Whether that sentence should
+  become a numbered rule with a ratchet behind it is a live question this entry does not settle.
+  _And R8 could not have caught it even if it read exports_ — this group names its subject in the
+  **trailing** position, so its leading words are the four verbs and it buckets as
+  "register"/"get"/"list"/"clear", never grouping. That is the known leading-word gap recorded in
+  [§7](#7-enforcement), the same one that hid `transformVersion`+`trustTransform` and
+  `total`/`perAttempt`; per that entry, this class is found by **reading**, and this is one more
+  §6 bullet saying so.
+  _Why the pin is sharper here than for its two siblings:_ both of those fold names off a **barrel**
+  that re-exports from an implementation module, so an old spelling surviving as a module export is
+  invisible to consumers. `src/fingerprint.ts` **is** the subpath entry — there is no barrel in
+  between — so the four implementations had to stop being `export`ed, not merely stop being
+  re-exported, and the absent-pin is the only thing standing between a stray `export` keyword and a
+  second published spelling.
+  _The facade rule, restated with its cost measured:_ a namespace object does not tree-shake —
+  esbuild will not split an object literal to drop a dead property — so the four implementations
+  stay plain module functions and `resolveFingerprint` keeps calling the lookup directly. That
+  keeps the whole fold **free on the budgeted gate** (all three scenarios byte-identical;
+  `import { resolveFingerprint }` unchanged at 1.29 KB gzip) and confines the cost to the one place
+  it is unavoidable: a consumer that wanted `register` alone now carries all four, ~70 B gzip. The
+  same trade the token grammars recorded as "`format` ships wherever `parse` is live" — worth
+  naming as the standing price of this shape rather than rediscovering it per fold.
+
 Everything else this section once listed has **shipped** and moved to the record below —
 the cross-package `StitchStore`/`StitchLike`/`RequestSeam` clashes (qualified per-framework
 and per-ecosystem), `queryOptions`→`stitchQueryOptions`, `OAuth2Opts`/`CookieSessionOpts`,
