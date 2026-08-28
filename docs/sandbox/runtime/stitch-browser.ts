@@ -32,11 +32,10 @@ import type { TraceSink } from 'stitchapi';
  *     validate, compile,
  *     fetchAdapter, memoryStore, multiplex, toOtlpJson,
  *     StitchError, RateLimitError,
- *     isStitch, isSeam, isSecretKey, verdictOf,
+ *     isStitch, isSeam, verdictOf,
  *     httpSurface, graphqlSurface,
  *     xhrAdapter, axiosAdapter,
- *     duration, size, rate, compact,
- *     redactSecretsDeep, registerSecretKey,
+ *     duration, size, rate, compact, secrets,
  *     loggerSink, systemClock, + all types
  *   Browser-safe, from the `stitchapi/auth` entry (ADR 0021):
  *     bearer, apiKey, basic, oauth2
@@ -75,7 +74,6 @@ export {
     // Type guards and the verdict reader. Pure predicates over plain objects.
     isStitch,
     isSeam,
-    isSecretKey,
     verdictOf,
     // Surface descriptors. Plain objects describing a protocol, no transport.
     httpSurface,
@@ -88,14 +86,13 @@ export {
     axiosAdapter,
     // Token grammars and the secret registry. `duration`/`size`/`rate` are the
     // parse/format namespace pairs (#753, formerly parseDuration/parseBytes/
-    // parseRate) — plain objects, no Node; the redaction pair is what the
-    // trace-privacy snippets reach for.
+    // parseRate) — plain objects, no Node; `secrets` is the redaction namespace
+    // (register/has/redact) the trace-privacy snippets reach for.
     duration,
     size,
     rate,
     compact,
-    redactSecretsDeep,
-    registerSecretKey,
+    secrets,
     // `loggerSink` writes to a CALLER-supplied logger — unlike `consoleSink` it
     // never re-enables core's own console path, so it is safe verbatim (see the
     // shimmed pair below).

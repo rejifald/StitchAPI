@@ -10,7 +10,7 @@ import {
 } from '../src';
 import type { StitchCallResult, StitchLike } from '../src';
 
-import { registerSecretKey } from 'stitchapi';
+import { secrets } from 'stitchapi';
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -502,8 +502,8 @@ describe('keyInputFor()', () => {
         expect(out.headers['accept-language']).toBe('uk');
     });
 
-    test("reuses core's isSecretKey: registerSecretKey widens header redaction", () => {
-        registerSecretKey('x-querycore-spec-credential');
+    test("reuses core's secrets.has: secrets.register widens header redaction", () => {
+        secrets.register('x-querycore-spec-credential');
         const out = keyInputFor({
             headers: { 'x-querycore-spec-credential': 'v' },
         }) as { headers: Record<string, unknown> };

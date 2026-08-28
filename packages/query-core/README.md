@@ -78,7 +78,7 @@ const options = stitchQueryOptions(getUser, { params: { id: '1' } });
 
 - **`stitchQueryOptions(stitch, input)`** returns a `StitchQueryOptions<T>` (`{ queryKey, queryFn }` — TanStack's own field names, kept verbatim as a standards-interop carve-out). Pass it straight to `useQuery` / `createQuery` / `injectQuery`.
 - **`deriveQueryKey(stitch, input)`** builds the canonical cache key: a stable stitch name plus a sanitised input.
-- **`nameOf(stitch)`** and **`keyInputFor(input)`** expose the two key segments for bindings that compose keys themselves. `keyInputFor` never puts the raw input in a key: it drops runtime-only `signal`/`onProgress` and redacts the values of secret-bearing headers (`authorization`, `cookie`, `*-token`, `*-api-key`, plus core's `isSecretKey` names — including anything widened via `registerSecretKey`).
+- **`nameOf(stitch)`** and **`keyInputFor(input)`** expose the two key segments for bindings that compose keys themselves. `keyInputFor` never puts the raw input in a key: it drops runtime-only `signal`/`onProgress` and redacts the values of secret-bearing headers (`authorization`, `cookie`, `*-token`, `*-api-key`, plus core's `secrets.has` names — including anything widened via `secrets.register`).
 
 ## Example
 
