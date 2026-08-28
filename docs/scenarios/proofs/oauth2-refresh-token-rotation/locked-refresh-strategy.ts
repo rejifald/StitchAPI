@@ -1,13 +1,13 @@
 // USER CODE, part 2 — everything in rotating-refresh-strategy.ts PLUS cross-process mutual
 // exclusion, built on the only two `StitchStore` primitives that can express a lock:
 // `increment(key, ttl)` (atomic; the winner is whoever gets `1`) and `set(key, undefined)`
-// (a delete, part of the documented store contract — see `verifyStoreContract`, testing.ts:224).
+// (a delete, part of the documented store contract — see `conformance.store`, testing.ts:236).
 //
 // Losers do NOT redeem. They poll the vault until the winner publishes a new access token, which
 // is what keeps a single-use refresh token from being presented twice.
 //
-// CAVEAT the proof cannot check: `verifyStoreContract` only requires `increment` to be atomic
-// WITHIN a process (testing.ts:160-162, 291). A real deployment needs a backend whose increment is
+// CAVEAT the proof cannot check: `conformance.store` only requires `increment` to be atomic
+// WITHIN a process (testing.ts:172-174, 303). A real deployment needs a backend whose increment is
 // atomic ACROSS processes (Redis `INCR`, `UPDATE ... RETURNING`). That is a stronger guarantee
 // than the store contract demands.
 import type {

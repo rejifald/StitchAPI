@@ -483,7 +483,7 @@ P24 envelope), `CircuitOptions.cooldown` (its `halfOpenAfter` sibling was widene
 too, then **removed** in the 2026-08-04 P1 fix below — the two named one instant),
 `ReconnectOptions.delay` (was `backoffMs`, de-suffixed to `backoff` and later renamed
 under P2), `OAuth2Options.refreshSkew` (now `refresh.skew`), `CookieSessionOptions.ttl`,
-and `verifyStoreContract`'s `ttl` knob — all `number | string` via the one shared
+and `conformance.store`'s `ttl` knob — all `number | string` via the one shared
 `duration.parse`.
 _Resolved (seam-authored, 2026-08):_ the two positions where a **`Surface`** supplies a
 duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return — take
@@ -493,7 +493,7 @@ duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return �
 _Not widened, deliberately:_ `StitchStore.set`/`increment`'s `ttl` **parameter** stays a
 raw-ms `number` — **core** calls those verbs with an already-resolved value, so it is the
 complement case, not an oversight. The consumer-authored knob of the same name on
-`verifyStoreContract` is widened, which is the pair that shows the rule turns on who
+`conformance.store` is widened, which is the pair that shows the rule turns on who
 supplies the value.
 _Resolved (2026-07 sweep, emitted — de-suffixed):_ `StitchEvent` `waited`,
 `retryAfter`, the `done` event's `elapsed` (was `ms`), `MockResponse.delay`;
@@ -1407,6 +1407,54 @@ shape, not as today's surface: nothing on the surface carries an alias.
   `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
   only ever see the object form. **R6 clears** — the baseline is now **0**.
 
+- **Export-surface fold (conformance kit, 2026-08-28)** — the third application of the fold the
+  token grammars started (`parse*` → `duration`/`size`/`rate`, recorded above) and `secrets`
+  continued. **No numbered principle governs this one, and none is claimed.**
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) is written about
+  **fields** in a house contract and **R8** enforces it there; neither reaches the names on a
+  barrel. The argument is P24's read one level out — a shared prefix across sibling names means the
+  prefix is the subject and the suffixes are its members — but it is applied here by judgement, as
+  the two folds before it were, not by a rule that covers it.
+  `stitchapi/testing` had the clearest instance left: four identical `verify<Seam>Contract`
+  functions of one shape (`(impl) => ContractReport`), plus `assertConformance` and
+  `adapterContractFixture` — six names a vendor reads to make **one** decision, "does my seam
+  comply". Note that this family is **not** an instance of R8's leading-word gap recorded above for
+  `total`/`perAttempt`, the cache-transform pair and the endpoint slot: these names share a leading
+  word, `verify`, so a hypothetical R8 pointed at exports would have bucketed all four. It would
+  have bucketed them **under the verb** — the one dimension that is identical across the group and
+  therefore carries no information — and proposed folding on it. The tell that the seam is the real
+  dimension came from elsewhere: the module's own docblock named the group by wildcard (_"the
+  relevant `verify*Contract` function"_), and a name you can only write with a glob is a dimension
+  the export names are refusing to carry.
+  **Fixed** — one `conformance` namespace with `store` / `adapter` / `sink` / `fingerprint` /
+  `assert` / `fixture`. The dimension is the **seam**, and it was already discriminated in the
+  return value: `ContractReport.seam` carries exactly those four values, so the fold only makes the
+  export surface agree with the report every one of them already produced. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the six old names
+  are pinned **absent** in `public-api-surface.spec.ts` beside the parsers and the secret functions,
+  and the namespace is pinned as a whole rather than member-by-member.
+  _Why `fixture` is inside:_ it is the one member that is not a verifier, and the test applied was
+  whether the name is **exhaustive over its contents** — not whether the members share a signature
+  (`secrets` already holds a registrar, a predicate and a transform).
+  `adapterContractFixture` is the SERVER half of the adapter contract, the pure function
+  `conformance.adapter` verifies a transport against, and it has no use apart from it — the same
+  pairing that put `format` beside `parse`. Left standalone it would have been one loose
+  `*Contract*`-spelled name beside the namespace that absorbed the other five, which is the state
+  the fold exists to end.
+  _Cost, and why this seam first:_ genuinely zero. `stitchapi/testing` is imported by `*.spec.ts`
+  and never reaches a production bundle, and the subpath is not size-gated — measured both sides,
+  and all three scenarios the gate does cover are byte-identical (whole entry 24.60 KB,
+  `import { stitch }` 21.82 KB, `stitchapi/auth` 5.22 KB). The implementations stay plain module
+  functions in `testing.ts`, so the namespace is a thin facade rather than an object welding six
+  functions onto a consumer's path.
+  _The one hazard worth recording:_ the churn was ~50 files and all but three were mechanical. A
+  namespace-valued export is **invisible to a flat `Object.keys` scan**, and three scenario proofs
+  enumerate the runtime export surface to prove an ABSENCE — that nothing verifies an inbound
+  signature, that nothing names a fixture's recording date, that no verifier faces a vendor. Two
+  read the live module and now descend one level into namespace exports; the third grepped the
+  source for `export function verify…` and now reads the facade instead. Left alone, all three
+  would have kept passing while measuring less, which is the failure mode a fold like this
+  introduces anywhere an absence is proved by enumeration — in this repo or in a consumer's.
 - **No numbered rule — an export-surface fold (the query key, 2026-08-28)** — this entry cites no
   principle, because none reaches it.
   [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) is the closest in

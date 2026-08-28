@@ -13,7 +13,7 @@
 // CONTRACT (a {@link SchemaFingerprinter} interface + a registry) and the
 // {@link resolveFingerprint} fallback ladder; the per-vendor strategies live in
 // their own packages (`@stitchapi/fingerprint-*`) with the validator as a peer
-// dependency, each proving compliance via `verifyFingerprintContract`
+// dependency, each proving compliance via `conformance.fingerprint`
 // (`stitchapi/testing`). No validator ever enters core's dependency graph.
 import { xxh128 } from './hash';
 import { type StandardSchemaV1, isStandardSchema } from './standard-schema';

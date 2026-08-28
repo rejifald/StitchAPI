@@ -7,7 +7,7 @@
 // it talks to a tiny normalized {@link AsyncStorageLike} surface, so the community
 // module, an MMKV shim, a SecureStore wrapper, or a test double all drop in.
 //
-// Compliance with the store contract is proven against `verifyStoreContract` from
+// Compliance with the store contract is proven against `conformance.store` from
 // `stitchapi/testing` (see test/store.spec.ts).
 import type { StitchStore } from 'stitchapi';
 

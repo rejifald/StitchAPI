@@ -364,11 +364,11 @@ comments but not docstrings_
 
 ## Conformance-test shape
 
-A vendor package proves soundness with `verifyFingerprintContract`, mirroring the
+A vendor package proves soundness with `conformance.fingerprint`, mirroring the
 existing `verify*Contract` → `ContractReport` shape
 ([`testing.ts`](../../packages/core/src/testing.ts)): a framework-agnostic,
 browser-safe async function returning `{ seam: 'fingerprint', ok, passed[],
-violations[] }`, paired with `assertConformance`. The vendor supplies fixtures;
+violations[] }`, paired with `conformance.assert`. The vendor supplies fixtures;
 the kit asserts these independent rules:
 
 1.  **Determinism** — same schema → same fingerprint across repeated calls and
@@ -393,8 +393,8 @@ the kit asserts these independent rules:
 
 ```ts
 // vendor CI, one-liner
-assertConformance(
-    await verifyFingerprintContract(zodFingerprinter, zodFixtures),
+conformance.assert(
+    await conformance.fingerprint(zodFingerprinter, zodFixtures),
 );
 ```
 
@@ -481,7 +481,7 @@ conformance-tested):
   trace. The raw schema reaches the resolver because `toValidator` keeps a
   non-enumerable `source` back-reference (the Validator wrapper otherwise hides
   `~standard`).
-- **`stitchapi/testing` → `verifyFingerprintContract`** — the conformance kit
+- **`stitchapi/testing` → `conformance.fingerprint`** — the conformance kit
   (vendor agreement, sync result-shape, determinism + stability, sensitivity,
   soundness-or-abstain, committed snapshots).
 - **Five vendor packages**, each with the validator as a _peer_ dependency and
