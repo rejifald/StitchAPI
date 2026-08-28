@@ -1,11 +1,12 @@
 ---
 title: 'Helpers'
-description: 'fetchAdapter, axiosAdapter, xhrAdapter, consoleSink, fileSink, createTrace, multiplex, loggerSink, the OTLP exporters, and memoryStore.'
+description: 'fetchAdapter, axiosAdapter, xhrAdapter, consoleSink, fileSink, createTrace, multiplex, loggerSink, the OTLP exporters, memoryStore, the secret-redaction hooks, and the duration, size, and rate parsers.'
 ---
 
 The exported helper functions you wire into a stitch: the default transport, the
-trace sinks (including OTLP export), the default store, and the schema adapter.
-Each signature is below; the guides cover usage in depth and are linked under
+trace sinks (including OTLP export), the secret-redaction hooks, the default
+store, and the parsers behind the duration, size, and rate tokens. Each signature
+is below; the guides cover usage in depth and are linked under
 [See also](#see-also).
 
 ## Transport
@@ -252,6 +253,105 @@ const body = toOtlpJson([]);
 
 <AutoTypeTable path="../../packages/core/src/otlp.ts" name="OtlpOptions" />
 
+## Secret redaction
+
+Reach for these three when a credential of yours rides under a name the built-in
+denylist doesn't know. Before an event reaches a sink, the value of any
+secret-bearing key is replaced with `REDACTED` — matched by exact name (`key`,
+`sig`, `access_key`) or by a contained stem (`token`, `secret`, `signature`,
+`credential`, `api_key`), which is how `access_token`, `client_secret`, and
+`x-amz-signature` are all caught without listing every vendor spelling. A host
+that calls its credential `session_ref` matches neither, so you name it yourself.
+
+### registerSecretKey
+
+Add one key name to that denylist. Every scrubber reads from it: the console and
+JSONL `start.url`, the OTLP `url.full` attribute, the structured `input.query`,
+and the traced request body.
+
+```ts twoslash
+import { registerSecretKey, stitch } from 'stitchapi';
+
+registerSecretKey('session_ref');
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    trace: 'console',
+});
+
+// The traced URL reads …/users?role=admin&session_ref=REDACTED
+await listUsers({ query: { role: 'admin', session_ref: 'sr_live_x' } });
+```
+
+Additive and process-wide, mirroring the built-in list — a name goes in and never
+comes out. Registering the same name twice is a no-op, and the match is
+case-insensitive, so one lowercase registration covers `SESSION_REF` too.
+
+`apiKey({ in: 'query', name })` registers its configured `name` at construction,
+so a key the [apiKey strategy](/docs/guides/auth/api-key) puts in the URL is
+covered already. This is the hook for a credential no strategy declares — one
+your own code appends to a query, or one that arrives in a body field.
+
+### isSecretKey
+
+The predicate the scrubbers run, exported so you can ask it yourself: does this
+key name — a query param, a body field — already redact? Audit your own config
+with it before deciding whether `registerSecretKey` has anything left to add.
+
+```ts twoslash
+import { isSecretKey } from 'stitchapi';
+
+isSecretKey('access_token'); // true — carries the `token` stem
+isSecretKey('Client_Secret'); // true — the match is case-insensitive
+isSecretKey('page'); // false — benign params survive for observability
+isSecretKey('session_ref'); // false — until you register it
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't reach for this to decide whether a **header** is
+    secret. It answers about query params and body keys, so
+    `isSecretKey('authorization')` and `isSecretKey('x-api-key')` both come back
+    `false` even though a sink redacts both headers. Headers are matched against
+    their own denylist at the sink boundary, which you widen with
+    [`redactHeaders`](/docs/guides/observability/trace-sinks#default-secret-redaction),
+    not with `registerSecretKey`.
+</Callout>
+
+### redactSecretsDeep
+
+Deep-clone a value and replace every secret-named key inside it with `REDACTED`,
+so a payload you are about to log or forward carries no credential. It walks
+plain objects and arrays, leaves primitives alone, and hands back a new value —
+the input is never mutated.
+
+```ts twoslash
+import { redactSecretsDeep } from 'stitchapi';
+
+const safe = redactSecretsDeep({
+    id: 7,
+    profile: { email: 'ada@example.com', api_key: 'sk_live_x' },
+});
+// { id: 7, profile: { email: 'ada@example.com', api_key: 'REDACTED' } }
+```
+
+A second argument adds patterns on top of the shared denylist — an exact key
+name, a dotted path, a `*` single-segment wildcard, or a prefix that claims
+everything under it — for a field only this payload treats as sensitive:
+
+```ts twoslash
+import { redactSecretsDeep } from 'stitchapi';
+
+redactSecretsDeep({ note: 'kept', meta: { note: 'gone' } }, ['meta.note']);
+// { note: 'kept', meta: { note: 'REDACTED' } }
+```
+
+This is what
+[`.inspect({ redact: true })`](/docs/recipes/inspect-what-the-server-sent) runs
+over its otherwise-unredacted `raw` body, and an array there
+(`{ redact: ['meta.note'] }`) is forwarded as this second argument. Call it
+directly for a value that didn't come from `.inspect()`.
+
 ## Store
 
 ### memoryStore
@@ -265,6 +365,126 @@ import { memoryStore } from 'stitchapi';
 
 const store = memoryStore();
 ```
+
+## Duration, size, and rate tokens
+
+Three grammars, one namespace each, every one a `parse`/`format` pair. A stitch
+reads its own config through `parse`; the pair is exported so a peer package that
+takes an authored token — a distributed limiter's rate, a command runner's buffer
+cap — resolves it to the same number a stitch would, instead of mirroring the
+grammar in a second regexp that then drifts from it.
+
+`format` is the **exact** inverse, not a pretty-printer: `parse(format(v))`
+returns `v` unchanged for every value `parse` can produce. That is what makes it
+safe to write a token back — into a config file, a CLI flag, an error message
+quoting the limit it enforced — and it is where these differ from `ms`, whose
+`ms(90_000)` is `'2m'` and reads back as 120 000.
+
+### duration
+
+`5_000`, `'5s'`, `'1m'` → milliseconds. This is the grammar behind every authored
+duration on a stitch: `timeout.total`, `timeout.each`, `cache.ttl`,
+`backoff.base`, `circuit.cooldown`, a surface `interpret` hook's `after`. A
+number is already ms; `<number><unit>` takes `ms` | `s` | `m` | `h` | `d`, with
+fractions allowed.
+
+`duration.format` picks the largest unit that stays exact **and** readable, and
+falls back to plain milliseconds when no unit divides the value cleanly.
+
+```ts twoslash
+import { duration } from 'stitchapi';
+
+duration.parse('1.5s'); // 1500
+duration.parse('2m'); // 120_000
+duration.parse(5_000); // 5000 — a number is already ms
+duration.parse('soon'); // undefined
+
+duration.format(90_000); // '1.5m'
+duration.format(3_600_000); // '1h'
+duration.format(90_001); // '90001ms' — no unit divides it exactly
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't format a duration StitchAPI emitted into a field
+    something else will read — keep it a number. Every emitted duration
+    (`event.waited`, a result's `elapsed`, `retryAfter`) is raw milliseconds,
+    and that is the contract a consumer parses against. `format` is for values a
+    _person_ reads, or for writing a token back into config; putting one in an
+    emitted payload turns a number every reader can use into a string each of
+    them has to parse.
+</Callout>
+
+### size
+
+`4096`, `'64kb'`, `'1mb'` → bytes, in **powers of 1024** — the npm-`bytes`
+convention every Node config parser already speaks, so `'1mb'` is `1_048_576`.
+Units are `b` | `kb` | `mb` | `gb` | `tb`, case-insensitive, and the IEC
+spellings (`kib`, `mib`, …) name the same values for callers who want the base
+explicit. It backs the byte caps — `serve.body.max`, and `buffer.max` on
+`@stitchapi/shell`.
+
+`size.format` emits the short spelling, and prefers the base unit over an exact
+but unreadable quotient — 1024 is a power of two, so almost every byte count
+divides into `kb` exactly and almost none of them divide into it _legibly_.
+
+```ts twoslash
+import { size } from 'stitchapi';
+
+size.parse('64kb'); // 65_536
+size.parse('1mb'); // 1_048_576
+size.parse(4096); // 4096 — a number is already bytes
+size.parse('big'); // undefined
+
+size.format(1_048_576); // '1mb'
+size.format(1536); // '1.5kb'
+size.format(1537); // '1537b' — '1.5009765625kb' is exact and useless
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't reach for this on a `chars` field —
+    [`stream.buffer.chars`](/docs/reference/surfaces#streambuffer) and
+    `trace.body.chars` count UTF-16 code units of decoded text, not bytes off
+    the socket, so a `'64kb'` token there measures the wrong thing. Those fields
+    take a bare number and reject a string at compile time. Worth holding onto
+    now that the name is `size` rather than `parseBytes` — the call site no
+    longer says "bytes" out loud, so the type is the only thing left warning
+    you.
+</Callout>
+
+### rate
+
+`'2/s'`, `'1000/h'` → `{ count, per }`, where `per` is the window length in ms.
+The denominator is a `duration` token and a bare unit means one of that unit
+(`'2/s'` ≡ `'2/1s'`), so this is the grammar behind
+[`throttle.rate`](/docs/guides/resilience/throttle#the-rate-grammar), in-process
+and store-backed alike. `rate.format` writes the pair back, using the bare-unit
+spelling for a one-unit window.
+
+```ts twoslash
+import { rate } from 'stitchapi';
+
+rate.parse('2/s'); // { count: 2, per: 1000 }
+rate.parse('1000/h'); // { count: 1000, per: 3_600_000 }
+rate.parse('100/15m'); // { count: 100, per: 900_000 }
+
+rate.format({ count: 2, per: 1000 }); // '2/s'
+rate.format({ count: 100, per: 900_000 }); // '100/15m'
+```
+
+A rate declares a minimum spacing rather than a bucket, so `'2/500ms'`, `'4/s'`
+and `'240/m'` all describe the same limiter. `format` returns the token for the
+pair it was handed rather than reducing it to one canonical member of that set —
+`{ count: 2, per: 500 }` comes back as `'2/500ms'`, the numbers the author wrote.
+
+**An unreadable token throws here, where the other two resolve to `undefined`.**
+The divergence runs with their fallback rather than against it. For a cap,
+falling back to the field's default leaves the ceiling where it was, so a typo
+can never widen it to "unbounded". A rate has no such safe default —
+`undefined` means _no rate limit at all_ — so a fallback would let a typo
+silently remove the limit instead of narrowing it. `'fast'`, `'0/s'`, and
+`'1/30d'` (a spacing past the ~24.8-day timer ceiling) all throw, and
+`rate.format` rejects the same three rather than writing a token that would
+throw on the way back in.
 
 ## See also
 
@@ -290,5 +510,12 @@ const store = memoryStore();
         title="Guide: Standard Schema"
         href="/docs/guides/validation/standard-schema"
     />
+    <Card title="Guide: apiKey" href="/docs/guides/auth/api-key" />
+    <Card title="Guide: throttle" href="/docs/guides/resilience/throttle" />
+    <Card
+        title="Recipe: inspect what the server sent"
+        href="/docs/recipes/inspect-what-the-server-sent"
+    />
     <Card title="Config types" href="/docs/reference/config-types" />
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
 </Cards>

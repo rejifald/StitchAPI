@@ -38,6 +38,59 @@ import { stitch } from 'stitchapi';
 const getUser = stitch('https://api.example.com/users/{id}');
 ```
 
+### httpSurface
+
+The default is a **named value, not an engine branch**. Composing a stitch
+resolves an omitted `kind` to `httpSurface`, so `__config.kind` reads back
+`'http'` on a plain stitch the same way it reads `'download'` on a download one —
+a surface is always selected, and a consumer reading a declaration never has to
+special-case an empty slot.
+
+```ts twoslash
+import { httpSurface, stitch } from 'stitchapi';
+
+const getUser = stitch({ url: 'https://api.example.com/users/{id}' });
+
+getUser.__config.kind; // 'http' — resolved at compose time, never absent
+
+// The same stitch, with the default said out loud.
+stitch({ kind: httpSurface, url: 'https://api.example.com/users/{id}' });
+```
+
+Importing it by name pays off in one place: a base that supplies `kind` passes
+that surface down through [`extends`](/docs/guides/authoring/extends), and
+`kind: httpSurface` is how a single member declares itself a plain HTTP call
+against that base instead of inheriting the surface.
+
+```ts twoslash
+import { graphqlSurface, httpSurface, stitch } from 'stitchapi';
+
+const gqlBase = { baseUrl: 'https://api.example.com', kind: graphqlSurface };
+
+// Every other member POSTs a document; this one is an ordinary GET.
+const getUser = stitch({
+    extends: [gqlBase],
+    kind: httpSurface,
+    path: '/users/{id}',
+});
+```
+
+`graphqlSurface` is the generic spelling of the `graphql()` helper below, and it
+shares the root barrel with `httpSurface`. Every other surface exports its
+`*Surface` value from its own subpath — `sseSurface` from `stitchapi/sse`,
+`downloadSurface` from `stitchapi/download`.
+
+<Callout type="warn">
+    **Anti-pattern:** don't compose `httpSurface.interpret` into a surface of
+    your own. It is reachable, and it is the rule `sse` and `stream` fall back
+    to when they declare no `interpret` themselves — but it ends in "the body is
+    the value", which is the http surface's own choice of result rather than a
+    shared one. Compose
+    [`verdictOf`](/docs/guides/resilience/verdict#beyond-configuration) instead:
+    that is the caller's `verdict` config applied to a response, and it leaves
+    the success value to you.
+</Callout>
+
 ## graphql
 
 `graphql()` POSTs `{ query, variables }` and picks `data`; a `200` carrying
@@ -258,3 +311,16 @@ Either way the surface is named in `__config` by a stable string `id`
 for MCP, the playground, and `llms.txt` — the behaviour hooks stay a runtime
 detail. An `id` a consumer doesn't recognise degrades to "an http-shaped call of
 unknown style", never a crash.
+
+## See also
+
+<Cards>
+    <Card title="Guide: stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Guide: GraphQL" href="/docs/guides/data/graphql" />
+    <Card title="Guide: verdict" href="/docs/guides/resilience/verdict" />
+    <Card title="Guide: extends" href="/docs/guides/authoring/extends" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="seam()" href="/docs/reference/seam" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+    <Card title="Helpers" href="/docs/reference/helpers" />
+</Cards>
