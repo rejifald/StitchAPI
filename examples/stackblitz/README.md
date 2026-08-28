@@ -1,8 +1,9 @@
 # StitchAPI — StackBlitz templates
 
 Minimal, self-contained apps you can open and run in the browser — no local setup. Each
-installs the published `@stitchapi/*` packages from npm and points at the public demo API
-(`https://demo.stitchapi.dev`); edit `src/api.ts` to hit your own.
+installs the published `@stitchapi/*` packages from npm and fetches from
+[JSONPlaceholder](https://jsonplaceholder.typicode.com), a free public sample API; edit
+`src/api.ts` to hit your own.
 
 | Template                                         | What it shows                                                                                | Open                                                                                                              |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
