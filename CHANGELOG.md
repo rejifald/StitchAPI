@@ -234,6 +234,75 @@ npm release are grouped under the in-development version that introduced them.
     to re-export only `stitchQueryOptions` and to point callers at query-core for the key itself;
     that divergence from the other four bindings predates this fold and is left standing.
 
+- **BREAKING CHANGE: the fingerprinter registry is now one `fingerprinters` namespace on
+  `stitchapi/fingerprint` — `registerFingerprinter`, `getFingerprinter`, `listFingerprinters` and
+  `clearFingerprinters` are replaced by `fingerprinters.register`, `.get`, `.list` and `.clear`.**
+  ([ADR 0004](docs/adr/0004-standard-schema-fingerprint-for-cache-invalidation.md))
+  Four verb-prefixed names over one `Map`, each repeating a subject the subpath already names —
+  the shape `secrets` and the token grammars moved away from. Same reasoning, same fix: one name
+  per dimension, the verb at the call site.
+
+    | Was                         | Now                           |
+    | --------------------------- | ----------------------------- |
+    | `registerFingerprinter(fp)` | `fingerprinters.register(fp)` |
+    | `getFingerprinter(vendor)`  | `fingerprinters.get(vendor)`  |
+    | `listFingerprinters()`      | `fingerprinters.list()`       |
+    | `clearFingerprinters()`     | `fingerprinters.clear()`      |
+
+    **Behaviour is byte-for-byte what it was** — same process-local `Map`, same last-registration-
+    wins, same `undefined` on an unregistered vendor, same unordered `list`, same `clear`. Only the
+    spelling moved, so the one line each `@stitchapi/fingerprint-*` package's README asks you to
+    write becomes `fingerprinters.register(zodFingerprinter)` and nothing else changes. No aliases:
+    pre-GA, and `src/fingerprint.ts` **is** the subpath entry, so keeping an old spelling would put
+    it straight back on the published surface with no barrel in between.
+
+    **Free on the core gate**, measured both sides: all three budgeted scenarios are unchanged to
+    the byte on min+gzip — whole entry 24.60 KB, `import { stitch }` 21.82 KB, `stitchapi/auth`
+    5.22 KB, with the same 0.20 / 0.18 / 0.13 KB headroom. No budget raise. Nothing on the core
+    path reaches the registry: the root barrel never re-exported it, and `resolveFingerprint` —
+    which the cache does reach — still calls the module function directly rather than going through
+    the namespace, so `import { resolveFingerprint }` is byte-identical at 2.73 KB min / 1.29 KB
+    gzip. The namespace is a thin facade over four plain module functions for exactly that reason.
+
+    **What it does cost** is on the subpath, which the gate does not budget: a consumer importing
+    only `registerFingerprinter` (0.10 KB min / 0.11 KB gzip) now imports `fingerprinters` and gets
+    all four members (0.23 / 0.18), because esbuild will not split an object literal to drop a dead
+    property. That is ~70 B gzip on the one import line a vendor package asks for, and the whole
+    subpath entry is slightly _smaller_ than before (2.94 → 2.90 KB min, 1.37 KB gzip either way).
+
+- **BREAKING CHANGE: the OTLP trio is now one `otlp` namespace — `otlpSink`, `otlpHttpExporter`
+  and `toOtlpJson` are replaced by `otlp.sink`, `otlp.exporter` and `otlp.json`.**
+  ([ADR 0007](docs/adr/0007-composition-causality-and-run-identity.md))
+  Three names on the barrel for one export path, each repeating the subject noun and varying only
+  the role word — the same shape the token grammars and the redaction trio moved away from. Same
+  reasoning, same fix: one name per dimension, the role at the call site.
+
+    | Was                       | Now                    |
+    | ------------------------- | ---------------------- |
+    | `otlpSink(opts?)`         | `otlp.sink(opts?)`     |
+    | `otlpHttpExporter(opts?)` | `otlp.exporter(opts?)` |
+    | `toOtlpJson(spans)`       | `otlp.json(spans)`     |
+
+    **The grouping says something the three names hid.** These are not three sibling helpers but
+    three LAYERS of one pipeline, each the input to the next: `otlp.json` serializes spans to the
+    OTLP/JSON wire shape, `otlp.exporter` POSTs that to a collector, and `otlp.sink` maps a
+    stitch's events to spans and hands them to the exporter. `otlp.sink()` alone is still the
+    whole common case; the other two are the seams for a second collector and for a transport core
+    doesn't ship (gRPC, a queue, a file).
+
+    **Behaviour is byte-for-byte what it was** — same span mapping, same OTel HTTP semantic
+    conventions, same `OTEL_EXPORTER_OTLP_ENDPOINT` default, same fire-and-forget export, same
+    `url.full` scrubbing. Only the spelling moved. `STITCH_EXPORT=otlp` is unaffected. No aliases:
+    pre-GA, and keeping the old spellings would leave three names on the barrel next to the
+    namespace, which is the thing being removed.
+
+    **Effectively free on the bundle**, measured both sides: the whole entry is unchanged at
+    24.60 KB gzip (minified actually drops, three exported names becoming one) and
+    `import { stitch }` moves 21.82 → 21.83 KB (+10 B). No budget raise. The implementations stay
+    plain module functions in `otlp.ts` and core's own call site (`stitch.ts`) keeps importing
+    `otlpSink` directly, so the namespace is a thin facade rather than an object that welds all
+    three onto a consumer's path.
+
 - **BREAKING CHANGE (`@stitchapi/react-native`, `@stitchapi/expo`): the streaming-polyfill pair is
   now one `rnStreamingPolyfills` namespace — `assertStreamingPolyfills` and `hasStreamingPolyfills`
   are replaced by `rnStreamingPolyfills.assert` and `rnStreamingPolyfills.has`.**
