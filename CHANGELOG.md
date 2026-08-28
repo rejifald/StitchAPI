@@ -262,6 +262,39 @@ npm release are grouped under the in-development version that introduced them.
     Every old spelling is pinned **absent** in all six packages' specs — not only where it lived —
     so "one dimension, one name" is a property of the family, not of each package on its own.
 
+- **BREAKING CHANGE (`@stitchapi/react-native`, `@stitchapi/expo`): the streaming-polyfill pair is
+  now one `rnStreamingPolyfills` namespace — `assertStreamingPolyfills` and `hasStreamingPolyfills`
+  are replaced by `rnStreamingPolyfills.assert` and `rnStreamingPolyfills.has`.**
+  ([ADR 0012](docs/adr/0012-integration-symbol-naming.md))
+  Two verb-prefixed names on the barrel for one question — are the three globals Hermes does not
+  ship present? — which is the shape core's `secrets` namespace and the token grammars already
+  moved away from. Same reasoning, same fix: one name per dimension, the verb at the call site.
+
+    | Was                          | Now                             |
+    | ---------------------------- | ------------------------------- |
+    | `assertStreamingPolyfills()` | `rnStreamingPolyfills.assert()` |
+    | `hasStreamingPolyfills()`    | `rnStreamingPolyfills.has()`    |
+
+    **Behaviour is byte-for-byte what it was** — same three required globals in the same order,
+    same `typeof === 'undefined'` test, same error text and install hint, same optional `scope`
+    argument defaulting to `globalThis`. Only the spelling moved. No aliases: pre-GA, and keeping
+    the old spellings would leave two verbose names on the barrel next to the namespace, which is
+    the thing being removed. Both old names are pinned **absent** from the barrel so an alias
+    cannot drift back and leave two spellings of one call.
+
+    **The name gained its `rn` qualifier at the same time.** The old pair was bare and non-branded
+    in an adapter package, which [ADR 0012](docs/adr/0012-integration-symbol-naming.md) rule 6
+    rules out — the packages landed one day before that ADR's conformance sweep and were missed by
+    it. `rnStreamingPolyfills` matches `rnStreamAdapter` in the same package, and the qualifier
+    earns its keep on the re-export: `@stitchapi/expo` re-exports this barrel verbatim, so the
+    namespace is reachable from a package that needs no polyfill at all (`expo/fetch` streams
+    natively). A bare `streamingPolyfills` on an Expo import would be answering about a gap Expo
+    does not have.
+
+    The implementations stay plain module functions in `polyfills.ts` and `rnStreamAdapter` keeps
+    importing `assertStreamingPolyfills` directly, so the namespace is a thin facade rather than an
+    object welded onto the adapter's path. Non-streaming stitches still never reach the guard.
+
 - **BREAKING CHANGE: the secret-redaction trio is now one `secrets` namespace — `registerSecretKey`,
   `isSecretKey` and `redactSecretsDeep` are replaced by `secrets.register`, `secrets.has` and
   `secrets.redact`.** ([ADR 0018](docs/adr/0018-inspect-raw-redaction.md))

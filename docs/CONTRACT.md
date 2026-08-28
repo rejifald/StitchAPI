@@ -1080,6 +1080,33 @@ against both — the findings sit at the end of the list:
   +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
   siblings. None of the six has a size gate and all are server-side, so the trade is accepted
   rather than budgeted — recorded here so it is a decision, not an accident.
+- **ADR 0012 rule 6 (an adapter package the sweep never reached, 2026-08-28)** —
+  `@stitchapi/react-native` exported `assertStreamingPolyfills` and
+  `hasStreamingPolyfills`: two bare, non-branded names in an adapter package, which
+  [ADR 0012](adr/0012-integration-symbol-naming.md) rule 6 rules out on sight. _Why it
+  survived:_ not a blind spot in the rule but in its **scope** — the ADR's conformance
+  table swept ten published packages on 2026-06-20, and `@stitchapi/react-native` /
+  `@stitchapi/expo` had landed on 2026-06-19, one day earlier. Neither appears in the
+  table, so the pair was never adjudicated rather than adjudicated and passed. Rule 6's
+  enforcement is a review gate, and there was no review to gate it at. **Fixed** (the two
+  fold into one `rnStreamingPolyfills` namespace with `assert`/`has` — the export-surface
+  shape of the [P17](#p17--one-canonical-duration-form)/[P25](#p25--one-canonical-size-form)
+  entry above and of core's `secrets`: one name per dimension, the verb at the call site,
+  rather than two verb-prefixed functions for one question. The `rn` qualifier matches
+  `rnStreamAdapter` in the same package.) Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); both old
+  names are pinned **absent** from the barrel in
+  `packages/react-native/test/polyfills.spec.ts`, verified non-vacuous by re-adding the
+  old export line and watching the pins fail.
+  _Why the qualifier is load-bearing here rather than merely proactive:_ ADR 0012's
+  re-export-barrel cost is **live** for this package, not latent. `@stitchapi/expo` is
+  `export * from '@stitchapi/react-native'`, so the name is republished on a second npm
+  surface — one where `expo/fetch` streams natively and no polyfill is ever needed. A bare
+  `streamingPolyfills` reaching an Expo import would be answering about a gap that package
+  does not have; the `rn` token is what says which runtime is being asked about, once the
+  named import has flattened the package scope away. The transit is pinned on the expo side
+  too (`packages/expo/test/surface.spec.ts`), because with `export *` a break in the chain
+  would otherwise surface in expo's CI as no diff at all.
 
 Everything else this section once listed has **shipped** and moved to the record below —
 the cross-package `StitchStore`/`StitchLike`/`RequestSeam` clashes (qualified per-framework
