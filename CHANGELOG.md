@@ -187,6 +187,37 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: the secret-redaction trio is now one `secrets` namespace — `registerSecretKey`,
+  `isSecretKey` and `redactSecretsDeep` are replaced by `secrets.register`, `secrets.has` and
+  `secrets.redact`.** ([ADR 0018](docs/adr/0018-inspect-raw-redaction.md))
+  Three verb-prefixed names on the barrel for one denylist, which is the shape the token grammars
+  had already moved away from one release earlier. Same reasoning, same fix: one name per
+  dimension, the verb at the call site.
+
+    | Was                            | Now                         |
+    | ------------------------------ | --------------------------- |
+    | `registerSecretKey(name)`      | `secrets.register(name)`    |
+    | `isSecretKey(name)`            | `secrets.has(name)`         |
+    | `redactSecretsDeep(v, extra?)` | `secrets.redact(v, extra?)` |
+
+    **Behaviour is byte-for-byte what it was** — same denylist, same stems, same case-insensitive
+    match, same process-wide additive registration, same deep non-mutating clone, same `extra`
+    path grammar. Only the spelling moved. `apiKey({ in: 'query', name })` still registers its
+    configured name automatically. No aliases: pre-GA, and keeping the old spellings would leave
+    three verbose names on the barrel next to the namespace, which is the thing being removed.
+
+    **The header caveat now has one home.** `secrets.has` answers about query params and body keys,
+    not headers — `secrets.has('authorization')` is `false` even though every built-in sink redacts
+    that header, which you widen with `redactHeaders` at the sink boundary instead. The old
+    predicate's name invited that mistake at every call site and needed the warning repeated; it is
+    stated once on the namespace's JSDoc and once in the reference page.
+
+    **Effectively free on the bundle**, measured both sides: `import { stitch }` is unchanged at
+    21.82 KB gzip and the whole entry moves 24.59 → 24.60 KB (+10 B; minified actually drops, three
+    exported names becoming one). No budget raise. The implementations stay plain module functions
+    in `util.ts` and core's own call sites keep importing them directly, so the namespace is a thin
+    facade rather than an object that welds all three onto a consumer's path.
+
 - **BREAKING CHANGE: the three token parsers are now `parse`/`format` pairs — `parseDuration`,
   `parseBytes` and `parseRate` are replaced by `duration`, `size` and `rate`.**
   ([CONTRACT.md P17](docs/CONTRACT.md#p17--one-canonical-duration-form) /

@@ -76,7 +76,6 @@ export const PLAYGROUND_SURFACE_NAMES = [
     // Guards + verdict reader.
     'isStitch',
     'isSeam',
-    'isSecretKey',
     'verdictOf',
     // Surface descriptors.
     'httpSurface',
@@ -86,13 +85,12 @@ export const PLAYGROUND_SURFACE_NAMES = [
     'xhrAdapter',
     'axiosAdapter',
     // Token-grammar namespaces (parse/format pairs, #753), object helper, and the
-    // secret-redaction pair.
+    // secret-redaction namespace (register/has/redact, formerly three functions).
     'duration',
     'size',
     'rate',
     'compact',
-    'redactSecretsDeep',
-    'registerSecretKey',
+    'secrets',
     // Injectable clock.
     'systemClock',
 ] as const;
