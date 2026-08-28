@@ -123,7 +123,7 @@ outside React.
 `{ getItem, setItem, removeItem }`. Values ride in a JSON envelope with an absolute
 expiry (AsyncStorage has no native TTL), and `increment` is serialized so concurrent
 increments stay atomic — the throttle counter behaves exactly as it does on Redis.
-It is proven against the same `verifyStoreContract` kit every
+It is proven against the same `conformance.store` kit every
 [`StitchStore`](/docs/guides/state/pluggable-store) passes.
 
 ## See also

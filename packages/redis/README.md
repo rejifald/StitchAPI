@@ -99,7 +99,7 @@ for the exact semantics.
 
 ## Conformance
 
-Compliance with the store seam is proven against `verifyStoreContract` from
+Compliance with the store seam is proven against `conformance.store` from
 `stitchapi/testing`, for all three driver adapters (`fromIoredis`,
 `fromNodeRedis`, `fromUpstash`). Set `REDIS_URL` to additionally run the contract
 against a live Redis:

@@ -21,7 +21,7 @@ import { registerFingerprinter } from 'stitchapi/fingerprint';
 registerFingerprinter(zodFingerprinter);
 ```
 
-Compliance is proven against `verifyFingerprintContract` from `stitchapi/testing`.
+Compliance is proven against `conformance.fingerprint` from `stitchapi/testing`.
 
 ## Contributing
 

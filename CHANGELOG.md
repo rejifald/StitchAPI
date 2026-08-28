@@ -129,7 +129,7 @@ npm release are grouped under the in-development version that introduced them.
     ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)), so optional is
     the only additive shape. **Existing custom stores need no changes.**
 
-    If you do implement it, `verifyStoreContract` now checks it — but only when present, so
+    If you do implement it, `conformance.store` now checks it — but only when present, so
     omitting it is not a contract failure. The rule that matters is the atomicity one: 20 concurrent
     reservations must come back as 20 distinct, evenly spaced instants, because a non-atomic cell
     hands several callers the same instant, which is the exact burst the verb exists to remove.
@@ -186,6 +186,52 @@ npm release are grouped under the in-development version that introduced them.
     No behaviour change — the parser, its grammar, and its throw are exactly as they were.
 
 ### Changed
+
+- **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
+  — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
+  `verifyFingerprintContract`, `assertConformance` and `adapterContractFixture` are replaced by
+  `conformance.store`, `.adapter`, `.sink`, `.fingerprint`, `.assert` and `.fixture`.**
+  Four identical `verify<Seam>Contract` shapes returning one `ContractReport`, read off one entry to
+  make one decision — the shape the token grammars and the secret-redaction trio each moved away
+  from. Same reasoning, same fix: one name per dimension, the dimension named at the call site.
+  The dimension here is the **seam**, and `ContractReport.seam` was already the discriminator the
+  export names refused to be.
+
+    | Was                                       | Now                                     |
+    | ----------------------------------------- | --------------------------------------- |
+    | `verifyStoreContract(make, opts?)`        | `conformance.store(make, opts?)`        |
+    | `verifyAdapterContract(adapter, baseUrl)` | `conformance.adapter(adapter, baseUrl)` |
+    | `verifySinkContract(makeSink)`            | `conformance.sink(makeSink)`            |
+    | `verifyFingerprintContract(fp, fixtures)` | `conformance.fingerprint(fp, fixtures)` |
+    | `assertConformance(report)`               | `conformance.assert(report)`            |
+    | `adapterContractFixture(req)`             | `conformance.fixture(req)`              |
+
+    ```ts
+    // was
+    assertConformance(await verifyStoreContract(() => myStore()));
+    // now
+    conformance.assert(await conformance.store(() => myStore()));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same rules, same rule names, same independent
+    rule-catching so one violation never masks another, same `ContractReport`, same per-run key
+    namespacing, same `ttl` duration grammar, same browser-safe no-`node:*` guarantee. Only the
+    spelling moved. No aliases: pre-GA, and keeping the old spellings would leave six verbose names
+    on the entry beside the namespace, which is the thing being removed.
+
+    **`adapterContractFixture` joins the namespace as `conformance.fixture`** rather than staying
+    standalone. It is not a verifier, but it is not an independent capability either: it is the
+    SERVER half of the adapter contract — the pure request-in/response-out function
+    `conformance.adapter` verifies a transport against — and it cannot be used apart from it. Same
+    call the token grammars made putting `format` beside `parse`. Leaving it out would have kept one
+    loose `*Contract*`-spelled name beside the namespace that replaced the other five, which is
+    precisely the drift the fold removes.
+
+    **Free on the bundle, and structurally so.** `stitchapi/testing` is imported by specs and never
+    reaches a production bundle, and the subpath is not size-gated; the gate was run on both sides
+    anyway and all three scenarios it does measure are byte-identical (whole entry 24.60 KB gzip,
+    `import { stitch }` 21.82 KB, `stitchapi/auth` 5.22 KB). The implementations stay plain module
+    functions in `testing.ts` and the namespace is a thin `as const` facade over them.
 
 - **BREAKING CHANGE: the secret-redaction trio is now one `secrets` namespace — `registerSecretKey`,
   `isSecretKey` and `redactSecretsDeep` are replaced by `secrets.register`, `secrets.has` and

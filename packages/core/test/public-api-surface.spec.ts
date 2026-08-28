@@ -3,7 +3,9 @@
 // would slip past the test suite (only attw/build catches it, late). This guards the contract: the
 // documented value exports are present and of the expected kind.
 import * as api from '../src';
+import { memoryStore } from '../src';
 import * as authApi from '../src/auth';
+import * as testingApi from '../src/testing';
 import type { AdapterResponse } from '../src/types';
 
 // Every documented function/guard export (systemClock is an object; the error classes are below).
@@ -93,6 +95,40 @@ const AUTH_FUNCTIONS = [
     'optionalEnv',
     'secretsFile',
     'secretFrom',
+] as const;
+
+// The vendor-facing conformance kit on `stitchapi/testing`, one namespace over the four pluggable
+// seams. `ContractReport.seam` was already the discriminator; the exports refused to be, so a
+// third-party seam author read four `verify<Seam>Contract` names off one entry to make one
+// decision. This is the export-surface reading of the same rule the token grammars and `secrets`
+// applied on the root: one name per dimension, the dimension named at the call site.
+//
+// Pinned as a WHOLE, not as six members. The seams are load-bearing for real out-of-repo
+// consumers — every `@stitchapi/fingerprint-*`, `@stitchapi/redis`, `deno-kv`, `cloudflare-kv`,
+// `react-native` and `expo` package proves compliance through them in its own CI — and `assert` is
+// the only one core's own suites would notice missing, since a verifier that returns a report
+// nobody throws on is a spec that always passes.
+const CONFORMANCE_MEMBERS = [
+    'assert',
+    'store',
+    'adapter',
+    'sink',
+    'fingerprint',
+    'fixture',
+] as const;
+
+// The six names `conformance` REPLACED, pinned absent for the same reason as the parsers and the
+// secret functions on the root. `adapterContractFixture` is in this list deliberately: it is not a
+// verifier, but it is not an independent capability either — it is the server half of the adapter
+// contract, unusable apart from `conformance.adapter`, so leaving it standalone would have kept one
+// loose `*Contract*` name beside the namespace that replaced the other five.
+const REMOVED_CONFORMANCE_FUNCTIONS = [
+    'assertConformance',
+    'verifyStoreContract',
+    'verifyAdapterContract',
+    'verifySinkContract',
+    'verifyFingerprintContract',
+    'adapterContractFixture',
 ] as const;
 
 describe('public API surface (src/index.ts)', () => {
@@ -213,4 +249,83 @@ describe('public API surface (src/auth.ts → stitchapi/auth)', () => {
     test('exports exactly the auth surface, nothing more', () => {
         expect(Object.keys(authApi).sort()).toEqual([...AUTH_FUNCTIONS].sort());
     });
+});
+
+// The third entry this spec guards. `stitchapi/testing` is not size-gated and never reaches a
+// production bundle, so nothing else in the build would notice a member going missing — and its
+// consumers are the packages LEAST able to absorb a silent break, since a vendor's CI is the whole
+// point of the kit. The pins live here rather than in conformance-kit.spec.ts (which exercises what
+// the verifiers DO) so that all three entries' export surfaces are pinned in one file, and a fourth
+// entry has an obvious place to land.
+describe('public API surface (src/testing.ts → stitchapi/testing)', () => {
+    test.each(CONFORMANCE_MEMBERS)(
+        'exports conformance.%s as a function',
+        (member) => {
+            expect(
+                typeof (testingApi.conformance as Record<string, unknown>)[
+                    member
+                ],
+            ).toBe('function');
+        },
+    );
+
+    // The namespace carries the kit and nothing beyond it: an extra member here is a capability
+    // that skipped the "is this a seam?" question the four names answer.
+    test('the namespace is exactly the kit, nothing more', () => {
+        expect(Object.keys(testingApi.conformance).sort()).toEqual(
+            [...CONFORMANCE_MEMBERS].sort(),
+        );
+    });
+
+    // Behavioural, not just structural: a namespace wired to some other function — or to a `store`
+    // that reports on a seam it did not run — passes the typeof checks above and fails here. The
+    // report's `seam` is the discriminator the namespace is keyed by, so this is the pin that says
+    // the key and the report agree.
+    test('each member reports the seam its name claims', async () => {
+        const store = await testingApi.conformance.store(memoryStore, {
+            ttl: '80ms',
+        });
+        expect(store.seam).toBe('store');
+        expect(store.ok).toBe(true);
+
+        const seen: string[] = [];
+        const sink = await testingApi.conformance.sink(() => ({
+            handle: (event) => {
+                seen.push(event.type);
+            },
+        }));
+        expect(sink.seam).toBe('sink');
+        expect(sink.ok).toBe(true);
+        expect(seen.length).toBeGreaterThan(0);
+
+        // `assert` is a no-op on a clean report and throws a listing on a dirty one.
+        expect(() => {
+            testingApi.conformance.assert(store);
+        }).not.toThrow();
+        expect(() => {
+            testingApi.conformance.assert({
+                seam: 'store',
+                ok: false,
+                passed: [],
+                violations: [{ rule: 'r', detail: 'd' }],
+            });
+        }).toThrow(/store contract: 1 violation/);
+
+        // The fixture is the adapter contract's server half — the one member that is not a
+        // verifier, pinned as the echo function it is.
+        expect(
+            testingApi.conformance.fixture({
+                method: 'GET',
+                path: '/text',
+                headers: {},
+            }).body,
+        ).toBe('stitch-conformance-text');
+    });
+
+    test.each(REMOVED_CONFORMANCE_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (testingApi as Record<string, unknown>)).toBe(false);
+        },
+    );
 });

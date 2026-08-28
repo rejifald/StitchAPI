@@ -26,7 +26,7 @@ const output = S.standardSchemaV1(S.Struct({ id: S.Number }));
 ```
 
 `effect` is a **peer dependency**. Compliance is proven against
-`verifyFingerprintContract` from `stitchapi/testing`.
+`conformance.fingerprint` from `stitchapi/testing`.
 
 ## Contributing
 

@@ -20,7 +20,7 @@
 // into the driver seam and lets the store run from Vercel/Cloudflare edge
 // functions with zero TCP socket.
 //
-// Compliance with the store contract is proven against `verifyStoreContract` from
+// Compliance with the store contract is proven against `conformance.store` from
 // `stitchapi/testing` (see test/conformance.spec.ts).
 import type { StitchStore } from 'stitchapi';
 
