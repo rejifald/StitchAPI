@@ -255,24 +255,29 @@ const body = toOtlpJson([]);
 
 ## Secret redaction
 
-Reach for these three when a credential of yours rides under a name the built-in
-denylist doesn't know. Before an event reaches a sink, the value of any
-secret-bearing key is replaced with `REDACTED` — matched by exact name (`key`,
-`sig`, `access_key`) or by a contained stem (`token`, `secret`, `signature`,
-`credential`, `api_key`), which is how `access_token`, `client_secret`, and
-`x-amz-signature` are all caught without listing every vendor spelling. A host
-that calls its credential `session_ref` matches neither, so you name it yourself.
+One namespace over one denylist. Reach for it when a credential of yours rides
+under a name the built-in list doesn't know. Before an event reaches a sink, the
+value of any secret-bearing key is replaced with `REDACTED` — matched by exact
+name (`key`, `sig`, `access_key`) or by a contained stem (`token`, `secret`,
+`signature`, `credential`, `api_key`), which is how `access_token`,
+`client_secret`, and `x-amz-signature` are all caught without listing every
+vendor spelling. A host that calls its credential `session_ref` matches neither,
+so you name it yourself.
 
-### registerSecretKey
+`secrets` groups the three calls that share that denylist the same way
+[`duration`](#duration) groups a parse/format pair: one name on the barrel, the
+verb at the call site.
 
-Add one key name to that denylist. Every scrubber reads from it: the console and
+### secrets.register
+
+Add one key name to the denylist. Every scrubber reads from it: the console and
 JSONL `start.url`, the OTLP `url.full` attribute, the structured `input.query`,
 and the traced request body.
 
 ```ts twoslash
-import { registerSecretKey, stitch } from 'stitchapi';
+import { secrets, stitch } from 'stitchapi';
 
-registerSecretKey('session_ref');
+secrets.register('session_ref');
 
 const listUsers = stitch({
     baseUrl: 'https://api.example.com',
@@ -293,32 +298,32 @@ so a key the [apiKey strategy](/docs/guides/auth/api-key) puts in the URL is
 covered already. This is the hook for a credential no strategy declares — one
 your own code appends to a query, or one that arrives in a body field.
 
-### isSecretKey
+### secrets.has
 
 The predicate the scrubbers run, exported so you can ask it yourself: does this
 key name — a query param, a body field — already redact? Audit your own config
-with it before deciding whether `registerSecretKey` has anything left to add.
+with it before deciding whether `secrets.register` has anything left to add.
 
 ```ts twoslash
-import { isSecretKey } from 'stitchapi';
+import { secrets } from 'stitchapi';
 
-isSecretKey('access_token'); // true — carries the `token` stem
-isSecretKey('Client_Secret'); // true — the match is case-insensitive
-isSecretKey('page'); // false — benign params survive for observability
-isSecretKey('session_ref'); // false — until you register it
+secrets.has('access_token'); // true — carries the `token` stem
+secrets.has('Client_Secret'); // true — the match is case-insensitive
+secrets.has('page'); // false — benign params survive for observability
+secrets.has('session_ref'); // false — until you register it
 ```
 
 <Callout type="warn">
     **Anti-pattern:** don't reach for this to decide whether a **header** is
     secret. It answers about query params and body keys, so
-    `isSecretKey('authorization')` and `isSecretKey('x-api-key')` both come back
+    `secrets.has('authorization')` and `secrets.has('x-api-key')` both come back
     `false` even though a sink redacts both headers. Headers are matched against
     their own denylist at the sink boundary, which you widen with
     [`redactHeaders`](/docs/guides/observability/trace-sinks#default-secret-redaction),
-    not with `registerSecretKey`.
+    not with `secrets.register`.
 </Callout>
 
-### redactSecretsDeep
+### secrets.redact
 
 Deep-clone a value and replace every secret-named key inside it with `REDACTED`,
 so a payload you are about to log or forward carries no credential. It walks
@@ -326,9 +331,9 @@ plain objects and arrays, leaves primitives alone, and hands back a new value �
 the input is never mutated.
 
 ```ts twoslash
-import { redactSecretsDeep } from 'stitchapi';
+import { secrets } from 'stitchapi';
 
-const safe = redactSecretsDeep({
+const safe = secrets.redact({
     id: 7,
     profile: { email: 'ada@example.com', api_key: 'sk_live_x' },
 });
@@ -340,9 +345,9 @@ name, a dotted path, a `*` single-segment wildcard, or a prefix that claims
 everything under it — for a field only this payload treats as sensitive:
 
 ```ts twoslash
-import { redactSecretsDeep } from 'stitchapi';
+import { secrets } from 'stitchapi';
 
-redactSecretsDeep({ note: 'kept', meta: { note: 'gone' } }, ['meta.note']);
+secrets.redact({ note: 'kept', meta: { note: 'gone' } }, ['meta.note']);
 // { note: 'kept', meta: { note: 'REDACTED' } }
 ```
 

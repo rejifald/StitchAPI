@@ -87,6 +87,14 @@ except `index.ts`, so the split is a clean cut, not a refactor.
 | `AuthStrategy` `AuthContext` `SecurityScheme`                     | `stitchapi` | **both**         |
 | `registerSecretKey` `isSecretKey` `redactSecretsDeep`             | `stitchapi` | `stitchapi`      |
 
+> [!NOTE]
+>
+> **Spelling amendment (post-decision).** The last row's three functions are now
+> exported from the root as the single `secrets` namespace — `secrets.register` /
+> `secrets.has` / `secrets.redact`. The **placement** decision this ADR records is
+> unchanged: they stay on `stitchapi`, not `stitchapi/auth`, for the reason given
+> below. Only the spelling moved.
+
 Three notes on that table:
 
 - **`AuthStrategy`/`AuthContext`/`SecurityScheme` stay declared on the root** —

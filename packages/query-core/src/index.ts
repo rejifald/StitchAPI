@@ -16,7 +16,7 @@
 // `cancel()`s by aborting, and `refetch()`es by re-running. For a streaming
 // surface it consumes `.stream()` and pushes a state update as each `delta`
 // arrives — the reactive differentiator over plain request/response query libs.
-import { isSecretKey } from 'stitchapi';
+import { secrets } from 'stitchapi';
 import type { Stitch, StitchEvent, StitchResult } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
@@ -410,9 +410,9 @@ export function nameOf(stitch: unknown): string {
 }
 
 // Header names whose VALUES are secrets — the header-specific denylist on top of
-// core's `isSecretKey` predicate (which contributes the secret stems — `token`,
+// core's `secrets.has` predicate (which contributes the secret stems — `token`,
 // `secret`, `apikey`, … — and any caller-registered names via
-// `registerSecretKey`). We redact the value (rather than dropping the header) so
+// `secrets.register`). We redact the value (rather than dropping the header) so
 // the key stays stable per token AND callers who legitimately vary a response by
 // a non-secret header (e.g. `accept-language`) keep separate cache entries.
 // Compared case-insensitively; the `*-token` / `*-api-key` suffix rules catch
@@ -433,7 +433,7 @@ function isSecretHeader(name: string): boolean {
         SECRET_HEADERS.has(k) ||
         k.endsWith('-token') ||
         k.endsWith('-api-key') ||
-        isSecretKey(k)
+        secrets.has(k)
     );
 }
 

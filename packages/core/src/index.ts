@@ -43,13 +43,21 @@ export type {
     SpanAttributes,
     OtlpOptions,
 } from './otlp';
-// Trace-redaction escape hatch: widen the secret-key denylist so a host's custom credential
-// param name is scrubbed in every trace sink (start.url, OTLP url.full, input.query). `apiKey({ in:
-// 'query', name })` registers its name here automatically; this is the manual hook for a credential
-// the built-in set/stems don't catch. `isSecretKey` is the matching predicate, exposed so a host
-// can audit which of its query params / body keys the scrubbers already cover. `redactSecretsDeep`
-// walks a plain value and replaces secret-named keys.
-export { registerSecretKey, isSecretKey, redactSecretsDeep } from './util';
+// The trace-redaction escape hatch, one namespace over one denylist. `secrets.register(name)`
+// widens it so a host's custom credential param is scrubbed in every trace sink (start.url, OTLP
+// url.full, input.query); `secrets.has(name)` is the matching predicate, so a host can audit which
+// of its query params / body keys the scrubbers already cover; `secrets.redact(value)` walks a
+// plain value and replaces secret-named keys, which is what `.inspect({ redact })` hands the
+// caller. `apiKey({ in: 'query', name })` registers its name automatically; this is the manual
+// hook for a credential the built-in set/stems don't catch.
+//
+// Same shape as the token grammars below, for the same reason: one name per dimension with the
+// verb at the call site, rather than the three verb-prefixed functions
+// (`registerSecretKey`/`isSecretKey`/`redactSecretsDeep`) it replaced — three names on the barrel
+// for one decision. The caveat the old predicate's name invited (it answers about query params
+// and body keys, NOT headers, which `redactHeaders` widens at the sink boundary) had to be
+// repeated at each use; it is stated once on the namespace's own JSDoc instead.
+export { secrets } from './util';
 export type { Issue, ValidationResult, Validator } from './validator';
 // Standalone validation, uniform with what `input`/`output` consume: `validate(schema, value)`
 // checks a value now; `compile(schema)` coerces once and returns a reusable checker. Both take any

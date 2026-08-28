@@ -28,6 +28,10 @@ const FUNCTIONS = [
     'compile',
     'isStitch',
     'isSeam',
+    // The `exactOptionalPropertyTypes` companion: public because config authoring under that flag
+    // otherwise needs the `...(key !== undefined ? { key } : {})` spread dance at every call site,
+    // and a peer package building a `StitchConfig` hits it as often as core does.
+    'compact',
     // The verdict (ADR 0022 Decision 2), public because a surface author must compose it: an
     // `interpret` hook REPLACES the default rather than layering on it, so a surface with its own
     // body rules needs this to keep the caller's `verdict` config working. The one composition
@@ -50,6 +54,24 @@ const TOKEN_GRAMMARS = ['duration', 'size', 'rate'] as const;
 // landed; re-adding one as an alias would put two spellings of one call on the barrel, which is
 // the same "three names for one decision" trap the verdict scopes below are pinned against.
 const REMOVED_PARSERS = ['parseDuration', 'parseBytes', 'parseRate'] as const;
+
+// The trace-redaction escape hatch (ADR 0018; ADR 0021's export table deliberately keeps it on the
+// ROOT rather than moving it to `stitchapi/auth` with the strategies that register into it).
+// Public for the one credential the built-in denylist/stems don't catch, and load-bearing for a
+// real cross-package consumer: `@stitchapi/query-core` imports it from this barrel to extend its
+// header denylist rather than fork a parallel list that would drift.
+//
+// Pinned as a WHOLE, not as three members: `register` without `has` leaves a caller unable to
+// audit what it just widened, and `redact` is the only one core's own engine would notice missing.
+const SECRET_NAMESPACE_MEMBERS = ['register', 'has', 'redact'] as const;
+
+// The three verb-prefixed functions `secrets` REPLACED, pinned absent for the same reason as the
+// parsers above — one dimension, one name, the verb at the call site.
+const REMOVED_SECRET_FUNCTIONS = [
+    'registerSecretKey',
+    'isSecretKey',
+    'redactSecretsDeep',
+] as const;
 
 // The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the
 // status alone) answers the engine's transport-health question and has no surface-author use;
@@ -98,6 +120,37 @@ describe('public API surface (src/index.ts)', () => {
 
     test.each(REMOVED_PARSERS)(
         'does NOT export %s — the namespace pair replaced it',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
+
+    test.each(SECRET_NAMESPACE_MEMBERS)(
+        'exports secrets.%s as a function',
+        (member) => {
+            expect(
+                typeof (api.secrets as Record<string, unknown>)[member],
+            ).toBe('function');
+        },
+    );
+
+    // The pin is behavioural, not just structural: a barrel wired to some other predicate — or to
+    // a `redact` that does not read the registry `register` writes — passes the typeof checks
+    // above and fails here. `register` is process-wide and additive by contract, so the name is
+    // namespaced to this spec to stay inert for every other test in the run.
+    test('the exported namespace is the one backing the shared denylist', () => {
+        const key = 'x_public_api_surface_spec_cred';
+        expect(api.secrets.has(key)).toBe(false);
+        api.secrets.register(key);
+        expect(api.secrets.has(key)).toBe(true);
+        expect(api.secrets.redact({ [key]: 'live', page: 2 })).toEqual({
+            [key]: 'REDACTED',
+            page: 2,
+        });
+    });
+
+    test.each(REMOVED_SECRET_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
         (name) => {
             expect(name in (api as Record<string, unknown>)).toBe(false);
         },

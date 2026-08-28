@@ -28,6 +28,15 @@
 > worded to avoid the removed spellings; where it says "the query-scoped
 > predicate/registrar" it means the pre-rename name of `isSecretKey` /
 > `registerSecretKey` respectively.
+>
+> **Amendment 2 — the three exports are now one namespace.** Also pre-GA and
+> without aliases: `registerSecretKey` / `isSecretKey` / `redactSecretsDeep` are
+> exported from the root barrel as **`secrets.register`** / **`secrets.has`** /
+> **`secrets.redact`**, matching the `duration`/`size`/`rate` shape — one name per
+> dimension, the verb at the call site. The implementations and their names inside
+> `util.ts` are unchanged, and core's own call sites still import the functions
+> directly (the namespace is a thin facade, so it does not weld the three together
+> for a bundler). Read the function names below as the `util.ts`-internal ones.
 
 ## Context
 

@@ -935,6 +935,9 @@ const URL_REDACTED = 'REDACTED';
 const REGISTERED_SECRET_KEYS = new Set<string>();
 
 /**
+ * Widen half of {@link secrets}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
  * Register an additional key name whose value is a secret (a query-param name, a body
  * field, …), so the trace URL/query scrubbers redact it. Additive and process-wide
  * (mirroring the built-in denylist): names can be widened but never un-redacted.
@@ -945,6 +948,9 @@ export function registerSecretKey(name: string): void {
 }
 
 /**
+ * Predicate half of {@link secrets}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
  * True when a key name (a query-param name, a response-body object key, or any
  * key in the same family — a `start` event's `input.query`) carries a secret value:
  * matched case-insensitively against the secret key set above, by containing one of
@@ -961,6 +967,9 @@ export function isSecretKey(key: string): boolean {
 }
 
 /**
+ * Scrub half of {@link secrets}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
  * Deep-clone `value` and replace any object key that matches {@link isSecretKey}
  * (or the caller's `extra` name/path patterns via {@link matchPath}) with the
  * `'REDACTED'` sentinel. Returns a new value — the input is **never mutated**.
@@ -1011,6 +1020,39 @@ function redactSecretsAt(
     }
     return value;
 }
+
+/**
+ * The trace-redaction escape hatch — one namespace for one denylist (ADR 0018; ADR 0021
+ * keeps it on the ROOT rather than moving it to `stitchapi/auth` with the strategies that
+ * register into it). The shape is the token grammars’: one name per dimension, the verb
+ * named at the call site, rather than three verb-prefixed functions for one decision.
+ *
+ * Before an event reaches a sink, the value of any secret-bearing key is replaced with
+ * `REDACTED` — matched by exact name (`key`, `sig`, `access_key`) or by a contained stem
+ * (`token`, `secret`, `signature`, `credential`, `api_key`), which is how `access_token`,
+ * `client_secret` and `x-amz-signature` are all caught without listing every vendor
+ * spelling. A credential riding under a name neither rule catches is named by the host:
+ *
+ * - `secrets.register(name)` widens the denylist, so that name is scrubbed in every trace
+ *   sink (the JSONL/console `start.url`, the OTLP `url.full`, the structured `input.query`,
+ *   and the traced request body). `apiKey({ in: 'query', name })` calls it automatically at
+ *   construction, so this is the manual hook for a credential core never placed.
+ * - `secrets.has(name)` is the matching predicate — audit which of your query params and
+ *   body keys the scrubbers already cover before deciding what is left to register.
+ * - `secrets.redact(value, extra?)` scrubs a plain value against that denylist, deep and
+ *   without mutating its input. It is what `.inspect({ redact })` hands the caller.
+ *
+ * **Not for headers.** All three answer about query params and body keys, so
+ * `secrets.has('authorization')` is `false` even though every built-in sink redacts that
+ * header: headers are matched against their own denylist at the sink boundary, widened with
+ * `redactHeaders` rather than here. The old `isSecretKey` name invited exactly that mistake
+ * and needed the warning spelled out at each use; it is stated once here instead.
+ */
+export const secrets = {
+    register: registerSecretKey,
+    has: isSecretKey,
+    redact: redactSecretsDeep,
+} as const;
 
 /**
  * Strip credentials from a URL before it reaches a trace sink: removes userinfo
