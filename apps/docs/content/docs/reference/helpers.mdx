@@ -282,6 +282,15 @@ Add one key name to the denylist. Every scrubber reads from it: the console and
 JSONL `start.url`, the OTLP `url.full` attribute, the structured `input.query`,
 and the traced request body.
 
+The **query bindings** read from it too. `@stitchapi/query-core` derives every
+cache key through the same predicate, so a registered name is redacted from the
+query keys built by [React](/docs/integrations/react),
+[Vue](/docs/integrations/vue), [Svelte](/docs/integrations/svelte),
+[Solid](/docs/integrations/solid) and [Angular](/docs/integrations/angular), and
+from [`swrKey`](/docs/integrations/swr). That reach matters more than a trace
+sink's: query keys are persisted by cache providers and shown in devtools, so a
+credential in one outlives the process.
+
 ```ts twoslash
 import { secrets, stitch } from 'stitchapi';
 
@@ -322,13 +331,19 @@ secrets.has('session_ref'); // false — until you register it
 ```
 
 <Callout type="warn">
-    **Anti-pattern:** don't reach for this to decide whether a **header** is
-    secret. It answers about query params and body keys, so
+    **Anti-pattern:** don't reach for this as your _only_ test of whether a
+    **header** is secret. It answers about query params and body keys, so
     `secrets.has('authorization')` and `secrets.has('x-api-key')` both come back
-    `false` even though a sink redacts both headers. Headers are matched against
-    their own denylist at the sink boundary, which you widen with
+    `false` even though both headers are redacted. Headers get their own denylist:
+    at the trace-sink boundary you widen it with
     [`redactHeaders`](/docs/guides/observability/trace-sinks#default-secret-redaction),
     not with `secrets.register`.
+
+    Query keys are where the two meet. The key builders check their own header
+    denylist **and then** fall through to `secrets.has`, so a name you register is
+    redacted from a cache key even though `secrets.has` is the wrong question to
+    ask about a header on its own.
+
 </Callout>
 
 ### secrets.redact
