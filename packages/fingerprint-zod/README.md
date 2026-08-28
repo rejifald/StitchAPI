@@ -16,9 +16,9 @@ falls back to re-validate-on-hit) on anything it can't soundly capture — opaqu
 
 ```ts
 import { zodFingerprinter } from '@stitchapi/fingerprint-zod';
-import { registerFingerprinter } from 'stitchapi/fingerprint';
+import { fingerprinters } from 'stitchapi/fingerprint';
 
-registerFingerprinter(zodFingerprinter);
+fingerprinters.register(zodFingerprinter);
 ```
 
 Compliance is proven against `verifyFingerprintContract` from `stitchapi/testing`.

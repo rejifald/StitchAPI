@@ -5,7 +5,7 @@
 // `version` fast path, and the cacheable-method gate (GraphQL opt-in).
 import { graphql, memoryStore, seam, stitch } from '../src';
 import type { Adapter, CacheOptions, StitchConfig } from '../src';
-import { clearFingerprinters, registerFingerprinter } from '../src/fingerprint';
+import { fingerprinters } from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
 
@@ -601,7 +601,7 @@ describe('cache — re-validate on hit vs version fast path', () => {
 
 describe('cache — schema fingerprint fold (ADR 0004)', () => {
     afterEach(() => {
-        clearFingerprinters();
+        fingerprinters.clear();
     });
 
     test('a no-output stitch caches fast — a hit is served without re-validation', async () => {
@@ -620,7 +620,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
     });
 
     test('a registered fingerprinter takes the fast path; a changed schema is a new generation → miss', async () => {
-        registerFingerprinter(testFingerprinter);
+        fingerprinters.register(testFingerprinter);
         const { adapter, calls } = counting();
         const store = memoryStore();
         const base = {
@@ -647,7 +647,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
     });
 
     test('an un-fingerprintable schema is refused by default (fail-closed) and surfaces why', async () => {
-        registerFingerprinter(testFingerprinter); // registered, but ABSTAINS on { opaque }
+        fingerprinters.register(testFingerprinter); // registered, but ABSTAINS on { opaque }
         const { adapter, calls } = counting();
         const s = stitch({
             url: URL,
@@ -664,7 +664,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
     });
 
     test('fingerprint.fallback:"revalidate" caches and re-validates the stored value on each hit', async () => {
-        registerFingerprinter(testFingerprinter);
+        fingerprinters.register(testFingerprinter);
         const { adapter, calls } = counting();
         const s = stitch({
             url: URL,

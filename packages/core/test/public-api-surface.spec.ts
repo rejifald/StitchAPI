@@ -1,9 +1,18 @@
-// The public API surface of the package (src/index.ts). smoke.spec.ts exercises `stitch` end-to-end
-// but nothing pins the EXPORT surface itself, so an accidental removal/rename of a public symbol
-// would slip past the test suite (only attw/build catches it, late). This guards the contract: the
-// documented value exports are present and of the expected kind.
+// The public API surface of the package. smoke.spec.ts exercises `stitch` end-to-end but nothing
+// pins the EXPORT surface itself, so an accidental removal/rename of a public symbol would slip
+// past the test suite (only attw/build catches it, late). This guards the contract: the documented
+// value exports are present and of the expected kind.
+//
+// Scope is the root barrel (src/index.ts) plus the subpaths whose surface is a DECISION rather
+// than an implementation detail — `stitchapi/auth`, split off deliberately (ADR 0021), and
+// `stitchapi/fingerprint`, whose registry folded into one namespace. Both directions of each fold
+// live here on purpose: the members that must be present, and the spellings they replaced pinned
+// ABSENT beside `REMOVED_PARSERS` and `REMOVED_SECRET_FUNCTIONS`, so "did an old name drift back
+// as an alias?" is one file to read rather than three.
 import * as api from '../src';
 import * as authApi from '../src/auth';
+import * as fingerprintApi from '../src/fingerprint';
+import type { SchemaFingerprinter } from '../src/fingerprint';
 import type { AdapterResponse, StitchEvent } from '../src/types';
 
 // Every documented function/guard export (systemClock is an object; the error classes are below).
@@ -96,6 +105,32 @@ const REMOVED_OTLP_FUNCTIONS = [
 // on the barrel for one decision invites composing the wrong one — which is precisely the mistake
 // that put a flag-failed `200` through the circuit's transport-failure path.
 const INTERNAL_VERDICT_SCOPES = ['classifyStatus', 'httpInterpret'] as const;
+
+// The per-vendor fingerprint-strategy registry on `stitchapi/fingerprint` (ADR 0004), one
+// namespace over one process-local `Map`.
+//
+// Pinned as a WHOLE, like `secrets` above: `register` without `get` leaves a host unable to check
+// what it just registered or to see why a stitch it expected to cache is refusing, and `clear` is
+// the one member with no in-app caller at all — every conformance suite in the five
+// `@stitchapi/fingerprint-*` packages resets through it, and nothing inside core would notice it
+// missing.
+const FINGERPRINTER_NAMESPACE_MEMBERS = [
+    'register',
+    'get',
+    'list',
+    'clear',
+] as const;
+
+// The four verb-prefixed functions `fingerprinters` REPLACED, pinned absent for the same reason as
+// the parsers and the secret trio — one dimension, one name, the verb at the call site. This
+// subpath makes the pin sharper than either: `src/fingerprint.ts` IS the entry, so re-exporting one
+// of these puts it straight back on the published surface with no barrel in between to stop it.
+const REMOVED_FINGERPRINTER_FUNCTIONS = [
+    'registerFingerprinter',
+    'getFingerprinter',
+    'listFingerprinters',
+    'clearFingerprinters',
+] as const;
 
 // The auth surface moved to its own subpath (ADR 0021). Pinned in BOTH directions: present on
 // `stitchapi/auth`, and ABSENT from the root — a re-export there would quietly put oauth2 and
@@ -303,4 +338,85 @@ describe('public API surface (src/auth.ts → stitchapi/auth)', () => {
     test('exports exactly the auth surface, nothing more', () => {
         expect(Object.keys(authApi).sort()).toEqual([...AUTH_FUNCTIONS].sort());
     });
+});
+
+describe('public API surface (src/fingerprint.ts → stitchapi/fingerprint)', () => {
+    // The registry is process-local and this spec registers into it, so leave it as found.
+    beforeEach(() => {
+        fingerprintApi.fingerprinters.clear();
+    });
+    afterEach(() => {
+        fingerprintApi.fingerprinters.clear();
+    });
+
+    test.each(FINGERPRINTER_NAMESPACE_MEMBERS)(
+        'exports fingerprinters.%s as a function',
+        (member) => {
+            expect(
+                typeof (
+                    fingerprintApi.fingerprinters as Record<string, unknown>
+                )[member],
+            ).toBe('function');
+        },
+    );
+
+    // The pin is behavioural, not just structural, and it pins the FACADE specifically. The four
+    // implementations stay plain module functions — `resolveFingerprint` calls the lookup directly
+    // rather than through the namespace, so that a consumer importing `fingerprinters` is the only
+    // one who pays for all four (esbuild will not split an object literal to drop a dead member).
+    // That split is only safe while both halves read one `Map`: a namespace built over its own
+    // registry passes every typeof check above, and fails here, because the strategy it accepted
+    // never reaches the resolver that is supposed to use it.
+    test('the exported namespace is the one the resolver reads', () => {
+        const schema = {
+            '~standard': {
+                version: 1,
+                vendor: 'x-public-api-surface-spec',
+                validate: (value: unknown) => ({ value }),
+            },
+        } as const;
+        const strategy: SchemaFingerprinter = {
+            vendor: 'x-public-api-surface-spec',
+            range: '*',
+            fingerprint: () => ({ token: 'pinned', strength: 'strong' }),
+        };
+
+        // Unregistered → the resolver refuses, and the namespace agrees nothing is there.
+        expect(
+            fingerprintApi.fingerprinters.get(strategy.vendor),
+        ).toBeUndefined();
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }).policy,
+        ).toBe('refuse');
+
+        fingerprintApi.fingerprinters.register(strategy);
+        expect(fingerprintApi.fingerprinters.get(strategy.vendor)).toBe(
+            strategy,
+        );
+        expect(fingerprintApi.fingerprinters.list()).toContain(strategy);
+        // The registration the FACADE took is the one the resolver's own call site sees.
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }),
+        ).toMatchObject({
+            policy: 'fast',
+            reason: 'sound structural fingerprint',
+        });
+
+        fingerprintApi.fingerprinters.clear();
+        expect(
+            fingerprintApi.fingerprinters.get(strategy.vendor),
+        ).toBeUndefined();
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }).policy,
+        ).toBe('refuse');
+    });
+
+    test.each(REMOVED_FINGERPRINTER_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (fingerprintApi as Record<string, unknown>)).toBe(
+                false,
+            );
+        },
+    );
 });
