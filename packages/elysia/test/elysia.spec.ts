@@ -6,8 +6,9 @@
 // the three public surfaces: seam-on-context (+ principal binding), the SSE bridge, and the
 // StitchError → HTTP mapping.
 import { stitch } from '../src';
-import { isStitchError, stitchErrorResponse } from '../src';
+import { stitchError } from '../src';
 import { streamStitchSse } from '../src';
+import * as api from '../src';
 
 import { Elysia } from 'elysia';
 import type { Adapter } from 'stitchapi';
@@ -165,7 +166,7 @@ describe('streamStitchSse bridges a stitch stream to an SSE body', () => {
     });
 });
 
-describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => {
+describe('stitchError.handler / stitchError.map map a StitchError to HTTP', () => {
     test('a thrown StitchError becomes a 502 by default via the plugin onError', async () => {
         const api = seam({ baseUrl: 'https://api.test' });
         // The upstream 404 is thrown as a StitchError; the handler does NOT catch it.
@@ -225,7 +226,7 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
     test('onError:true registers the default mapping (the new P13 spelling, at runtime)', async () => {
         // `true` never type-checked before, so this asserts the RUNTIME honours it — not just
         // that the signature widened. It must behave exactly like omitting the key: register
-        // the 502-by-default mapping, NOT pass `true` through to `stitchOnError`.
+        // the 502-by-default mapping, NOT pass `true` through to `stitchError.handler`.
         const api = seam({ baseUrl: 'https://api.test' });
         const app = new Elysia()
             .use(stitch({ seam: api, onError: true }))
@@ -248,9 +249,9 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
         expect(true).toBe(true);
     });
 
-    test('stitchErrorResponse returns undefined for a non-Stitch error (caller falls through)', async () => {
-        expect(stitchErrorResponse(new Error('plain'))).toBeUndefined();
-        const mapped = stitchErrorResponse(
+    test('stitchError.map returns undefined for a non-Stitch error (caller falls through)', async () => {
+        expect(stitchError.map(new Error('plain'))).toBeUndefined();
+        const mapped = stitchError.map(
             Object.assign(new Error('upstream'), {
                 name: 'StitchError',
                 status: 503,
@@ -268,7 +269,7 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
     describe('does not leak the raw error message by default', () => {
         test('a transport failure with an internal hostname is not disclosed', async () => {
             // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
-            const res = stitchErrorResponse(
+            const res = stitchError.map(
                 Object.assign(
                     new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
                     { name: 'StitchError' },
@@ -283,7 +284,7 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
 
         test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
             // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
-            const res = stitchErrorResponse(
+            const res = stitchError.map(
                 Object.assign(new Error('HTTP 401'), {
                     name: 'StitchError',
                     status: 401,
@@ -294,7 +295,7 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
         });
 
         test('the `body` opt-in still includes the raw message', async () => {
-            const res = stitchErrorResponse(
+            const res = stitchError.map(
                 Object.assign(
                     new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
                     { name: 'StitchError' },
@@ -308,10 +309,52 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
         });
     });
 
-    test('isStitchError discriminates by name', () => {
+    test('stitchError.is discriminates by name', () => {
         const e = Object.assign(new Error('x'), { name: 'StitchError' });
-        expect(isStitchError(e)).toBe(true);
-        expect(isStitchError(new Error('plain'))).toBe(false);
-        expect(isStitchError('nope')).toBe(false);
+        expect(stitchError.is(e)).toBe(true);
+        expect(stitchError.is(new Error('plain'))).toBe(false);
+        expect(stitchError.is('nope')).toBe(false);
+    });
+});
+
+// --- public-surface pin: the error family is ONE namespace -------------------
+//
+// This package has no dedicated public-surface spec (only core does), so the pin lives here,
+// beside the behaviour it guards. It mirrors the intent of core's `REMOVED_SECRET_FUNCTIONS`
+// in `packages/core/test/public-api-surface.spec.ts`, in both directions:
+//
+//  - PRESENT, as a WHOLE: `stitchError` is an OBJECT whose members are exactly `is`, `map` and `handler`.
+//    The key set is pinned rather than each member independently, so adding or dropping one is
+//    a deliberate edit here — the same call core's `SECRET_NAMESPACE_MEMBERS` makes. Object-ness
+//    is asserted explicitly because `stitchError` was a FUNCTION in `@stitchapi/hono` before the
+//    fold, and a bare `typeof === 'function'` check would have passed for it.
+//  - ABSENT: every verb-prefixed spelling the namespace replaced, across all six adapters — not
+//    only the ones this package carried. Pre-GA `rc`, so they were removed outright rather than
+//    aliased (CONTRACT.md P19); re-adding one would put two spellings of one call back on the
+//    barrel, which is exactly the drift this fold closes.
+describe('public surface: the stitchError namespace', () => {
+    const MEMBERS = ['is', 'map', 'handler'] as const;
+
+    test('exports stitchError as a namespace object', () => {
+        expect(typeof api.stitchError).toBe('object');
+        expect(Object.keys(api.stitchError).sort()).toEqual(
+            [...MEMBERS].sort(),
+        );
+    });
+
+    test.each(MEMBERS)('exports stitchError.%s as a function', (member) => {
+        expect(
+            typeof (api.stitchError as Record<string, unknown>)[member],
+        ).toBe('function');
+    });
+
+    test.each([
+        'isStitchError',
+        'stitchErrorHandler',
+        'stitchOnError',
+        'stitchErrorResponse',
+        'toHttpException',
+    ] as const)('does NOT export %s — the namespace replaced it', (name) => {
+        expect(name in (api as Record<string, unknown>)).toBe(false);
     });
 });

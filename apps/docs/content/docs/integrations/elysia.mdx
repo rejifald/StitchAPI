@@ -129,9 +129,13 @@ const app = new Elysia().use(
 );
 ```
 
-Set `onError: false` to register none and wire your own with `stitchOnError`
-(an `.onError`-compatible mapper) or `stitchErrorResponse(err, options)` (a one-off
-`StitchError` → `Response`); `isStitchError` narrows an unknown error first.
+Set `onError: false` to register none and wire your own with `stitchError.handler()`
+(an `.onError`-compatible mapper) or `stitchError.map(err, options)` (a one-off
+`StitchError` → `Response`); `stitchError.is(err)` narrows an unknown error first.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this
+one concept. The **option** keeps Elysia's own word (`onError`) while the **export**
+is shared vocabulary.
 
 <Callout type="info">
     On Bun clusters and other multi-runtime deployments, pair the seam with a

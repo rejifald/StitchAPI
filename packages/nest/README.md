@@ -166,8 +166,13 @@ app.useGlobalFilters(new StitchExceptionFilter(app.getHttpAdapter()));
 
 The options envelope is `StitchErrorOptions` — the same `{ status?, body? }` shape as
 `@stitchapi/hono`'s and `@stitchapi/elysia`'s error helpers. `status` takes a fixed number
-or a `(err) => number` function. Outside a filter, use `toHttpException(err, { status })` /
-`isStitchError(err)` directly.
+or a `(err) => number` function. Outside a filter, use `stitchError.map(err, { status })` /
+`stitchError.is(err)` directly.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this one
+concept. It has no `.handler` member: Nest registers a filter **instance** through DI, so
+the handler stays the `StitchExceptionFilter` class above — the Nest idiom, and what
+ADR 0012 rule 1 blesses for a host adapter's primary surface.
 
 The client-facing **body** defaults to Nest's rendering of a fixed
 `'Upstream request failed'` — the raw `err.message` is withheld, because it can disclose an
