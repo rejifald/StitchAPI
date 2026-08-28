@@ -12,11 +12,7 @@
 // names yourself, which is the denylist-you-must-enumerate the capture says the field cannot write.
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c3-inspect-redact.ts
-import {
-    isSecretKey,
-    redactSecretsDeep,
-    stitch,
-} from '../../../../packages/core/src/index';
+import { secrets, stitch } from '../../../../packages/core/src/index';
 import {
     ARRAY,
     BASE,
@@ -100,7 +96,7 @@ async function main(): Promise<void> {
         ];
         checkSeq(
             "which of the canary's key names the denylist considers secret",
-            keys.filter((k) => isSecretKey(k)),
+            keys.filter((k) => secrets.has(k)),
             [],
         );
         checkSeq(
@@ -113,7 +109,7 @@ async function main(): Promise<void> {
                 'x-amz-signature',
                 'sig',
                 'pwd',
-            ].filter((k) => isSecretKey(k)),
+            ].filter((k) => secrets.has(k)),
             [
                 'access_token',
                 'client_secret',
@@ -193,46 +189,46 @@ async function main(): Promise<void> {
                 v,
             );
         // Exact dotted path.
-        const exact = redactSecretsDeep(body, ['profile.contact.mail']);
+        const exact = secrets.redact(body, ['profile.contact.mail']);
         check(
             'exact path `profile.contact.mail`',
             at(exact, ['profile', 'contact', 'mail']),
             'REDACTED',
         );
         // Prefix: a pattern that is a proper prefix nukes the whole subtree.
-        const prefix = redactSecretsDeep(body, ['profile']);
+        const prefix = secrets.redact(body, ['profile']);
         check(
             'a prefix pattern `profile` replaces the ENTIRE subtree with the sentinel',
             at(prefix, ['profile']),
             'REDACTED',
         );
         // Wildcard on an object level.
-        const wild = redactSecretsDeep(body, ['profile.*.mail']);
+        const wild = secrets.redact(body, ['profile.*.mail']);
         check(
             'wildcard `profile.*.mail` matches one object level',
             at(wild, ['profile', 'contact', 'mail']),
             'REDACTED',
         );
         // The array-index grammar mismatch.
-        const bracket = redactSecretsDeep(body, ['contacts[].email']);
+        const bracket = secrets.redact(body, ['contacts[].email']);
         check(
             '`contacts[].email` — the DRIFT grammar — matches nothing',
             bytesOf(bracket).includes(ARRAY),
             true,
         );
-        const star = redactSecretsDeep(body, ['contacts.*.email']);
+        const star = secrets.redact(body, ['contacts.*.email']);
         check(
             '`contacts.*.email` matches nothing either — the path is `contacts[1].email`',
             bytesOf(star).includes(ARRAY),
             true,
         );
-        const indexed = redactSecretsDeep(body, ['contacts[1].email']);
+        const indexed = secrets.redact(body, ['contacts[1].email']);
         check(
             'only the concrete index `contacts[1].email` matches',
             bytesOf(indexed).includes(ARRAY),
             false,
         );
-        const bare = redactSecretsDeep(body, ['email']);
+        const bare = secrets.redact(body, ['email']);
         check(
             'so for arrays the usable spelling is the BARE key name, which matches at every index',
             bytesOf(bare).includes(ARRAY),
@@ -291,9 +287,9 @@ async function main(): Promise<void> {
         );
         // Non-mutation: the engine's retained body must survive redaction intact.
         const original = { email: EMAIL, ssn: SSN, name: NAME, extra: RENAMED };
-        const clone = redactSecretsDeep(original, ['email']);
+        const clone = secrets.redact(original, ['email']);
         check(
-            'redactSecretsDeep does not mutate its input',
+            'secrets.redact does not mutate its input',
             original.email,
             EMAIL,
         );
@@ -361,7 +357,7 @@ async function main(): Promise<void> {
         [
             ...scan(
                 bytesOf(
-                    redactSecretsDeep(
+                    secrets.redact(
                         { note: `mail ${FREETEXT} please`, other: 1 },
                         ['email', 'mail', 'ssn', 'name', 'contact', 'address'],
                     ),
