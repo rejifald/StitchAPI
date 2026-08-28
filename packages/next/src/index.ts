@@ -8,9 +8,13 @@
 // - `streamStitchSse(stitch.stream())` — turn a streaming stitch into a `text/event-stream`
 //   `Response` (the Web-standard twin of `@stitchapi/express`'s `streamStitchSse`,
 //   which targets a Node `ServerResponse`).
-// - `stitchErrorResponse(err)` — map a thrown `StitchError` to a `Response` with a
-//   safe status (default 502), or `undefined` for anything else so the caller can
-//   rethrow it untouched.
+// - `stitchError` — one namespace for "a stitch failed, turn it into HTTP": `.is(err)`
+//   narrows an unknown error, `.map(err)` maps a thrown `StitchError` to a `Response`
+//   with a safe status (default 502), or `undefined` for anything else so the caller can
+//   rethrow it untouched. The same spelling every other `@stitchapi` host adapter exports
+//   (ADR 0012; the export-surface analogue of the `secrets` fold in core). There is no
+//   `.handler`: a route handler is its own `Request → Response` function, so Next has no
+//   central error hook to register one on.
 //
 // Built on Web standards (`Response`, `ReadableStream`, `TextEncoder`) only — no
 // `next` import — so the same helpers work in Next route handlers, Remix, SvelteKit
@@ -142,8 +146,13 @@ export function streamStitchSse<T>(
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
 
-/** True when `err` is the error a stitch throws on failure (`name === 'StitchError'`). */
-export function isStitchError(err: unknown): err is StitchErrorLike {
+// The two functions below are the implementations behind the `stitchError` namespace at the end
+// of this section; only that namespace is exported. They stay plain module functions — declared,
+// not exported — so the namespace is a thin facade rather than the only way to reach either.
+//
+// Guard half of `stitchError`; the namespace carries the contract. True when `err` is the error
+// a stitch throws on failure (`name === 'StitchError'`).
+function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
 
@@ -175,26 +184,18 @@ export interface StitchErrorOptions {
 }
 
 /**
- * Map a thrown `StitchError` to a JSON `Response`, or `undefined` when `err` is not a Stitch
- * error — so the caller can rethrow / fall through with `?? throw err`. Use it in a route
- * handler's `catch`:
+ * Map half of `stitchError`; the namespace carries the contract. Internal — the barrel
+ * exports the namespace, not this.
  *
- * ```ts
- * try {
- *     return Response.json(await getUser({ params: { id } }));
- * } catch (err) {
- *     const mapped = stitchErrorResponse(err);
- *     if (mapped) return mapped; // undefined → not a StitchError
- *     throw err;
- * }
- * ```
+ * Map a thrown `StitchError` to a JSON `Response`, or `undefined` when `err` is not a Stitch
+ * error — so the caller can rethrow / fall through.
  *
  * The default body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the
  * raw `err.message` is **not** echoed, since it can leak internal hostnames or the
  * upstream's status to an untrusted client. Opt in to a custom (or the raw) message with
  * {@link StitchErrorOptions.body}.
  */
-export function stitchErrorResponse(
+function stitchErrorResponse(
     err: unknown,
     options: StitchErrorOptions = {},
 ): Response | undefined {
@@ -208,3 +209,36 @@ export function stitchErrorResponse(
         : { error: STATUS_TEXT[status] ?? 'Error' };
     return Response.json(body, { status });
 }
+
+/**
+ * The one name for "a stitch failed, turn it into HTTP" in this package — the guard and the
+ * mapper as one namespace, so the same concept reads the same way across every `@stitchapi/*`
+ * host adapter (ADR 0012; the export-surface analogue of the `secrets` / `duration` folds in
+ * core). The verb lives at the call site rather than in two verb-prefixed top-level names:
+ *
+ * - `stitchError.is(err)` narrows an unknown error to a {@link StitchErrorLike}.
+ * - `stitchError.map(err, options?)` returns a JSON `Response`, or `undefined` when `err` is
+ *   not a stitch failure — so the caller can rethrow / fall through.
+ *
+ * ```ts
+ * try {
+ *     return Response.json(await getUser({ params: { id } }));
+ * } catch (err) {
+ *     const mapped = stitchError.map(err);
+ *     if (mapped) return mapped; // undefined → not a StitchError
+ *     throw err;
+ * }
+ * ```
+ *
+ * **No `.handler` here, deliberately.** The other hosts expose one because they have a central
+ * error hook to register it on — Express's error middleware, Fastify's `setErrorHandler`,
+ * Hono's and Elysia's `onError`. A Next App Router route handler has no such hook: each
+ * handler is its own `Request → Response` function, so mapping happens in that handler's own
+ * `catch`. A `handler()` here would have nowhere to be registered.
+ *
+ * A facade, not a re-implementation: each member points at the module function above.
+ */
+export const stitchError = {
+    is: isStitchError,
+    map: stitchErrorResponse,
+} as const;

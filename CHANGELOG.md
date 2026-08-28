@@ -187,6 +187,81 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: the six host adapters' error helpers are now one `stitchError` namespace —
+  `isStitchError`, `stitchErrorHandler`, `stitchOnError`, `stitchErrorResponse` and
+  `toHttpException` are replaced by `stitchError.is`, `stitchError.map` and
+  `stitchError.handler`.** ([ADR 0012](docs/adr/0012-integration-symbol-naming.md),
+  [CONTRACT.md §6](docs/CONTRACT.md))
+  One concept — "a stitch failed, turn it into HTTP" — carried two or three verb-prefixed
+  top-level names in each of `@stitchapi/express`, `/fastify`, `/hono`, `/elysia`, `/next` and
+  `/nest`, and the mapper alone had **four spellings**. `hono` and `elysia` were otherwise
+  perfectly parallel, down to an identically named `stitchOnError`, and diverged on exactly
+  that. It is the defect ADR 0012's own Context section opens with; that sweep fixed the
+  logger-sink family and never came back for this one.
+
+    | Package | Was                                                       | Now                                    |
+    | ------- | --------------------------------------------------------- | -------------------------------------- |
+    | express | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | fastify | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | hono    | `isStitchError` · `stitchError` · `stitchOnError`         | `stitchError.is` · `.map` · `.handler` |
+    | elysia  | `isStitchError` · `stitchErrorResponse` · `stitchOnError` | `stitchError.is` · `.map` · `.handler` |
+    | next    | `isStitchError` · `stitchErrorResponse`                   | `stitchError.is` · `.map`              |
+    | nest    | `isStitchError` · `toHttpException`                       | `stitchError.is` · `.map`              |
+
+    ```ts
+    // before
+    import { isStitchError, stitchOnError } from '@stitchapi/hono';
+    // after
+    import { stitchError } from '@stitchapi/hono';
+
+    app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+
+    app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same `502`-by-default mapping, same
+    generic status-tied body, same `status` / `body` overrides, same pass-through for a
+    non-Stitch error. Only the spelling moved. No aliases: pre-GA `rc`, and keeping the old
+    spellings would leave the very names being removed on the barrel beside the namespace.
+
+    **Not every host has all three members, and the missing ones stay missing.** A member that
+    meant something different per package would re-create the drift this closes. `express` and
+    `fastify` have no `.map` — their handler writes onto a mutable `res` / `reply` and returns
+    no mapped artifact to hand back. `next` has no `.handler` — a route handler is its own
+    `Request` → `Response` function, so there is no central error hook to register one on.
+
+    **`StitchExceptionFilter` is unchanged and stays a top-level class** on `@stitchapi/nest`:
+    Nest registers a filter _instance_ through DI (`useGlobalFilters`,
+    `{ provide: APP_FILTER, useClass }`), the idiom ADR 0012 rule 1 blesses. It is pinned
+    present as a class so a later tidy-up cannot sweep it into the namespace.
+
+    **The plugin option slots are untouched** — `@stitchapi/fastify` still takes `errorHandler`
+    (after Fastify's `setErrorHandler`) and `@stitchapi/elysia` still takes `onError`. CONTRACT.md
+    P18's mirror clause binds a framework-hook _slot_, where the surrounding option bag supplies
+    the framework context; a named import strips exactly that context, which is why it does not
+    carry over to the exports.
+
+    **The namespace is a thin facade.** The implementations stay plain module functions and each
+    package's own call sites keep importing them directly, so nothing welds all three onto a
+    consumer that reaches one. Measured with esbuild from source: importing only `stitch` /
+    `streamStitchSse` bundles **none** of the error module, and a guard-only consumer pays
+    +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
+    siblings. None of these six has a size gate and all are server-side, so the trade is accepted
+    rather than budgeted.
+
+    **Why it drifted.** ADR 0012's 2026-06-20 conformance sweep covered ten packages;
+    `@stitchapi/express` (#207), `@stitchapi/elysia` (#208) and `@stitchapi/next` (#222) all landed
+    2026-06-19, one day earlier, and appear in neither its conformance nor its migration table.
+    Those three contributed `stitchErrorResponse` twice and half of both handler spellings. But
+    adjudication alone would not have saved them: every one of these names is `Stitch`-branded, so
+    all six pass ADR 0012's rules read one symbol at a time — and `toHttpException` proves it from
+    the other side, since nest _was_ swept and its one genuinely bare export was missed anyway.
+    Recorded as a dated addendum on ADR 0012 (its 2026-06-20 table is left intact) and in
+    CONTRACT.md §6.
+
+    Every old spelling is pinned **absent** in all six packages' specs — not only where it lived —
+    so "one dimension, one name" is a property of the family, not of each package on its own.
+
 - **BREAKING CHANGE: the secret-redaction trio is now one `secrets` namespace — `registerSecretKey`,
   `isSecretKey` and `redactSecretsDeep` are replaced by `secrets.register`, `secrets.has` and
   `secrets.redact`.** ([ADR 0018](docs/adr/0018-inspect-raw-redaction.md))

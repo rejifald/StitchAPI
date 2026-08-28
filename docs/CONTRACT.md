@@ -535,9 +535,21 @@ not a [P16](#p16--cross-surface--cross-package-parity) parity break, and a sweep
 unifies them has removed information rather than added consistency. The _shape_ behind
 both stays identical (`boolean | AtLeastOne<StitchErrorOptions>`), which is where parity
 actually binds. Only these two hosts have the slot at all — express/hono/nest/next expose
-standalone helpers with no options object — and each of those helpers is likewise named
-for its own framework (`stitchErrorHandler` on express/fastify, `stitchOnError` on
-hono/elysia, `StitchExceptionFilter` on nest).
+standalone helpers with no options object.
+
+_The mirror clause binds the **slot**, not the **export**._ This paragraph once added that
+each of those helpers was "likewise named for its own framework" (`stitchErrorHandler` on
+express/fastify, `stitchOnError` on hono/elysia). That was a description of the surface as it
+stood, not a licence: the framework-hook argument covers a field a user authors _inside_ a
+config object, where the surrounding option bag supplies the framework context. A named
+import strips exactly that context (ADR 0012's whole premise), so it does not carry over —
+and the family had drifted past any mirror reading anyway, with **four** spellings of one
+mapper (`stitchError`, `stitchErrorResponse` twice, `toHttpException`), of which only
+`toHttpException` even named a framework type. The exports are now one namespace,
+**`stitchError`**, in all six adapters ([§6](#6-migration-record-2026-07-08-hard-break-sweep));
+the `errorHandler` / `onError` **option slots** are untouched, which is this clause still
+doing its job. `StitchExceptionFilter` stays a top-level class on nest — DI-registered, ADR
+0012 rule 1.
 
 ### P19 · The alias obligation is scoped to the GA channel
 
@@ -1002,6 +1014,73 @@ against both — the findings sit at the end of the list:
   `parsers-properties.spec.ts`, not a table of pretty cases, and verified non-vacuous by
   reintroducing `ms`-style rounding and watching all three properties fail.
 
+- **P16/P18 (the error family folds, 2026-08-28)** — the export-surface analogue of
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope): where P24 says a
+  shared field-name prefix inside one house contract is an envelope, a shared symbol prefix
+  across one package's exports is a **namespace**. Six host adapters each carried two or three
+  `stitch*Error*`-prefixed top-level names for a single dimension — "a stitch failed, turn it
+  into HTTP" — and the mapper alone had **four spellings** (`stitchError` on hono,
+  `stitchErrorResponse` on elysia _and_ next, `toHttpException` on nest). hono and elysia were
+  otherwise perfectly parallel, down to an identically named `stitchOnError`, and diverged on
+  exactly this. It is the same defect ADR 0012's own Context section opens with — one concept,
+  four spellings — which that sweep fixed for the logger-sink family and did not come back for.
+  **Fixed** — one `stitchError` namespace per package, identical in all six: `.is(err)` narrows,
+  `.map(err, options?)` returns the host's mapped artifact, `.handler(options?)` builds the
+  host's error hook. Hard break, no alias ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel),
+  `rc` channel); every old spelling is pinned **absent** in each package's own spec — in all six,
+  not just where it lived, so "one dimension, one name" is a property of the family.
+  `toHttpException` was additionally a live [ADR 0012 rule 6](../adr/0012-integration-symbol-naming.md)
+  violation: a bare, non-branded export on an adapter package, which the 2026-06-20 sweep missed
+  because it read the logger-sink family only.
+  _Why a namespace and not a sixth uniform verb-prefixed name:_ the same argument the `secrets`
+  and `duration`/`size`/`rate` folds made in core one release earlier — one name per dimension,
+  the verb at the call site — reused rather than re-argued. The `parseDuration`→`duration` bullet
+  above is this entry's direct precedent; this is the same fold applied across packages instead of
+  within one barrel.
+  _Half the family was never adjudicated._ ADR 0012's conformance table swept ten published
+  packages on 2026-06-20. **`@stitchapi/express` (#207), `@stitchapi/elysia` (#208) and
+  `@stitchapi/next` (#222) all landed 2026-06-19 — one day earlier — and appear nowhere in it**,
+  neither as a ✅ row nor in the migration table. Those three contributed `stitchErrorResponse`
+  twice and half of both handler spellings, so the drift is not a coincidence: it is what an
+  un-adjudicated package looks like. This is the same one-day gap a parallel audit found for
+  `@stitchapi/react-native` / `@stitchapi/expo` (#224, also 2026-06-19); both are recorded as
+  dated addenda on ADR 0012 rather than by rewriting its 2026-06-20 table, which stands as the
+  record of what was actually examined that day.
+  _But full adjudication would not have caught it either, and that is the sharper half._ Every
+  one of these names is `Stitch`-branded, so all six pass rule 6 the moment they are read one
+  symbol at a time — which is the only way ADR 0012's rules read. The rule that was missing is
+  "one concept, one spelling **across** packages", and `toHttpException` proves the point from
+  the other side: nest **was** in the table, marked ⚠️→fixed for five other exports, and its one
+  genuinely bare adapter export was still missed.
+  _The ragged edges are the interesting part._ Not every host supports all three, and the fix is
+  to let a member be **absent**, never to redefine it locally: a member that means something
+  different per package is the drift the fold exists to end. express/fastify have no `.map`
+  (their handler writes onto a mutable `res`/`reply` and returns no artifact to hand back); next
+  has no `.handler` (a route handler is its own `Request → Response`, so there is no central hook
+  to register on); nest has no `.handler` either, because its handler is a DI-registered
+  **class** — `StitchExceptionFilter` stays top-level per ADR 0012 rule 1, and is pinned present
+  as a class so a later tidy-up cannot sweep it in.
+  _No gate could have found this, on any axis — worth writing down like R10's own blind spot._
+  **R8/P24 is the closest rule and it misses on two counts at once**: it groups by leading word
+  across the flat members of **one exported `interface`**, so it never looks at a barrel's
+  exported _symbols_, and it never looks past one package. **R5 is the only cross-package rule
+  in the repo, and it runs the opposite direction** — it flags a watch-listed identifier for
+  being the **same** in ≥2 packages, where this finding is one concept being **different** in
+  six. Nothing in the repo compares spellings across packages at all, and a rule that did would
+  need the concept-level knowledge ("these five names mean one thing") that no source-text
+  signal carries. So this class is found by **reading**, exactly like R8's trailing-word gap
+  above, and the per-package pins are the guard. R5 will not fire on the new `stitchError`
+  either: it is deliberately identical across all six, the same same-name-same-shape-by-design
+  case `StitchErrorLike` and `StitchErrorOptions` are already de-listed for.
+  _Facade discipline, measured._ A namespace object does not tree-shake, so the implementations
+  stay plain module functions and each namespace is a thin facade over them; the packages' own
+  call sites (fastify's and elysia's `plugin.ts`, nest's filter) keep importing the functions
+  directly. Verified with esbuild from source: a consumer importing only `stitch` /
+  `streamStitchSse` bundles **none** of the error module, and a guard-only consumer pays
+  +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
+  siblings. None of the six has a size gate and all are server-side, so the trade is accepted
+  rather than budgeted — recorded here so it is a decision, not an accident.
+
 Everything else this section once listed has **shipped** and moved to the record below —
 the cross-package `StitchStore`/`StitchLike`/`RequestSeam` clashes (qualified per-framework
 and per-ecosystem), `queryOptions`→`stitchQueryOptions`, `OAuth2Opts`/`CookieSessionOpts`,
@@ -1101,7 +1180,8 @@ shape, not as today's surface: nothing on the surface carries an alias.
   (express/fastify/nest/next) mis-named their error **duck-type** `StitchError`, shadowing core's real
   `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
   so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
-  structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
+  structural contract across all six host adapters (de-listed from R5, the guard stays — it is
+  `stitchError.is` since the 2026-08-28 fold above).
 - **P9/P16 (per-request seam)** — third R5 pair. The per-request seam handle is ecosystem-qualified
   per ADR 0012 (extending hono's `HonoRequestSeam`): express `RequestSeam`→`ExpressRequestSeam`, elysia
   →`ElysiaRequestSeam`, fastify `StitchHost`→`FastifyRequestSeam`, nest `StitchHost`→`NestRequestSeam`.
