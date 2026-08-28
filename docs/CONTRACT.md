@@ -1002,6 +1002,37 @@ against both — the findings sit at the end of the list:
   `parsers-properties.spec.ts`, not a table of pretty cases, and verified non-vacuous by
   reintroducing `ms`-style rounding and watching all three properties fail.
 
+- **No numbered principle (the OTLP pipeline on the barrel, 2026-08-28)** — `otlpSink`,
+  `otlpHttpExporter` and `toOtlpJson` were three names on the ROOT barrel for one export path.
+  All three carried the subject (`otlp`/`Otlp`) and varied only the role word: `…Sink`,
+  `…HttpExporter`, `to…Json`. **Fixed** (`otlp.sink` / `otlp.exporter` / `otlp.json`, following
+  `secrets` and the `duration`/`size`/`rate` pairs above rather than adding a fourth set of
+  role-prefixed names). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the three old
+  names are pinned **absent** in `public-api-surface.spec.ts` beside `REMOVED_PARSERS` and
+  `REMOVED_SECRET_FUNCTIONS`, so an alias cannot drift back and leave two spellings of one call.
+  _No rule required this, and none forbade it._ The reasoning is
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)'s — a repeated token
+  is the subject, so each member owes only its **role** — but P24 is written over the _fields of a
+  house contract_ and is gated by **R8** over object types. Neither reaches a barrel's export
+  names, and this entry does not claim otherwise: the fold is a judgement made in P24's spirit, on
+  a surface no principle currently governs. The same is true of the two folds it follows
+  (#753's parsers, #764's `secrets`), which is now three precedents and no rule.
+  _And R8 could not have been pointed at it as written._ R8 needs a shared **leading**-word prefix.
+  `otlpSink` and `otlpHttpExporter` lead with the subject, `toOtlpJson` leads with a verb and
+  carries its subject in the middle — so widening R8 to walk export names would still have grouped
+  at most two of the three, and split the pipeline at its serializer. Same blind spot as the
+  `halfOpenAfter` and `perAttempt` entries above: each name is individually well-formed and
+  accurate, and the defect is only visible across the set.
+  _What the flat names actively hid:_ the three are not siblings at all but three **layers** of one
+  pipeline, each the input to the next — `json` serializes, `exporter` POSTs what `json` produced,
+  `sink` maps events to spans and hands them to `exporter`. Three co-equal barrel entries present
+  them as a menu of interchangeable helpers, which is the reading that makes a caller reach for
+  `toOtlpJson` when they wanted a sink. The namespace orders them without a doc paragraph having to.
+  _Bundle cost, the reason a facade and not an object:_ a namespace object does not tree-shake, so
+  the three implementations stay plain module functions and `otlp` is a thin facade over them;
+  core's own call site (`stitch.ts`) keeps importing `otlpSink` directly. Measured both sides: the
+  whole entry unchanged at 24.60 KB gzip, `import { stitch }` 21.82 → 21.83 KB. No budget raise.
 - **ADR 0012 rule 6 (an adapter package the sweep never reached, 2026-08-28)** —
   `@stitchapi/react-native` exported `assertStreamingPolyfills` and
   `hasStreamingPolyfills`: two bare, non-branded names in an adapter package, which
