@@ -26,7 +26,7 @@ Hermes ships no `TextEncoder` / `TextDecoder` / `ReadableStream`, which the stre
 import 'react-native-polyfill-globals/auto';
 ```
 
-`rnStreamAdapter` throws a precise error (via `assertStreamingPolyfills`) if they're missing. **Non-streaming** stitches work without any polyfill.
+`rnStreamAdapter` throws a precise error (via `rnStreamingPolyfills.assert()`) if they're missing — call it yourself at app start to fail earlier, or use `rnStreamingPolyfills.has()` to branch instead of catching. **Non-streaming** stitches work without any polyfill.
 
 ## Wire it into a seam
 
