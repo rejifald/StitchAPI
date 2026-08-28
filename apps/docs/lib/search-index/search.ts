@@ -42,7 +42,15 @@ function indexPath(): string {
 /** Restore (once) the persisted Orama index. Throws if it hasn't been built. */
 export function loadIndex(): Promise<AnyOrama> {
     if (!cached) {
-        cached = restore('json', readFileSync(indexPath(), 'utf8'));
+        cached = restore('json', readFileSync(indexPath(), 'utf8')).catch(
+            (error: unknown) => {
+                // Same reason as the embedder's loader: a memoized rejection
+                // would outlive the fault that caused it and fail every later
+                // query on this instance. Clear it so a retry can succeed.
+                cached = undefined;
+                throw error;
+            },
+        );
     }
     return cached;
 }
