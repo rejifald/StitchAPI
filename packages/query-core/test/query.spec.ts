@@ -1,13 +1,8 @@
 // @stitchapi/query-core behaviour. Driven by FAKE stitches (plain callables that
 // return a `StitchResult`-shaped value) — no engine, no network. We exercise the
 // unary lifecycle, cancel/refetch, and the streaming `delta` accumulation.
-import {
-    createStitchQuery,
-    deriveQueryKey,
-    keyInputFor,
-    nameOf,
-    stitchQueryOptions,
-} from '../src';
+import * as api from '../src';
+import { createStitchQuery, stitchKey, stitchQueryOptions } from '../src';
 import type { StitchCallResult, StitchLike } from '../src';
 
 import { secrets } from 'stitchapi';
@@ -447,7 +442,7 @@ describe('onSuccess / onError callbacks', () => {
 
 // --- key derivation (the one shared implementation behind every binding) ----
 
-describe('nameOf()', () => {
+describe('stitchKey.name()', () => {
     const withConfig = (cfg: Record<string, unknown>): StitchLike<string> =>
         Object.assign(
             unaryStitch<string>(async () => 'x'),
@@ -455,31 +450,33 @@ describe('nameOf()', () => {
         );
 
     test('prefers name, then path, then url, then the literal fallback', () => {
-        expect(nameOf(withConfig({ name: 'getUser', path: '/u/{id}' }))).toBe(
-            'getUser',
+        expect(
+            stitchKey.name(withConfig({ name: 'getUser', path: '/u/{id}' })),
+        ).toBe('getUser');
+        expect(stitchKey.name(withConfig({ path: '/users/{id}' }))).toBe(
+            '/users/{id}',
         );
-        expect(nameOf(withConfig({ path: '/users/{id}' }))).toBe('/users/{id}');
-        expect(nameOf(withConfig({ url: 'https://x.dev/feed' }))).toBe(
+        expect(stitchKey.name(withConfig({ url: 'https://x.dev/feed' }))).toBe(
             'https://x.dev/feed',
         );
-        expect(nameOf(withConfig({}))).toBe('stitch');
+        expect(stitchKey.name(withConfig({}))).toBe('stitch');
     });
 
     test('a bare callable without __config falls back to the literal', () => {
-        expect(nameOf(unaryStitch(async () => 1))).toBe('stitch');
+        expect(stitchKey.name(unaryStitch(async () => 1))).toBe('stitch');
     });
 });
 
-describe('keyInputFor()', () => {
+describe('stitchKey.input()', () => {
     test('null / undefined stay null; primitives pass through', () => {
-        expect(keyInputFor(null)).toBeNull();
-        expect(keyInputFor(undefined)).toBeNull();
-        expect(keyInputFor(7)).toBe(7);
-        expect(keyInputFor('q')).toBe('q');
+        expect(stitchKey.input(null)).toBeNull();
+        expect(stitchKey.input(undefined)).toBeNull();
+        expect(stitchKey.input(7)).toBe(7);
+        expect(stitchKey.input('q')).toBe('q');
     });
 
     test('drops runtime-only signal / onProgress, keeps everything else', () => {
-        const out = keyInputFor({
+        const out = stitchKey.input({
             params: { id: '1' },
             signal: new AbortController().signal,
             onProgress: () => {},
@@ -488,7 +485,7 @@ describe('keyInputFor()', () => {
     });
 
     test('redacts secret header VALUES but keeps benign headers varying the key', () => {
-        const out = keyInputFor({
+        const out = stitchKey.input({
             headers: {
                 Authorization: 'Bearer tok',
                 'x-csrf-token': 'abc',
@@ -504,21 +501,21 @@ describe('keyInputFor()', () => {
 
     test("reuses core's secrets.has: secrets.register widens header redaction", () => {
         secrets.register('x-querycore-spec-credential');
-        const out = keyInputFor({
+        const out = stitchKey.input({
             headers: { 'x-querycore-spec-credential': 'v' },
         }) as { headers: Record<string, unknown> };
         expect(out.headers['x-querycore-spec-credential']).toBe('[redacted]');
     });
 });
 
-describe('deriveQueryKey() / stitchQueryOptions()', () => {
+describe('stitchKey.of() / stitchQueryOptions()', () => {
     test('the key is [name, sanitised input]', () => {
         const stitch = Object.assign(
             unaryStitch<string>(async () => 'x'),
             { __config: { path: '/users/{id}' } },
         );
         expect(
-            deriveQueryKey(stitch, {
+            stitchKey.of(stitch, {
                 params: { id: '1' },
                 headers: { authorization: 'Bearer t' },
             }),
@@ -538,5 +535,72 @@ describe('deriveQueryKey() / stitchQueryOptions()', () => {
         await expect(options.queryFn()).resolves.toEqual({
             echoed: { body: { a: 1 } },
         });
+    });
+});
+
+// --- the key grammar's EXPORT surface --------------------------------------
+//
+// query-core has no `public-api-surface.spec.ts` of its own — only core does — so the
+// pins for the fold live here, beside the behaviour they guard. Same intent as core's
+// `REMOVED_PARSERS` / `REMOVED_SECRET_FUNCTIONS`: the namespace's members present, the
+// verb-prefixed names it replaced ABSENT, so an alias cannot drift back and leave two
+// spellings of one derivation in circulation.
+//
+// Pinning here covers all FIVE barrels, not just this one. React / Vue / Svelte /
+// Angular re-export the grammar straight from this package, so a name absent here
+// cannot reappear on theirs; and `@stitchapi/solid` deliberately re-exports only the
+// adapter, pointing callers at this package for the key.
+//
+// Pinned as a WHOLE, not as three independent members: `of` alone would still pass an
+// "is it exported?" check while dropping the segment accessors, and composing a wider
+// key around a stitch's identity is the only reason the segments are public at all.
+const KEY_NAMESPACE_MEMBERS = ['of', 'name', 'input'] as const;
+
+const REMOVED_KEY_FUNCTIONS = [
+    'deriveQueryKey',
+    'nameOf',
+    'keyInputFor',
+] as const;
+
+describe('the stitchKey export surface', () => {
+    test.each(KEY_NAMESPACE_MEMBERS)(
+        'exports stitchKey.%s as a function',
+        (member) => {
+            expect(
+                typeof (api.stitchKey as Record<string, unknown>)[member],
+            ).toBe('function');
+        },
+    );
+
+    test.each(REMOVED_KEY_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
+
+    // A bare `queryKey` would collide with TanStack's own vocabulary — it is the field
+    // name on the POJO this package hands them — which is why the grammar carries the
+    // `stitch` prefix, exactly as `stitchQueryOptions` does (ADR 0012). Pinned so the
+    // shorter spelling cannot be added later "for symmetry".
+    test('does NOT export a bare queryKey — ADR 0012', () => {
+        expect('queryKey' in (api as Record<string, unknown>)).toBe(false);
+    });
+
+    // Structural, not merely present: a barrel wired to some other derivation passes
+    // the typeof checks above and fails here. `of` must be exactly its two segments.
+    test('stitchKey.of is stitchKey.name plus stitchKey.input', () => {
+        const stitch = Object.assign(
+            unaryStitch<string>(async () => 'x'),
+            { __config: { path: '/users/{id}' } },
+        );
+        const input = {
+            params: { id: '1' },
+            headers: { authorization: 'Bearer t' },
+        };
+        expect(api.stitchKey.of(stitch, input)).toEqual([
+            api.stitchKey.name(stitch),
+            api.stitchKey.input(input),
+        ]);
     });
 });

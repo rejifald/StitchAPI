@@ -187,6 +187,53 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: the query-key trio is now one `stitchKey` namespace — `deriveQueryKey`,
+  `nameOf` and `keyInputFor` are replaced by `stitchKey.of`, `stitchKey.name` and
+  `stitchKey.input`.** ([ADR 0012](docs/adr/0012-integration-symbol-naming.md))
+  Three verb-prefixed names for one two-segment key, re-exported wholesale onto five barrels
+  (`@stitchapi/query-core` and the React / Vue / Svelte / Angular bindings). Their own JSDoc
+  already described them as parts of one thing — "the first segment of a derived query key",
+  "the second segment" — and `deriveQueryKey` wore the exact `parseDuration` shape the house
+  convention rejects. Same reasoning as the token grammars and the `secrets` hatch, same fix:
+  one name per dimension, the segment named at the call site.
+
+    | Was                             | Now                           |
+    | ------------------------------- | ----------------------------- |
+    | `deriveQueryKey(stitch, input)` | `stitchKey.of(stitch, input)` |
+    | `nameOf(stitch)`                | `stitchKey.name(stitch)`      |
+    | `keyInputFor(input)`            | `stitchKey.input(input)`      |
+
+    **Behaviour is byte-for-byte what it was** — the same `[name, sanitised input]` tuple, the same
+    `name ?? path ?? url ?? 'stitch'` fallback chain, the same dropped runtime-only
+    `signal`/`onProgress`, the same header-value redaction layered over core's `secrets.has`
+    denylist. Only the spelling moved. `stitchQueryOptions` is untouched and still keys through
+    `stitchKey.of`. No aliases: pre-GA, and keeping the old spellings would leave three verbose
+    names beside the namespace on all five barrels, which is the thing being removed.
+
+    **`stitchKey`, not `queryKey`.** TanStack Query owns that word — `queryKey` is the field name
+    on the options object this package builds _for_ them — so a bare `queryKey` export would put
+    one word on two meanings on a single import path, the exact collision that made the adapter
+    `stitchQueryOptions` rather than `queryOptions`
+    ([ADR 0012](docs/adr/0012-integration-symbol-naming.md),
+    [P22](docs/CONTRACT.md#p22--a-standards-interop-contract-uses-the-standards-field-names)). The
+    **absence** of a bare `queryKey` is pinned too, so the shorter spelling cannot be added later
+    for symmetry.
+
+    **Measured on the bundle, both sides.** query-core has no size gate; measured anyway, esbuild
+    tree-shaken + gzip, the method `packages/core/scripts/bundle-size.mjs` uses. query-core's own
+    entry is free — 1598 → 1597 B gzip whole-entry, with the `createStitchQuery`-only and
+    `stitchQueryOptions`-only scenarios not moving at all. The React and Vue **hook-only**
+    scenarios grow 1876 → 1919 B and 1885 → 1928 B gzip (+43 B each): those two bindings sanitise
+    their dep key through the grammar, and a namespace object does not tree-shake, so `of` now
+    rides along with `input`/`name` for a consumer who never touches TanStack. `packages/core`'s
+    gated budgets do not move at all (24.60 / 21.82 / 5.22 KB gzip, unchanged).
+
+    The implementations stay plain module functions and query-core's own call sites (`of`'s body,
+    `stitchQueryOptions`) keep calling them directly, so the namespace is a thin facade rather
+    than an object that welds all three onto every consumer's path. `@stitchapi/solid` continues
+    to re-export only `stitchQueryOptions` and to point callers at query-core for the key itself;
+    that divergence from the other four bindings predates this fold and is left standing.
+
 - **BREAKING CHANGE: the fingerprinter registry is now one `fingerprinters` namespace on
   `stitchapi/fingerprint` — `registerFingerprinter`, `getFingerprinter`, `listFingerprinters` and
   `clearFingerprinters` are replaced by `fingerprinters.register`, `.get`, `.list` and `.clear`.**

@@ -22,8 +22,7 @@ import {
     type StitchQuery,
     type StitchQueryResult,
     createStitchQuery,
-    keyInputFor,
-    nameOf,
+    stitchKey,
 } from '@stitchapi/query-core';
 import { compact } from 'stitchapi';
 import {
@@ -47,14 +46,15 @@ export type {
 } from '@stitchapi/query-core';
 
 // The TanStack Query adapter is implemented once in `@stitchapi/query-core`
-// (`deriveQueryKey` + `stitchQueryOptions`) so a stitch keys identically in every
+// (`stitchKey` + `stitchQueryOptions`) so a stitch keys identically in every
 // framework binding. Re-exported here so Vue apps import from one place.
-export {
-    deriveQueryKey,
-    keyInputFor,
-    nameOf,
-    stitchQueryOptions,
-} from '@stitchapi/query-core';
+//
+// The derivation is ONE namespace — `stitchKey.of` / `.name` / `.input` — not the
+// three verb-prefixed functions it replaced (`deriveQueryKey`/`nameOf`/`keyInputFor`),
+// which were three names on five barrels for one key. Named `stitchKey` and not a
+// bare `queryKey` for the same reason the adapter is `stitchQueryOptions` and not
+// `queryOptions`: TanStack Query owns both words (ADR 0012).
+export { stitchKey, stitchQueryOptions } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
 // Composable result
@@ -109,12 +109,12 @@ export interface UseStitchOptions<T> extends Omit<
 
 // A structural key of the input so an equal-shaped literal does not re-create the
 // handle, but `{ id: 1 }` → `{ id: 2 }` does. Mirrors `@stitchapi/react`. Sanitises
-// first via query-core's `keyInputFor` so an inline `onProgress` (fresh identity
+// first via query-core's `stitchKey.input` so an inline `onProgress` (fresh identity
 // per render) can't churn the key and loop, and a per-call `signal` adds no
 // non-deterministic noise — both are runtime-only.
 function defaultKey(input: unknown): string {
     try {
-        return JSON.stringify(keyInputFor(input));
+        return JSON.stringify(stitchKey.input(input));
     } catch {
         // Non-serialisable input (a function, a cyclic object) → opt out of
         // structural keying; falling back to a fresh key re-creates each time.
@@ -177,10 +177,10 @@ function useStitchInternal<T>(
 
     // Re-create the handle (and re-fetch) when a structural key of the input or
     // the streaming-relevant options change. A stable name for the stitch (via
-    // `nameOf`, NOT the raw `name` — so two nameless stitches on different paths
+    // `stitchKey.name`, NOT the raw `name` — so two nameless stitches on different paths
     // don't share a dep key) joins the key so two stitches with the same input
     // still differ.
-    const name = nameOf(stitch);
+    const name = stitchKey.name(stitch);
     const depKey = (): string => {
         const opts = toValue(options);
         return JSON.stringify([
