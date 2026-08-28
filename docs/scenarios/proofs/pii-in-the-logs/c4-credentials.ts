@@ -13,9 +13,8 @@
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c4-credentials.ts
 import { apiKey, bearer } from '../../../../packages/core/src/auth';
-import { stitch } from '../../../../packages/core/src/index';
+import { otlp, stitch } from '../../../../packages/core/src/index';
 import type { OtelSpan } from '../../../../packages/core/src/otlp';
-import { otlpSink } from '../../../../packages/core/src/otlp';
 import { consoleSink, loggerSink } from '../../../../packages/core/src/trace';
 import {
     BASE,
@@ -272,7 +271,7 @@ async function main(): Promise<void> {
             baseUrl: BASE,
             path: '/v1/customers/1',
             adapter: fakeVendor(),
-            trace: otlpSink({
+            trace: otlp.sink({
                 exporter: { export: (s) => void spans.push(...s) },
             }),
         });
@@ -281,12 +280,12 @@ async function main(): Promise<void> {
             query: { api_key: QUERY_KEY },
         });
         const row = leakRow(
-            'otlpSink — hand-rolled',
+            'otlp.sink — hand-rolled',
             bytesOf(spans),
             CREDENTIALS,
             'the exported spans',
         );
-        check('otlpSink: nothing', row.hits.size, 0);
+        check('otlp.sink: nothing', row.hits.size, 0);
         note(
             '`url.full` after scrubbing',
             (spans[0]?.attributes as Record<string, unknown> | undefined)?.[

@@ -35,7 +35,19 @@ export {
     loggerSink,
 } from './trace';
 export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
-export { otlpSink, otlpHttpExporter, toOtlpJson } from './otlp';
+// The OTLP trace pipeline, one namespace over one export path. `otlp.sink(opts?)` is the
+// TraceSink you hand to `trace` — it maps a stitch's events to one OTel CLIENT span;
+// `otlp.exporter(opts?)` is the default destination it builds, POSTing OTLP/JSON to
+// `${endpoint}/v1/traces`; `otlp.json(spans)` is the serializer underneath both, public as the
+// seam for a transport core does not ship (gRPC, a queue, a file) so a hand-rolled exporter uses
+// the same wire mapping rather than re-deriving it.
+//
+// Same shape as `secrets` and the token grammars below, for the same reason: one name per
+// dimension with the role at the call site, rather than the three names
+// (`otlpSink`/`otlpHttpExporter`/`toOtlpJson`) it replaced — which repeated the subject noun in
+// all three and varied only the role word, while hiding that they are three LAYERS of one
+// pipeline (json feeds exporter feeds sink) rather than three sibling helpers.
+export { otlp } from './otlp';
 export type {
     SpanExporter,
     OtelSpan,

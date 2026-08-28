@@ -135,7 +135,7 @@ is present in that destination's bytes.
   JSON.stringify(StitchError)         597   ●●  ●●  ●●  ●●  ●●  ●●  ●●
   event:error (JSON)                  103    ·   ·   ·   ·   ·   ·   ·
   cache entry (store.set)             627   ●●  ●●  ●●  ●●  ●●  ●●  ●●
-  otlpSink (exported spans)           455    ·   ·   ·   ·   ·   ·   ·
+  otlp.sink (exported spans)          455    ·   ·   ·   ·   ·   ·   ·
 ```
 
 Three things are worth reading off it directly.
