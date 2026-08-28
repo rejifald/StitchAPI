@@ -152,6 +152,32 @@ Three packages carried bare, non-branded adapter exports; all are renamed here, 
 on-pattern. Private packages (`eval-harness`, `sandbox-sim`, `completions-plugin`) are
 not public surface and are out of scope.
 
+### Addendum (2026-08-28) — two packages the sweep missed
+
+The table above covers ten packages. It should have covered twelve:
+**`@stitchapi/react-native`** and **`@stitchapi/expo`** landed on **2026-06-19**, one day
+before this sweep, and were never added to it — so their surfaces were not adjudicated
+rather than adjudicated and passed. Rule 6's enforcement is a review gate, and a package
+that lands the day before the gate is built does not pass through it.
+
+| Package                       | Verdict                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@stitchapi/react-native`** | **⚠️ → fixed:** `assertStreamingPolyfills` + `hasStreamingPolyfills` → the `rnStreamingPolyfills` namespace (`.assert()` / `.has()`). The rest was already on-pattern: `rnStreamAdapter` (rule 2), `asyncStorageStore` (rule 1, provider-branded), the `useStitch*` hooks (rule 1, `Stitch`-branded). |
+| `@stitchapi/expo`             | ✅ `expoFetchAdapter` / `expoSecureStore` are provider-branded (rule 1); everything else is re-exported from `@stitchapi/react-native`, so it inherits that package's verdict.                                                                                                                        |
+
+The rename is a **hard break with no `@deprecated` alias**, unlike the 2026-06-20 renames
+above: the line is still pre-GA and
+[CONTRACT P19](../CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes
+the alias obligation to the GA channel, while **R7** now flags a `@deprecated` tag reaching
+a published surface at all. The old spellings are pinned absent instead
+([`polyfills.spec.ts`](../../packages/react-native/test/polyfills.spec.ts), and across the
+`export *` chain in [`surface.spec.ts`](../../packages/expo/test/surface.spec.ts)).
+
+The `rn` qualifier is not merely proactive here. Cost 2 above (re-export barrels) is live:
+`@stitchapi/expo` re-exports react-native's barrel verbatim, so a bare `streamingPolyfills`
+would land on a surface where `expo/fetch` streams natively and no polyfill is ever needed
+— answering about a gap that package does not have.
+
 ## Migration & deprecation
 
 Every package is pre-GA (`1.0.0-rc.2`), so this is the cheap moment to align. Each
