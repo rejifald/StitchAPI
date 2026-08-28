@@ -72,7 +72,7 @@
         "@angular/platform-browser-dynamic": "^22.1.1",
         "@stitchapi/query-core": "workspace:*",
         "@types/node": "^22.10.0",
-        "jsdom": "^25.0.1",
+        "jsdom": "^30.0.1",
         "rxjs": "^7.8.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
