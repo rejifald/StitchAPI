@@ -1231,6 +1231,45 @@ shape, not as today's surface: nothing on the surface carries an alias.
   `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
   only ever see the object form. **R6 clears** — the baseline is now **0**.
 
+- **P24's export-surface analogue (the query key, 2026-08-28)** — P24 folds flat _config_ members
+  that share a subject into one envelope; the same argument applies to a _barrel_, and the
+  precedent is now three deep: the token grammars (`parseDuration`/`parseBytes`/`parseRate` →
+  `duration`/`size`/`rate`, above), core's redaction hatch
+  (`registerSecretKey`/`isSecretKey`/`redactSecretsDeep` → `secrets`), and now
+  `@stitchapi/query-core`'s key derivation. `deriveQueryKey`/`nameOf`/`keyInputFor` were three
+  verb-prefixed names for one two-segment tuple, and their own JSDoc said as much — "the first
+  segment of a derived query key", "the second segment" — while `deriveQueryKey` wore the exact
+  `parseDuration` shape the grammars had already moved away from. **Fixed** — one `stitchKey`
+  namespace (`of`/`name`/`input`), the segment named at the call site. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the three old
+  names are pinned **absent** in `packages/query-core/test/query.spec.ts`, which is where a
+  fold's pins live for a package with no `public-api-surface.spec.ts` of its own.
+  _Why the blast radius was five barrels, not one:_ the trio was re-exported wholesale by
+  `@stitchapi/react`, `/vue`, `/svelte` and `/angular`, so one derivation carried fifteen public
+  names. That multiplier is what makes an export-surface fold worth more than its config-side
+  siblings, and it is invisible to R8, which reads one package's types at a time. The pin sits in
+  query-core alone and still covers all five — the four bindings re-export **from** this package,
+  so a name absent here cannot reappear on theirs.
+  _Why `stitchKey` and not `queryKey`:_
+  [P22](#p22--a-standards-interop-contract-uses-the-standards-field-names) keeps TanStack's own
+  field names verbatim **inside** the options object — `queryKey` and `queryFn` are theirs — which
+  is precisely why the export beside it may not take that word. A bare `queryKey` export sitting
+  next to a `queryKey` field that means something narrower is the
+  [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one) collision that made
+  the adapter `stitchQueryOptions` rather than `queryOptions`
+  ([ADR 0012](adr/0012-integration-symbol-naming.md)). P22's carve-out is scoped to the interop
+  _payload_, not to the vocabulary around it; the absence of a bare `queryKey` is pinned with the
+  fold so the shorter spelling cannot arrive later for symmetry.
+  _The facade obligation, and its measured price:_ a namespace object does not tree-shake, so the
+  three implementations stay plain module functions and the namespace is a thin `as const` facade
+  over them, with query-core's own call sites on the functions. Measured both sides: query-core's
+  entry does not move (1598 → 1597 B gzip) and its `createStitchQuery`-only and
+  `stitchQueryOptions`-only scenarios are byte-identical, but the React and Vue **hook-only**
+  scenarios grow **+43 B gzip each**, because those two bindings sanitise their dep key through
+  the grammar across a package boundary and so retain the whole namespace. Cross-package, a
+  consumer gets the namespace or nothing — the same trade `secrets` made when query-core moved to
+  `secrets.has`. Recorded here rather than rounded to "free".
+
 ## 7. Enforcement
 
 [`scripts/check-contract.mjs`](../scripts/check-contract.mjs) is a **ratchet**, run as

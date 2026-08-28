@@ -260,9 +260,10 @@ describe('stitchStreamStore', () => {
 });
 
 // --- stitchQueryOptions ----------------------------------------------------------
-// The implementation is HOISTED into `@stitchapi/query-core` (nameOf /
-// keyInputFor / deriveQueryKey own the deep coverage there); these tests verify
-// the re-export wiring and one end-to-end shape through this package's entry.
+// The implementation is HOISTED into `@stitchapi/query-core` (the `stitchKey`
+// namespace — `.of` / `.name` / `.input` — owns the deep coverage there); these
+// tests verify the re-export wiring and one end-to-end shape through this
+// package's entry.
 
 describe('stitchQueryOptions', () => {
     test('is the ONE shared query-core implementation, re-exported', () => {

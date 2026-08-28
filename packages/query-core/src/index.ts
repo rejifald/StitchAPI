@@ -399,12 +399,17 @@ interface KeyConfig {
     url?: string;
 }
 
-/** A stable, human-meaningful name for the stitch — the first segment of a
+/**
+ * Name half of {@link stitchKey}; the namespace carries the contract. Internal —
+ * the barrel exports the namespace, not this.
+ *
+ * A stable, human-meaningful name for the stitch — the first segment of a
  * derived query key. Mirrors core's `nameOf` (`packages/core/src/engine.ts`) —
  * `name ?? path ?? url ?? 'stitch'` — so two DISTINCT nameless stitches
  * (`/users/{id}` vs `/orders/{id}`) don't collapse to the literal `'stitch'`
- * and collide on one cache entry. */
-export function nameOf(stitch: unknown): string {
+ * and collide on one cache entry.
+ */
+function nameOf(stitch: unknown): string {
     const cfg = (stitch as { __config?: KeyConfig }).__config;
     return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
 }
@@ -438,6 +443,9 @@ function isSecretHeader(name: string): boolean {
 }
 
 /**
+ * Input half of {@link stitchKey}; the namespace carries the contract. Internal —
+ * the barrel exports the namespace, not this.
+ *
  * Build the value that goes into a cache/query key from a stitch's per-call
  * input — the second segment of a derived query key. Never puts the raw input
  * in the key:
@@ -452,7 +460,7 @@ function isSecretHeader(name: string): boolean {
  *
  * `null` / `undefined` inputs stay `null`; a primitive input is returned unchanged.
  */
-export function keyInputFor(input: unknown): unknown {
+function keyInputFor(input: unknown): unknown {
     if (input === null || input === undefined) return null;
     if (typeof input !== 'object') return input;
 
@@ -477,18 +485,57 @@ export function keyInputFor(input: unknown): unknown {
 }
 
 /**
+ * Whole-key half of {@link stitchKey}; the namespace carries the contract.
+ * Internal — the barrel exports the namespace, not this.
+ *
  * Derive the canonical cache/query key for a stitch call: a stable name for the
  * stitch (see {@link nameOf}) plus a sanitised copy of the input (see
  * {@link keyInputFor}). Every binding — the five TanStack adapters' query keys
  * and the swr key builder — derives from here, so a stitch keys identically no
  * matter which framework reads it.
  */
-export function deriveQueryKey(
+function deriveQueryKey(
     stitch: unknown,
     input: unknown,
 ): readonly [string, unknown] {
     return [nameOf(stitch), keyInputFor(input)];
 }
+
+/**
+ * The derived-query-key grammar — one namespace for one key. The shape is the
+ * house one (`stitchapi`'s `duration`/`size`/`rate` grammars and its `secrets`
+ * hatch): one name per dimension, the segment named at the call site, rather
+ * than a barrel of verb-prefixed functions for one derivation.
+ *
+ * A key is a two-segment tuple — a stable name for the stitch, then a sanitised
+ * copy of the per-call input — and every binding derives from here, so a stitch
+ * keys identically no matter which framework reads it:
+ *
+ * - `stitchKey.of(stitch, input)` is the whole key, `[name, input]`. This is
+ *   what the five TanStack adapters put in `queryKey` and what a caller needs
+ *   for invalidation (`queryClient.invalidateQueries({ queryKey: … })`).
+ * - `stitchKey.name(stitch)` is the first segment alone — `name ?? path ?? url
+ *   ?? 'stitch'`, mirroring core's own naming — for a binding that composes a
+ *   wider key (a dep list, a scope prefix) around the stitch's identity.
+ * - `stitchKey.input(input)` is the second segment alone: the redaction step.
+ *   Runtime-only fields (`signal`, `onProgress`) are dropped and the VALUES of
+ *   secret-bearing headers are replaced, so a bearer token cannot reach a
+ *   persisted or devtools-visible key.
+ *
+ * **`stitchKey`, not `queryKey`.** TanStack Query owns that word: `queryKey` is
+ * the field name on the options object this package builds for it (see
+ * {@link StitchQueryOptions}), so a bare `queryKey` export would be one word for
+ * two things on the same import path — the exact collision that made the adapter
+ * `stitchQueryOptions` rather than `queryOptions`
+ * ([ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md)).
+ *
+ * @see {@link stitchQueryOptions} — the ready-made TanStack POJO, keyed by `of`.
+ */
+export const stitchKey = {
+    of: deriveQueryKey,
+    name: nameOf,
+    input: keyInputFor,
+} as const;
 
 /**
  * Build a TanStack-Query-compatible options object for a stitch, WITHOUT a hard
@@ -504,7 +551,7 @@ export function deriveQueryKey(
  * ```
  *
  * The `queryFn` awaits the stitch (the validated output); the `queryKey` is
- * {@link deriveQueryKey}'s stable, secret-redacted key, so TanStack caches per
+ * {@link stitchKey}`.of`'s stable, secret-redacted key, so TanStack caches per
  * call without leaking a bearer token into the key or refetching every render.
  *
  * Named `stitchQueryOptions` (not a bare `queryOptions`) because TanStack Query

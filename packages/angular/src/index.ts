@@ -63,12 +63,13 @@ export type {
 // binding, so the key format (and its secret-redaction guarantees) cannot drift
 // between frameworks. Re-exported here so Angular apps import everything from
 // `@stitchapi/angular`.
-export {
-    deriveQueryKey,
-    keyInputFor,
-    nameOf,
-    stitchQueryOptions,
-} from '@stitchapi/query-core';
+//
+// The derivation is ONE namespace — `stitchKey.of` / `.name` / `.input` — not the
+// three verb-prefixed functions it replaced (`deriveQueryKey`/`nameOf`/`keyInputFor`),
+// which were three names on five barrels for one key. Named `stitchKey` and not a
+// bare `queryKey` for the same reason the adapter is `stitchQueryOptions` and not
+// `queryOptions`: TanStack Query owns both words (ADR 0012).
+export { stitchKey, stitchQueryOptions } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
 // Public surface
