@@ -42,9 +42,9 @@ Measured with seven distinct sentinels — a name, an email, an SSN, a nested
 `primaryContactMail`. **Thirteen destinations carry all seven. Eleven carry zero. Nothing is
 partially redacted.**
 
-| carries the whole body                                                                                                                                                                                | carries none of it                                                                                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| the `result` event · `fileSink` at any non-zero cap · `.inspect().raw` · `.inspect().data` · `JSON.stringify(inspect())` · `.report()` · `StitchError.body` · `JSON.stringify(err)` · the cache entry | `start` / `progress` / `done` / `error` events · `consoleSink` · `loggerSink` · `otlpSink` · `StitchError.message` · `String(err)` · `err.stack` |
+| carries the whole body                                                                                                                                                                                | carries none of it                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the `result` event · `fileSink` at any non-zero cap · `.inspect().raw` · `.inspect().data` · `JSON.stringify(inspect())` · `.report()` · `StitchError.body` · `JSON.stringify(err)` · the cache entry | `start` / `progress` / `done` / `error` events · `consoleSink` · `loggerSink` · `otlp.sink` · `StitchError.message` · `String(err)` · `err.stack` |
 
 Exactly **one event** carries the response body — `result`, on `data`. "The event spine leaks" is
 really "one event leaks", which is a much smaller thing to reason about.

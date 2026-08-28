@@ -21,14 +21,14 @@ STITCH_EXPORT=otlp OTEL_EXPORTER_OTLP_ENDPOINT=https://api.example.com node app.
 ```
 
 To wire it yourself — to set headers, or to tee OTLP next to your own sink —
-build the sink with `otlpSink()` and combine sinks with `multiplex`:
+build the sink with `otlp.sink()` and combine sinks with `multiplex`:
 
 ```ts twoslash
-import { createTrace, multiplex, otlpSink } from 'stitchapi';
+import { createTrace, multiplex, otlp } from 'stitchapi';
 
 const trace = multiplex(
     createTrace({ console: true }),
-    otlpSink({
+    otlp.sink({
         endpoint: 'https://api.example.com',
         headers: { authorization: 'Bearer token' },
     }),
@@ -40,12 +40,14 @@ const trace = multiplex(
 `STITCH_EXPORT=otlp` is the toggle (a comma list, e.g. `console,otlp`);
 `OTEL_EXPORTER_OTLP_ENDPOINT` sets the collector base URL.
 
-`otlpSink(opts?)` returns a sink. `OtlpOptions` carries `endpoint` (OTLP/HTTP
+The pipeline is one namespace, `otlp`, with a member per layer.
+
+`otlp.sink(opts?)` returns a sink. `OtlpOptions` carries `endpoint` (OTLP/HTTP
 base URL), `headers` (extra headers on the POST, e.g. auth), and `exporter` (a
 custom `SpanExporter` destination, defaulting to the built-in HTTP exporter).
 
-`otlpHttpExporter({ endpoint?, headers? })` is that default exporter — it POSTs
-OTLP/JSON to `${endpoint}/v1/traces`. `toOtlpJson(spans)` serializes collected
+`otlp.exporter({ endpoint?, headers? })` is that default exporter — it POSTs
+OTLP/JSON to `${endpoint}/v1/traces`. `otlp.json(spans)` serializes collected
 spans to the OTLP/JSON `ResourceSpans` shape a collector accepts, if you ship
 them some other way.
 

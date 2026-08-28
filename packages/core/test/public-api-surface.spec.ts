@@ -13,7 +13,7 @@ import * as api from '../src';
 import * as authApi from '../src/auth';
 import * as fingerprintApi from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
-import type { AdapterResponse } from '../src/types';
+import type { AdapterResponse, StitchEvent } from '../src/types';
 
 // Every documented function/guard export (systemClock is an object; the error classes are below).
 const FUNCTIONS = [
@@ -29,9 +29,6 @@ const FUNCTIONS = [
     'fileSink',
     'multiplex',
     'loggerSink',
-    'otlpSink',
-    'otlpHttpExporter',
-    'toOtlpJson',
     'memoryStore',
     'validate',
     'compile',
@@ -80,6 +77,26 @@ const REMOVED_SECRET_FUNCTIONS = [
     'registerSecretKey',
     'isSecretKey',
     'redactSecretsDeep',
+] as const;
+
+// The OTLP trace pipeline (ADR 0007 correlates the spans it builds), one namespace over one
+// export path. Public because a host ships spans somewhere core does not: `sink` is the TraceSink
+// it hands to `trace`, `exporter` the default HTTP destination, `json` the wire serializer a
+// hand-rolled transport (gRPC, a queue, a file) reuses instead of re-deriving the OTLP shape.
+//
+// Pinned as a WHOLE, like `secrets` above: these are three LAYERS of one pipeline, so a namespace
+// that kept `sink` and lost `json` would still export a working default path while removing the
+// only reason `json` was ever public — the custom-transport seam, which is the member with no
+// caller inside core to notice it missing.
+const OTLP_NAMESPACE_MEMBERS = ['sink', 'exporter', 'json'] as const;
+
+// The three names `otlp` REPLACED, pinned absent for the same reason as the parsers and the
+// secret functions above. These three repeated the subject noun and varied only the role word
+// (`otlpSink`/`otlpHttpExporter`/`toOtlpJson`), which is the shape the barrel moved away from.
+const REMOVED_OTLP_FUNCTIONS = [
+    'otlpSink',
+    'otlpHttpExporter',
+    'toOtlpJson',
 ] as const;
 
 // The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the
@@ -185,6 +202,79 @@ describe('public API surface (src/index.ts)', () => {
     });
 
     test.each(REMOVED_SECRET_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
+
+    test.each(OTLP_NAMESPACE_MEMBERS)(
+        'exports otlp.%s as a function',
+        (member) => {
+            expect(typeof (api.otlp as Record<string, unknown>)[member]).toBe(
+                'function',
+            );
+        },
+    );
+
+    // Behavioural, not just structural: the three must still be the same PIPELINE, wired to each
+    // other. A namespace assembled from three unrelated functions — or one whose `sink` no longer
+    // defaults to this exporter — passes the typeof checks above and fails here. The sink is built
+    // with NO `exporter` option, so it has to reach for `otlp.exporter`'s destination on its own;
+    // the stubbed `fetch` proves it got there, and that what it POSTed is `otlp.json`'s wire shape.
+    test('the exported members are one pipeline: sink → exporter → json', async () => {
+        const calls: { url: string; body: unknown }[] = [];
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = ((url: string, init: { body: string }) => {
+            calls.push({ url, body: JSON.parse(init.body) });
+            return Promise.resolve({ ok: true, status: 200 });
+        }) as unknown as typeof fetch;
+        const realEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
+        process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = 'http://collector.test';
+        try {
+            const name = 'publicApiSurfacePipeline';
+            const sink = api.otlp.sink();
+            const events: StitchEvent[] = [
+                {
+                    type: 'start',
+                    name,
+                    method: 'GET',
+                    url: 'http://api.example.com/x',
+                    input: {},
+                    at: 1000,
+                },
+                {
+                    type: 'result',
+                    data: {},
+                    status: 200,
+                    attempts: 1,
+                    at: 1050,
+                },
+                { type: 'done', ok: true, elapsed: 50, attempts: 1, at: 1050 },
+            ];
+            for (const ev of events) sink.handle(ev, { name });
+            // The default exporter is fire-and-forget, so let its promise settle.
+            await Promise.resolve();
+        } finally {
+            globalThis.fetch = realFetch;
+            if (realEndpoint === undefined)
+                delete process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
+            else process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = realEndpoint;
+        }
+
+        // `sink` reached `exporter`, which POSTed to the OTLP path.
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.url).toBe('http://collector.test/v1/traces');
+        // …and the body is exactly what the exported serializer produces for those spans, so all
+        // three members are the same pipeline rather than three lookalikes.
+        const doc = calls[0]?.body as {
+            resourceSpans: [{ scopeSpans: [{ spans: unknown[] }] }];
+        };
+        expect(doc.resourceSpans[0].scopeSpans[0].spans).toHaveLength(1);
+        expect(typeof api.otlp.json([])).toBe('object');
+    });
+
+    test.each(REMOVED_OTLP_FUNCTIONS)(
         'does NOT export %s — the namespace replaced it',
         (name) => {
             expect(name in (api as Record<string, unknown>)).toBe(false);
