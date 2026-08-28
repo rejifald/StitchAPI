@@ -55,15 +55,28 @@ export interface DispatchOpts {
  * (SANDBOX.md §3). The single source of truth the scan keys on — D1 and the
  * tests (T-α) import this constant rather than re-listing the identifiers.
  *
- * Frozen. `as const` makes it a readonly tuple of string literals.
+ * Frozen. `as const` makes it a readonly tuple of string literals. Entries track
+ * core's SPELLING, though — `otlpTrace` became `otlpSink` here in #494, and the
+ * `otlpSink`/`otlpHttpExporter` pair became the single `otlp` namespace when core
+ * folded them. The scan matches the identifier at a word boundary and tolerates a
+ * leading dot, so the one `otlp` entry covers `otlp.sink(…)` and `otlp.exporter(…)`
+ * exactly as the two separate names did.
+ *
+ * That fold widens the list by one member: `otlp.json` is a pure serializer and
+ * used to route BROWSER (it was `toOtlpJson`, never listed here), and a snippet
+ * naming only it now routes to the server tier. Deliberate — the alternative is
+ * dropping `otlp` from this list entirely, which would route real `otlp.sink()`
+ * egress to the browser and silently simulate it. `multiplex` is the precedent:
+ * pure JS, listed here anyway, because these are TRACE-pipeline names and the
+ * pipeline's destination is the Node-only part. Over-routing a pure serializer to
+ * real Node costs a tier hop and returns the identical JSON.
  */
 export const NODE_ONLY_SURFACES = [
     'env',
     'cookieSession',
     'createTrace',
     'multiplex',
-    'otlpSink',
-    'otlpHttpExporter',
+    'otlp',
     'cli',
     'serve',
     'mcp',

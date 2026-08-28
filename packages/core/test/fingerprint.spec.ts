@@ -5,11 +5,8 @@
 import {
     type FingerprintInput,
     type SchemaFingerprinter,
-    clearFingerprinters,
-    getFingerprinter,
+    fingerprinters,
     hash,
-    listFingerprinters,
-    registerFingerprinter,
     resolveFingerprint,
 } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
@@ -78,16 +75,16 @@ describe('hash', () => {
 
 describe('registry', () => {
     beforeEach(() => {
-        clearFingerprinters();
+        fingerprinters.clear();
     });
 
     it('registers, retrieves, lists, and clears', () => {
-        expect(getFingerprinter('test')).toBeUndefined();
-        registerFingerprinter(refFingerprinter);
-        expect(getFingerprinter('test')).toBe(refFingerprinter);
-        expect(listFingerprinters()).toContain(refFingerprinter);
-        clearFingerprinters();
-        expect(getFingerprinter('test')).toBeUndefined();
+        expect(fingerprinters.get('test')).toBeUndefined();
+        fingerprinters.register(refFingerprinter);
+        expect(fingerprinters.get('test')).toBe(refFingerprinter);
+        expect(fingerprinters.list()).toContain(refFingerprinter);
+        fingerprinters.clear();
+        expect(fingerprinters.get('test')).toBeUndefined();
     });
 
     it('last registration for a vendor wins', () => {
@@ -96,16 +93,16 @@ describe('registry', () => {
             range: '*',
             fingerprint: () => ({ token: 'x', strength: 'strong' }),
         };
-        registerFingerprinter(refFingerprinter);
-        registerFingerprinter(other);
-        expect(getFingerprinter('test')).toBe(other);
+        fingerprinters.register(refFingerprinter);
+        fingerprinters.register(other);
+        expect(fingerprinters.get('test')).toBe(other);
     });
 });
 
 describe('resolveFingerprint — the fallback ladder', () => {
     beforeEach(() => {
-        clearFingerprinters();
-        registerFingerprinter(refFingerprinter);
+        fingerprinters.clear();
+        fingerprinters.register(refFingerprinter);
     });
 
     const userSchema = () =>
@@ -177,14 +174,14 @@ describe('resolveFingerprint — the fallback ladder', () => {
     });
 
     it('rung 5: unknown/unregistered vendor → refuse by default', () => {
-        clearFingerprinters();
+        fingerprinters.clear();
         const r = resolveFingerprint({ output: userSchema() });
         expect(r.policy).toBe('refuse');
         expect(r.reason).toContain('no fingerprinter registered');
     });
 
     it('rung 5: opt-in fallback:revalidate', () => {
-        clearFingerprinters();
+        fingerprinters.clear();
         const r = resolveFingerprint({
             output: userSchema(),
             fallback: 'revalidate',

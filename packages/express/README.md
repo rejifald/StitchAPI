@@ -13,7 +13,7 @@ binding: a request handler, an SSE writer, and an error-handling middleware.
 Works on Express 4 and 5.
 
 ```ts
-import { stitch, stitchErrorHandler } from '@stitchapi/express';
+import { stitch, stitchError } from '@stitchapi/express';
 import express from 'express';
 import { seam } from 'stitchapi';
 
@@ -28,7 +28,7 @@ app.use(stitch({ seam: api, principal: (req) => req.user?.id }));
 app.get('/me', async (req, res) => res.json(await req.stitch.stitch('/me')()));
 
 // Map a thrown StitchError to an HTTP response (register after your routes).
-app.use(stitchErrorHandler());
+app.use(stitchError.handler());
 ```
 
 Importing the package augments Express's `Request` type, so `req.stitch` is typed
@@ -100,34 +100,43 @@ Both `delta` and `error` also take the full object form — `delta: { data, even
 and `error: { data, event, observe }` — e.g. `error.observe` logs the real failure
 server-side while the client still gets the generic token.
 
-## Errors: `stitchErrorHandler(options?)`
+## Errors: `stitchError`
 
 A failed stitch throws a `StitchError` carrying the upstream `status`. Register
-`stitchErrorHandler()` **after your routes** so handlers need no per-route
+`stitchError.handler()` **after your routes** so handlers need no per-route
 try/catch — it maps a StitchError to a JSON response and `next(err)`s everything
 else (so Express's default handler, and any error middleware after it, stays in
 charge):
 
 ```ts
-app.use(stitchErrorHandler());
+app.use(stitchError.handler());
 // default 502, body `{ error: 'Bad Gateway' }` — neither the upstream's
 // 401/404/etc. status nor the raw error message is leaked to your client (a
 // transport failure would otherwise read like `getaddrinfo ENOTFOUND
 // payments.internal.corp`, disclosing internal topology).
 
 // propagate the upstream status instead:
-app.use(stitchErrorHandler({ status: (e) => e.status ?? 502 }));
+app.use(stitchError.handler({ status: (e) => e.status ?? 502 }));
 
 // or shape your own error envelope (this opts in to the raw message):
 app.use(
-    stitchErrorHandler({
+    stitchError.handler({
         body: (e, status) => ({ code: status, msg: e.message }),
     }),
 );
 ```
 
-Note: an Express error middleware is matched by its 4-arg arity — `stitchErrorHandler`
+`stitchError.is(err)` is the guard on its own, for when you want to branch on a Stitch
+failure yourself.
+
+Note: an Express error middleware is matched by its 4-arg arity — `stitchError.handler`
 returns a `(err, req, res, next)` function for exactly that reason.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this one
+concept: `.is` everywhere, `.map` wherever the framework has a mapped value to return, and
+`.handler` wherever it has an error hook to register on.
+Express has no `.map`: its error middleware writes onto `res` and
+returns no mapped value to hand back.
 
 ## Contributing
 

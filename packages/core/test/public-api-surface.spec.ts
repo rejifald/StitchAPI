@@ -1,12 +1,21 @@
-// The public API surface of the package (src/index.ts). smoke.spec.ts exercises `stitch` end-to-end
-// but nothing pins the EXPORT surface itself, so an accidental removal/rename of a public symbol
-// would slip past the test suite (only attw/build catches it, late). This guards the contract: the
-// documented value exports are present and of the expected kind.
+// The public API surface of the package. smoke.spec.ts exercises `stitch` end-to-end but nothing
+// pins the EXPORT surface itself, so an accidental removal/rename of a public symbol would slip
+// past the test suite (only attw/build catches it, late). This guards the contract: the documented
+// value exports are present and of the expected kind.
+//
+// Scope is the root barrel (src/index.ts) plus the subpaths whose surface is a DECISION rather
+// than an implementation detail — `stitchapi/auth`, split off deliberately (ADR 0021), and
+// `stitchapi/fingerprint`, whose registry folded into one namespace. Both directions of each fold
+// live here on purpose: the members that must be present, and the spellings they replaced pinned
+// ABSENT beside `REMOVED_PARSERS` and `REMOVED_SECRET_FUNCTIONS`, so "did an old name drift back
+// as an alias?" is one file to read rather than three.
 import * as api from '../src';
 import { memoryStore } from '../src';
 import * as authApi from '../src/auth';
+import * as fingerprintApi from '../src/fingerprint';
+import type { SchemaFingerprinter } from '../src/fingerprint';
 import * as testingApi from '../src/testing';
-import type { AdapterResponse } from '../src/types';
+import type { AdapterResponse, StitchEvent } from '../src/types';
 
 // Every documented function/guard export (systemClock is an object; the error classes are below).
 const FUNCTIONS = [
@@ -22,9 +31,6 @@ const FUNCTIONS = [
     'fileSink',
     'multiplex',
     'loggerSink',
-    'otlpSink',
-    'otlpHttpExporter',
-    'toOtlpJson',
     'memoryStore',
     'validate',
     'compile',
@@ -75,6 +81,26 @@ const REMOVED_SECRET_FUNCTIONS = [
     'redactSecretsDeep',
 ] as const;
 
+// The OTLP trace pipeline (ADR 0007 correlates the spans it builds), one namespace over one
+// export path. Public because a host ships spans somewhere core does not: `sink` is the TraceSink
+// it hands to `trace`, `exporter` the default HTTP destination, `json` the wire serializer a
+// hand-rolled transport (gRPC, a queue, a file) reuses instead of re-deriving the OTLP shape.
+//
+// Pinned as a WHOLE, like `secrets` above: these are three LAYERS of one pipeline, so a namespace
+// that kept `sink` and lost `json` would still export a working default path while removing the
+// only reason `json` was ever public — the custom-transport seam, which is the member with no
+// caller inside core to notice it missing.
+const OTLP_NAMESPACE_MEMBERS = ['sink', 'exporter', 'json'] as const;
+
+// The three names `otlp` REPLACED, pinned absent for the same reason as the parsers and the
+// secret functions above. These three repeated the subject noun and varied only the role word
+// (`otlpSink`/`otlpHttpExporter`/`toOtlpJson`), which is the shape the barrel moved away from.
+const REMOVED_OTLP_FUNCTIONS = [
+    'otlpSink',
+    'otlpHttpExporter',
+    'toOtlpJson',
+] as const;
+
 // The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the
 // status alone) answers the engine's transport-health question and has no surface-author use;
 // `httpInterpret` is the http surface's own hook, reachable as `httpSurface.interpret`. Three names
@@ -82,19 +108,30 @@ const REMOVED_SECRET_FUNCTIONS = [
 // that put a flag-failed `200` through the circuit's transport-failure path.
 const INTERNAL_VERDICT_SCOPES = ['classifyStatus', 'httpInterpret'] as const;
 
-// The auth surface moved to its own subpath (ADR 0021). Pinned in BOTH directions: present on
-// `stitchapi/auth`, and ABSENT from the root — a re-export there would quietly put oauth2 and
-// cookieSession back on every consumer's `import { stitch }` path, which is the point of the split.
-const AUTH_FUNCTIONS = [
-    'bearer',
-    'apiKey',
-    'basic',
-    'cookieSession',
-    'oauth2',
-    'env',
-    'optionalEnv',
-    'secretsFile',
-    'secretFrom',
+// The per-vendor fingerprint-strategy registry on `stitchapi/fingerprint` (ADR 0004), one
+// namespace over one process-local `Map`.
+//
+// Pinned as a WHOLE, like `secrets` above: `register` without `get` leaves a host unable to check
+// what it just registered or to see why a stitch it expected to cache is refusing, and `clear` is
+// the one member with no in-app caller at all — every conformance suite in the five
+// `@stitchapi/fingerprint-*` packages resets through it, and nothing inside core would notice it
+// missing.
+const FINGERPRINTER_NAMESPACE_MEMBERS = [
+    'register',
+    'get',
+    'list',
+    'clear',
+] as const;
+
+// The four verb-prefixed functions `fingerprinters` REPLACED, pinned absent for the same reason as
+// the parsers and the secret trio — one dimension, one name, the verb at the call site. This
+// subpath makes the pin sharper than either: `src/fingerprint.ts` IS the entry, so re-exporting one
+// of these puts it straight back on the published surface with no barrel in between to stop it.
+const REMOVED_FINGERPRINTER_FUNCTIONS = [
+    'registerFingerprinter',
+    'getFingerprinter',
+    'listFingerprinters',
+    'clearFingerprinters',
 ] as const;
 
 // The vendor-facing conformance kit on `stitchapi/testing`, one namespace over the four pluggable
@@ -129,6 +166,21 @@ const REMOVED_CONFORMANCE_FUNCTIONS = [
     'verifySinkContract',
     'verifyFingerprintContract',
     'adapterContractFixture',
+] as const;
+
+// The auth surface moved to its own subpath (ADR 0021). Pinned in BOTH directions: present on
+// `stitchapi/auth`, and ABSENT from the root — a re-export there would quietly put oauth2 and
+// cookieSession back on every consumer's `import { stitch }` path, which is the point of the split.
+const AUTH_FUNCTIONS = [
+    'bearer',
+    'apiKey',
+    'basic',
+    'cookieSession',
+    'oauth2',
+    'env',
+    'optionalEnv',
+    'secretsFile',
+    'secretFrom',
 ] as const;
 
 describe('public API surface (src/index.ts)', () => {
@@ -192,6 +244,79 @@ describe('public API surface (src/index.ts)', () => {
         },
     );
 
+    test.each(OTLP_NAMESPACE_MEMBERS)(
+        'exports otlp.%s as a function',
+        (member) => {
+            expect(typeof (api.otlp as Record<string, unknown>)[member]).toBe(
+                'function',
+            );
+        },
+    );
+
+    // Behavioural, not just structural: the three must still be the same PIPELINE, wired to each
+    // other. A namespace assembled from three unrelated functions — or one whose `sink` no longer
+    // defaults to this exporter — passes the typeof checks above and fails here. The sink is built
+    // with NO `exporter` option, so it has to reach for `otlp.exporter`'s destination on its own;
+    // the stubbed `fetch` proves it got there, and that what it POSTed is `otlp.json`'s wire shape.
+    test('the exported members are one pipeline: sink → exporter → json', async () => {
+        const calls: { url: string; body: unknown }[] = [];
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = ((url: string, init: { body: string }) => {
+            calls.push({ url, body: JSON.parse(init.body) });
+            return Promise.resolve({ ok: true, status: 200 });
+        }) as unknown as typeof fetch;
+        const realEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
+        process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = 'http://collector.test';
+        try {
+            const name = 'publicApiSurfacePipeline';
+            const sink = api.otlp.sink();
+            const events: StitchEvent[] = [
+                {
+                    type: 'start',
+                    name,
+                    method: 'GET',
+                    url: 'http://api.example.com/x',
+                    input: {},
+                    at: 1000,
+                },
+                {
+                    type: 'result',
+                    data: {},
+                    status: 200,
+                    attempts: 1,
+                    at: 1050,
+                },
+                { type: 'done', ok: true, elapsed: 50, attempts: 1, at: 1050 },
+            ];
+            for (const ev of events) sink.handle(ev, { name });
+            // The default exporter is fire-and-forget, so let its promise settle.
+            await Promise.resolve();
+        } finally {
+            globalThis.fetch = realFetch;
+            if (realEndpoint === undefined)
+                delete process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
+            else process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = realEndpoint;
+        }
+
+        // `sink` reached `exporter`, which POSTed to the OTLP path.
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.url).toBe('http://collector.test/v1/traces');
+        // …and the body is exactly what the exported serializer produces for those spans, so all
+        // three members are the same pipeline rather than three lookalikes.
+        const doc = calls[0]?.body as {
+            resourceSpans: [{ scopeSpans: [{ spans: unknown[] }] }];
+        };
+        expect(doc.resourceSpans[0].scopeSpans[0].spans).toHaveLength(1);
+        expect(typeof api.otlp.json([])).toBe('object');
+    });
+
+    test.each(REMOVED_OTLP_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
+
     test.each(INTERNAL_VERDICT_SCOPES)(
         'does NOT export %s — one composition point, not three',
         (name) => {
@@ -249,6 +374,87 @@ describe('public API surface (src/auth.ts → stitchapi/auth)', () => {
     test('exports exactly the auth surface, nothing more', () => {
         expect(Object.keys(authApi).sort()).toEqual([...AUTH_FUNCTIONS].sort());
     });
+});
+
+describe('public API surface (src/fingerprint.ts → stitchapi/fingerprint)', () => {
+    // The registry is process-local and this spec registers into it, so leave it as found.
+    beforeEach(() => {
+        fingerprintApi.fingerprinters.clear();
+    });
+    afterEach(() => {
+        fingerprintApi.fingerprinters.clear();
+    });
+
+    test.each(FINGERPRINTER_NAMESPACE_MEMBERS)(
+        'exports fingerprinters.%s as a function',
+        (member) => {
+            expect(
+                typeof (
+                    fingerprintApi.fingerprinters as Record<string, unknown>
+                )[member],
+            ).toBe('function');
+        },
+    );
+
+    // The pin is behavioural, not just structural, and it pins the FACADE specifically. The four
+    // implementations stay plain module functions — `resolveFingerprint` calls the lookup directly
+    // rather than through the namespace, so that a consumer importing `fingerprinters` is the only
+    // one who pays for all four (esbuild will not split an object literal to drop a dead member).
+    // That split is only safe while both halves read one `Map`: a namespace built over its own
+    // registry passes every typeof check above, and fails here, because the strategy it accepted
+    // never reaches the resolver that is supposed to use it.
+    test('the exported namespace is the one the resolver reads', () => {
+        const schema = {
+            '~standard': {
+                version: 1,
+                vendor: 'x-public-api-surface-spec',
+                validate: (value: unknown) => ({ value }),
+            },
+        } as const;
+        const strategy: SchemaFingerprinter = {
+            vendor: 'x-public-api-surface-spec',
+            range: '*',
+            fingerprint: () => ({ token: 'pinned', strength: 'strong' }),
+        };
+
+        // Unregistered → the resolver refuses, and the namespace agrees nothing is there.
+        expect(
+            fingerprintApi.fingerprinters.get(strategy.vendor),
+        ).toBeUndefined();
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }).policy,
+        ).toBe('refuse');
+
+        fingerprintApi.fingerprinters.register(strategy);
+        expect(fingerprintApi.fingerprinters.get(strategy.vendor)).toBe(
+            strategy,
+        );
+        expect(fingerprintApi.fingerprinters.list()).toContain(strategy);
+        // The registration the FACADE took is the one the resolver's own call site sees.
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }),
+        ).toMatchObject({
+            policy: 'fast',
+            reason: 'sound structural fingerprint',
+        });
+
+        fingerprintApi.fingerprinters.clear();
+        expect(
+            fingerprintApi.fingerprinters.get(strategy.vendor),
+        ).toBeUndefined();
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }).policy,
+        ).toBe('refuse');
+    });
+
+    test.each(REMOVED_FINGERPRINTER_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (fingerprintApi as Record<string, unknown>)).toBe(
+                false,
+            );
+        },
+    );
 });
 
 // The third entry this spec guards. `stitchapi/testing` is not size-gated and never reaches a

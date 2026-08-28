@@ -2,15 +2,10 @@
 // supertest we hand-build minimal mock `req`/`res` objects and call the middleware/handler/error
 // middleware directly. The seam is built with a FAKE `adapter` (no network). Asserts the three public
 // contracts: `stitch()` sets `req.stitch` (root + principal-bound), `streamStitchSse` writes the
-// right SSE frames for a fake stream (delta / error / disconnect teardown), and `stitchErrorHandler`
-// maps a StitchError to 502 (and `next(err)`s everything else).
-import {
-    currentStitch,
-    isStitchError,
-    stitch,
-    stitchErrorHandler,
-    streamStitchSse,
-} from '../src';
+// right SSE frames for a fake stream (delta / error / disconnect teardown), and
+// `stitchError.handler` maps a StitchError to 502 (and `next(err)`s everything else).
+import { currentStitch, stitch, stitchError, streamStitchSse } from '../src';
+import * as api from '../src';
 
 import type { Request, Response } from 'express';
 import { EventEmitter } from 'node:events';
@@ -414,7 +409,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
     });
 });
 
-describe('stitchErrorHandler maps a StitchError to HTTP', () => {
+describe('stitchError.handler maps a StitchError to HTTP', () => {
     test('maps a StitchError to 502 by default and does not leak the upstream status', () => {
         const err = Object.assign(new Error('down'), {
             name: 'StitchError',
@@ -422,7 +417,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         });
         const res = mockRes();
         let nextedWith: unknown = 'untouched';
-        stitchErrorHandler()(
+        stitchError.handler()(
             err,
             mockReq(),
             res as unknown as Response,
@@ -444,7 +439,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             { name: 'StitchError' },
         );
         const res = mockRes();
-        stitchErrorHandler()(
+        stitchError.handler()(
             err,
             mockReq(),
             res as unknown as Response,
@@ -465,7 +460,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             status: 401,
         });
         const res = mockRes();
-        stitchErrorHandler()(
+        stitchError.handler()(
             err,
             mockReq(),
             res as unknown as Response,
@@ -483,7 +478,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             { name: 'StitchError' },
         );
         const res = mockRes();
-        stitchErrorHandler({ body: (e) => ({ error: e.message }) })(
+        stitchError.handler({ body: (e) => ({ error: e.message }) })(
             err,
             mockReq(),
             res as unknown as Response,
@@ -502,7 +497,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             status: 429,
         });
         const res = mockRes();
-        stitchErrorHandler({ status: (e) => e.status ?? 502 })(
+        stitchError.handler({ status: (e) => e.status ?? 502 })(
             err,
             mockReq(),
             res as unknown as Response,
@@ -515,7 +510,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         const plain = new Error('not a stitch error');
         const res = mockRes();
         let nextedWith: unknown;
-        stitchErrorHandler()(
+        stitchError.handler()(
             plain,
             mockReq(),
             res as unknown as Response,
@@ -527,13 +522,56 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         expect(res.jsonBody).toBeUndefined(); // not handled here
     });
 
-    test('isStitchError discriminates by name', () => {
+    test('stitchError.is discriminates by name', () => {
         expect(
-            isStitchError(
+            stitchError.is(
                 Object.assign(new Error('x'), { name: 'StitchError' }),
             ),
         ).toBe(true);
-        expect(isStitchError(new Error('plain'))).toBe(false);
-        expect(isStitchError('nope')).toBe(false);
+        expect(stitchError.is(new Error('plain'))).toBe(false);
+        expect(stitchError.is('nope')).toBe(false);
+    });
+});
+
+// --- public-surface pin: the error family is ONE namespace -------------------
+//
+// This package has no dedicated public-surface spec (only core does), so the pin lives here,
+// beside the behaviour it guards. It mirrors the intent of core's `REMOVED_SECRET_FUNCTIONS`
+// in `packages/core/test/public-api-surface.spec.ts`, in both directions:
+//
+//  - PRESENT, as a WHOLE: `stitchError` is an OBJECT whose members are exactly `is` and `handler` (no `map`: an Express error
+//    middleware writes onto the mutable `res` and returns no mapped value to hand back).
+//    The key set is pinned rather than each member independently, so adding or dropping one is
+//    a deliberate edit here — the same call core's `SECRET_NAMESPACE_MEMBERS` makes. Object-ness
+//    is asserted explicitly because `stitchError` was a FUNCTION in `@stitchapi/hono` before the
+//    fold, and a bare `typeof === 'function'` check would have passed for it.
+//  - ABSENT: every verb-prefixed spelling the namespace replaced, across all six adapters — not
+//    only the ones this package carried. Pre-GA `rc`, so they were removed outright rather than
+//    aliased (CONTRACT.md P19); re-adding one would put two spellings of one call back on the
+//    barrel, which is exactly the drift this fold closes.
+describe('public surface: the stitchError namespace', () => {
+    const MEMBERS = ['is', 'handler'] as const;
+
+    test('exports stitchError as a namespace object', () => {
+        expect(typeof api.stitchError).toBe('object');
+        expect(Object.keys(api.stitchError).sort()).toEqual(
+            [...MEMBERS].sort(),
+        );
+    });
+
+    test.each(MEMBERS)('exports stitchError.%s as a function', (member) => {
+        expect(
+            typeof (api.stitchError as Record<string, unknown>)[member],
+        ).toBe('function');
+    });
+
+    test.each([
+        'isStitchError',
+        'stitchErrorHandler',
+        'stitchOnError',
+        'stitchErrorResponse',
+        'toHttpException',
+    ] as const)('does NOT export %s — the namespace replaced it', (name) => {
+        expect(name in (api as Record<string, unknown>)).toBe(false);
     });
 });

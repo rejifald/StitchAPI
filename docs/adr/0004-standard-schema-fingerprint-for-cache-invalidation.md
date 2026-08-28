@@ -28,6 +28,17 @@
 > because inside the envelope the subject is named once, and `on*` is reserved for handlers.
 > The prose below uses the new spellings throughout.
 
+> **Amended 2026-08-28 (spelling only — the registry, its semantics and every rung are unchanged).**
+> The four registry exports on `stitchapi/fingerprint` are now the single **`fingerprinters`**
+> namespace: `registerFingerprinter` / `getFingerprinter` / `listFingerprinters` /
+> `clearFingerprinters` are **`fingerprinters.register`** / **`.get`** / **`.list`** / **`.clear`**.
+> Pre-GA and without aliases, matching the `duration`/`size`/`rate` and `secrets` shape — one name
+> per dimension, the verb at the call site, rather than four names each repeating a subject the
+> subpath already names. The implementations and their names inside `src/fingerprint.ts` are
+> unchanged and `resolveFingerprint` still calls the lookup directly, so the namespace is a thin
+> facade that does not weld the four together for a bundler. Read the function names below as the
+> module-internal ones.
+
 ## Context
 
 [ADR 0003](0003-derived-key-response-cache-and-coalescing.md) makes one decision
@@ -454,8 +465,8 @@ Shipped and **wired into the ADR 0003 response cache** (each piece unit- and
 conformance-tested):
 
 - **`stitchapi/fingerprint`** — the contract: `SchemaFingerprinter` /
-  `SchemaFingerprint`, the registry (`registerFingerprinter` /
-  `getFingerprinter`), the synchronous `hash`, and `resolveFingerprint`
+  `SchemaFingerprint`, the registry (one `fingerprinters` namespace —
+  `.register` / `.get` / `.list` / `.clear`), the synchronous `hash`, and `resolveFingerprint`
   (the ladder). Browser-safe, synchronous, no new core dependency. `hash` now
   rides the **same 128-bit `xxh128`** the cache key uses (the shared `src/hash.ts`
   primitive) — the swap this module always anticipated, a one-time safe

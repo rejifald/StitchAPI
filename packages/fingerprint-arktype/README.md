@@ -16,9 +16,9 @@ opaque, non-deterministic `$ark.fn<n>` references, and property defaults.
 
 ```ts
 import { arktypeFingerprinter } from '@stitchapi/fingerprint-arktype';
-import { registerFingerprinter } from 'stitchapi/fingerprint';
+import { fingerprinters } from 'stitchapi/fingerprint';
 
-registerFingerprinter(arktypeFingerprinter);
+fingerprinters.register(arktypeFingerprinter);
 ```
 
 Compliance is proven against `conformance.fingerprint` from `stitchapi/testing`.

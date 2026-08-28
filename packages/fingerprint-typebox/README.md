@@ -23,9 +23,9 @@ codec (detected via its symbol, recursively, since it is invisible to
 
 ```ts
 import { typeboxFingerprinter } from '@stitchapi/fingerprint-typebox';
-import { registerFingerprinter } from 'stitchapi/fingerprint';
+import { fingerprinters } from 'stitchapi/fingerprint';
 
-registerFingerprinter(typeboxFingerprinter);
+fingerprinters.register(typeboxFingerprinter);
 ```
 
 Compliance is proven against `conformance.fingerprint` from `stitchapi/testing`.
