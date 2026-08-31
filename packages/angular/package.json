@@ -65,11 +65,11 @@
         }
     },
     "devDependencies": {
-        "@angular/common": "^22.1.3",
-        "@angular/compiler": "^22.1.3",
-        "@angular/core": "^22.1.3",
-        "@angular/platform-browser": "^22.1.3",
-        "@angular/platform-browser-dynamic": "^22.1.1",
+        "@angular/common": "^22.1.4",
+        "@angular/compiler": "^22.1.4",
+        "@angular/core": "^22.1.4",
+        "@angular/platform-browser": "^22.1.4",
+        "@angular/platform-browser-dynamic": "^22.1.4",
         "@stitchapi/query-core": "workspace:*",
         "@types/node": "^22.10.0",
         "jsdom": "^30.0.1",
