@@ -82,7 +82,7 @@
         "@stitchapi/query-core": "workspace:*",
         "@stitchapi/react": "workspace:*",
         "@stitchapi/react-native": "workspace:*",
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.4.0",
         "@types/react": "^19.2.18",
         "react": "^19.2.8",
         "stitchapi": "workspace:*",

@@ -27,7 +27,7 @@
         "zod": "^4.4.3"
     },
     "devDependencies": {
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.4.0",
         "@types/react": "^19.2.18",
         "esbuild": "^0.28.2",
         "react": "^19.2.8"
