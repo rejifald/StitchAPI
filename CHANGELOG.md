@@ -187,6 +187,30 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
+  `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
+  was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
+  capability: a standalone `stitch()` built its vault over `store` with no way to point it
+  elsewhere, and the two host integrations that build a seam from config — fastify's `seamConfig`
+  and a `@stitchapi/nest` **feature** seam's `config` — type that slot as `SeamConfig` and so could
+  not name it either. CONTRACT.md P16 says a config field is declared once on `StitchConfig` and
+  projected; this one was re-declared per surface.
+
+    ```ts
+    // was — seam only
+    const api = seam({ secretStore: expoSecureStore(SecureStore) });
+    // now — anywhere a config goes, `stitch()` included
+    const api = seam({ vault: expoSecureStore(SecureStore) });
+    const me = stitch({ url: '…', vault: expoSecureStore(SecureStore), auth: cookieSession(…) });
+    ```
+
+    The name is the one the rest of the codebase already used for this thing (ADR 0002 §4,
+    `AuthContext.vault`, the docs); `secretStore` was a third spelling for it. Behaviour is
+    unchanged where it was reachable: the vault still defaults to a reserved, redacted namespace
+    over `store`, the split is still by visibility rather than backend, and a seam still shares one
+    vault across its members and closes a distinct backend on `close()`. `vault` is redacted from
+    `__config` exactly like `store`. Hard break, no alias (P19, `rc` channel).
+
 - **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
   — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
   `verifyFingerprintContract`, `assertConformance` and `adapterContractFixture` are replaced by
@@ -1630,6 +1654,44 @@ npm release are grouped under the in-development version that introduced them.
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
 ### Security
+
+- **`@stitchapi/swr` redacts caller-registered credential headers from the cache key.**
+  `swrKey` forks query-core's key derivation rather than importing it — swr is one of the three
+  stream-less adapters that deliberately carry no `@stitchapi/query-core` dependency
+  ([P9](docs/CONTRACT.md#p9--unique-by-shape-exported-types)) — and the fork had drifted: its
+  `isSecretHeader` checked the static header denylist and the `*-token` / `*-api-key` suffix rules,
+  but omitted query-core's closing `|| secrets.has(k)` clause. That clause is what pulls in core's
+  secret **stems** and, crucially, anything a host widened via `secrets.register`.
+
+    The effect was a redaction gap that only opened where a host had registered its own credential
+    name: `secrets.register('x-acme-cred')` redacted that header from the query key on
+    react/vue/svelte/solid/angular (all query-core-backed) while `@stitchapi/swr` wrote it into the
+    SWR key **in cleartext** — and SWR keys are persisted by cache providers and shown in devtools.
+    It contradicted `@stitchapi/query-core`'s documented guarantee ("plus core's `secrets.has`
+    names — including anything widened via `secrets.register`") and its own JSDoc claim that every
+    binding, "the swr key builder" included, derives from one implementation.
+
+    The clause is restored, so the two spellings agree again. `stitchapi` was already a peer
+    dependency and a tsup external; it is now imported for a value (`secrets`) rather than only a
+    type — exactly what query-core does — which adds no bundled runtime. Headers that were already
+    redacted are unaffected, since the clause only widens: a key changes only for a host that had
+    registered a name the static list missed, which is the leak being closed.
+
+    **Both parity tests now actually pin the behaviour.** query-core's fixture was
+    `x-querycore-spec-credential`, which contains the built-in `credential` stem — it passed via the
+    stem whether or not it was ever registered, so the test meant to guard `secrets.register` would
+    not have caught this drift in either package. Both suites now use a neutral `x-acme-cred`,
+    matched by no static entry, no suffix rule and no stem, so only the registration can redact it;
+    an unregistered `x-acme-region` asserts benign headers still vary the cache.
+
+    **The docs now state the reach.** `secrets.register`'s reference page listed only the trace
+    scrubbers it feeds (`start.url`, OTLP `url.full`, `input.query`, the traced body) and never
+    mentioned cache keys — true of query-core since it gained the clause, not just of swr. It now
+    names the query bindings, and the `secrets.has` anti-pattern callout ("headers are widened with
+    `redactHeaders`, not with `secrets.register`") is scoped to the trace-sink boundary, with the
+    query-key path called out as the place the two denylists meet. The
+    [swr integration page](https://stitchapi.dev/docs/integrations/swr) now documents what `swrKey`
+    drops and redacts, rather than describing it as just "the cache key".
 
 - **Five Dependabot alerts closed by `pnpm.overrides` — `fast-uri` and `ip-address`.** Both are
   transitive-only: no manifest in the workspace names either one, so Dependabot could not open a
