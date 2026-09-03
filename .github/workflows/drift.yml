@@ -18,9 +18,26 @@ on:
     push:
         branches: [main]
     pull_request:
+    # Both jobs below are REQUIRED checks on `main`, so the merge queue blocks on a
+    # `drift` / `drift-executable` status for every queued merge candidate — without
+    # this trigger the workflow never emits one and the queue deadlocks. Same
+    # rationale as verify.yml besides: a `pull_request` run only proves the tethers
+    # hold against the base as it was when CI last ran, and every fact here spans
+    # artifacts two PRs can touch separately (a version bump vs. the README quoting
+    # it), so both can be green and still disagree once merged. `merge_group` checks
+    # the actual post-merge result.
+    merge_group:
 
 permissions:
     contents: read
+
+# One group per ref, so runs of different PRs never queue behind each other. Cancel
+# only superseded `pull_request` runs: a merge_group ref (refs/heads/gh-readonly-queue/…)
+# is unique per queue entry and the queue is waiting on that status, so those must
+# never be cancelled.
+concurrency:
+    group: drift-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
     drift:
