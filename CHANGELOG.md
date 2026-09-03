@@ -187,6 +187,40 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **`@stitchapi/download`'s opt-in `dedupe` keys off the RESOLVED request and ref-counts its
+  sharers — a behaviour change to a shipped opt-in feature.**
+  ([#455](https://github.com/rejifald/StitchAPI/issues/455)) Nothing moves unless you passed
+  `dedupe: true`; if you did, both halves of what it does changed. v1 documented two limits, and
+  these are them.
+
+    **The key is the resolved target, not the spelling.** It was `item.url`, else an explicit `id`,
+    else the enqueue index — so two `{ path: '/x' }` items sharing a `defaults.baseUrl` had two keys
+    and made two requests, and only items given a whole `url` ever collapsed. The key is now
+    `defaults` merged under the item and resolved: `baseUrl` + `path` (or a whole `url`), with the
+    query string sorted. `{ path: '/x' }` twice under one `baseUrl` is one fetch, and so are
+    `?a=1&b=2` and `?b=2&a=1`. An item's own `id` still wins where it has one — naming two items
+    alike declares them one download whatever their URLs, and naming them apart keeps them apart.
+    **More items collapse than before**, which is the point; give items you want fetched separately
+    distinct `id`s. A thunked `baseUrl`/`url` is resolved once more per item to build the key.
+
+    **Cancel is ref-counted.** Sharers used to hold a bare shared promise: cancelling a follower only
+    detached it — the fetch ran on and the follower still settled `fulfilled` when it finished — and
+    cancelling the leader aborted the one request everyone was waiting on, failing the followers.
+    Each sharer now settles `cancelled` on its own, and the request on the wire is aborted only when
+    the **last** sharer cancels. Cancelling the item that opened the request no longer fails the
+    others: the fetch outlives it, and its byte progress and `idle` window pass to a survivor.
+
+    **A settled group is no longer joinable.** Settling is what pumps the queue, and the key was
+    dropped a microtask later — so the item admitted by a group's own settlement could still find
+    that key and adopt its finished result, or its finished **failure**, without ever reaching the
+    wire (a 404 for a request it never sent, which is how a batch quietly stops retrying). The key
+    is dropped the instant the request settles. `dedupe` coalesces requests **in flight**; it is not
+    a cache, and a just-finished blob is never replayed onto a later item.
+
+    Unchanged: FIFO admission, the `concurrency` ceiling, per-item settling, `idle` semantics, and
+    the default — `dedupe` is still `false`, every item still its own request. The package's bundle
+    budget moves 2.65 KB → 3.05 KB gzip for the two mechanisms.
+
 - **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
   — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
   `verifyFingerprintContract`, `assertConformance` and `adapterContractFixture` are replaced by

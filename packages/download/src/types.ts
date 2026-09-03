@@ -88,10 +88,23 @@ export interface BatchOptions {
      */
     idle?: number | string;
     /**
-     * Reuse a single in-flight download for items that share a key (their `id`, else URL) instead of
+     * Reuse a single in-flight download for items that resolve to the same request instead of
      * fetching independently. Default `false` — every item is its own request (predictable, no
-     * cross-item coupling). With dedupe on, followers share the leader's result and progress; a
-     * follower cannot be cancelled independently of the shared fetch.
+     * cross-item coupling).
+     *
+     * The key is an item's own `id` when it has one — naming two items alike is a deliberate claim
+     * that they are one download — and otherwise the RESOLVED target: `defaults` merged under the
+     * item, then `baseUrl` + `path` (or a whole `url`), with the query string sorted. So two
+     * `{ path: '/x' }` items under one `baseUrl` are one fetch, and so are `?a=1&b=2` and `?b=2&a=1`.
+     * A thunked `baseUrl`/`url` is resolved to build that key, so it is read once more per item.
+     *
+     * Sharers are REF-COUNTED: each shares the one result and the leader's progress, cancels
+     * independently, and the request on the wire is aborted only when the LAST of them cancels —
+     * cancelling one sharer never fails the others.
+     *
+     * In-flight coalescing, not a cache: only items whose lifetimes OVERLAP collapse. An item
+     * admitted after the shared request settled starts a fresh one, so a finished blob — or a
+     * finished failure — is never replayed onto a later item.
      */
     dedupe?: boolean;
     /** Aggregate progress across all items (summed bytes + ETA). Fires on every per-item chunk. */

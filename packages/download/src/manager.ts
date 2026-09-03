@@ -1,6 +1,7 @@
 import { classifyFailure, toStitchError } from './classify';
 import { DownloadCancelledError, DownloadIdleTimeoutError } from './errors';
 import { ProgressAggregator } from './progress';
+import { resolveTarget } from './target';
 import type {
     BatchOptions,
     BatchSnapshot,
@@ -25,16 +26,55 @@ import type { DownloadResult } from 'stitchapi/download';
 
 interface QueueItem {
     id: DownloadId;
-    key: string;
+    /**
+     * The `id` the CALLER wrote, when they wrote one — `undefined` when {@link DownloadManager.add}
+     * derived one from the URL or the enqueue index. Dedupe keys off it in preference to the URL:
+     * an explicit id is a deliberate identity claim, and it outranks what the endpoint spells.
+     */
+    explicitId: DownloadId | undefined;
     config: Partial<StitchConfig>;
 }
 
 interface Active {
+    /**
+     * The controller behind this item's request. Under dedupe every sharer of one in-flight fetch
+     * holds the SAME controller — there is one request on the wire, so there is one thing to abort,
+     * and it is aborted only by {@link Shared} losing its last sharer.
+     */
     ctrl: AbortController;
     /** The live forward-progress timer handle, re-armed on every chunk; `undefined` when unarmed. */
     timer: unknown;
     /** The latest RAW transport error captured via `hooks.onError` — for classification. */
     raw: unknown;
+    /**
+     * The dedupe group this item is one sharer of, while it still is one — `undefined` outside
+     * dedupe, and cleared the moment it leaves the ref count. It lives here rather than in a second
+     * id-keyed map because that is all this record is: the state an item holds while it is active.
+     */
+    group: Shared | undefined;
+}
+
+/**
+ * One in-flight fetch shared by every item that resolved to the same dedupe key, plus the live set
+ * of those items — the REF COUNT. A sharer that cancels leaves the set and settles on its own; the
+ * request on the wire is aborted only when the set empties, so no one item's cancel can pull the
+ * bytes out from under the others.
+ */
+interface Shared {
+    /** The dedupe key this group is registered under, for unregistering it again. */
+    key: string;
+    /** The single request every sharer awaits. */
+    promise: Promise<DownloadResult>;
+    /** The one controller behind that request — aborted only when the LAST sharer leaves. */
+    ctrl: AbortController;
+    /** Live sharers, in admission order; `size` is the ref count. */
+    sharers: Set<DownloadId>;
+    /**
+     * The sharer that currently owns the group's byte progress and its idle timer. It starts as the
+     * item that opened the request and is handed to a survivor if that item cancels out — the fetch
+     * outlives it, so its watchdog and its progress must too.
+     */
+    leader: DownloadId;
 }
 
 interface InternalHandle {
@@ -65,7 +105,8 @@ export class DownloadManager {
     readonly #results = new Map<DownloadId, ItemResult>();
     readonly #handles = new Map<DownloadId, InternalHandle>();
     readonly #lastTotal = new Map<DownloadId, number>();
-    readonly #dedupeInflight = new Map<string, Promise<DownloadResult>>();
+    /** Dedupe key → the group sharing one in-flight fetch. Only ever populated when `dedupe` is on. */
+    readonly #shared = new Map<string, Shared>();
     readonly #cancelled = new Set<DownloadId>();
     readonly #stalled = new Set<DownloadId>();
     #drainWaiters: (() => void)[] = [];
@@ -128,9 +169,7 @@ export class DownloadManager {
         if (phase === undefined) return; // unknown id
         this.#cancelled.add(id);
         if (phase === 'active') {
-            // The abort rejects the in-flight download; #onReject settles it 'cancelled', its slot
-            // frees, and #pump admits the next queued item.
-            this.#active.get(id)?.ctrl.abort(new DownloadCancelledError());
+            this.#cancelActive(id);
         } else if (phase === 'queued') {
             // Drop from the queue and settle now. It held no slot, so the next queued item's turn is
             // unaffected — no freed slot, no skip.
@@ -152,13 +191,70 @@ export class DownloadManager {
             this.#cancelled.add(item.id);
             this.#settle(item.id, { id: item.id, status: 'cancelled' });
         }
-        // Abort each in-flight item. Aborts reject on a microtask, so snapshot the entries first
-        // rather than mutate #active mid-iteration. Each aborted download releases its engine throttle
-        // slot, so a later batch to the same host isn't starved by leaked in-flight state.
-        for (const [id, active] of [...this.#active.entries()]) {
+        // Cancel each in-flight item. Aborts reject on a microtask and a deduped item settles inline,
+        // so snapshot the ids first rather than mutate #active mid-iteration. Each aborted download
+        // releases its engine throttle slot, so a later batch to the same host isn't starved by
+        // leaked in-flight state. Under dedupe the ref count still governs: the group's request is
+        // aborted once, by whichever of its sharers this loop reaches last.
+        for (const id of [...this.#active.keys()]) {
             this.#cancelled.add(id);
-            active.ctrl.abort(new DownloadCancelledError());
+            this.#cancelActive(id);
         }
+    }
+
+    /**
+     * Cancel one item that is already in flight.
+     *
+     * Outside dedupe the item owns its request outright: abort it and let the rejection settle it
+     * (#onReject), freeing its slot for the next queued item. Under dedupe the item is one SHARER of
+     * a group's request, so it leaves the ref count and settles right here — the shared promise no
+     * longer speaks for it — and the request is aborted only if it was the last sharer.
+     */
+    #cancelActive(id: DownloadId): void {
+        const group = this.#detach(id);
+        if (group === undefined) {
+            this.#active.get(id)?.ctrl.abort(new DownloadCancelledError());
+            return;
+        }
+        if (group.sharers.size === 0) {
+            // The last sharer left. Unregister the key BEFORE aborting, so a duplicate admitted
+            // later opens a fresh request rather than joining a dying one — and only then kill the
+            // request on the wire, which no one is waiting on any more.
+            this.#unregister(group);
+            group.ctrl.abort(new DownloadCancelledError());
+        } else if (group.leader === id) this.#promoteLeader(group);
+        this.#settle(id, { id, status: 'cancelled' });
+    }
+
+    /** Remove `id` from its shared group, if it is in one, and hand that group back to the caller. */
+    #detach(id: DownloadId): Shared | undefined {
+        const active = this.#active.get(id);
+        const group = active?.group;
+        if (active === undefined || group === undefined) return undefined;
+        active.group = undefined;
+        group.sharers.delete(id);
+        return group;
+    }
+
+    // Drop a group from the key index — but only while it still holds the key. A group abandoned by
+    // its last sharer may already have been replaced there by a fresh duplicate, and that newcomer's
+    // request must survive the old group's promise finally settling.
+    #unregister(group: Shared): void {
+        if (this.#shared.get(group.key) === group)
+            this.#shared.delete(group.key);
+    }
+
+    // Hand the group's progress + idle timer to a surviving sharer after its leader cancelled out.
+    // The request on the wire is unchanged, so its forward-progress watchdog must not lapse with the
+    // item that happened to open it; the window restarts here, since the outgoing timer dies in
+    // #settle along with its owner.
+    #promoteLeader(group: Shared): void {
+        const next: DownloadId | undefined = group.sharers
+            .values()
+            .next().value;
+        if (next === undefined) return;
+        group.leader = next;
+        this.#resetIdle(next);
     }
 
     /**
@@ -210,11 +306,28 @@ export class DownloadManager {
         let id: DownloadId = explicitId ?? url ?? this.#order.length;
         // A duplicate URL/id would collide in the per-item maps — disambiguate by enqueue index.
         if (this.#phase.has(id)) id = this.#order.length;
-        const key = this.#dedupe ? String(explicitId ?? url ?? id) : String(id);
         const config: Partial<StitchConfig> = isStr
             ? { url: item }
             : this.#stripId(item);
-        return { id, key, config };
+        return { id, explicitId, config };
+    }
+
+    /**
+     * The dedupe key for an item: the caller's own `id` when they gave one, else the RESOLVED
+     * request target — `defaults` merged under the item, then `baseUrl` + `path` (or a whole `url`)
+     * with the query sorted. Keying off the resolution rather than the spelling is what makes
+     * `{ path: '/x' }` twice under one `baseUrl` a single fetch; keying off an explicit `id` first
+     * keeps the older, deliberate arm, where the caller declares two items to BE the same download.
+     *
+     * One flat namespace, as before — an explicit id and a resolved URL are compared as equals.
+     *
+     * Computed at admission, not at `add()`: a thunked `baseUrl`/`url` is read here, so it is read as
+     * close to the request as the batch can manage (and never at all when `dedupe` is off).
+     */
+    #dedupeKey(item: QueueItem): string {
+        return item.explicitId !== undefined
+            ? String(item.explicitId)
+            : resolveTarget({ ...this.#defaults, ...item.config });
     }
 
     #stripId(
@@ -258,35 +371,70 @@ export class DownloadManager {
         this.#phase.set(item.id, 'active');
         this.#opts.onItemStart?.(item.id);
 
-        const ctrl = new AbortController();
-        const active: Active = { ctrl, timer: undefined, raw: undefined };
+        const key = this.#dedupe ? this.#dedupeKey(item) : undefined;
+        const joined = key === undefined ? undefined : this.#shared.get(key);
+        // A follower shares the LEADER's controller rather than owning a dead one of its own: the
+        // group has a single request on the wire, so it has a single thing to abort — and if this
+        // follower is later promoted, its idle timer has to be able to reach it.
+        const ctrl = joined?.ctrl ?? new AbortController();
+        const active: Active = {
+            ctrl,
+            timer: undefined,
+            raw: undefined,
+            group: joined,
+        };
         this.#active.set(item.id, active);
 
         let result: Promise<DownloadResult>;
-        const shared = this.#dedupe
-            ? this.#dedupeInflight.get(item.key)
-            : undefined;
-        if (shared !== undefined) {
-            // Follower: reuse the leader's in-flight fetch — no second request on the wire.
-            result = shared;
+        if (joined !== undefined) {
+            // Follower: reuse the leader's in-flight fetch — no second request on the wire. It joins
+            // the ref count, so that fetch now outlives any ONE of its sharers cancelling.
+            joined.sharers.add(item.id);
+            result = joined.promise;
         } else {
+            // The group this item OPENS, if it opens one. Held here rather than read back off
+            // `active.group`: that slot is cleared the moment THIS item leaves the ref count, and
+            // the group outlives it — a cancelled leader's request keeps streaming for whoever is
+            // left, so its bytes have to keep reaching them.
+            let opened: Shared | undefined;
             const input: StitchInput = {
                 signal: ctrl.signal,
                 onProgress: (p: AdapterProgress) => {
+                    // Attributed to the group's CURRENT leader, read per chunk rather than
+                    // captured: a leader that cancels hands the group's progress — and the `idle`
+                    // window those chunks reset — to a survivor.
                     if (p.direction === 'download')
-                        this.#onItemProgress(item.id, p);
+                        this.#onItemProgress(opened?.leader ?? item.id, p);
                 },
             };
             // Promise.resolve() subscribes to the COLD StitchResult (nothing runs until a handler
             // attaches) and yields a real Promise to share for dedupe.
-            result = Promise.resolve(
+            const promise = Promise.resolve(
                 download(this.#configFor(item, active))(input),
             );
-            if (this.#dedupe) {
-                this.#dedupeInflight.set(item.key, result);
-                void result
-                    .catch(() => undefined)
-                    .finally(() => this.#dedupeInflight.delete(item.key));
+            result = promise;
+            if (key !== undefined) {
+                const group: Shared = {
+                    key,
+                    promise,
+                    ctrl,
+                    sharers: new Set<DownloadId>([item.id]),
+                    leader: item.id,
+                };
+                opened = group;
+                active.group = group;
+                this.#shared.set(key, group);
+                // Unregister the KEY the instant the request settles, and ahead of any per-item
+                // handler — reactions run in registration order and this one is registered first,
+                // before the `result.then` below. A settled group must not still be joinable:
+                // #settle pumps the queue, so an item admitted by the very settlement that ended
+                // this fetch would otherwise inherit its finished blob — or its finished FAILURE —
+                // without ever reaching the wire. Dedupe coalesces requests IN FLIGHT; it is not a
+                // cache, and the boundary has to be crisp rather than a microtask wide.
+                const forget = (): void => {
+                    this.#unregister(group);
+                };
+                void promise.then(forget, forget);
             }
             this.#armIdle(item.id, active);
         }
@@ -396,6 +544,10 @@ export class DownloadManager {
         if (this.#results.has(id)) return; // guard double-settle (dedupe / abort races)
         this.#results.set(id, result);
         this.#phase.set(id, 'settled');
+        // Leave the ref count without aborting anything. Reaching here still holding a group means
+        // the shared request itself finished (resolved, or rejected for everyone) — the cancel path
+        // detaches first, precisely so that it can decide whether the wire should die with the item.
+        this.#detach(id);
         const active = this.#active.get(id);
         if (active !== undefined) {
             this.#clearIdle(active);
