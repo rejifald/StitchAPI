@@ -128,7 +128,10 @@ app.register(stitchPlugin, {
 ```
 
 Set `errorHandler: false` to register none and wire your own with
-`stitchErrorHandler(options)`.
+`stitchError.handler(options)`; `stitchError.is(err)` narrows an unknown error to a
+`StitchError` first. The **option** keeps Fastify's own word (`errorHandler`, after
+`setErrorHandler`) while the **export** is the `stitchError` namespace every
+`@stitchapi` host adapter shares.
 
 <Callout type="info">
     By default `fastify.log` (Fastify's built-in Pino logger) is bridged as the

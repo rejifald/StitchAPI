@@ -152,6 +152,32 @@ Three packages carried bare, non-branded adapter exports; all are renamed here, 
 on-pattern. Private packages (`eval-harness`, `sandbox-sim`, `completions-plugin`) are
 not public surface and are out of scope.
 
+### Addendum (2026-08-28) — two packages the sweep missed
+
+The table above covers ten packages. It should have covered twelve:
+**`@stitchapi/react-native`** and **`@stitchapi/expo`** landed on **2026-06-19**, one day
+before this sweep, and were never added to it — so their surfaces were not adjudicated
+rather than adjudicated and passed. Rule 6's enforcement is a review gate, and a package
+that lands the day before the gate is built does not pass through it.
+
+| Package                       | Verdict                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@stitchapi/react-native`** | **⚠️ → fixed:** `assertStreamingPolyfills` + `hasStreamingPolyfills` → the `rnStreamingPolyfills` namespace (`.assert()` / `.has()`). The rest was already on-pattern: `rnStreamAdapter` (rule 2), `asyncStorageStore` (rule 1, provider-branded), the `useStitch*` hooks (rule 1, `Stitch`-branded). |
+| `@stitchapi/expo`             | ✅ `expoFetchAdapter` / `expoSecureStore` are provider-branded (rule 1); everything else is re-exported from `@stitchapi/react-native`, so it inherits that package's verdict.                                                                                                                        |
+
+The rename is a **hard break with no `@deprecated` alias**, unlike the 2026-06-20 renames
+above: the line is still pre-GA and
+[CONTRACT P19](../CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes
+the alias obligation to the GA channel, while **R7** now flags a `@deprecated` tag reaching
+a published surface at all. The old spellings are pinned absent instead
+([`polyfills.spec.ts`](../../packages/react-native/test/polyfills.spec.ts), and across the
+`export *` chain in [`surface.spec.ts`](../../packages/expo/test/surface.spec.ts)).
+
+The `rn` qualifier is not merely proactive here. Cost 2 above (re-export barrels) is live:
+`@stitchapi/expo` re-exports react-native's barrel verbatim, so a bare `streamingPolyfills`
+would land on a surface where `expo/fetch` streams natively and no polyfill is ever needed
+— answering about a gap that package does not have.
+
 ## Migration & deprecation
 
 Every package is pre-GA (`1.0.0-rc.2`), so this is the cheap moment to align. Each
@@ -196,6 +222,46 @@ hard-breaks:
   `PinoLoggerInstrumentation`).
 - **`Stitch`-brand the bridges** (`stitchLoggerSink`). Rejected: the sink bridges the
   _host's_ logger, not Stitch's — the ecosystem token is the informative one.
+
+## Addenda
+
+The 2026-06-20 conformance table above is left **exactly as it was** — it is the record of
+what was examined that day, and rewriting it would erase the omissions rather than record
+them. Packages the sweep never reached, and rule gaps it could not have seen, are added here
+with a date.
+
+### 2026-08-28 — three host adapters were never adjudicated, and rule 6 reads one symbol at a time
+
+The conformance table swept **ten** published packages. `@stitchapi/express` (#207),
+`@stitchapi/elysia` (#208) and `@stitchapi/next` (#222) all merged **2026-06-19**, one day
+before this ADR was accepted, and appear in **neither** the conformance table nor the
+migration table. They are adjudicated here: all three were already `Stitch`-branded on their
+primary surface (rule 1) and carried no bare, non-branded adapter export — **rules 1–6 pass,
+no rename owed under this ADR.**
+
+That clean verdict is the point. Those three packages were nonetheless carrying two of the
+**four competing spellings** of a single concept — the "a stitch failed, turn it into HTTP"
+helper, which read `stitchError` (hono), `stitchErrorResponse` (elysia _and_ next),
+`toHttpException` (nest), plus `stitchErrorHandler` (express, fastify) and `stitchOnError`
+(hono, elysia) for the handler. That is the same one-concept-four-spellings defect this ADR's
+own **Context** section opens with, in a different family, and **rules 1–6 cannot express it**:
+every rule here adjudicates _one symbol's_ qualification in isolation, so a set of names that
+are each individually well-formed but collectively inconsistent passes cleanly. Folded to one
+`stitchError` namespace per package (CONTRACT.md §6, 2026-08-28); the missed coverage was a
+contributing cause, not the whole one.
+
+`@stitchapi/nest`'s `toHttpException` is the counter-example that fixes the reading: nest
+**was** in the table, marked ⚠️→fixed for five other exports, and this bare, non-branded
+adapter export — a live **rule 6** violation — was missed anyway. The sweep read the
+logger-sink family and stopped, so coverage of a _package_ did not mean coverage of its
+_surface_.
+
+**Consequence for the Enforcement section's deferred lint:** the proposed check ("an
+adapter/provider package exports no bare, non-branded identifier") would have caught
+`toHttpException` and **nothing else** in this family. Cross-package spelling consistency is a
+separate rule that no gate in the repo implements — CONTRACT.md's R5 is the only cross-package
+lint and it runs the opposite direction, flagging identifiers that are the _same_ in ≥2
+packages. Found by reading; guarded per-package by tests.
 
 ## References
 

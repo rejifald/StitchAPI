@@ -127,7 +127,7 @@ jobs:
             - run: pnpm --filter stitchapi check:size
             # Advertised bundle sizes (READMEs, docs, homepage) matching the measured
             # figure is now a yakir tether (`bundle-advertised-size`), enforced by the
-            # `drift-size` job in drift.yml (it builds core and measures the same way).
+            # `drift-executable` job in drift.yml (it builds core and measures the same way).
 
     # Coverage gate: core declares coverage thresholds (packages/core/vitest.config.ts), so a drop
     # below them fails here. Runs core's instrumented suite (`test:coverage`) in its own job rather
@@ -196,7 +196,7 @@ jobs:
     # Browser-sandbox security model (§2.13): the Playwright harness proves the real CSP +
     # Worker egress blocking and that a real RunResult.trace reaches the playground DAG. It
     # builds the docs app and drives a headless Chromium, so it runs as its own job rather
-    # than inside the `verify` gate. Make it a required check once it has settled in CI.
+    # than inside the `verify` gate. Already a required check on `main`.
     e2e:
         runs-on: ubuntu-latest
         timeout-minutes: 15
@@ -218,8 +218,8 @@ jobs:
     # search_docs — it catches a content edit that silently drops a page out of its own
     # question's results (the >8/>30 misranks this ratchet was tuned to fix). It builds the
     # docs app and loads the local embedding model, so — like size/sandbox/e2e — it runs as
-    # its own job rather than in the fast `verify` gate. Make it a required check once it has
-    # settled in CI.
+    # its own job rather than in the fast `verify` gate. Required on `main` since 2026-08-28,
+    # once the model fetch below stopped depending on a live HuggingFace CDN.
     search-relevance:
         runs-on: ubuntu-latest
         timeout-minutes: 10
@@ -231,11 +231,48 @@ jobs:
                   node-version-file: .nvmrc
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
-            # Cache the local embedding model (all-MiniLM-L6-v2, ~23 MB) transformers.js pulls
-            # into node_modules on the first index build, so a HuggingFace CDN hiccup can't flake
-            # a required check. Keyed on the lockfile, so a transformers version bump re-fetches.
+            # Vendor the embedding model into apps/docs/.model-cache and run the eval
+            # against THAT, so this job is network-free like the rest of `verify`.
+            #
+            # It used to cache transformers.js's own in-node_modules download dir, keyed
+            # on `hashFiles('pnpm-lock.yaml')` with no restore-keys — which meant the
+            # highest-volume PR class here, a dependabot bump, could never hit it: the
+            # lockfile IS the change, so the key was always new. Actions cache
+            # ref-scoping then stopped those PRs from reading each other's entries, so
+            # the repo piled up eight 83 MB caches under eight lockfile hashes and every
+            # dependabot PR still re-downloaded the model mid-eval. Four such runs
+            # started within 40 seconds on 2026-08-28; #758 lost that race, took a 429
+            # from the HuggingFace CDN, and failed before one relevance assertion ran.
+            #
+            # So: key on the model's real identity (repo + dtype + transformers version,
+            # see the script), cache the vendored dir at a stable path instead of a
+            # pnpm-hashed one, and confine every possible network call to the one fetch
+            # step below — which is retried, and a no-op whenever the cache restores.
+            - id: embed-model
+              # pipefail + the empty check because the pipe would otherwise swallow a
+              # failing script and hand actions/cache an empty key.
+              run: |
+                  set -euo pipefail
+                  KEY="$(pnpm --filter @stitchapi/docs --silent run embed-model-cache-key | tail -n1)"
+                  if [ -z "$KEY" ]; then
+                      echo "::error::could not compute the embedding-model cache key"
+                      exit 1
+                  fi
+                  echo "Model cache key: $KEY"
+                  echo "key=$KEY" >> "$GITHUB_OUTPUT"
+            # restore-keys so even a genuine key change (a transformers bump, an
+            # EMBED_MODEL/EMBED_DTYPE edit) starts from the previous copy rather than a
+            # cold ~83 MB pull: transformers.js checks per file, so the fetch below then
+            # asks only for what actually differs.
             - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
               with:
-                  path: node_modules/.pnpm/@huggingface+transformers@*/node_modules/@huggingface/transformers/.cache
-                  key: transformers-model-${{ hashFiles('pnpm-lock.yaml') }}
+                  path: apps/docs/.model-cache
+                  key: ${{ steps.embed-model.outputs.key }}
+                  restore-keys: embed-model-
+            - run: pnpm --filter @stitchapi/docs fetch:embed-model
+            # VENDORED_EMBED_MODEL pins embed.ts to .model-cache with
+            # allowRemoteModels=false, so a vendoring failure fails loudly here instead
+            # of silently re-downloading the model in the middle of the eval.
             - run: pnpm --filter @stitchapi/docs check:search-relevance
+              env:
+                  VENDORED_EMBED_MODEL: '1'

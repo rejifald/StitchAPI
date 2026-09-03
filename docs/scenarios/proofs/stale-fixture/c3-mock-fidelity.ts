@@ -2,7 +2,7 @@
 //
 // The question matters because a mock that accepts a response no transport could produce lets you
 // write code against a shape that cannot exist. The library HAS a published notion of what a
-// well-formed transport does — `verifyAdapterContract` + `adapterContractFixture` — so the sharp
+// well-formed transport does — `conformance.adapter` + `conformance.fixture` — so the sharp
 // version of the question is: does `mockAdapter` hold itself to the contract it publishes for
 // everybody else?
 //
@@ -18,10 +18,7 @@
 //   pnpm exec tsx docs/scenarios/proofs/stale-fixture/c3-mock-fidelity.ts
 import { stitch } from '../../../../packages/core/src/index';
 import { mockAdapter } from '../../../../packages/core/src/test-mock';
-import {
-    adapterContractFixture,
-    verifyAdapterContract,
-} from '../../../../packages/core/src/testing';
+import { conformance } from '../../../../packages/core/src/testing';
 import type {
     Adapter,
     AdapterRequest,
@@ -108,7 +105,7 @@ async function main(): Promise<void> {
             '200.7 -> 200.7',
         ]);
         note(
-            '(b) → `adapterContractFixture` only ever emits 100..599 integers (testing.ts:613-617), and `verifyAdapterContract` probes 200/404/500. `mockAdapter` is bound by neither',
+            '(b) → `conformance.fixture` only ever emits 100..599 integers (testing.ts:628-632), and `conformance.adapter` probes 200/404/500. `mockAdapter` is bound by neither',
             '',
         );
     }
@@ -179,14 +176,14 @@ async function main(): Promise<void> {
     heading(
         'C3 (e) — the contract the library DOES publish, run against the mock',
     );
-    // `verifyAdapterContract` is the library's own definition of a well-formed transport. Point it
-    // at a `mockAdapter` wired to serve `adapterContractFixture` and see whether the mock passes.
+    // `conformance.adapter` is the library's own definition of a well-formed transport. Point it
+    // at a `mockAdapter` wired to serve `conformance.fixture` and see whether the mock passes.
     {
         const fixtureAdapter = mockAdapter([
             {
                 respond: (call) => {
                     const u = new URL(call.req.url);
-                    const out = adapterContractFixture({
+                    const out = conformance.fixture({
                         method: call.req.method,
                         path: u.pathname + u.search,
                         headers: call.req.headers,
@@ -210,7 +207,7 @@ async function main(): Promise<void> {
                 },
             },
         ]);
-        const report = await verifyAdapterContract(fixtureAdapter, BASE);
+        const report = await conformance.adapter(fixtureAdapter, BASE);
         check('seam verified', report.seam, 'adapter');
         note('rules passed', report.passed.length);
         note('rules violated', report.violations.length);

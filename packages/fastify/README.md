@@ -140,7 +140,14 @@ await app.register(stitchPlugin, {
 ```
 
 Set `errorHandler: false` to register none and wire your own with
-`stitchErrorHandler(options)`.
+`stitchError.handler(options)`; `stitchError.is(err)` is the guard on its own.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this one
+concept: `.is` everywhere, `.map` wherever the framework has a mapped value to return, and
+`.handler` wherever it has an error hook to register on.
+Fastify has no `.map`: the handler writes onto `reply` and returns no
+mapped value to hand back. The plugin **option** keeps Fastify's own word
+(`errorHandler`, after `setErrorHandler`) while the **export** is shared vocabulary.
 
 ## Logger
 
@@ -151,14 +158,13 @@ events and log only retries, drift, and errors). A seam built with its own
 
 ## API
 
-| Export               | Kind     | Purpose                                           |
-| -------------------- | -------- | ------------------------------------------------- |
-| `stitchPlugin`       | plugin   | `fastify.register(stitchPlugin, options)`         |
-| `currentStitch()`    | function | The request's ambient principal-bound seam        |
-| `streamStitchSse`    | function | Stream a stitch's `.stream()` to an SSE reply     |
-| `stitchErrorHandler` | function | A `setErrorHandler`-compatible StitchError mapper |
-| `fastifyLoggerSink`  | function | `fastify.log` → seam `TraceSink` bridge           |
-| `isStitchError`      | function | Narrow an unknown error to a `StitchError`        |
+| Export              | Kind     | Purpose                                         |
+| ------------------- | -------- | ----------------------------------------------- |
+| `stitchPlugin`      | plugin   | `fastify.register(stitchPlugin, options)`       |
+| `currentStitch()`   | function | The request's ambient principal-bound seam      |
+| `streamStitchSse`   | function | Stream a stitch's `.stream()` to an SSE reply   |
+| `stitchError`       | object   | `.is` narrows · `.handler` is the error handler |
+| `fastifyLoggerSink` | function | `fastify.log` → seam `TraceSink` bridge         |
 
 `stitchapi` and `fastify` are **peer dependencies** — bring your own.
 

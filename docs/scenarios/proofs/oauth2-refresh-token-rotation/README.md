@@ -54,8 +54,8 @@ so they test the working tree, not the published bundle.
   latency (10ms); the assertions only claim `1 < refreshes < N`.
 - **C6 shares one `memoryStore` in one process.** It proves the lock _logic_ is expressible with the
   primitives StitchAPI exposes. It does not prove `memoryStore` is a distributed lock —
-  `verifyStoreContract` only requires `increment` to be atomic _within_ a process
-  (`packages/core/src/testing.ts:160`). A real deployment needs a backend whose increment is atomic
+  `conformance.store` only requires `increment` to be atomic _within_ a process
+  (`packages/core/src/testing.ts:172`). A real deployment needs a backend whose increment is atomic
   across processes (Redis `INCR`).
 - **C4b/C4c show a hack that works, in one process only.** A `params` getter plus a response-capturing
   `adapter` does rotate correctly when redemptions are serialised. C4d shows it revoking the account

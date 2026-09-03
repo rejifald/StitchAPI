@@ -75,8 +75,8 @@ and make the gap between them detectable rather than hoping someone re-records.
 `stitchapi/testing` is a substantial module and this pass has never given it a dedicated run.
 It exports `mockAdapter`, `stubStitch`/`failStitch`, `collectStitchEvents`, stream/SSE
 fixtures (`streamOf`, `streamThenError`, `gatedStream`, `sseStream`), `manualClock`, and a set
-of **contract verifiers** (`verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
-`verifyFingerprintContract`).
+of **contract verifiers** (`conformance.store`, `conformance.adapter`, `conformance.sink`,
+`conformance.fingerprint`).
 
 Note the split: the verifiers are aimed at people writing **plugins**, not people writing
 **integrations**. Whether the integration half is as well served is the question.

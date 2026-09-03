@@ -5,10 +5,7 @@
 // would quietly collapse both halves of this suite onto the same major.
 import { zodFingerprinter } from '../src';
 
-import {
-    assertConformance,
-    verifyFingerprintContract,
-} from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import type { FingerprintFixtures } from 'stitchapi/testing';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod/v3';
@@ -162,11 +159,11 @@ const fixtures: FingerprintFixtures = {
 
 describe('@stitchapi/fingerprint-zod', () => {
     it('passes the fingerprint conformance contract (Zod v3 + v4)', () => {
-        const report = verifyFingerprintContract(zodFingerprinter, fixtures);
+        const report = conformance.fingerprint(zodFingerprinter, fixtures);
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);
         expect(() => {
-            assertConformance(report);
+            conformance.assert(report);
         }).not.toThrow();
     });
 

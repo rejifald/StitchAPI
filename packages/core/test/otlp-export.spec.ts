@@ -1,7 +1,7 @@
 // OTLP export: an opt-in trace sink maps the event stream to OpenTelemetry CLIENT spans (OTel
 // HTTP semconv attributes) and hands them to a SpanExporter. Tested with a STUB exporter that
 // captures spans in memory — no running collector, no network.
-import { otlpSink, stitch } from '../src';
+import { otlp, stitch } from '../src';
 import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
 import { exportsFromEnv, multiplex } from '../src/trace';
 import { scrubUrl } from '../src/util';
@@ -42,7 +42,7 @@ beforeEach(() => {
 
 test('maps a successful call to one CLIENT span with OTel HTTP semconv attributes', () => {
     const { exporter, spans } = stubExporter();
-    const sink = otlpSink({ exporter });
+    const sink = otlp.sink({ exporter });
     const name = 'getThing';
     const events: StitchEvent[] = [
         {
@@ -80,7 +80,7 @@ test('maps a successful call to one CLIENT span with OTel HTTP semconv attribute
 
 test('maps an error to an ERROR span with error.type and status_code', () => {
     const { exporter, spans } = stubExporter();
-    const sink = otlpSink({ exporter });
+    const sink = otlp.sink({ exporter });
     const name = 'createThing';
     const events: StitchEvent[] = [
         {
@@ -112,7 +112,7 @@ test('maps an error to an ERROR span with error.type and status_code', () => {
 
 test('end-to-end: a real stitch call exports one span to the stub exporter', async () => {
     const { exporter, spans } = stubExporter();
-    const sink = otlpSink({ exporter });
+    const sink = otlp.sink({ exporter });
     server.route('GET', '/ping', { body: { ok: true } });
     const ping = stitch({ name: 'ping', baseUrl: server.url, path: '/ping' });
 
@@ -149,7 +149,7 @@ test('STITCH_EXPORT parses to a list and multiplex fans out to every sink', () =
 // bodies), so it must be scrubbed before a span leaves for a collector.
 test('url.full strips userinfo and redacts secret query params before export', () => {
     const { exporter, spans } = stubExporter();
-    const sink = otlpSink({ exporter });
+    const sink = otlp.sink({ exporter });
     const name = 'fetchThing';
     const events: StitchEvent[] = [
         {

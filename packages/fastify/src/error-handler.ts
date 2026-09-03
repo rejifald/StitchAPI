@@ -3,12 +3,21 @@
 // adapts the Nest exception filter (`packages/nest/src/exception-filter.ts`) to a Fastify
 // `setErrorHandler`-compatible function, so a route handler calling a stitch needs no
 // per-handler try/catch.
+//
+// The two functions below are the implementations; the barrel exports only the `stitchError`
+// namespace that faces them. They stay plain module functions so `plugin.ts` (and a bundler)
+// reaches one of them without pulling the other in behind it.
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
 
-/** True when `err` is the error a stitch throws on failure (`name === 'StitchError'`). */
+/**
+ * Guard half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
+ * True when `err` is the error a stitch throws on failure (`name === 'StitchError'`).
+ */
 export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
@@ -53,17 +62,13 @@ function resolveStatus(
 }
 
 /**
+ * Handler half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
  * Build a `setErrorHandler`-compatible function that maps a {@link StitchErrorLike} to an HTTP
  * response (status `502` by default; override via {@link StitchErrorOptions.status})
  * and **rethrows every other error** so Fastify's default handling — and any error handler
- * registered in an outer scope — stays in charge. Register it on the app or a plugin scope:
- *
- * ```ts
- * app.setErrorHandler(stitchErrorHandler({ status: (e) => e.status ?? 502 }));
- * ```
- *
- * The plugin registers this for you when `errorHandler` is not `false`; call this directly
- * only to register it yourself with custom options.
+ * registered in an outer scope — stays in charge.
  */
 export function stitchErrorHandler(
     options: StitchErrorOptions = {},
@@ -84,3 +89,39 @@ export function stitchErrorHandler(
         void reply.status(status).send(body);
     };
 }
+
+/**
+ * The one name for "a stitch failed, turn it into HTTP" in this package — the guard and the
+ * `setErrorHandler` function as one namespace, so the same concept reads the same way across
+ * every `@stitchapi/*` host adapter (ADR 0012; the export-surface analogue of the `secrets` /
+ * `duration` folds in core). The verb lives at the call site rather than in two verb-prefixed
+ * top-level names:
+ *
+ * - `stitchError.is(err)` narrows an unknown error to a {@link StitchErrorLike}.
+ * - `stitchError.handler(options?)` builds the `setErrorHandler`-compatible function. The
+ *   plugin registers it for you unless `errorHandler` is `false`; call this directly only to
+ *   register it yourself with custom options.
+ *
+ * ```ts
+ * app.setErrorHandler(stitchError.handler({ status: (e) => e.status ?? 502 }));
+ * ```
+ *
+ * The plugin **option** is still spelled `errorHandler`, after Fastify's own `setErrorHandler`
+ * — CONTRACT.md P18's mirror clause, which binds the framework-hook slot and is untouched by
+ * this namespace.
+ *
+ * **No `.map` here, deliberately.** On the hosts that have one (hono, elysia, next, nest),
+ * `stitchError.map(err)` returns the mapped artifact as a *value* — an `HTTPException`, a
+ * `Response`. Fastify has no such value: the handler writes a status and a body onto the
+ * mutable `reply` and returns nothing, so there is nothing to hand back. A `map` here would be
+ * invented surface, not the same member under the same name — and a member that means
+ * something different per package is the drift this namespace exists to end.
+ *
+ * A facade, not a re-implementation: each member points at the module function above, so
+ * `plugin.ts` keeps importing those directly and a bundler that reaches one member does not
+ * weld the other onto the consumer's path.
+ */
+export const stitchError = {
+    is: isStitchError,
+    handler: stitchErrorHandler,
+} as const;

@@ -14,7 +14,7 @@
 // stance (DESIGN §10, like the BYO axios adapter), and keeps the package with
 // ZERO runtime dependencies — usable from Node, Bun or Deno alike.
 //
-// Compliance with the store contract is proven against `verifyStoreContract` from
+// Compliance with the store contract is proven against `conformance.store` from
 // `stitchapi/testing` (see test/conformance.spec.ts).
 import { duration } from 'stitchapi';
 import type {

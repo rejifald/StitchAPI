@@ -1,5 +1,5 @@
 // Conformance proof for @stitchapi/redis. All three driver adapters
-// (`fromIoredis`, `fromNodeRedis`, `fromUpstash`) must pass `verifyStoreContract`
+// (`fromIoredis`, `fromNodeRedis`, `fromUpstash`) must pass `conformance.store`
 // from `stitchapi/testing`.
 //
 // The default run is hermetic and offline: a tiny in-repo Redis engine (a Map
@@ -15,7 +15,7 @@
 import { fromIoredis, fromNodeRedis, fromUpstash, redisStore } from '../src';
 import type { IoredisLike, NodeRedisLike, UpstashLike } from '../src';
 
-import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import { describe, expect, test } from 'vitest';
 
 // --- a faithful in-memory Redis engine ------------------------------------
@@ -279,16 +279,16 @@ function upstashFacade(engine: FakeRedisEngine): UpstashLike {
 
 describe('@stitchapi/redis store contract', () => {
     test('redisStore(fromIoredis(...)) passes the store contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() =>
+        conformance.assert(
+            await conformance.store(() =>
                 redisStore(fromIoredis(ioredisFacade(new FakeRedisEngine()))),
             ),
         );
     });
 
     test('redisStore(fromNodeRedis(...)) passes the store contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() =>
+        conformance.assert(
+            await conformance.store(() =>
                 redisStore(
                     fromNodeRedis(nodeRedisFacade(new FakeRedisEngine())),
                 ),
@@ -297,8 +297,8 @@ describe('@stitchapi/redis store contract', () => {
     });
 
     test('redisStore(fromUpstash(...)) passes the store contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() =>
+        conformance.assert(
+            await conformance.store(() =>
                 redisStore(fromUpstash(upstashFacade(new FakeRedisEngine()))),
             ),
         );
@@ -359,10 +359,8 @@ describe.skipIf(!REDIS_URL)('against a real Redis (REDIS_URL)', () => {
         };
         const client = new mod.default(REDIS_URL as string);
         try {
-            assertConformance(
-                await verifyStoreContract(() =>
-                    redisStore(fromIoredis(client)),
-                ),
+            conformance.assert(
+                await conformance.store(() => redisStore(fromIoredis(client))),
             );
         } finally {
             await client.quit();

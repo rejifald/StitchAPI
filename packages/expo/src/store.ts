@@ -48,7 +48,7 @@ function toSecureKey(key: string): string {
  *
  * // Encrypted vault for auth tokens/cookies; pair with asyncStorageStore for
  * // non-secret throttle counters if you want those persisted too.
- * const api = seam({ secretStore: expoSecureStore(SecureStore) });
+ * const api = seam({ vault: expoSecureStore(SecureStore) });
  * ```
  *
  * Values ride in the same JSON envelope as the AsyncStorage store (TTL-aware); keep

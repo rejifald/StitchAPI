@@ -94,9 +94,10 @@ export function makeRuntime(
     const clock = opts?.clock ?? systemClock;
     const authCtx: AuthContext = {
         store,
-        // Secrets live in the vault, off `__config` and redacted from traces. Standalone stitches
-        // get a reserved namespace over their own store; a seam injects its shared vault.
-        vault: opts?.vault ?? vaultView(store),
+        // Secrets live in the vault, off `__config` and redacted from traces. A seam injects its
+        // shared vault; otherwise it is a reserved namespace over the config's `vault` backend,
+        // falling back to the store the throttle counters already share.
+        vault: opts?.vault ?? vaultView(cfg.vault ?? store),
         // The SAME clock the engine schedules on (ADR 0010), so a strategy's time-driven control
         // flow — oauth2's token freshness window — is deterministic under an injected clock.
         clock,

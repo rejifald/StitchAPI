@@ -24,7 +24,7 @@ import {
     type NoUnknownNestedKeys,
     type ResolvedStitchConfig,
     type Seam,
-    type SeamOptions,
+    type SeamConfig,
     type Stitch,
     type StitchConfig,
     type StitchInput,
@@ -175,6 +175,6 @@ function bindSeam(s: Seam): StreamSeamApi {
 export const stream = Object.assign(streamStitch, {
     surface: streamSurface,
     stitch: streamStitch,
-    bind: (arg: Seam | SeamOptions): StreamSeamApi =>
+    bind: (arg: Seam | SeamConfig): StreamSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

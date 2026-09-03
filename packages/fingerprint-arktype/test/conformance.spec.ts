@@ -2,10 +2,7 @@
 import { arktypeFingerprinter } from '../src';
 
 import { type } from 'arktype';
-import {
-    assertConformance,
-    verifyFingerprintContract,
-} from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import type { FingerprintFixtures } from 'stitchapi/testing';
 import { describe, expect, it } from 'vitest';
 
@@ -138,14 +135,11 @@ const fixtures: FingerprintFixtures = {
 
 describe('@stitchapi/fingerprint-arktype', () => {
     it('passes the fingerprint conformance contract', () => {
-        const report = verifyFingerprintContract(
-            arktypeFingerprinter,
-            fixtures,
-        );
+        const report = conformance.fingerprint(arktypeFingerprinter, fixtures);
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);
         expect(() => {
-            assertConformance(report);
+            conformance.assert(report);
         }).not.toThrow();
     });
 

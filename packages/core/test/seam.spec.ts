@@ -226,3 +226,44 @@ test('close() flushes the sink and closes the shared store', async () => {
     await api.close();
     expect(closed).toBe(true);
 });
+
+// A store that counts its own `close()` — the seam owns every backend it was handed, and must
+// close each exactly once.
+const countingStore = (): { store: StitchStore; closes: () => number } => {
+    const base = memoryStore();
+    let closes = 0;
+    return {
+        closes: () => closes,
+        store: {
+            get: (k) => base.get(k),
+            set: (k, v, ttl) => base.set(k, v, ttl),
+            increment: (k, ttl) => base.increment(k, ttl),
+            close: async () => {
+                closes += 1;
+                await base.close?.();
+            },
+        },
+    };
+};
+
+test('close() closes a separate vault backend too — and a shared one only once', async () => {
+    const state = countingStore();
+    const secrets = countingStore();
+    // A hardened vault is a SECOND connection the seam opened, so the lifecycle owns it too.
+    await seam({
+        baseUrl: server.url,
+        store: state.store,
+        vault: secrets.store,
+    }).close();
+    expect([state.closes(), secrets.closes()]).toEqual([1, 1]);
+
+    // Pointing both slots at one backend is legal (and is what the default does, via the vault
+    // lens); closing it twice would be a double-close on a real pool.
+    const shared = countingStore();
+    await seam({
+        baseUrl: server.url,
+        store: shared.store,
+        vault: shared.store,
+    }).close();
+    expect(shared.closes()).toBe(1);
+});

@@ -96,10 +96,10 @@ checks run against it, so the plain one-function form stays valid.
 
 ### Prove it against the contract
 
-`verifyAdapterContract(adapter, baseUrl)` from `stitchapi/testing` runs your
+`conformance.adapter(adapter, baseUrl)` from `stitchapi/testing` runs your
 transport against a fixture host and checks the rules above: status passthrough
 for 200/404/500, request delivery, lowercased response headers, text and JSON
-decoding, and both abort paths. Mount `adapterContractFixture` on any server —
+decoding, and both abort paths. Mount `conformance.fixture` on any server —
 `node:http`, hono, a service worker — and point the verifier at it. See
 [Conformance kits](/docs/reference/conformance-kits) for the fixture and the
 report shape.
