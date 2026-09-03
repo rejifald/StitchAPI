@@ -3,7 +3,9 @@
 // Unlike `@stitchapi/react` (which OWNS the call lifecycle via query-core), this is
 // a thin adapter for apps already standardised on [SWR](https://swr.vercel.app):
 // SWR keeps owning caching, deduping, and revalidation, while the stitch stays the
-// typed, validated, traced fetcher. No `@stitchapi/query-core` — SWR is the store.
+// typed, validated, traced fetcher. No `@stitchapi/query-core` — SWR is the store
+// (CONTRACT.md P9 de-lists this adapter's minimal tier). Its only runtime import is
+// its `stitchapi` peer, for the shared secret-key predicate — same as query-core.
 //
 // - `useStitchSWR` — the hook: `useSWR` with the stitch as the fetcher.
 // - `swrKey`       — the cache key a stitch+input maps to, for manual `useSWR`,
@@ -12,6 +14,7 @@
 //
 // SWR models request/response only — for streaming (`sse` / `stream` surfaces)
 // reach for `useStitchStream` from `@stitchapi/react` instead.
+import { secrets } from 'stitchapi';
 import type { Stitch } from 'stitchapi';
 import useSWR, { type SWRConfiguration, type SWRResponse } from 'swr';
 
@@ -59,10 +62,16 @@ export type QueryInput<S> =
  * dropped), so SWR caches and dedupes per call without leaking or churning. */
 export type StitchSWRKey = readonly [name: string, input: unknown];
 
-// --- key derivation (shared logic; duplicated in @stitchapi/react) ---------
-// These two helpers are intentionally copied verbatim into `@stitchapi/react`'s
-// `stitchQueryOptions`: they are separate published packages, so a cross-package
-// import would add a runtime dependency. Keep the two copies in lock-step.
+// --- key derivation (mirrors @stitchapi/query-core) ------------------------
+// The canonical implementation is query-core's `stitchKey` namespace —
+// `stitchKey.name` / `stitchKey.input`, composed by `stitchKey.of` — and the five
+// TanStack-family bindings all import it, so their keys cannot drift. This adapter
+// re-states it instead of importing it: swr is one of the three stream-less
+// adapters that deliberately carry NO `@stitchapi/query-core` dependency
+// (CONTRACT.md P9). That makes the helpers below a KNOWN FORK — query-core keeps
+// these same private spellings behind its namespace, so keep the two byte-for-byte
+// in step, including the `secrets.has` clause in `isSecretHeader`, or a credential
+// redacted by every other binding lands in the SWR key in cleartext.
 
 /** The `__config` slice a key derives from. Mirrors core's `nameOf`
  * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
@@ -81,12 +90,16 @@ function nameOf(stitch: unknown): string {
     return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
 }
 
-// Header names whose VALUES are secrets — mirrors core's private `SECRET_HEADERS`
-// trace denylist (`packages/core/src/trace.ts`), which is not exported. We redact
-// the value (rather than dropping the header) so the key stays stable per token
-// AND callers who legitimately vary a response by a non-secret header (e.g.
-// `accept-language`) keep separate cache entries. Compared case-insensitively; the
-// `*-token` / `*-api-key` suffix rules catch vendor spellings without enumerating.
+// Header names whose VALUES are secrets — the header-specific denylist on top of
+// core's `secrets.has` predicate (which contributes the secret stems — `token`,
+// `secret`, `apikey`, … — and any caller-registered names via `secrets.register`).
+// It mirrors core's private `SECRET_HEADERS` trace denylist
+// (`packages/core/src/trace.ts`), which is not exported. We redact the value
+// (rather than dropping the header) so the key stays stable per token AND callers
+// who legitimately vary a response by a non-secret header (e.g. `accept-language`)
+// keep separate cache entries. Compared case-insensitively; the `*-token` /
+// `*-api-key` suffix rules catch vendor spellings the stems miss (dashes defeat
+// the `api_key`/`apikey` stems).
 const SECRET_HEADERS = new Set([
     'authorization',
     'proxy-authorization',
@@ -100,7 +113,10 @@ const REDACTED = '[redacted]';
 function isSecretHeader(name: string): boolean {
     const k = name.toLowerCase();
     return (
-        SECRET_HEADERS.has(k) || k.endsWith('-token') || k.endsWith('-api-key')
+        SECRET_HEADERS.has(k) ||
+        k.endsWith('-token') ||
+        k.endsWith('-api-key') ||
+        secrets.has(k)
     );
 }
 
