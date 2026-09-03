@@ -47,6 +47,14 @@ docs/sandbox/dist/
 apps/docs/test-results/
 apps/docs/playwright-report/
 
+# Transient modules the eval harness transpiles and imports (@stitchapi/eval-harness,
+# written by score/run.ts). Already gitignored, so CI checks out clean and never sees
+# them — but `prettier --check .` walks the working tree, not the index, and these are
+# machine-written from a template. Running the eval suite locally (which `pnpm -r test`
+# does) would otherwise block the next push on a file that is not even committed. Same
+# reasoning as `apps/docs/test-results/` above.
+packages/eval-harness/.eval-tmp/
+
 # yakir's baseline lockfile is generated (2-space, written by `yakir fix`); leave
 # its formatting to the tool, like any other lockfile.
 yakir.lock
