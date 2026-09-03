@@ -29,7 +29,7 @@ const bare = sse({ path: '/stream' });
 expectType<SseEvent<unknown>[]>(output(bare));
 expectType<unknown>(output(bare)[0]!.data);
 
-// 3) a seam-bound sse member infers `.data` identically (covers `bindSeam`). Pass `SeamOptions` (not a
+// 3) a seam-bound sse member infers `.data` identically (covers `bindSeam`). Pass `SeamConfig` (not a
 //    pre-built `Seam`) so the seam is minted inside the same module family as `sse` — a `Seam` imported
 //    from the root entry is a nominally distinct (built-`lib`) type from `src`'s here.
 const member = sse

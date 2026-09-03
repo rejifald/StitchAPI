@@ -1400,8 +1400,8 @@ export interface AuthContext {
     store: StitchStore; // throttle/session state — in-memory by default, shareable when configured
     /**
      * Secret namespace for auth tokens/sessions: off `__config`, redacted from traces, read
-     * only by auth strategies (ADR 0002 §4). Defaults to a reserved prefix over `store`; a
-     * seam may back it with a hardened `secretStore`. Sessions are keyed by scope here.
+     * only by auth strategies (ADR 0002 §4). Defaults to a reserved prefix over `store`; the
+     * `vault` config slot backs it with a hardened store instead. Keyed by scope here.
      */
     vault: StitchStore;
     /**
@@ -1842,6 +1842,14 @@ export interface StitchConfig {
     clock?: Clock;
     /** Pluggable state store for throttle + session. Default in-memory. */
     store?: StitchStore;
+    /**
+     * Backend for the **vault** — the reserved, redacted namespace auth tokens and sessions live
+     * in (ADR 0002 §4). Defaults to a namespace over `store`, so secrets and throttle counters
+     * share one backend; point this at a KMS/Vault/keychain store (`expoSecureStore`) to harden
+     * the secrets alone. The split is by **visibility**, not backend — either may be distributed.
+     * Live object — stripped from `__config`.
+     */
+    vault?: StitchStore;
     /**
      * Observability sink — **off by default**, because a stitch's only effect on
      * the world is its call. Opt in with `'console'` (the colored stderr stream),
@@ -2346,7 +2354,7 @@ export interface StitchStore {
  * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `document`)
  * and the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting
  * — `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
- * `paginate`, `pick`, `transform`, `wire`, `hooks`, `trace`, `store`, `cache`, `adapter`
+ * `paginate`, `pick`, `transform`, `wire`, `hooks`, `trace`, `store`, `vault`, `cache`, `adapter`
  * — belongs here, so the type itself answers "what belongs at the seam". Members set the endpoint
  * keys.
  */
@@ -2361,19 +2369,6 @@ export type SeamConfig = Omit<
     | 'output'
     | 'kind'
 >;
-
-/**
- * Options for {@link Seam} — the shared {@link SeamConfig} plus an optional hardened `secretStore`
- * backing the vault.
- */
-export type SeamOptions = SeamConfig & {
-    /**
-     * Backend for the vault (auth tokens/sessions). Defaults to a reserved, redacted namespace
-     * over the seam's `store`; supply a KMS/Vault-backed store here for a hardened vault. Split
-     * is by **visibility**, not backend — both store and vault may be distributed (ADR 0002 §4).
-     */
-    secretStore?: StitchStore;
-};
 
 /**
  * A principal-bound seam handle — what `seam.as(id)` returns, and the object trusted code hands to
