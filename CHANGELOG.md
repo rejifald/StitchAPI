@@ -187,6 +187,30 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
+  `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
+  was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
+  capability: a standalone `stitch()` built its vault over `store` with no way to point it
+  elsewhere, and the two host integrations that build a seam from config — fastify's `seamConfig`
+  and a `@stitchapi/nest` **feature** seam's `config` — type that slot as `SeamConfig` and so could
+  not name it either. CONTRACT.md P16 says a config field is declared once on `StitchConfig` and
+  projected; this one was re-declared per surface.
+
+    ```ts
+    // was — seam only
+    const api = seam({ secretStore: expoSecureStore(SecureStore) });
+    // now — anywhere a config goes, `stitch()` included
+    const api = seam({ vault: expoSecureStore(SecureStore) });
+    const me = stitch({ url: '…', vault: expoSecureStore(SecureStore), auth: cookieSession(…) });
+    ```
+
+    The name is the one the rest of the codebase already used for this thing (ADR 0002 §4,
+    `AuthContext.vault`, the docs); `secretStore` was a third spelling for it. Behaviour is
+    unchanged where it was reachable: the vault still defaults to a reserved, redacted namespace
+    over `store`, the split is still by visibility rather than backend, and a seam still shares one
+    vault across its members and closes a distinct backend on `close()`. `vault` is redacted from
+    `__config` exactly like `store`. Hard break, no alias (P19, `rc` channel).
+
 - **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
   — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
   `verifyFingerprintContract`, `assertConformance` and `adapterContractFixture` are replaced by
