@@ -1005,6 +1005,29 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`@stitchapi/download`'s aggregate ETA tracks recent throughput, not the batch's lifetime
+  average.** ([#456](https://github.com/rejifald/StitchAPI/issues/456)) `BatchProgress.ratePerSec`
+  was `loaded / (now - firstByte)` — one average over everything the batch had ever done — and
+  `eta` divided the remaining bytes by it. That answers "how fast has this batch gone overall?",
+  which is not the question an ETA asks. A dead first minute stayed in the denominator forever, so
+  the ETA kept reading minutes-too-long while every item was streaming at full speed; a fast first
+  second did the same in reverse, holding out a rosy ETA long after the transfer had stalled.
+
+    Each `snapshot()` now takes a reading — bytes delivered since the previous reading, over the
+    time between them — and folds it into an exponentially-decayed average with a two-second
+    half-life, so the rate forgets the distant past and `eta` becomes a projection of how the batch
+    is moving _now_. The decay is a function of elapsed time rather than of how many readings were
+    taken, which means an extra `snapshot()` call cannot skew the number and a burst of small
+    chunks weighs exactly what the interval it covers is worth. Dropping an item still discards its
+    partial bytes from `loaded`, and the rate baseline drops with them, so a cancelled sibling's
+    byte cliff is never mistaken for the healthy siblings going backwards.
+
+    No new option: the half-life is an internal constant. Time still comes from the injected
+    `clock`, so the whole thing is driven by `manualClock()` with zero wall-clock. The aggregate
+    `total` under-counting while items are still queued (sizes are unknown until an item starts) is
+    a separate matter, tracked in
+    [#461](https://github.com/rejifald/StitchAPI/issues/461).
+
 - **A transport failure reaches the caller as a `StitchError` carrying the original on `.cause`.**
   ([#450](https://github.com/rejifald/StitchAPI/issues/450)) A socket reset, a DNS failure or an
   abort surfaced as whatever the transport happened to throw, so the awaited and `.safe()` paths
