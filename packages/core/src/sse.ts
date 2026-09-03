@@ -21,7 +21,7 @@ import {
     type NoUnknownNestedKeys,
     type ResolvedStitchConfig,
     type Seam,
-    type SeamOptions,
+    type SeamConfig,
     type Stitch,
     type StitchConfig,
     type StitchInput,
@@ -239,6 +239,6 @@ function bindSeam(s: Seam): SseSeamApi {
 export const sse = Object.assign(sseStitch, {
     surface: sseSurface,
     stitch: sseStitch,
-    bind: (arg: Seam | SeamOptions): SseSeamApi =>
+    bind: (arg: Seam | SeamConfig): SseSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

@@ -101,9 +101,18 @@ deprecation window, and no migration path is owed.
       (principal for sessions).
 
     Both may be in-memory **or** distributed. The default is **one `StitchStore` with a
-    reserved, redacted secret namespace**; a separate `secretStore` is an _optional_ override
+    reserved, redacted secret namespace**; a separate backend is an _optional_ override
     for a hardened vault (KMS/Vault with audit). The vault is **not** memory-only — sensitive
     ≠ unshareable, and shared tokens/sessions across workers are deliberate features.
+
+    > **Amendment 2026-09-03 — the override is `vault`, a `StitchConfig` slot, not a seam-only
+    > `secretStore`.** This decision is unchanged (two namespaces, split by visibility, either
+    > distributable); only where the override is declared changed. It was `secretStore` on
+    > `SeamOptions`, which made a hardened vault reachable from `seam()` **alone** — a standalone
+    > `stitch()`, fastify's `seamConfig` and a nest feature seam all type their config as
+    > `SeamConfig` and silently had no way to name it. It is now `vault?: StitchStore` on
+    > `StitchConfig`, projected to every surface, and `SeamOptions` is deleted. See
+    > [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep) (P16).
 
 5.  **Shared budgets are sealed; per-stitch override may only TIGHTEN, never escape.** A
     stitch may add a stricter local throttle that **stacks** on the seam's (both gates must

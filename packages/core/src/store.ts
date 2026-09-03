@@ -113,9 +113,9 @@ export function memoryStore(): StitchStore {
 }
 
 /**
- * A namespaced view over a store: the seam's **vault** (ADR 0002 §4). It prefixes every key so
- * auth tokens/sessions live in a reserved slice of the backend (the same `StitchStore` by
- * default, or a hardened `secretStore`), kept off `__config` and redacted from traces. It is a
+ * A namespaced view over a store: the **vault** (ADR 0002 §4). It prefixes every key so
+ * auth tokens/sessions live in a reserved slice of the backend (the config's `store` by default,
+ * or a hardened `vault` backend), kept off `__config` and redacted from traces. It is a
  * thin lens — `close()` delegates to the backend, so callers close the backend, not the view.
  */
 export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {

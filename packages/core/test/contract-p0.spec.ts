@@ -83,6 +83,8 @@ const HANDLE_SAMPLES: Record<Exclude<RedactedSlot, ProjectedSlot>, unknown> = {
     adapter: fetchAdapter(),
     clock: systemClock,
     store: memoryStore(),
+    // A SECOND live store: the vault backend is as secret-bearing as the store it defaults to.
+    vault: memoryStore(),
     // A live sink: `trace` is data in its shorthand forms but an author-closure handle in this one.
     trace: { handle: () => undefined },
 };

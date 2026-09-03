@@ -1543,6 +1543,37 @@ shape, not as today's surface: nothing on the surface carries an alias.
     now sits once on the namespace's JSDoc and once in the reference page, the same relocation
     `size` made when it stopped being `parseBytes`.
 
+- **P16 (the seam-only config slot, 2026-09-03)** — the rule's projection clause says a config
+  field is added to `StitchConfig` and **projected** (`SeamConfig = Omit<StitchConfig, …>`),
+  never re-declared per surface. One field was: `secretStore`, the hardened backend for the auth
+  vault, declared on `SeamOptions = SeamConfig & { secretStore?: StitchStore }`. The cost was not
+  aesthetic. Three surfaces type their config slot as `SeamConfig` and therefore could not reach
+  the capability at all: a standalone `stitch()` (the engine built `vaultView(store)` with no
+  hook, so an RN app wanting SecureStore for its session cookie had to adopt a seam), fastify's
+  `seamConfig`, and a nest **feature** seam's `config` — while nest's `forRoot` had it only
+  because `StitchModuleOptions extends SeamOptions`. **Fixed** — `vault?: StitchStore` on
+  `StitchConfig`, and `SeamOptions` **deleted** (with nothing left to add, the second type was
+  itself the defect). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel).
+  _The name came from the codebase._ ADR 0002 §4, `SharedRuntime.vault`, `AuthContext.vault`, the
+  redaction drop-list and the docs all called this the **vault**; only the option that configured
+  it said `secretStore`, so its JSDoc had to translate — "Backend for the vault" — which is the
+  tell ([P1](#p1--one-word-one-concept-one-value-space): one concept, one word). The config slot
+  names the **backend**, the runtime the namespaced **view** over it — the same two layers `store`
+  already spans, not a [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)
+  collision.
+  **No ratchet could have found it, on two counts** — the same pair the `total`/`perAttempt` entry
+  records. `SeamOptions` is a `type X = A & { … }` **intersection literal**, which no member rule
+  scans (the limitation is written into `check-contract.mjs` itself); and even scanned, **R8** needs
+  a shared _leading_ word, while `store`/`secretStore` share a trailing one. The gate is now a
+  type-level assert instead of a lint: `Exclude<keyof Parameters<typeof seam>[0], keyof StitchConfig>`
+  must be `never` (`extends-inference.test-d.ts` §8b), so the next seam-only slot fails to compile
+  rather than shipping a capability three surfaces cannot name.
+  _Redaction came for free, by construction:_ adding the slot to `StitchConfigAnatomy` as
+  `dropped: 'redact'` broke `contract-p0.spec.ts` until the fixture sampled a live `vault` — the
+  anatomy doing exactly the job [§7](#7-enforcement)'s note describes, a new must-not-appear slot
+  caught at compile time rather than by review.
+
 ## 7. Enforcement
 
 [`scripts/check-contract.mjs`](../scripts/check-contract.mjs) is a **ratchet**, run as
