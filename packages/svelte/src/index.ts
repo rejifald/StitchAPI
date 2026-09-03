@@ -40,15 +40,15 @@ export type {
 } from '@stitchapi/query-core';
 
 // The TanStack Query adapter is the ONE shared implementation in query-core
-// (`deriveQueryKey` and its helpers included, for callers who key their own
-// caches). Named `stitchQueryOptions` — not a bare `queryOptions` — because
-// TanStack Query itself exports a `queryOptions` (ADR 0012).
-export {
-    deriveQueryKey,
-    keyInputFor,
-    nameOf,
-    stitchQueryOptions,
-} from '@stitchapi/query-core';
+// (`stitchKey` included, for callers who key their own caches). Named
+// `stitchQueryOptions` — not a bare `queryOptions` — because TanStack Query
+// itself exports a `queryOptions` (ADR 0012).
+//
+// The derivation is ONE namespace — `stitchKey.of` / `.name` / `.input` — not the
+// three verb-prefixed functions it replaced (`deriveQueryKey`/`nameOf`/`keyInputFor`),
+// which were three names on five barrels for one key. `stitchKey` and not a bare
+// `queryKey` for the same ADR 0012 reason the adapter carries its prefix.
+export { stitchKey, stitchQueryOptions } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
 // Store shape

@@ -71,7 +71,7 @@
         "@testing-library/react": "^16.1.0",
         "@types/node": "^22.10.0",
         "@types/react": "^19.2.18",
-        "jsdom": "^25.0.1",
+        "jsdom": "^30.0.1",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",
         "stitchapi": "workspace:*",

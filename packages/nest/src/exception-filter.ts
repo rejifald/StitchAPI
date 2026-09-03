@@ -2,6 +2,11 @@
 // throws a plain `Error` branded `name === 'StitchError'` carrying the upstream `status`
 // (packages/core/src/stitch.ts). This bridges it to Nest's HTTP layer so a controller
 // calling a stitch needs no per-handler try/catch and no hand-rolled @Catch filter.
+//
+// The two functions below are the implementations; the barrel exports only the `stitchError`
+// namespace that faces them (the filter class stays a top-level class — it is DI-registered,
+// which is the Nest idiom ADR 0012 rule 1 blesses). They stay plain module functions so the
+// filter reaches the mapper without welding the guard onto a consumer that never calls it.
 import {
     type ArgumentsHost,
     Catch,
@@ -14,7 +19,12 @@ import { BaseExceptionFilter } from '@nestjs/core';
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
 
-/** True when `err` is the error a stitch throws on failure (`name === 'StitchError'`). */
+/**
+ * Guard half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
+ * True when `err` is the error a stitch throws on failure (`name === 'StitchError'`).
+ */
 export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
@@ -47,6 +57,9 @@ export interface StitchErrorOptions {
 }
 
 /**
+ * Map half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
  * Map a thrown stitch failure to a Nest {@link HttpException}, or `undefined` when `err`
  * is not a {@link StitchErrorLike} (so a caller can rethrow it untouched). The status is
  * `502` by default; override it via {@link StitchErrorOptions.status}.
@@ -75,8 +88,39 @@ export function toHttpException(
 }
 
 /**
+ * The one name for "a stitch failed, turn it into HTTP" in this package — the guard and the
+ * mapper as one namespace, so the same concept reads the same way across every `@stitchapi/*`
+ * host adapter (ADR 0012; the export-surface analogue of the `secrets` / `duration` folds in
+ * core). The verb lives at the call site rather than in two verb-prefixed top-level names:
+ *
+ * - `stitchError.is(err)` narrows an unknown error to a {@link StitchErrorLike}.
+ * - `stitchError.map(err, options?)` returns a Nest {@link HttpException}, or `undefined` when
+ *   `err` is not a stitch failure — so a caller can rethrow it untouched.
+ *
+ * ```ts
+ * // inside a hand-rolled filter or an interceptor:
+ * throw stitchError.map(err, { status: (e) => e.status ?? 502 }) ?? err;
+ * ```
+ *
+ * **No `.handler` here, deliberately.** The other hosts expose one because their error hook
+ * takes a plain function; Nest's takes a filter **instance**, resolved by the DI container and
+ * registered with `useGlobalFilters` or an `APP_FILTER` provider. So the handler stays the
+ * top-level {@link StitchExceptionFilter} class — the Nest idiom, and what ADR 0012 rule 1
+ * blesses for a host adapter's primary surface. Folding a `useClass`-able class behind a
+ * namespace member would break `{ provide: APP_FILTER, useClass: … }` for no naming gain.
+ *
+ * A facade, not a re-implementation: each member points at the module function above, so the
+ * filter keeps calling those directly and a bundler that reaches one member does not weld the
+ * other onto the consumer's path.
+ */
+export const stitchError = {
+    is: isStitchError,
+    map: toHttpException,
+} as const;
+
+/**
  * A global exception filter that converts a {@link StitchErrorLike} into an
- * {@link HttpException} (via {@link toHttpException} — `502` by default) and lets Nest
+ * {@link HttpException} (via {@link stitchError}`.map` — `502` by default) and lets Nest
  * render it; every other exception is delegated to Nest's default handling, unchanged.
  * Register it globally so controllers calling stitches need no try/catch:
  *

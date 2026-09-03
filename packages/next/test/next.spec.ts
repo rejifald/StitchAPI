@@ -1,6 +1,7 @@
 // @stitchapi/next behaviour — Web-standard Response helpers driven with fake event
 // sources and errors. No engine, no Next.
-import { isStitchError, stitchErrorResponse, streamStitchSse } from '../src';
+import { stitchError, streamStitchSse } from '../src';
+import * as api from '../src';
 
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, test } from 'vitest';
@@ -34,7 +35,7 @@ const done: StitchEvent = {
     at: 0,
 };
 
-function stitchError(message: string, status?: number): Error {
+function makeStitchError(message: string, status?: number): Error {
     const e = new Error(message) as Error & { status?: number };
     e.name = 'StitchError';
     if (status !== undefined) e.status = status;
@@ -209,9 +210,9 @@ describe('streamStitchSse', () => {
     });
 });
 
-// --- stitchErrorResponse ---------------------------------------------------
+// --- stitchError.map -------------------------------------------------------
 
-describe('stitchErrorResponse', () => {
+describe('stitchError.map', () => {
     // The helper now returns `Response | undefined` (undefined ⇒ not a StitchError, so the
     // caller can rethrow). The cases below all pass a StitchError, so a Response is
     // guaranteed — narrow it once here.
@@ -222,7 +223,7 @@ describe('stitchErrorResponse', () => {
 
     test('a StitchError maps to 502 by default with a generic JSON body', async () => {
         const res = mustRespond(
-            stitchErrorResponse(stitchError('upstream down', 503)),
+            stitchError.map(makeStitchError('upstream down', 503)),
         );
         expect(res.status).toBe(502);
         expect(res.headers.get('content-type')).toContain('application/json');
@@ -232,7 +233,7 @@ describe('stitchErrorResponse', () => {
 
     test('status can propagate the upstream status', async () => {
         const res = mustRespond(
-            stitchErrorResponse(stitchError('rate limited', 429), {
+            stitchError.map(makeStitchError('rate limited', 429), {
                 status: (e) => e.status ?? 502,
             }),
         );
@@ -240,8 +241,8 @@ describe('stitchErrorResponse', () => {
     });
 
     test('a non-StitchError returns undefined so the caller can rethrow', () => {
-        expect(stitchErrorResponse(new Error('oops'))).toBeUndefined();
-        expect(stitchErrorResponse('not even an error')).toBeUndefined();
+        expect(stitchError.map(new Error('oops'))).toBeUndefined();
+        expect(stitchError.map('not even an error')).toBeUndefined();
     });
 
     // Regression: the default body must not echo the raw upstream/transport message,
@@ -250,8 +251,10 @@ describe('stitchErrorResponse', () => {
     describe('does not leak the raw error message by default', () => {
         test('a transport failure with an internal hostname is not disclosed', async () => {
             const res = mustRespond(
-                stitchErrorResponse(
-                    stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                stitchError.map(
+                    makeStitchError(
+                        'getaddrinfo ENOTFOUND payments.internal.corp',
+                    ),
                 ),
             );
             expect(res.status).toBe(502);
@@ -262,7 +265,7 @@ describe('stitchErrorResponse', () => {
 
         test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
             const res = mustRespond(
-                stitchErrorResponse(stitchError('HTTP 401', 401)),
+                stitchError.map(makeStitchError('HTTP 401', 401)),
             );
             expect(res.status).toBe(502);
             expect(await res.text()).not.toContain('HTTP 401');
@@ -270,8 +273,10 @@ describe('stitchErrorResponse', () => {
 
         test('the `body` opt-in can still include the raw message', async () => {
             const res = mustRespond(
-                stitchErrorResponse(
-                    stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                stitchError.map(
+                    makeStitchError(
+                        'getaddrinfo ENOTFOUND payments.internal.corp',
+                    ),
                     { body: (e) => ({ error: e.message }) },
                 ),
             );
@@ -280,10 +285,54 @@ describe('stitchErrorResponse', () => {
     });
 });
 
-describe('isStitchError', () => {
+describe('stitchError.is', () => {
     test('matches the branded error only', () => {
-        expect(isStitchError(stitchError('x'))).toBe(true);
-        expect(isStitchError(new Error('x'))).toBe(false);
-        expect(isStitchError('x')).toBe(false);
+        expect(stitchError.is(makeStitchError('x'))).toBe(true);
+        expect(stitchError.is(new Error('x'))).toBe(false);
+        expect(stitchError.is('x')).toBe(false);
+    });
+});
+
+// --- public-surface pin: the error family is ONE namespace -------------------
+//
+// This package has no dedicated public-surface spec (only core does), so the pin lives here,
+// beside the behaviour it guards. It mirrors the intent of core's `REMOVED_SECRET_FUNCTIONS`
+// in `packages/core/test/public-api-surface.spec.ts`, in both directions:
+//
+//  - PRESENT, as a WHOLE: `stitchError` is an OBJECT whose members are exactly `is` and `map` (no `handler`: a Next route
+//    handler is its own `Request` -> `Response` function, so there is no central error
+//    hook to register one on).
+//    The key set is pinned rather than each member independently, so adding or dropping one is
+//    a deliberate edit here — the same call core's `SECRET_NAMESPACE_MEMBERS` makes. Object-ness
+//    is asserted explicitly because `stitchError` was a FUNCTION in `@stitchapi/hono` before the
+//    fold, and a bare `typeof === 'function'` check would have passed for it.
+//  - ABSENT: every verb-prefixed spelling the namespace replaced, across all six adapters — not
+//    only the ones this package carried. Pre-GA `rc`, so they were removed outright rather than
+//    aliased (CONTRACT.md P19); re-adding one would put two spellings of one call back on the
+//    barrel, which is exactly the drift this fold closes.
+describe('public surface: the stitchError namespace', () => {
+    const MEMBERS = ['is', 'map'] as const;
+
+    test('exports stitchError as a namespace object', () => {
+        expect(typeof api.stitchError).toBe('object');
+        expect(Object.keys(api.stitchError).sort()).toEqual(
+            [...MEMBERS].sort(),
+        );
+    });
+
+    test.each(MEMBERS)('exports stitchError.%s as a function', (member) => {
+        expect(
+            typeof (api.stitchError as Record<string, unknown>)[member],
+        ).toBe('function');
+    });
+
+    test.each([
+        'isStitchError',
+        'stitchErrorHandler',
+        'stitchOnError',
+        'stitchErrorResponse',
+        'toHttpException',
+    ] as const)('does NOT export %s — the namespace replaced it', (name) => {
+        expect(name in (api as Record<string, unknown>)).toBe(false);
     });
 });

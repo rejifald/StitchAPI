@@ -12,9 +12,8 @@
 // into `consoleSink` and `loggerSink`, the two destinations C1 measured as carrying nothing (h).
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c7-drift-signal.ts
-import { drift, stitch } from '../../../../packages/core/src/index';
+import { drift, otlp, stitch } from '../../../../packages/core/src/index';
 import type { OtelSpan } from '../../../../packages/core/src/otlp';
-import { otlpSink } from '../../../../packages/core/src/otlp';
 import { consoleSink, loggerSink } from '../../../../packages/core/src/trace';
 import type {
     DriftFinding,
@@ -268,12 +267,12 @@ async function main(): Promise<void> {
         const e = stitch({
             ...cfg,
             adapter: fakeVendor({ body: afterTheRelease() }),
-            trace: otlpSink({
+            trace: otlp.sink({
                 exporter: { export: (s) => void spans.push(...s) },
             }),
         });
         await e();
-        leakRow('otlpSink', bytesOf(spans), NEW_FIELD, '');
+        leakRow('otlp.sink', bytesOf(spans), NEW_FIELD, '');
         check(
             'OTLP carries level/path/change but NOT the detail',
             bytesOf(spans).includes('stitch.drift.path'),
@@ -473,13 +472,13 @@ async function main(): Promise<void> {
             path: '/v1/customers/1',
             adapter: fakeVendor({ body: vendorSentBadPlan }),
             output: ENUMED,
-            trace: otlpSink({
+            trace: otlp.sink({
                 exporter: { export: (s) => void spans.push(...s) },
             }),
         });
         await d.safe();
         const otlpRow = leakRow(
-            'otlpSink — stock Zod 4 enum',
+            'otlp.sink — stock Zod 4 enum',
             bytesOf(spans),
             SENTINELS,
             'OTLP exports level/path/change only',
@@ -597,13 +596,13 @@ async function main(): Promise<void> {
             path: '/v1/customers/1',
             adapter: fakeVendor({ body: vendorSentBadPlan }),
             output: ECHOING,
-            trace: otlpSink({
+            trace: otlp.sink({
                 exporter: { export: (s) => void spans.push(...s) },
             }),
         });
         await d.safe();
         const otlpRow = leakRow(
-            'otlpSink — echoing validator',
+            'otlp.sink — echoing validator',
             bytesOf(spans),
             SENTINELS,
             'OTLP exports level/path/change only',

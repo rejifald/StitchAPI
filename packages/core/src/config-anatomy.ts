@@ -137,6 +137,7 @@ export interface StitchConfigAnatomy {
     adapter: { dropped: 'redact' };
     clock: { dropped: 'redact' };
     store: { dropped: 'redact' };
+    vault: { dropped: 'redact' };
     trace: { dropped: 'redact' };
 }
 

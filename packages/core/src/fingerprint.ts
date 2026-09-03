@@ -13,7 +13,7 @@
 // CONTRACT (a {@link SchemaFingerprinter} interface + a registry) and the
 // {@link resolveFingerprint} fallback ladder; the per-vendor strategies live in
 // their own packages (`@stitchapi/fingerprint-*`) with the validator as a peer
-// dependency, each proving compliance via `verifyFingerprintContract`
+// dependency, each proving compliance via `conformance.fingerprint`
 // (`stitchapi/testing`). No validator ever enters core's dependency graph.
 import { xxh128 } from './hash';
 import { type StandardSchemaV1, isStandardSchema } from './standard-schema';
@@ -61,7 +61,7 @@ export interface SchemaFingerprint {
 
 /**
  * A per-validator fingerprint strategy. Implemented by `@stitchapi/fingerprint-*`
- * packages and registered via {@link registerFingerprinter}.
+ * packages and registered via {@link fingerprinters}`.register`.
  *
  * `fingerprint` MUST be synchronous and browser-safe (no `node:*`, no async),
  * because it runs on the path that derives the cache generation.
@@ -80,30 +80,96 @@ export interface SchemaFingerprinter {
 // ---------------------------------------------------------------------------
 // registry — process-local, like the other core seams
 // ---------------------------------------------------------------------------
+//
+// One `Map`, one namespace: `fingerprinters.register` / `.get` / `.list` / `.clear`.
+// This module IS the `stitchapi/fingerprint` entry, so what it exports is the subpath's
+// whole surface — and the four verb-prefixed functions the namespace replaced
+// (`registerFingerprinter` / `getFingerprinter` / `listFingerprinters` /
+// `clearFingerprinters`) were four names for one dimension, each repeating a subject the
+// subpath already names. Same shape and the same reason as the root barrel's `secrets`
+// and the token grammars: one name per dimension, the verb at the call site.
+//
+// The implementations stay plain module functions and `resolveFingerprint` calls
+// `getFingerprinter` directly, so the namespace is a thin FACADE rather than the seam
+// core reads through. That distinction is load-bearing: esbuild will not split an object
+// literal to drop a dead property, so routing an internal read through `fingerprinters`
+// would weld all four onto the path of everyone who imports the caller.
 
 const registry = new Map<string, SchemaFingerprinter>();
 
-/** Register a per-vendor fingerprint strategy (last registration wins). */
-export function registerFingerprinter(fp: SchemaFingerprinter): void {
+/**
+ * Register half of {@link fingerprinters}; the namespace carries the contract. Internal —
+ * the subpath exports the namespace, not this.
+ *
+ * Register a per-vendor fingerprint strategy (last registration wins).
+ */
+function registerFingerprinter(fp: SchemaFingerprinter): void {
     registry.set(fp.vendor, fp);
 }
 
-/** The strategy registered for a `~standard.vendor`, if any. */
-export function getFingerprinter(
-    vendor: string,
-): SchemaFingerprinter | undefined {
+/**
+ * Lookup half of {@link fingerprinters}; the namespace carries the contract. Internal —
+ * the subpath exports the namespace, not this.
+ *
+ * The strategy registered for a `~standard.vendor`, if any.
+ */
+function getFingerprinter(vendor: string): SchemaFingerprinter | undefined {
     return registry.get(vendor);
 }
 
-/** Every registered strategy (registration order not guaranteed). */
-export function listFingerprinters(): readonly SchemaFingerprinter[] {
+/**
+ * List half of {@link fingerprinters}; the namespace carries the contract. Internal —
+ * the subpath exports the namespace, not this.
+ *
+ * Every registered strategy (registration order not guaranteed).
+ */
+function listFingerprinters(): readonly SchemaFingerprinter[] {
     return [...registry.values()];
 }
 
-/** Drop all registrations — for tests. */
-export function clearFingerprinters(): void {
+/**
+ * Reset half of {@link fingerprinters}; the namespace carries the contract. Internal —
+ * the subpath exports the namespace, not this.
+ *
+ * Drop all registrations — for tests.
+ */
+function clearFingerprinters(): void {
     registry.clear();
 }
+
+/**
+ * The per-vendor fingerprint-strategy registry — one namespace over one process-local
+ * `Map` (ADR 0004). A generic fingerprint is impossible from the Standard Schema spec
+ * alone, so structural fingerprinting is per-validator: an `@stitchapi/fingerprint-*`
+ * package ships the strategy, the host registers it once at startup, and
+ * {@link resolveFingerprint} reads it when a stitch's `output` schema needs a token.
+ *
+ * - `fingerprinters.register(fp)` adds a strategy, keyed by its {@link
+ *   SchemaFingerprinter.vendor}. Additive and process-wide, and the LAST registration for
+ *   a vendor wins — so a host may override a published strategy with its own without
+ *   unregistering anything.
+ * - `fingerprinters.get(vendor)` is the matching lookup, `undefined` when nothing is
+ *   registered for that `~standard.vendor`. That `undefined` is what puts a schema on
+ *   rung 5 of the ladder (`refuse` by default), so this is also how a host audits why a
+ *   stitch it expected to cache is not caching.
+ * - `fingerprinters.list()` is every registered strategy, for a host reporting which
+ *   validators its process can actually fingerprint (registration order not guaranteed).
+ * - `fingerprinters.clear()` drops all registrations. For TESTS — it empties a
+ *   process-wide registry, so calling it in an app un-fingerprints every schema at once
+ *   and silently moves each one onto rung 5.
+ *
+ * Registration is explicit rather than an import side effect, which is what keeps a
+ * validator out of core's dependency graph: core ships the CONTRACT and this registry,
+ * never a strategy. The shape is the token grammars' and `secrets`' — one name per
+ * dimension, the verb named at the call site, rather than four verb-prefixed functions
+ * that each repeat the subject this subpath already names.
+ */
+export const fingerprinters = {
+    register: registerFingerprinter,
+    get: getFingerprinter,
+    list: listFingerprinters,
+    clear: clearFingerprinters,
+} as const;
 
 // ---------------------------------------------------------------------------
 // resolver — the ADR 0004 fallback ladder

@@ -136,9 +136,9 @@ function describeRoot(schema: unknown): string {
  * Fingerprint strategy for TypeBox schemas. Register it once at startup:
  *
  * ```ts
- * import { registerFingerprinter } from 'stitchapi/fingerprint';
+ * import { fingerprinters } from 'stitchapi/fingerprint';
  * import { typeboxFingerprinter } from '@stitchapi/fingerprint-typebox';
- * registerFingerprinter(typeboxFingerprinter);
+ * fingerprinters.register(typeboxFingerprinter);
  * ```
  */
 export const typeboxFingerprinter: SchemaFingerprinter = {

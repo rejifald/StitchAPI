@@ -38,8 +38,11 @@
  */
 
 /**
- * Names every playground tier binds into the snippet scope. Each MUST be a
- * function at runtime — a silently-dropped re-export shows up as `undefined`.
+ * Names every playground tier binds into the snippet scope. Each MUST be DEFINED
+ * at runtime — a silently-dropped re-export shows up as `undefined`. Not all are
+ * functions: the surface also carries plain objects (`httpSurface`, `systemClock`,
+ * `duration`/`size`/`rate`, `secrets`, `otlp`), which is why the binding test
+ * checks for `!== 'undefined'` rather than `=== 'function'`.
  */
 export const PLAYGROUND_SURFACE_NAMES = [
     // The call API.
@@ -61,9 +64,9 @@ export const PLAYGROUND_SURFACE_NAMES = [
     // Tracing (shimmed on the browser tier, real on node — present on both).
     'createTrace',
     'multiplex',
-    'otlpSink',
-    'otlpHttpExporter',
-    'toOtlpJson',
+    // The OTLP pipeline is one namespace (sink/exporter/json). On the browser
+    // tier it is the reconstructed object from shims/otlp-browser.
+    'otlp',
     // Trace sinks. `loggerSink` is core's verbatim; `consoleSink`/`fileSink` are
     // routed through the browser `createTrace` (see stitch-browser.ts) so they
     // cannot re-enable core's console path or write silently to nowhere.

@@ -100,7 +100,7 @@ describe('mockAdapter spy', () => {
     });
 });
 
-// `verifyAdapterContract`'s abort rule — "a pre-aborted AbortSignal rejects" — is one of the nine
+// `conformance.adapter`'s abort rule — "a pre-aborted AbortSignal rejects" — is one of the nine
 // the library holds every transport to, and the mock used to fail it: `req.signal` was consulted
 // only inside the `delay` branch, so a delay-less route answered a cancelled request. A
 // cancellation test written against such a route asserted the OPPOSITE of production behaviour.

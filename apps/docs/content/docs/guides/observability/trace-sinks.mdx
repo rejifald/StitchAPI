@@ -77,13 +77,13 @@ for await (const event of search({ query: { q: 'mango' } }).stream()) {
 
 The `trace` field accepts:
 
-| Value         | Effect                                                                |
-| ------------- | --------------------------------------------------------------------- |
-| _(unset)_     | Falls back to the env vars below — off unless one is set.             |
-| `'console'`   | The colored one-line-per-event stream to stderr.                      |
-| `fileSink(p)` | JSONL appended to `p` (defaults to `~/.stitch/runs/proto.jsonl`).     |
-| a `TraceSink` | Any custom sink — e.g. from `createTrace` / `multiplex` / `otlpSink`. |
-| `false`       | Forces tracing off, even when `STITCH_TRACE_*` is set.                |
+| Value         | Effect                                                                 |
+| ------------- | ---------------------------------------------------------------------- |
+| _(unset)_     | Falls back to the env vars below — off unless one is set.              |
+| `'console'`   | The colored one-line-per-event stream to stderr.                       |
+| `fileSink(p)` | JSONL appended to `p` (defaults to `~/.stitch/runs/proto.jsonl`).      |
+| a `TraceSink` | Any custom sink — e.g. from `createTrace` / `multiplex` / `otlp.sink`. |
+| `false`       | Forces tracing off, even when `STITCH_TRACE_*` is set.                 |
 
 When `trace` is unset, four env vars control the built-in sink:
 `STITCH_TRACE_CONSOLE=1` turns on the colored stderr stream;

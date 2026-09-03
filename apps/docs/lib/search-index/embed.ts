@@ -63,7 +63,19 @@ export function getEmbedder(): Promise<FeatureExtractionPipeline> {
 async function loadEmbedder(): Promise<FeatureExtractionPipeline> {
     const { env, pipeline } = await import('@huggingface/transformers');
 
-    if (process.env.VERCEL) {
+    // Serve the model from the copy scripts/fetch-embed-model.mts vendors,
+    // never the HuggingFace CDN. Unconditional on Vercel; opt-in elsewhere via
+    // VENDORED_EMBED_MODEL.
+    //
+    // transformers.js reads no environment variables of its own — cacheDir,
+    // localModelPath and allowRemoteModels are settable only from code — so
+    // this branch is the ONLY way a caller can pin the model to disk. That is
+    // why the flag exists: the `search-relevance` job in verify.yml vendors the
+    // model once behind an actions/cache and then sets VENDORED_EMBED_MODEL for
+    // the index build and the eval, which is what makes that job network-free
+    // like the rest of `verify`. Without it CI took the CDN path on every run,
+    // and a HuggingFace 429 failed the job outright (PR #758).
+    if (process.env.VERCEL || process.env.VENDORED_EMBED_MODEL) {
         // The deployed node_modules (the default model cache dir) is read-only,
         // so point the cache dir at the function's writable /tmp. Belt-and-
         // braces: nothing should actually write here once localModelPath
@@ -72,17 +84,17 @@ async function loadEmbedder(): Promise<FeatureExtractionPipeline> {
         // loadResourceFile: caching only applies to a fetched Response, never
         // to a local FileResponse.
         env.cacheDir = '/tmp/.transformers-cache';
-        // Serve the model from the copy scripts/fetch-embed-model.mts vendors
-        // at build time instead of the HuggingFace CDN. Was: a ~90 MB fetch on
-        // the first search per warm instance, sometimes past the 60s
-        // maxDuration ceiling — the P3 cold-start watch-item this resolves.
+        // Was: a ~90 MB fetch on the first search per warm instance, sometimes
+        // past the 60s maxDuration ceiling — the P3 cold-start watch-item this
+        // resolves.
         env.localModelPath = modelDirPath();
         // Fail loudly the first time this is called if the vendored copy is
         // missing or incomplete (transformers.js throws with the missing
         // path), instead of silently falling back to that slow CDN fetch in
         // production. build-search-index.ts calls this same path at build
         // time (see prebuild-search-index.mjs), so a broken vendor copy fails
-        // the deploy, not just the first production request.
+        // the deploy, not just the first production request — and in CI it
+        // fails the job instead of quietly re-downloading mid-eval.
         env.allowRemoteModels = false;
     }
 
