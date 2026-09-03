@@ -96,7 +96,7 @@ the difference is visible through the same schema: `ok`, `ok`, `contract violati
    read-out shape, which carries no schema.
 5. **A fixture cannot say when it was recorded.** Of all exported names across the main entry and
    `stitchapi/testing`, exactly one matches `/fixture|cassette|record|snapshot|stale|fresh|expire/`
-   — `adapterContractFixture`, the transport echo contract for plugin authors. `__config` has no
+   — `conformance.fixture`, the transport echo contract for plugin authors. `__config` has no
    metadata slot, so "recorded on 2026-02-04" is not expressible.
 6. **Retry backoff delays are absent from the event stream.** `progress{phase:"retry"}` carries
    `detail: "status 503"` and `waited: undefined`, where the throttle and reconnect paths both

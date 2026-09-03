@@ -70,7 +70,7 @@ Atomically, indivisibly across every process sharing the store:
 at = max(now, cell ?? 0);   cell = at + spacing;   return at
 ```
 
-Three details are load-bearing and each is pinned by `verifyStoreContract`:
+Three details are load-bearing and each is pinned by `conformance.store`:
 
 - **`now` is the caller's clock, not the store's.** The cursor stays deterministic under
   an injected `Clock` (ADR 0010) — the fleet fixture drives it with `manualClock` — and a
@@ -161,7 +161,7 @@ factor of the fleet size is missing the point of being distributed.
 
 ## Open questions
 
-1. **Should `verifyStoreContract` fail a store that omits `reserve`?** No, and it does
+1. **Should `conformance.store` fail a store that omits `reserve`?** No, and it does
    not — the rules are added only when the verb is present. But there is no signal
    _encouraging_ a capable backend to add it either. A report line noting "no pacing
    cell — the throttle will use its per-process fallback" would be honest without being

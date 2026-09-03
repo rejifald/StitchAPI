@@ -41,7 +41,7 @@ interface FastifyStitchPluginCommon {
      */
     logger?: boolean | AtLeastOne<FastifyLoggerSinkOptions>;
     /**
-     * Options for the error handler the plugin registers (see {@link stitchErrorHandler}).
+     * Options for the error handler the plugin registers (see `stitchError.handler`).
      * `false` registers **no** error handler (you wire your own); `true` (the default) registers
      * the `502`-by-default mapping. The object form must set at least one field — enable-with-
      * defaults is spelled `true`, never `{}` (CONTRACT.md P13/P20), matching `logger` above.

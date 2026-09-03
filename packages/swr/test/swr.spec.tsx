@@ -6,6 +6,7 @@ import type { StitchLike } from '../src';
 
 import { render, renderHook, screen, waitFor } from '@testing-library/react';
 import { type ReactNode, createElement } from 'react';
+import { secrets } from 'stitchapi';
 import { SWRConfig } from 'swr';
 import { describe, expect, test } from 'vitest';
 
@@ -108,6 +109,32 @@ describe('swrKey — no secret leak in the cache key', () => {
         // …and the non-secret header is preserved so callers who legitimately
         // vary by `accept-language` still get separate cache entries.
         expect(headers['accept-language']).toBe('en-US');
+    });
+
+    // The parity pin against `@stitchapi/query-core`. Its `isSecretHeader` ends in
+    // `|| secrets.has(k)`, which pulls in core's secret STEMS and anything a host
+    // widened via `secrets.register`; this package forks that helper (no query-core
+    // dependency — CONTRACT.md P9), and the clause was missing, so a registered
+    // credential was redacted from the query key by react/vue/svelte/solid/angular
+    // and written to the SWR key in cleartext. Mirrors query-core's
+    // "reuses core's secrets.has" test in `test/query.spec.ts`.
+    test("reuses core's secrets.has: secrets.register widens header redaction", () => {
+        // `x-acme-cred` is NEUTRAL by construction — it matches neither the static
+        // `SECRET_HEADERS` list, nor the `-token` / `-api-key` suffix rules, nor any
+        // built-in stem ('cred' is not the `credential` stem). So the registration
+        // below is the ONLY thing that can redact it, and dropping the `secrets.has`
+        // clause fails this test rather than passing it for the wrong reason.
+        secrets.register('x-acme-cred');
+        const getUser = unaryStitch(async () => 1, { name: 'getUser' });
+        const [, keyInput] = swrKey(getUser, {
+            headers: { 'x-acme-cred': 'SECRET123', 'x-acme-region': 'eu' },
+        });
+
+        const headers = (keyInput as { headers: Record<string, string> })
+            .headers;
+        expect(headers['x-acme-cred']).toBe('[redacted]');
+        // An unregistered neutral header is untouched, so it still varies the cache.
+        expect(headers['x-acme-region']).toBe('eu');
     });
 });
 

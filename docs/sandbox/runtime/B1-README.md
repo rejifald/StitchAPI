@@ -31,7 +31,8 @@ docs/sandbox/runtime/
   shims/
     process.ts               ← `process` object injected into the snippet scope
     notices.ts               ← RunNotice collection channel (drainNotices)
-    otlp-browser.ts          ← no-op OTLP exporter (no egress) + shimmed otlpSink
+    otlp-browser.ts          ← the `otlp` namespace rebuilt: no-op exporter (no
+                               egress) + shimmed sink, `json` verbatim
     node-surfaces.ts         ← keychain/env (demo values) + cookieSession (in-mem jar)
     server-tier-stubs.ts     ← cli/serve/mcp throwing stubs (server-tier only)
 ```
@@ -76,14 +77,14 @@ The Node built-ins (`node:crypto`/`fs`/`path`) and `process.env` are **no longer
 shimmed** — core handles them isomorphically (GAP-AUDIT §1.5). What remains are the
 Node-only **surfaces** the browser entry deliberately replaces with sandbox policy:
 
-| Surface                         | Shim                   | Behaviour                                                                                |
-| ------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
-| `keychain(name)`                | `node-surfaces.ts`     | documented **demo value** + `RunNotice{kind:'shim'}`                                     |
-| `env(name)`                     | `node-surfaces.ts`     | documented **demo value** + `RunNotice{kind:'shim'}`                                     |
-| `cookieSession`                 | `node-surfaces.ts`     | core's pure-JS strategy; **in-memory jar** (lives in the StitchStore) + notice           |
-| `createTrace`                   | `stitch-browser.ts`    | JSONL = no-op; **console forced off** (trace via StitchTraceEntry); notice if a file set |
-| `otlpSink` / `otlpHttpExporter` | `otlp-browser.ts`      | **no-op exporter, zero network egress** + notice                                         |
-| `cli` / `serve` / `mcp`         | `server-tier-stubs.ts` | **throw** — server-tier only                                                             |
+| Surface                  | Shim                   | Behaviour                                                                                |
+| ------------------------ | ---------------------- | ---------------------------------------------------------------------------------------- |
+| `keychain(name)`         | `node-surfaces.ts`     | documented **demo value** + `RunNotice{kind:'shim'}`                                     |
+| `env(name)`              | `node-surfaces.ts`     | documented **demo value** + `RunNotice{kind:'shim'}`                                     |
+| `cookieSession`          | `node-surfaces.ts`     | core's pure-JS strategy; **in-memory jar** (lives in the StitchStore) + notice           |
+| `createTrace`            | `stitch-browser.ts`    | JSONL = no-op; **console forced off** (trace via StitchTraceEntry); notice if a file set |
+| `otlp` (whole namespace) | `otlp-browser.ts`      | `sink`/`exporter`: **no-op exporter, zero network egress** + notice; `json` verbatim     |
+| `cli` / `serve` / `mcp`  | `server-tier-stubs.ts` | **throw** — server-tier only                                                             |
 
 ### Shim-notice channel
 
@@ -122,7 +123,7 @@ Lifted from B1-SPIKE §7, plus what this implementation adds:
    `crypto` into the snippet scope (whose `globalThis` is shadowed).
 3. **No-op OTLP.** Real OTLP egress is server-tier only. The browser build's default
    exporter is a no-op (`otlp-browser.ts`) — do **not** rely on CSP `connect-src`
-   alone (SANDBOX §7). `otlpSink()`/`otlpHttpExporter()` are in `NODE_ONLY_SURFACES`,
+   alone (SANDBOX §7). `otlp` is in `NODE_ONLY_SURFACES`,
    so a snippet naming them routes to the server tier when it exists; pre-server it
    runs shimmed-with-notice.
 4. **Core's `createTrace` console path probes `process.stderr`.** In a Worker there is

@@ -86,7 +86,7 @@ Omit `match` (and `method`) and the route catches every request.
 
 Cancellation is honoured on **every** route, delay or not: a request whose
 `signal` is already aborted rejects without being answered, matching what a real
-transport does (and what [`verifyAdapterContract`](/docs/reference/conformance-kits)
+transport does (and what [`conformance.adapter`](/docs/reference/conformance-kits)
 requires of one). Nothing is sent, so such a request is absent from the spy and
 leaves a response sequence at its current position.
 

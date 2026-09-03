@@ -1,6 +1,7 @@
 // Proves the pluggable store (DESIGN.md §13): a SHARED store makes session and throttle
 // state shared across separate stitches (simulating two workers sharing Redis); the default
-// in-memory store keeps them independent.
+// in-memory store keeps them independent. The middle block proves the OTHER axis — `vault`, the
+// backend secrets go to, split from `store` by visibility rather than by backend (ADR 0002 §4).
 import { memoryStore, stitch } from '../src';
 import type { Clock, Stitch, StitchStore } from '../src';
 import { cookieSession, env } from '../src/auth';
@@ -154,6 +155,124 @@ describe('Pluggable store — sessions', () => {
         await a();
         await b();
         expect(server.callCount('/login')).toBe(2); // separate in-memory stores → two logins
+    });
+});
+
+// A store that remembers every key written to it — enough to prove WHICH backend a secret landed
+// in without reaching into either one's internals.
+const recordingStore = (): { store: StitchStore; keys: string[] } => {
+    const base = memoryStore();
+    const keys: string[] = [];
+    return {
+        keys,
+        store: {
+            get: (k) => base.get(k),
+            set: (k, v, ttl) => {
+                keys.push(k);
+                return base.set(k, v, ttl);
+            },
+            increment: (k, ttl) => base.increment(k, ttl),
+        },
+    };
+};
+
+describe('Pluggable store — the vault split', () => {
+    test('a standalone stitch keeps its session in `vault`, never in `store`', async () => {
+        process.env['ST_USER'] = 'u';
+        process.env['ST_PASS'] = 'p';
+        server.route('POST', '/login', {
+            setCookie: { name: 'SID', value: 'OK' },
+            body: { ok: true },
+        });
+        server.route('GET', '/a', {
+            requireCookie: { name: 'SID' },
+            body: { r: 'a' },
+        });
+        const login = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/login',
+            wire: { body: 'form' },
+        });
+
+        const state = recordingStore();
+        const secrets = recordingStore();
+        const a = stitch({
+            baseUrl: server.url,
+            path: '/a',
+            store: state.store,
+            vault: secrets.store,
+            auth: cookieSession({
+                login,
+                cookie: 'SID',
+                key: 'svc',
+                loginInput,
+                tenancy: 'app', // standalone shared session (no principal bound)
+            }),
+        });
+
+        expect(await a()).toEqual({ r: 'a' });
+        // The session landed in the hardened backend, under the vault's reserved prefix …
+        expect(secrets.keys.some((k) => k.startsWith('vault:'))).toBe(true);
+        // … and the everyday store never saw a byte of it. Until `vault` became a config slot,
+        // this split was reachable only by adopting a seam (CONTRACT.md P16).
+        expect(state.keys).toEqual([]);
+    });
+
+    test('a SHARED vault shares the session even when the stores are separate', async () => {
+        process.env['ST_USER'] = 'u';
+        process.env['ST_PASS'] = 'p';
+        server.route('POST', '/login', {
+            setCookie: { name: 'SID', value: 'OK' },
+            body: { ok: true },
+        });
+        server.route('GET', '/a', {
+            requireCookie: { name: 'SID' },
+            body: { r: 'a' },
+        });
+        server.route('GET', '/b', {
+            requireCookie: { name: 'SID' },
+            body: { r: 'b' },
+        });
+        const login = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/login',
+            wire: { body: 'form' },
+        });
+        const vault = memoryStore();
+        const member = (path: string): Stitch =>
+            stitch({
+                baseUrl: server.url,
+                path,
+                // No `store`: each gets its OWN default in-memory one, which is what makes the
+                // shared login below attributable to the vault and nothing else.
+                vault,
+                auth: cookieSession({
+                    login,
+                    cookie: 'SID',
+                    key: 'svc',
+                    loginInput,
+                    tenancy: 'app',
+                }),
+            });
+
+        expect(await member('/a')()).toEqual({ r: 'a' });
+        expect(await member('/b')()).toEqual({ r: 'b' });
+        // The split is by VISIBILITY, not by backend: secrets pool while the counters don't.
+        expect(server.callCount('/login')).toBe(1);
+    });
+
+    test('the vault backend is redacted from `__config`, like the store beside it', () => {
+        const a = stitch({
+            url: 'https://api.example.com/a',
+            store: memoryStore(),
+            vault: memoryStore(),
+        });
+        // Both are live handles, so both are off the public view (exfil-at-rest, ADR 0002 §4/§6).
+        const live = a.__config as { store?: unknown; vault?: unknown };
+        expect(live.store).toBeUndefined();
+        expect(live.vault).toBeUndefined();
     });
 });
 

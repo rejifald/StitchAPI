@@ -18,15 +18,15 @@ underlying `.ast`):
 ```ts
 import { effectFingerprinter } from '@stitchapi/fingerprint-effect';
 import * as S from 'effect/Schema';
-import { registerFingerprinter } from 'stitchapi/fingerprint';
+import { fingerprinters } from 'stitchapi/fingerprint';
 
-registerFingerprinter(effectFingerprinter);
+fingerprinters.register(effectFingerprinter);
 
 const output = S.standardSchemaV1(S.Struct({ id: S.Number }));
 ```
 
 `effect` is a **peer dependency**. Compliance is proven against
-`verifyFingerprintContract` from `stitchapi/testing`.
+`conformance.fingerprint` from `stitchapi/testing`.
 
 ## Contributing
 

@@ -313,19 +313,26 @@ export function compose(config: Fragment): ResolvedStitchConfig {
     let merged: Partial<StitchConfig> = {};
     const hookLayers: Hooks[] = [];
     let store: StitchStore | undefined;
+    let vault: StitchStore | undefined;
     let kind: StitchConfig['kind'];
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
+        // The vault backend is a store too, and takes the same atomic treatment for the same
+        // reason `auth` does below: a `StitchStore`'s capability methods (`reserve`, the
+        // `lease`/`release` pair, `close`) are OPTIONAL, so deep-merging two backends would
+        // splice one's onto the other and advertise a capability the winner does not have.
+        if (layer.vault) vault = layer.vault;
         // The surface is an atomic value (last-writer-wins), never deep-merged — merging two
         // Surface objects would corrupt their hooks/identity (ADR 0005 Decision 2).
         if (layer.kind) kind = layer.kind;
-        // hooks/store/kind are accumulated above; strip them so deepMerge only folds the rest
+        // hooks/store/vault/kind are accumulated above; strip them so deepMerge only folds the rest
         // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`). `auth` is
         // stripped too and re-applied per layer below — it is the third atomic slot.
         const rest = { ...layer };
         delete rest.hooks;
         delete rest.store;
+        delete rest.vault;
         delete rest.kind;
         delete rest.auth;
         // Capture the raw `idempotency` toggle BEFORE `expandShorthand` normalizes it away — a
@@ -367,6 +374,7 @@ export function compose(config: Fragment): ResolvedStitchConfig {
     const hooks = chainHooks(hookLayers);
     if (hooks) resolved.hooks = hooks;
     if (store) merged.store = store;
+    if (vault) merged.vault = vault;
     // An omitted `kind` resolves to `httpSurface` (ADR 0022 Decision 2). Before this, `http` was the
     // only surface with no interpretation of its own — the default lived as an unnamed branch in the
     // engine, which is why `acceptStatus` had nowhere to live and became a flat root slot. Selecting
@@ -918,6 +926,7 @@ function omit<T extends object, K extends keyof T>(
 // that was left out. Adding a slot to `StitchConfig` and forgetting it here no longer compiles.
 const REDACTED_SLOTS = [
     'store',
+    'vault',
     'auth',
     'adapter',
     'clock',
@@ -957,7 +966,7 @@ export type _FnBearingCovered = Assert<
 export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // Build the public view FRESH (never mutating `cfg` — i.e. `__rawConfig`) by omitting, in one
     // pass, everything that must not ride onto `__config` (CONTRACT.md P0):
-    //   • the live secret-bearing handles `store`/`auth`/`adapter`/`clock` (ADR 0002 §4/§6,
+    //   • the live secret-bearing handles `store`/`vault`/`auth`/`adapter`/`clock` (ADR 0002 §4/§6,
     //     exfil-at-rest) and the live `Surface` `kind` (both re-projected to plain data below);
     //   • the always-fn `transform` (a mapper) and `hooks` (an object of callbacks);
     //   • whichever of `url`/`baseUrl` are in their function form — a string endpoint stays, a thunk

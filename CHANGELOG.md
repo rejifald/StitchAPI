@@ -129,7 +129,7 @@ npm release are grouped under the in-development version that introduced them.
     ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)), so optional is
     the only additive shape. **Existing custom stores need no changes.**
 
-    If you do implement it, `verifyStoreContract` now checks it — but only when present, so
+    If you do implement it, `conformance.store` now checks it — but only when present, so
     omitting it is not a contract failure. The rule that matters is the atomicity one: 20 concurrent
     reservations must come back as 20 distinct, evenly spaced instants, because a non-atomic cell
     hands several callers the same instant, which is the exact burst the verb exists to remove.
@@ -186,6 +186,267 @@ npm release are grouped under the in-development version that introduced them.
     No behaviour change — the parser, its grammar, and its throw are exactly as they were.
 
 ### Changed
+
+- **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
+  `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
+  was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
+  capability: a standalone `stitch()` built its vault over `store` with no way to point it
+  elsewhere, and the two host integrations that build a seam from config — fastify's `seamConfig`
+  and a `@stitchapi/nest` **feature** seam's `config` — type that slot as `SeamConfig` and so could
+  not name it either. CONTRACT.md P16 says a config field is declared once on `StitchConfig` and
+  projected; this one was re-declared per surface.
+
+    ```ts
+    // was — seam only
+    const api = seam({ secretStore: expoSecureStore(SecureStore) });
+    // now — anywhere a config goes, `stitch()` included
+    const api = seam({ vault: expoSecureStore(SecureStore) });
+    const me = stitch({ url: '…', vault: expoSecureStore(SecureStore), auth: cookieSession(…) });
+    ```
+
+    The name is the one the rest of the codebase already used for this thing (ADR 0002 §4,
+    `AuthContext.vault`, the docs); `secretStore` was a third spelling for it. Behaviour is
+    unchanged where it was reachable: the vault still defaults to a reserved, redacted namespace
+    over `store`, the split is still by visibility rather than backend, and a seam still shares one
+    vault across its members and closes a distinct backend on `close()`. `vault` is redacted from
+    `__config` exactly like `store`. Hard break, no alias (P19, `rc` channel).
+
+- **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
+  — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
+  `verifyFingerprintContract`, `assertConformance` and `adapterContractFixture` are replaced by
+  `conformance.store`, `.adapter`, `.sink`, `.fingerprint`, `.assert` and `.fixture`.**
+  Four identical `verify<Seam>Contract` shapes returning one `ContractReport`, read off one entry to
+  make one decision — the shape the token grammars and the secret-redaction trio each moved away
+  from. Same reasoning, same fix: one name per dimension, the dimension named at the call site.
+  The dimension here is the **seam**, and `ContractReport.seam` was already the discriminator the
+  export names refused to be.
+
+    | Was                                       | Now                                     |
+    | ----------------------------------------- | --------------------------------------- |
+    | `verifyStoreContract(make, opts?)`        | `conformance.store(make, opts?)`        |
+    | `verifyAdapterContract(adapter, baseUrl)` | `conformance.adapter(adapter, baseUrl)` |
+    | `verifySinkContract(makeSink)`            | `conformance.sink(makeSink)`            |
+    | `verifyFingerprintContract(fp, fixtures)` | `conformance.fingerprint(fp, fixtures)` |
+    | `assertConformance(report)`               | `conformance.assert(report)`            |
+    | `adapterContractFixture(req)`             | `conformance.fixture(req)`              |
+
+    ```ts
+    // was
+    assertConformance(await verifyStoreContract(() => myStore()));
+    // now
+    conformance.assert(await conformance.store(() => myStore()));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same rules, same rule names, same independent
+    rule-catching so one violation never masks another, same `ContractReport`, same per-run key
+    namespacing, same `ttl` duration grammar, same browser-safe no-`node:*` guarantee. Only the
+    spelling moved. No aliases: pre-GA, and keeping the old spellings would leave six verbose names
+    on the entry beside the namespace, which is the thing being removed.
+
+    **`adapterContractFixture` joins the namespace as `conformance.fixture`** rather than staying
+    standalone. It is not a verifier, but it is not an independent capability either: it is the
+    SERVER half of the adapter contract — the pure request-in/response-out function
+    `conformance.adapter` verifies a transport against — and it cannot be used apart from it. Same
+    call the token grammars made putting `format` beside `parse`. Leaving it out would have kept one
+    loose `*Contract*`-spelled name beside the namespace that replaced the other five, which is
+    precisely the drift the fold removes.
+
+    **Free on the bundle, and structurally so.** `stitchapi/testing` is imported by specs and never
+    reaches a production bundle, and the subpath is not size-gated; the gate was run on both sides
+    anyway and all three scenarios it does measure are byte-identical (whole entry 24.60 KB gzip,
+    `import { stitch }` 21.82 KB, `stitchapi/auth` 5.22 KB). The implementations stay plain module
+    functions in `testing.ts` and the namespace is a thin `as const` facade over them.
+
+- **BREAKING CHANGE: the six host adapters' error helpers are now one `stitchError` namespace —
+  `isStitchError`, `stitchErrorHandler`, `stitchOnError`, `stitchErrorResponse` and
+  `toHttpException` are replaced by `stitchError.is`, `stitchError.map` and
+  `stitchError.handler`.** ([ADR 0012](docs/adr/0012-integration-symbol-naming.md),
+  [CONTRACT.md §6](docs/CONTRACT.md))
+  One concept — "a stitch failed, turn it into HTTP" — carried two or three verb-prefixed
+  top-level names in each of `@stitchapi/express`, `/fastify`, `/hono`, `/elysia`, `/next` and
+  `/nest`, and the mapper alone had **four spellings**. `hono` and `elysia` were otherwise
+  perfectly parallel, down to an identically named `stitchOnError`, and diverged on exactly
+  that. It is the defect ADR 0012's own Context section opens with; that sweep fixed the
+  logger-sink family and never came back for this one.
+
+    | Package | Was                                                       | Now                                    |
+    | ------- | --------------------------------------------------------- | -------------------------------------- |
+    | express | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | fastify | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | hono    | `isStitchError` · `stitchError` · `stitchOnError`         | `stitchError.is` · `.map` · `.handler` |
+    | elysia  | `isStitchError` · `stitchErrorResponse` · `stitchOnError` | `stitchError.is` · `.map` · `.handler` |
+    | next    | `isStitchError` · `stitchErrorResponse`                   | `stitchError.is` · `.map`              |
+    | nest    | `isStitchError` · `toHttpException`                       | `stitchError.is` · `.map`              |
+
+    ```ts
+    // before
+    import { isStitchError, stitchOnError } from '@stitchapi/hono';
+    // after
+    import { stitchError } from '@stitchapi/hono';
+
+    app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+
+    app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same `502`-by-default mapping, same
+    generic status-tied body, same `status` / `body` overrides, same pass-through for a
+    non-Stitch error. Only the spelling moved. No aliases: pre-GA `rc`, and keeping the old
+    spellings would leave the very names being removed on the barrel beside the namespace.
+
+    **Not every host has all three members, and the missing ones stay missing.** A member that
+    meant something different per package would re-create the drift this closes. `express` and
+    `fastify` have no `.map` — their handler writes onto a mutable `res` / `reply` and returns
+    no mapped artifact to hand back. `next` has no `.handler` — a route handler is its own
+    `Request` → `Response` function, so there is no central error hook to register one on.
+
+    **`StitchExceptionFilter` is unchanged and stays a top-level class** on `@stitchapi/nest`:
+    Nest registers a filter _instance_ through DI (`useGlobalFilters`,
+    `{ provide: APP_FILTER, useClass }`), the idiom ADR 0012 rule 1 blesses. It is pinned
+    present as a class so a later tidy-up cannot sweep it into the namespace.
+
+    **The plugin option slots are untouched** — `@stitchapi/fastify` still takes `errorHandler`
+    (after Fastify's `setErrorHandler`) and `@stitchapi/elysia` still takes `onError`. CONTRACT.md
+    P18's mirror clause binds a framework-hook _slot_, where the surrounding option bag supplies
+    the framework context; a named import strips exactly that context, which is why it does not
+    carry over to the exports.
+
+    **The namespace is a thin facade.** The implementations stay plain module functions and each
+    package's own call sites keep importing them directly, so nothing welds all three onto a
+    consumer that reaches one. Measured with esbuild from source: importing only `stitch` /
+    `streamStitchSse` bundles **none** of the error module, and a guard-only consumer pays
+    +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
+    siblings. None of these six has a size gate and all are server-side, so the trade is accepted
+    rather than budgeted.
+
+    **Why it drifted.** ADR 0012's 2026-06-20 conformance sweep covered ten packages;
+    `@stitchapi/express` (#207), `@stitchapi/elysia` (#208) and `@stitchapi/next` (#222) all landed
+    2026-06-19, one day earlier, and appear in neither its conformance nor its migration table.
+    Those three contributed `stitchErrorResponse` twice and half of both handler spellings. But
+    adjudication alone would not have saved them: every one of these names is `Stitch`-branded, so
+    all six pass ADR 0012's rules read one symbol at a time — and `toHttpException` proves it from
+    the other side, since nest _was_ swept and its one genuinely bare export was missed anyway.
+    Recorded as a dated addendum on ADR 0012 (its 2026-06-20 table is left intact) and in
+    CONTRACT.md §6.
+
+    Every old spelling is pinned **absent** in all six packages' specs — not only where it lived —
+    so "one dimension, one name" is a property of the family, not of each package on its own.
+
+- **BREAKING CHANGE: the query-key trio is now one `stitchKey` namespace — `deriveQueryKey`,
+  `nameOf` and `keyInputFor` are replaced by `stitchKey.of`, `stitchKey.name` and
+  `stitchKey.input`.** ([ADR 0012](docs/adr/0012-integration-symbol-naming.md))
+  Three verb-prefixed names for one two-segment key, re-exported wholesale onto five barrels
+  (`@stitchapi/query-core` and the React / Vue / Svelte / Angular bindings). Their own JSDoc
+  already described them as parts of one thing — "the first segment of a derived query key",
+  "the second segment" — and `deriveQueryKey` wore the exact `parseDuration` shape the house
+  convention rejects. Same reasoning as the token grammars and the `secrets` hatch, same fix:
+  one name per dimension, the segment named at the call site.
+
+    | Was                             | Now                           |
+    | ------------------------------- | ----------------------------- |
+    | `deriveQueryKey(stitch, input)` | `stitchKey.of(stitch, input)` |
+    | `nameOf(stitch)`                | `stitchKey.name(stitch)`      |
+    | `keyInputFor(input)`            | `stitchKey.input(input)`      |
+
+    **Behaviour is byte-for-byte what it was** — the same `[name, sanitised input]` tuple, the same
+    `name ?? path ?? url ?? 'stitch'` fallback chain, the same dropped runtime-only
+    `signal`/`onProgress`, the same header-value redaction layered over core's `secrets.has`
+    denylist. Only the spelling moved. `stitchQueryOptions` is untouched and still keys through
+    `stitchKey.of`. No aliases: pre-GA, and keeping the old spellings would leave three verbose
+    names beside the namespace on all five barrels, which is the thing being removed.
+
+    **`stitchKey`, not `queryKey`.** TanStack Query owns that word — `queryKey` is the field name
+    on the options object this package builds _for_ them — so a bare `queryKey` export would put
+    one word on two meanings on a single import path, the exact collision that made the adapter
+    `stitchQueryOptions` rather than `queryOptions`
+    ([ADR 0012](docs/adr/0012-integration-symbol-naming.md),
+    [P22](docs/CONTRACT.md#p22--a-standards-interop-contract-uses-the-standards-field-names)). The
+    **absence** of a bare `queryKey` is pinned too, so the shorter spelling cannot be added later
+    for symmetry.
+
+    **Measured on the bundle, both sides.** query-core has no size gate; measured anyway, esbuild
+    tree-shaken + gzip, the method `packages/core/scripts/bundle-size.mjs` uses. query-core's own
+    entry is free — 1598 → 1597 B gzip whole-entry, with the `createStitchQuery`-only and
+    `stitchQueryOptions`-only scenarios not moving at all. The React and Vue **hook-only**
+    scenarios grow 1876 → 1919 B and 1885 → 1928 B gzip (+43 B each): those two bindings sanitise
+    their dep key through the grammar, and a namespace object does not tree-shake, so `of` now
+    rides along with `input`/`name` for a consumer who never touches TanStack. `packages/core`'s
+    gated budgets do not move at all (24.60 / 21.82 / 5.22 KB gzip, unchanged).
+
+    The implementations stay plain module functions and query-core's own call sites (`of`'s body,
+    `stitchQueryOptions`) keep calling them directly, so the namespace is a thin facade rather
+    than an object that welds all three onto every consumer's path. `@stitchapi/solid` continues
+    to re-export only `stitchQueryOptions` and to point callers at query-core for the key itself;
+    that divergence from the other four bindings predates this fold and is left standing.
+
+- **BREAKING CHANGE: the fingerprinter registry is now one `fingerprinters` namespace on
+  `stitchapi/fingerprint` — `registerFingerprinter`, `getFingerprinter`, `listFingerprinters` and
+  `clearFingerprinters` are replaced by `fingerprinters.register`, `.get`, `.list` and `.clear`.**
+  ([ADR 0004](docs/adr/0004-standard-schema-fingerprint-for-cache-invalidation.md))
+  Four verb-prefixed names over one `Map`, each repeating a subject the subpath already names —
+  the shape `secrets` and the token grammars moved away from. Same reasoning, same fix: one name
+  per dimension, the verb at the call site.
+
+    | Was                         | Now                           |
+    | --------------------------- | ----------------------------- |
+    | `registerFingerprinter(fp)` | `fingerprinters.register(fp)` |
+    | `getFingerprinter(vendor)`  | `fingerprinters.get(vendor)`  |
+    | `listFingerprinters()`      | `fingerprinters.list()`       |
+    | `clearFingerprinters()`     | `fingerprinters.clear()`      |
+
+    **Behaviour is byte-for-byte what it was** — same process-local `Map`, same last-registration-
+    wins, same `undefined` on an unregistered vendor, same unordered `list`, same `clear`. Only the
+    spelling moved, so the one line each `@stitchapi/fingerprint-*` package's README asks you to
+    write becomes `fingerprinters.register(zodFingerprinter)` and nothing else changes. No aliases:
+    pre-GA, and `src/fingerprint.ts` **is** the subpath entry, so keeping an old spelling would put
+    it straight back on the published surface with no barrel in between.
+
+    **Free on the core gate**, measured both sides: all three budgeted scenarios are unchanged to
+    the byte on min+gzip — whole entry 24.60 KB, `import { stitch }` 21.82 KB, `stitchapi/auth`
+    5.22 KB, with the same 0.20 / 0.18 / 0.13 KB headroom. No budget raise. Nothing on the core
+    path reaches the registry: the root barrel never re-exported it, and `resolveFingerprint` —
+    which the cache does reach — still calls the module function directly rather than going through
+    the namespace, so `import { resolveFingerprint }` is byte-identical at 2.73 KB min / 1.29 KB
+    gzip. The namespace is a thin facade over four plain module functions for exactly that reason.
+
+    **What it does cost** is on the subpath, which the gate does not budget: a consumer importing
+    only `registerFingerprinter` (0.10 KB min / 0.11 KB gzip) now imports `fingerprinters` and gets
+    all four members (0.23 / 0.18), because esbuild will not split an object literal to drop a dead
+    property. That is ~70 B gzip on the one import line a vendor package asks for, and the whole
+    subpath entry is slightly _smaller_ than before (2.94 → 2.90 KB min, 1.37 KB gzip either way).
+
+- **BREAKING CHANGE: the OTLP trio is now one `otlp` namespace — `otlpSink`, `otlpHttpExporter`
+  and `toOtlpJson` are replaced by `otlp.sink`, `otlp.exporter` and `otlp.json`.**
+  ([ADR 0007](docs/adr/0007-composition-causality-and-run-identity.md))
+  Three names on the barrel for one export path, each repeating the subject noun and varying only
+  the role word — the same shape the token grammars and the redaction trio moved away from. Same
+  reasoning, same fix: one name per dimension, the role at the call site.
+
+    | Was                       | Now                    |
+    | ------------------------- | ---------------------- |
+    | `otlpSink(opts?)`         | `otlp.sink(opts?)`     |
+    | `otlpHttpExporter(opts?)` | `otlp.exporter(opts?)` |
+    | `toOtlpJson(spans)`       | `otlp.json(spans)`     |
+
+    **The grouping says something the three names hid.** These are not three sibling helpers but
+    three LAYERS of one pipeline, each the input to the next: `otlp.json` serializes spans to the
+    OTLP/JSON wire shape, `otlp.exporter` POSTs that to a collector, and `otlp.sink` maps a
+    stitch's events to spans and hands them to the exporter. `otlp.sink()` alone is still the
+    whole common case; the other two are the seams for a second collector and for a transport core
+    doesn't ship (gRPC, a queue, a file).
+
+    **Behaviour is byte-for-byte what it was** — same span mapping, same OTel HTTP semantic
+    conventions, same `OTEL_EXPORTER_OTLP_ENDPOINT` default, same fire-and-forget export, same
+    `url.full` scrubbing. Only the spelling moved. `STITCH_EXPORT=otlp` is unaffected. No aliases:
+    pre-GA, and keeping the old spellings would leave three names on the barrel next to the
+    namespace, which is the thing being removed.
+
+    **Effectively free on the bundle**, measured both sides: the whole entry is unchanged at
+    24.60 KB gzip (minified actually drops, three exported names becoming one) and
+    `import { stitch }` moves 21.82 → 21.83 KB (+10 B). No budget raise. The implementations stay
+    plain module functions in `otlp.ts` and core's own call site (`stitch.ts`) keeps importing
+    `otlpSink` directly, so the namespace is a thin facade rather than an object that welds all
+    three onto a consumer's path.
 
 - **BREAKING CHANGE (`@stitchapi/react-native`, `@stitchapi/expo`): the streaming-polyfill pair is
   now one `rnStreamingPolyfills` namespace — `assertStreamingPolyfills` and `hasStreamingPolyfills`
@@ -1393,6 +1654,44 @@ npm release are grouped under the in-development version that introduced them.
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
 ### Security
+
+- **`@stitchapi/swr` redacts caller-registered credential headers from the cache key.**
+  `swrKey` forks query-core's key derivation rather than importing it — swr is one of the three
+  stream-less adapters that deliberately carry no `@stitchapi/query-core` dependency
+  ([P9](docs/CONTRACT.md#p9--unique-by-shape-exported-types)) — and the fork had drifted: its
+  `isSecretHeader` checked the static header denylist and the `*-token` / `*-api-key` suffix rules,
+  but omitted query-core's closing `|| secrets.has(k)` clause. That clause is what pulls in core's
+  secret **stems** and, crucially, anything a host widened via `secrets.register`.
+
+    The effect was a redaction gap that only opened where a host had registered its own credential
+    name: `secrets.register('x-acme-cred')` redacted that header from the query key on
+    react/vue/svelte/solid/angular (all query-core-backed) while `@stitchapi/swr` wrote it into the
+    SWR key **in cleartext** — and SWR keys are persisted by cache providers and shown in devtools.
+    It contradicted `@stitchapi/query-core`'s documented guarantee ("plus core's `secrets.has`
+    names — including anything widened via `secrets.register`") and its own JSDoc claim that every
+    binding, "the swr key builder" included, derives from one implementation.
+
+    The clause is restored, so the two spellings agree again. `stitchapi` was already a peer
+    dependency and a tsup external; it is now imported for a value (`secrets`) rather than only a
+    type — exactly what query-core does — which adds no bundled runtime. Headers that were already
+    redacted are unaffected, since the clause only widens: a key changes only for a host that had
+    registered a name the static list missed, which is the leak being closed.
+
+    **Both parity tests now actually pin the behaviour.** query-core's fixture was
+    `x-querycore-spec-credential`, which contains the built-in `credential` stem — it passed via the
+    stem whether or not it was ever registered, so the test meant to guard `secrets.register` would
+    not have caught this drift in either package. Both suites now use a neutral `x-acme-cred`,
+    matched by no static entry, no suffix rule and no stem, so only the registration can redact it;
+    an unregistered `x-acme-region` asserts benign headers still vary the cache.
+
+    **The docs now state the reach.** `secrets.register`'s reference page listed only the trace
+    scrubbers it feeds (`start.url`, OTLP `url.full`, `input.query`, the traced body) and never
+    mentioned cache keys — true of query-core since it gained the clause, not just of swr. It now
+    names the query bindings, and the `secrets.has` anti-pattern callout ("headers are widened with
+    `redactHeaders`, not with `secrets.register`") is scoped to the trace-sink boundary, with the
+    query-key path called out as the place the two denylists meet. The
+    [swr integration page](https://stitchapi.dev/docs/integrations/swr) now documents what `swrKey`
+    drops and redacts, rather than describing it as just "the cache key".
 
 - **Five Dependabot alerts closed by `pnpm.overrides` — `fast-uri` and `ip-address`.** Both are
   transitive-only: no manifest in the workspace names either one, so Dependabot could not open a

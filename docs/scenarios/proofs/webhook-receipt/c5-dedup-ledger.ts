@@ -19,9 +19,8 @@
 //   pnpm exec tsx docs/scenarios/proofs/webhook-receipt/c5-dedup-ledger.ts
 import { memoryStore, stitch } from '../../../../packages/core/src/index';
 import {
-    assertConformance,
+    conformance,
     manualClock,
-    verifyStoreContract,
 } from '../../../../packages/core/src/testing';
 import type { Adapter, StitchStore } from '../../../../packages/core/src/types';
 import { clockStore } from './clock-store';
@@ -273,7 +272,7 @@ async function main(): Promise<void> {
         );
 
         // And the swap is not a leap of faith: the contract suite ships.
-        const report = await verifyStoreContract(() =>
+        const report = await conformance.store(() =>
             clockStore(
                 {
                     now: () => Date.now(),
@@ -284,23 +283,19 @@ async function main(): Promise<void> {
                 new Map(),
             ),
         );
-        assertConformance(report);
-        check(
-            '(e) `verifyStoreContract` on the BYO store → ok',
-            report.ok,
-            true,
-        );
+        conformance.assert(report);
+        check('(e) `conformance.store` on the BYO store → ok', report.ok, true);
         check('(e) → rules passed', report.passed.length, 11);
         check('(e) → violations', report.violations.length, 0);
         note(
             '(e) → `redisStore` / `cloudflareKvStore` / `denoKvStore` implement this same interface',
-            'the durable ledger is a one-line config change, and `verifyStoreContract` (testing.ts:173) proves a BYO one conforms',
+            'the durable ledger is a one-line config change, and `conformance.store` (testing.ts:185) proves a BYO one conforms',
         );
     }
 
     finish(
         'C5',
-        'YES, and the capture\'s open question has the ownership backwards. `store` is a config key the USER supplies (types.ts:1583-1584) and `memoryStore()` is a public export (index.ts:62) — nothing is borrowed from the engine; the ledger constructs the store and lends the same instance to the stitch. Three deliveries of one event id measured ["first:processed","retry:skipped","retry:skipped"] with exactly 1 side effect. TWO FINDINGS THE CAPTURE MISSES. First, `get`-then-`set` is a race the store already fixes: 3 concurrent claims on one id returned [true,true,true] — three charges — while `increment(key, ttl)` (types.ts:1969-1970) returned [true,false,false], exactly one. Second, the TTL boundary is exact but only against a clock-backed store: with a 4-day TTL over Stripe\'s 3-day window, claims at t=3d and t=ttl-1ms both skipped and t=ttl processed (the boundary is `expires > now`, exclusive, store.ts:16) — whereas `memoryStore` takes no clock (arity 0) and after FOUR virtual days on a `manualClock` the key was still live, so a 3-day window cannot be boundary-tested against it at all. Durability is the real gap in the default: `memoryStore.close()` is `data.clear()` (store.ts:59-61), so the ledger did not survive, and a deploy inside the retry window re-processes everything still in flight. The swap is first-class — a BYO durable store over the same interface survived a restart and passed all 11 rules of `verifyStoreContract` (testing.ts:173) with 0 violations',
+        'YES, and the capture\'s open question has the ownership backwards. `store` is a config key the USER supplies (types.ts:1583-1584) and `memoryStore()` is a public export (index.ts:62) — nothing is borrowed from the engine; the ledger constructs the store and lends the same instance to the stitch. Three deliveries of one event id measured ["first:processed","retry:skipped","retry:skipped"] with exactly 1 side effect. TWO FINDINGS THE CAPTURE MISSES. First, `get`-then-`set` is a race the store already fixes: 3 concurrent claims on one id returned [true,true,true] — three charges — while `increment(key, ttl)` (types.ts:1969-1970) returned [true,false,false], exactly one. Second, the TTL boundary is exact but only against a clock-backed store: with a 4-day TTL over Stripe\'s 3-day window, claims at t=3d and t=ttl-1ms both skipped and t=ttl processed (the boundary is `expires > now`, exclusive, store.ts:16) — whereas `memoryStore` takes no clock (arity 0) and after FOUR virtual days on a `manualClock` the key was still live, so a 3-day window cannot be boundary-tested against it at all. Durability is the real gap in the default: `memoryStore.close()` is `data.clear()` (store.ts:59-61), so the ledger did not survive, and a deploy inside the retry window re-processes everything still in flight. The swap is first-class — a BYO durable store over the same interface survived a restart and passed all 11 rules of `conformance.store` (testing.ts:185) with 0 violations',
     );
 }
 

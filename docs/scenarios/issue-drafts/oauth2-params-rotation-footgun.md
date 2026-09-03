@@ -84,7 +84,7 @@ getter must return synchronously while every `StitchStore` read is async — C4e
 (`types.ts:1965-1976`). A mutex can be built from `increment(key, ttl) === 1` — proven in
 `c6-cross-process-lock.ts`, 3 workers × 10 callers ⇒ 1 redemption — but its correctness depends
 on `increment` being atomic **across processes**, while the store contract only specifies
-atomicity _within_ a process (`testing.ts:160-162`). Either the contract should be tightened for
+atomicity _within_ a process (`testing.ts:172-174`). Either the contract should be tightened for
 backends that can honor it, or a lock primitive should be offered directly.
 
 ## Also worth a docs correction

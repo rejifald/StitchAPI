@@ -4,7 +4,7 @@
 import { asyncStorageStore } from '../src/store';
 import type { AsyncStorageLike } from '../src/store';
 
-import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import { describe, expect, test } from 'vitest';
 
 // A Map-backed AsyncStorage double with async resolution, so concurrent `increment`
@@ -27,8 +27,8 @@ function fakeAsyncStorage(): AsyncStorageLike {
 
 describe('asyncStorageStore', () => {
     test('satisfies the StitchStore contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() =>
+        conformance.assert(
+            await conformance.store(() =>
                 asyncStorageStore(fakeAsyncStorage()),
             ),
         );

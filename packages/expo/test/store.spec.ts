@@ -4,7 +4,7 @@
 import { expoSecureStore } from '../src/store';
 import type { SecureStoreLike } from '../src/store';
 
-import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import { describe, expect, test } from 'vitest';
 
 function fakeSecureStore(): SecureStoreLike {
@@ -25,8 +25,8 @@ function fakeSecureStore(): SecureStoreLike {
 
 describe('expoSecureStore', () => {
     test('satisfies the StitchStore contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() => expoSecureStore(fakeSecureStore())),
+        conformance.assert(
+            await conformance.store(() => expoSecureStore(fakeSecureStore())),
         );
     });
 

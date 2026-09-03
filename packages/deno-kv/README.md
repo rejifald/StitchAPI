@@ -103,7 +103,7 @@ denoKvStore(await Deno.openKv(), { keyPrefix: 'myapp' });
 
 ## Conformance
 
-Compliance with the store seam is proven against `verifyStoreContract` from
+Compliance with the store seam is proven against `conformance.store` from
 `stitchapi/testing`, run hermetically against an in-memory `Deno.Kv` fake (a Map
 with expiry + a monotonic versionstamp + an atomic builder that fails a commit
 when a checked versionstamp is stale — so the compare-and-set retry path is

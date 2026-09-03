@@ -188,9 +188,9 @@ Fan one event stream out to several sinks — for example console/JSONL alongsid
 OTLP — flushing each in turn.
 
 ```ts twoslash
-import { createTrace, multiplex, otlpSink } from 'stitchapi';
+import { createTrace, multiplex, otlp } from 'stitchapi';
 
-const sink = multiplex(createTrace(), otlpSink());
+const sink = multiplex(createTrace(), otlp.sink());
 ```
 
 ### loggerSink
@@ -211,42 +211,50 @@ import { loggerSink } from 'stitchapi';
 const sink = loggerSink(console, { levels: { result: 'debug' } });
 ```
 
-### otlpSink
+### otlp.sink
 
 An opt-in OpenTelemetry sink: it maps each stitch call's events to a single OTel
 `CLIENT` span and hands finished spans to a `SpanExporter`. With no exporter
-supplied it uses `otlpHttpExporter`. Configured by `OtlpOptions` (below).
+supplied it builds `otlp.exporter()`. Configured by `OtlpOptions` (below).
 
 ```ts twoslash
-import { otlpSink } from 'stitchapi';
+import { otlp } from 'stitchapi';
 
-const sink = otlpSink({ endpoint: 'https://api.example.com:4318' });
+const sink = otlp.sink({ endpoint: 'https://api.example.com:4318' });
 ```
 
-### otlpHttpExporter
+`otlp` groups the three layers of one export path the same way
+[`duration`](#duration) groups a parse/format pair: one name on the barrel, the
+role at the call site. They are layers, not siblings — `sink` builds spans and
+hands them to `exporter`, which POSTs what `json` serialized — so reach for the
+one you actually need. `otlp.sink()` alone covers the common case.
+
+### otlp.exporter
 
 The default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces`. The
 endpoint defaults to `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`.
 Fire-and-forget — a missing collector never breaks a stitch call.
 
 ```ts twoslash
-import { otlpHttpExporter } from 'stitchapi';
+import { otlp } from 'stitchapi';
 
-const exporter = otlpHttpExporter({
+const exporter = otlp.exporter({
     endpoint: 'https://api.example.com:4318',
     headers: { authorization: 'Bearer token' },
 });
 ```
 
-### toOtlpJson
+### otlp.json
 
 Serialize finished spans to the OTLP/JSON `ResourceSpans` shape a collector
-accepts on `/v1/traces` — useful for a custom `SpanExporter`.
+accepts on `/v1/traces`. This is the seam for a transport core doesn't ship —
+gRPC, a queue, a file — so a custom `SpanExporter` reuses the same wire mapping
+rather than re-deriving it.
 
 ```ts twoslash
-import { toOtlpJson } from 'stitchapi';
+import { otlp } from 'stitchapi';
 
-const body = toOtlpJson([]);
+const body = otlp.json([]);
 ```
 
 #### OtlpOptions
@@ -273,6 +281,15 @@ verb at the call site.
 Add one key name to the denylist. Every scrubber reads from it: the console and
 JSONL `start.url`, the OTLP `url.full` attribute, the structured `input.query`,
 and the traced request body.
+
+The **query bindings** read from it too. `@stitchapi/query-core` derives every
+cache key through the same predicate, so a registered name is redacted from the
+query keys built by [React](/docs/integrations/react),
+[Vue](/docs/integrations/vue), [Svelte](/docs/integrations/svelte),
+[Solid](/docs/integrations/solid) and [Angular](/docs/integrations/angular), and
+from [`swrKey`](/docs/integrations/swr). That reach matters more than a trace
+sink's: query keys are persisted by cache providers and shown in devtools, so a
+credential in one outlives the process.
 
 ```ts twoslash
 import { secrets, stitch } from 'stitchapi';
@@ -314,13 +331,19 @@ secrets.has('session_ref'); // false — until you register it
 ```
 
 <Callout type="warn">
-    **Anti-pattern:** don't reach for this to decide whether a **header** is
-    secret. It answers about query params and body keys, so
+    **Anti-pattern:** don't reach for this as your _only_ test of whether a
+    **header** is secret. It answers about query params and body keys, so
     `secrets.has('authorization')` and `secrets.has('x-api-key')` both come back
-    `false` even though a sink redacts both headers. Headers are matched against
-    their own denylist at the sink boundary, which you widen with
+    `false` even though both headers are redacted. Headers get their own denylist:
+    at the trace-sink boundary you widen it with
     [`redactHeaders`](/docs/guides/observability/trace-sinks#default-secret-redaction),
     not with `secrets.register`.
+
+    Query keys are where the two meet. The key builders check their own header
+    denylist **and then** fall through to `secrets.has`, so a name you register is
+    redacted from a cache key even though `secrets.has` is the wrong question to
+    ask about a header on its own.
+
 </Callout>
 
 ### secrets.redact

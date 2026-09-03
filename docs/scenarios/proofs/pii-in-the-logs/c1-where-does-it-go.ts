@@ -11,9 +11,8 @@
 // not a filter: it keeps a prefix, which is the sentinels that happen to sort early.
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c1-where-does-it-go.ts
-import { stitch } from '../../../../packages/core/src/index';
+import { otlp, stitch } from '../../../../packages/core/src/index';
 import type { OtelSpan } from '../../../../packages/core/src/otlp';
-import { otlpSink } from '../../../../packages/core/src/otlp';
 import { consoleSink, loggerSink } from '../../../../packages/core/src/trace';
 import type { StitchEvent } from '../../../../packages/core/src/types';
 import {
@@ -435,7 +434,7 @@ async function main(): Promise<void> {
         );
     }
 
-    heading('C1 (i) — otlpSink (not in the claims list, and worth the row)');
+    heading('C1 (i) — otlp.sink (not in the claims list, and worth the row)');
     {
         const spans: OtelSpan[] = [];
         const call = stitch({
@@ -443,13 +442,13 @@ async function main(): Promise<void> {
             baseUrl: BASE,
             path: '/v1/customers/1',
             adapter: fakeVendor(),
-            trace: otlpSink({
+            trace: otlp.sink({
                 exporter: { export: (s) => void spans.push(...s) },
             }),
         });
         await call();
         const row = leakRow(
-            'otlpSink (exported spans)',
+            'otlp.sink (exported spans)',
             bytesOf(spans),
             SENTINELS,
             'the spans handed to the exporter',
@@ -537,7 +536,7 @@ async function main(): Promise<void> {
 
     finish(
         'C1',
-        'CONFIRMED, and the table is more binary than the capture drew it. The destinations split into two populations with NOTHING in between: payload destinations carry all 7 sentinels (the `result` event, fileSink at every non-zero cap, `.inspect().raw`, `.inspect().data`, `JSON.stringify(inspect())`, `.report()`, `StitchError.body`, `JSON.stringify(StitchError)`, the cache entry) and metadata destinations carry 0 of 7 (`start`/`progress`/`done`/`error` events, consoleSink, loggerSink, otlpSink, `StitchError.message`, `String(err)` + `err.stack`). No destination is partially redacted. Exactly ONE event carries the response body — `result`, on `data` — so "the event spine leaks" is really "one event leaks". Three measurements the capture does not contain: (1) the default fileSink cap is a SIZE control that keeps a PREFIX, so on a 2.9KB body all 7 table sentinels still persisted into the `preview` and only an 8th, planted deliberately past character 2048, was absent; (2) `JSON.stringify(.inspect())` leaks all 7 through the ENUMERABLE `data` field, so ADR 0016 non-enumerability protects `raw` and nothing else — and the same pattern repeats on the error: `String(err)`/`err.stack` are clean but `JSON.stringify(err)` carries all 7, because `StitchError.body` is an own enumerable property while `message` is not, so `console.error(err)` is safe and `logger.error({ err })` is not; (3) the JSONL sink already ships a working deep key-name redactor — a body field named `cookie` is replaced with [REDACTED] while the identical value under `ssn` is not, and `redactHeaders` (documented as "header names") is the one config-reachable way to point it at a body key',
+        'CONFIRMED, and the table is more binary than the capture drew it. The destinations split into two populations with NOTHING in between: payload destinations carry all 7 sentinels (the `result` event, fileSink at every non-zero cap, `.inspect().raw`, `.inspect().data`, `JSON.stringify(inspect())`, `.report()`, `StitchError.body`, `JSON.stringify(StitchError)`, the cache entry) and metadata destinations carry 0 of 7 (`start`/`progress`/`done`/`error` events, consoleSink, loggerSink, otlp.sink, `StitchError.message`, `String(err)` + `err.stack`). No destination is partially redacted. Exactly ONE event carries the response body — `result`, on `data` — so "the event spine leaks" is really "one event leaks". Three measurements the capture does not contain: (1) the default fileSink cap is a SIZE control that keeps a PREFIX, so on a 2.9KB body all 7 table sentinels still persisted into the `preview` and only an 8th, planted deliberately past character 2048, was absent; (2) `JSON.stringify(.inspect())` leaks all 7 through the ENUMERABLE `data` field, so ADR 0016 non-enumerability protects `raw` and nothing else — and the same pattern repeats on the error: `String(err)`/`err.stack` are clean but `JSON.stringify(err)` carries all 7, because `StitchError.body` is an own enumerable property while `message` is not, so `console.error(err)` is safe and `logger.error({ err })` is not; (3) the JSONL sink already ships a working deep key-name redactor — a body field named `cookie` is replaced with [REDACTED] while the identical value under `ssn` is not, and `redactHeaders` (documented as "header names") is the one config-reachable way to point it at a body key',
     );
 }
 

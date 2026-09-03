@@ -107,9 +107,9 @@ function describe(schema: unknown): string {
  * Fingerprint strategy for ArkType schemas. Register it once at startup:
  *
  * ```ts
- * import { registerFingerprinter } from 'stitchapi/fingerprint';
+ * import { fingerprinters } from 'stitchapi/fingerprint';
  * import { arktypeFingerprinter } from '@stitchapi/fingerprint-arktype';
- * registerFingerprinter(arktypeFingerprinter);
+ * fingerprinters.register(arktypeFingerprinter);
  * ```
  */
 export const arktypeFingerprinter: SchemaFingerprinter = {

@@ -124,6 +124,9 @@ function buildChildSpans(run: OtelSpan): OtelSpan[] {
 }
 
 /**
+ * Sink layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
+ * exports the namespace, not this.
+ *
  * A TraceSink that turns each stitch call's events (start → … → done) into a single OTel CLIENT
  * span, exported on `done`. Attributes follow the OTel HTTP semantic conventions
  * (`http.request.method`, `url.full`, `server.address`, `http.response.status_code`,
@@ -317,7 +320,12 @@ function toOtlpAttributes(attrs: SpanAttributes): unknown[] {
     }));
 }
 
-/** Serialize spans to the OTLP/JSON `ResourceSpans` shape a collector accepts on `/v1/traces`. */
+/**
+ * Serializer layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
+ * exports the namespace, not this.
+ *
+ * Serialize spans to the OTLP/JSON `ResourceSpans` shape a collector accepts on `/v1/traces`.
+ */
 export function toOtlpJson(spans: OtelSpan[]): unknown {
     return {
         resourceSpans: [
@@ -362,10 +370,13 @@ export function toOtlpJson(spans: OtelSpan[]): unknown {
     };
 }
 
-/** Options for {@link otlpHttpExporter} — {@link OtlpOptions} minus the exporter it builds. */
+/** Options for `otlp.exporter` — {@link OtlpOptions} minus the exporter it builds. */
 export type OtlpExporterOptions = Omit<OtlpOptions, 'exporter'>;
 
 /**
+ * Exporter layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
+ * exports the namespace, not this.
+ *
  * Default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces` (endpoint defaults to
  * `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`). Fire-and-forget — failures are
  * swallowed so a missing collector never breaks a stitch call.
@@ -393,3 +404,30 @@ export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
         },
     };
 }
+
+/**
+ * The OTLP trace pipeline — one namespace for one export path (ADR 0007 correlates the spans
+ * it builds). The shape is the token grammars’ and `secrets`’: one name per dimension, the role
+ * named at the call site, rather than three names on the barrel repeating the subject noun.
+ *
+ * The three are layers of a single pipeline, not independent helpers, which is why they read
+ * better as one name — each is the input to the next:
+ *
+ * - `otlp.sink(opts?)` is the {@link TraceSink} you pass to `trace`. It maps each stitch call's
+ *   events (start → … → done) to one OTel CLIENT span with HTTP semantic-convention attributes
+ *   and hands finished spans to an exporter — `opts.exporter`, or `otlp.exporter()` by default.
+ * - `otlp.exporter(opts?)` is that default {@link SpanExporter}: it POSTs to
+ *   `${endpoint}/v1/traces`, fire-and-forget, so a missing collector never breaks a call.
+ * - `otlp.json(spans)` is the serializer underneath both — the OTLP/JSON `ResourceSpans` shape a
+ *   collector ingests. Public because it is the seam for a transport core does not ship: build
+ *   your own exporter around gRPC, a queue, or a file, and serialize with the same mapper the
+ *   HTTP one uses rather than re-deriving the wire shape and drifting from it.
+ *
+ * Reach for the layer you actually need: `otlp.sink()` alone for the common case, `otlp.exporter`
+ * to point a sink at a second collector, `otlp.json` only when you are writing a transport.
+ */
+export const otlp = {
+    sink: otlpSink,
+    exporter: otlpHttpExporter,
+    json: toOtlpJson,
+} as const;
