@@ -50,26 +50,52 @@ async function main(): Promise<void> {
     ];
     let total = 0;
     const hits: string[] = [];
+    const seams: string[] = [];
     for (const [name, mod] of entries) {
-        const names = Object.keys(mod);
+        // Descend one level into namespace-valued exports (`conformance`, `secrets`, the token
+        // grammars): a flat `Object.keys` would let a member hide behind its namespace, which is
+        // exactly the shape this scan must not be blind to.
+        const names: string[] = [];
+        for (const key of Object.keys(mod)) {
+            names.push(key);
+            const value = mod[key];
+            if (value !== null && typeof value === 'object') {
+                for (const member of Object.keys(value)) {
+                    names.push(`${key}.${member}`);
+                }
+            }
+        }
         total += names.length;
-        for (const n of names)
+        for (const n of names) {
             if (INBOUND_WORDS.test(n)) hits.push(`${name}#${n}`);
+            if (n.startsWith('conformance.')) seams.push(`${name}#${n}`);
+        }
     }
     note('(a) runtime exports enumerated across 6 entry points', total);
     checkSeq(
         '(a) exports matching /verif|hmac|signature|webhook|…/',
         hits.sort(),
+        [],
+    );
+    // The scan used to catch four `verify*Contract` names on `stitchapi/testing`; they are now
+    // `conformance.{store,adapter,sink,fingerprint}`, so the word list no longer matches them by
+    // name. That is a spelling change, not a disappearance — enumerate the whole namespace
+    // explicitly so the dismissal stays on the record instead of going quiet.
+    checkSeq(
+        '(a) the whole conformance kit, reached through the namespace',
+        seams.sort(),
         [
-            'stitchapi/testing#verifyAdapterContract',
-            'stitchapi/testing#verifyFingerprintContract',
-            'stitchapi/testing#verifySinkContract',
-            'stitchapi/testing#verifyStoreContract',
+            'stitchapi/testing#conformance.adapter',
+            'stitchapi/testing#conformance.assert',
+            'stitchapi/testing#conformance.fingerprint',
+            'stitchapi/testing#conformance.fixture',
+            'stitchapi/testing#conformance.sink',
+            'stitchapi/testing#conformance.store',
         ],
     );
     note(
-        '(a) → the four hits are conformance suites for BYO plugins',
-        'they verify that a store/adapter/sink/fingerprinter obeys its contract — nothing to do with a signature',
+        '(a) → all six are the BYO-plugin conformance kit',
+        'four seam verifiers, their assert helper, and the adapter echo fixture — they check that a store/adapter/sink/fingerprinter obeys its contract, nothing to do with a signature',
     );
 
     // ── (b) the AuthStrategy surface: one verb, and it points outward ─────────────────────────
@@ -192,7 +218,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        'NO — nothing in any package verifies an inbound signature, measured at runtime rather than by grep. Enumerating every public entry point turned up exactly four exports matching /verif|hmac|signature|webhook|…/ and all four are BYO-plugin conformance suites (`verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`, `verifyFingerprintContract`). `AuthStrategy` has exactly three keys, `{apply, name, scheme}` — `apply(req, ctx)` mutates an OUTGOING request, `scheme` is a declarative wire description, and there is no inbound arm. The only HMAC in the repo is `@stitchapi/aws-sigv4`, which ran here and produced an `AWS4-HMAC-SHA256` Authorization header on an outbound request; its subtle key is imported with usages ["sign"] (aws-sigv4/src/index.ts:84), so it structurally cannot verify. The nearest-looking primitive, `xxh128` (hash.ts:110-113), is UNKEYED and self-described as non-cryptographic — measured taking 1 argument and returning the same 32-char digest with no secret anywhere, which is precisely why it authenticates nobody. And `idempotency`, which wears the same word as the dedup problem, was measured putting `Idempotency-Key: evt_1PqR` on an OUTBOUND POST — the opposite end of the pipe',
+        'NO — nothing in any package verifies an inbound signature, measured at runtime rather than by grep. Enumerating every public entry point (descending one level into namespace exports, so nothing hides behind one) turned up ZERO names matching /verif|hmac|signature|webhook|…/; the only four that ever matched are the BYO-plugin conformance verifiers, now spelled `conformance.store`, `conformance.adapter`, `conformance.sink`, `conformance.fingerprint`, and the whole six-member namespace is enumerated explicitly above so its dismissal stays on the record. `AuthStrategy` has exactly three keys, `{apply, name, scheme}` — `apply(req, ctx)` mutates an OUTGOING request, `scheme` is a declarative wire description, and there is no inbound arm. The only HMAC in the repo is `@stitchapi/aws-sigv4`, which ran here and produced an `AWS4-HMAC-SHA256` Authorization header on an outbound request; its subtle key is imported with usages ["sign"] (aws-sigv4/src/index.ts:84), so it structurally cannot verify. The nearest-looking primitive, `xxh128` (hash.ts:110-113), is UNKEYED and self-described as non-cryptographic — measured taking 1 argument and returning the same 32-char digest with no secret anywhere, which is precisely why it authenticates nobody. And `idempotency`, which wears the same word as the dedup problem, was measured putting `Idempotency-Key: evt_1PqR` on an OUTBOUND POST — the opposite end of the pipe',
     );
 }
 

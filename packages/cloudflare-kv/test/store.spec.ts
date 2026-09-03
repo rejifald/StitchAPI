@@ -1,6 +1,6 @@
 // Behaviour proof for @stitchapi/cloudflare-kv.
 //
-// We deliberately do NOT run `verifyStoreContract` from `stitchapi/testing`: that
+// We deliberately do NOT run `conformance.store` from `stitchapi/testing`: that
 // kit asserts the atomic-increment rule ("20 concurrent increments net +20"), and Workers KV
 // has no atomic counter, so `increment` throws by design (see src/index.ts). The
 // contract would fail — correctly — so instead we prove the half KV *does* support

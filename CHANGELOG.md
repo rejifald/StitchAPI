@@ -129,7 +129,7 @@ npm release are grouped under the in-development version that introduced them.
     ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)), so optional is
     the only additive shape. **Existing custom stores need no changes.**
 
-    If you do implement it, `verifyStoreContract` now checks it — but only when present, so
+    If you do implement it, `conformance.store` now checks it — but only when present, so
     omitting it is not a contract failure. The rule that matters is the atomicity one: 20 concurrent
     reservations must come back as 20 distinct, evenly spaced instants, because a non-atomic cell
     hands several callers the same instant, which is the exact burst the verb exists to remove.
@@ -186,6 +186,151 @@ npm release are grouped under the in-development version that introduced them.
     No behaviour change — the parser, its grammar, and its throw are exactly as they were.
 
 ### Changed
+
+- **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
+  `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
+  was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
+  capability: a standalone `stitch()` built its vault over `store` with no way to point it
+  elsewhere, and the two host integrations that build a seam from config — fastify's `seamConfig`
+  and a `@stitchapi/nest` **feature** seam's `config` — type that slot as `SeamConfig` and so could
+  not name it either. CONTRACT.md P16 says a config field is declared once on `StitchConfig` and
+  projected; this one was re-declared per surface.
+
+    ```ts
+    // was — seam only
+    const api = seam({ secretStore: expoSecureStore(SecureStore) });
+    // now — anywhere a config goes, `stitch()` included
+    const api = seam({ vault: expoSecureStore(SecureStore) });
+    const me = stitch({ url: '…', vault: expoSecureStore(SecureStore), auth: cookieSession(…) });
+    ```
+
+    The name is the one the rest of the codebase already used for this thing (ADR 0002 §4,
+    `AuthContext.vault`, the docs); `secretStore` was a third spelling for it. Behaviour is
+    unchanged where it was reachable: the vault still defaults to a reserved, redacted namespace
+    over `store`, the split is still by visibility rather than backend, and a seam still shares one
+    vault across its members and closes a distinct backend on `close()`. `vault` is redacted from
+    `__config` exactly like `store`. Hard break, no alias (P19, `rc` channel).
+
+- **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
+  — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
+  `verifyFingerprintContract`, `assertConformance` and `adapterContractFixture` are replaced by
+  `conformance.store`, `.adapter`, `.sink`, `.fingerprint`, `.assert` and `.fixture`.**
+  Four identical `verify<Seam>Contract` shapes returning one `ContractReport`, read off one entry to
+  make one decision — the shape the token grammars and the secret-redaction trio each moved away
+  from. Same reasoning, same fix: one name per dimension, the dimension named at the call site.
+  The dimension here is the **seam**, and `ContractReport.seam` was already the discriminator the
+  export names refused to be.
+
+    | Was                                       | Now                                     |
+    | ----------------------------------------- | --------------------------------------- |
+    | `verifyStoreContract(make, opts?)`        | `conformance.store(make, opts?)`        |
+    | `verifyAdapterContract(adapter, baseUrl)` | `conformance.adapter(adapter, baseUrl)` |
+    | `verifySinkContract(makeSink)`            | `conformance.sink(makeSink)`            |
+    | `verifyFingerprintContract(fp, fixtures)` | `conformance.fingerprint(fp, fixtures)` |
+    | `assertConformance(report)`               | `conformance.assert(report)`            |
+    | `adapterContractFixture(req)`             | `conformance.fixture(req)`              |
+
+    ```ts
+    // was
+    assertConformance(await verifyStoreContract(() => myStore()));
+    // now
+    conformance.assert(await conformance.store(() => myStore()));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same rules, same rule names, same independent
+    rule-catching so one violation never masks another, same `ContractReport`, same per-run key
+    namespacing, same `ttl` duration grammar, same browser-safe no-`node:*` guarantee. Only the
+    spelling moved. No aliases: pre-GA, and keeping the old spellings would leave six verbose names
+    on the entry beside the namespace, which is the thing being removed.
+
+    **`adapterContractFixture` joins the namespace as `conformance.fixture`** rather than staying
+    standalone. It is not a verifier, but it is not an independent capability either: it is the
+    SERVER half of the adapter contract — the pure request-in/response-out function
+    `conformance.adapter` verifies a transport against — and it cannot be used apart from it. Same
+    call the token grammars made putting `format` beside `parse`. Leaving it out would have kept one
+    loose `*Contract*`-spelled name beside the namespace that replaced the other five, which is
+    precisely the drift the fold removes.
+
+    **Free on the bundle, and structurally so.** `stitchapi/testing` is imported by specs and never
+    reaches a production bundle, and the subpath is not size-gated; the gate was run on both sides
+    anyway and all three scenarios it does measure are byte-identical (whole entry 24.60 KB gzip,
+    `import { stitch }` 21.82 KB, `stitchapi/auth` 5.22 KB). The implementations stay plain module
+    functions in `testing.ts` and the namespace is a thin `as const` facade over them.
+
+- **BREAKING CHANGE: the six host adapters' error helpers are now one `stitchError` namespace —
+  `isStitchError`, `stitchErrorHandler`, `stitchOnError`, `stitchErrorResponse` and
+  `toHttpException` are replaced by `stitchError.is`, `stitchError.map` and
+  `stitchError.handler`.** ([ADR 0012](docs/adr/0012-integration-symbol-naming.md),
+  [CONTRACT.md §6](docs/CONTRACT.md))
+  One concept — "a stitch failed, turn it into HTTP" — carried two or three verb-prefixed
+  top-level names in each of `@stitchapi/express`, `/fastify`, `/hono`, `/elysia`, `/next` and
+  `/nest`, and the mapper alone had **four spellings**. `hono` and `elysia` were otherwise
+  perfectly parallel, down to an identically named `stitchOnError`, and diverged on exactly
+  that. It is the defect ADR 0012's own Context section opens with; that sweep fixed the
+  logger-sink family and never came back for this one.
+
+    | Package | Was                                                       | Now                                    |
+    | ------- | --------------------------------------------------------- | -------------------------------------- |
+    | express | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | fastify | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | hono    | `isStitchError` · `stitchError` · `stitchOnError`         | `stitchError.is` · `.map` · `.handler` |
+    | elysia  | `isStitchError` · `stitchErrorResponse` · `stitchOnError` | `stitchError.is` · `.map` · `.handler` |
+    | next    | `isStitchError` · `stitchErrorResponse`                   | `stitchError.is` · `.map`              |
+    | nest    | `isStitchError` · `toHttpException`                       | `stitchError.is` · `.map`              |
+
+    ```ts
+    // before
+    import { isStitchError, stitchOnError } from '@stitchapi/hono';
+    // after
+    import { stitchError } from '@stitchapi/hono';
+
+    app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+
+    app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same `502`-by-default mapping, same
+    generic status-tied body, same `status` / `body` overrides, same pass-through for a
+    non-Stitch error. Only the spelling moved. No aliases: pre-GA `rc`, and keeping the old
+    spellings would leave the very names being removed on the barrel beside the namespace.
+
+    **Not every host has all three members, and the missing ones stay missing.** A member that
+    meant something different per package would re-create the drift this closes. `express` and
+    `fastify` have no `.map` — their handler writes onto a mutable `res` / `reply` and returns
+    no mapped artifact to hand back. `next` has no `.handler` — a route handler is its own
+    `Request` → `Response` function, so there is no central error hook to register one on.
+
+    **`StitchExceptionFilter` is unchanged and stays a top-level class** on `@stitchapi/nest`:
+    Nest registers a filter _instance_ through DI (`useGlobalFilters`,
+    `{ provide: APP_FILTER, useClass }`), the idiom ADR 0012 rule 1 blesses. It is pinned
+    present as a class so a later tidy-up cannot sweep it into the namespace.
+
+    **The plugin option slots are untouched** — `@stitchapi/fastify` still takes `errorHandler`
+    (after Fastify's `setErrorHandler`) and `@stitchapi/elysia` still takes `onError`. CONTRACT.md
+    P18's mirror clause binds a framework-hook _slot_, where the surrounding option bag supplies
+    the framework context; a named import strips exactly that context, which is why it does not
+    carry over to the exports.
+
+    **The namespace is a thin facade.** The implementations stay plain module functions and each
+    package's own call sites keep importing them directly, so nothing welds all three onto a
+    consumer that reaches one. Measured with esbuild from source: importing only `stitch` /
+    `streamStitchSse` bundles **none** of the error module, and a guard-only consumer pays
+    +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
+    siblings. None of these six has a size gate and all are server-side, so the trade is accepted
+    rather than budgeted.
+
+    **Why it drifted.** ADR 0012's 2026-06-20 conformance sweep covered ten packages;
+    `@stitchapi/express` (#207), `@stitchapi/elysia` (#208) and `@stitchapi/next` (#222) all landed
+    2026-06-19, one day earlier, and appear in neither its conformance nor its migration table.
+    Those three contributed `stitchErrorResponse` twice and half of both handler spellings. But
+    adjudication alone would not have saved them: every one of these names is `Stitch`-branded, so
+    all six pass ADR 0012's rules read one symbol at a time — and `toHttpException` proves it from
+    the other side, since nest _was_ swept and its one genuinely bare export was missed anyway.
+    Recorded as a dated addendum on ADR 0012 (its 2026-06-20 table is left intact) and in
+    CONTRACT.md §6.
+
+    Every old spelling is pinned **absent** in all six packages' specs — not only where it lived —
+    so "one dimension, one name" is a property of the family, not of each package on its own.
 
 - **BREAKING CHANGE: the query-key trio is now one `stitchKey` namespace — `deriveQueryKey`,
   `nameOf` and `keyInputFor` are replaced by `stitchKey.of`, `stitchKey.name` and

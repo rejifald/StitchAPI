@@ -236,21 +236,31 @@ async function main(): Promise<void> {
             ),
             'utf8',
         );
+        // The verifiers are plain module functions behind the exported `conformance` facade, so
+        // read the facade: every member bound to a `verify*Contract` implementation, spelled the
+        // way a caller writes it. Matching `export function verify…` would find nothing and pass
+        // an empty list off as an absence.
+        const facade =
+            /export const conformance = \{([\s\S]*?)\} as const;/.exec(testing);
         const verifiers = [
             ...new Set(
                 [
-                    ...testing.matchAll(
-                        /export (?:async )?function (verify\w+)/g,
+                    ...(facade?.[1] ?? '').matchAll(
+                        /(\w+): (verify\w+Contract),/g,
                     ),
-                ].map((m) => m[1] as string),
+                ].map((m) => `conformance.${m[1] as string}`),
             ),
         ].sort();
-        checkSeq('the `verify*` family', verifiers, [
-            'verifyAdapterContract',
-            'verifyFingerprintContract',
-            'verifySinkContract',
-            'verifyStoreContract',
-        ]);
+        checkSeq(
+            'the `verify*` family, as the namespace spells it',
+            verifiers,
+            [
+                'conformance.adapter',
+                'conformance.fingerprint',
+                'conformance.sink',
+                'conformance.store',
+            ],
+        );
         check(
             'any of them verifies a VENDOR rather than a plugin',
             verifiers.some((v) => /vendor|endpoint|api|live|upstream/i.test(v)),
@@ -303,7 +313,7 @@ async function main(): Promise<void> {
 
     finish(
         'C6',
-        'TARGETING YES, SCHEDULING NO. One endpoint object aimed at three targets via `extends: { baseUrl, adapter }` produced exactly the three URLs expected and three verdicts — fixture ok, sandbox ok, PROD `contract violation (drift)` — so the difference between environments IS visible, through the same `output` schema. A `seam` does the same for a whole client and a member may still override either slot; a `baseUrl` THUNK (`string | (() => string)`) is the one hatch that retargets between calls without rebuilding. `.with()` deliberately cannot: it is `Partial<StitchInput>` and `.with({ baseUrl })` is a compile error. What does NOT exist: any named environment concept — zero env/sandbox/environment/profile/variant/stage/mode slots on `StitchConfig`, and an unknown key is a compile error, so there is no informal extension either; and any scheduling or live-verification spelling — the 8 CLI subcommands are run/trace/serve/mcp/diagram/export/from-curl/init and none verifies anything, while the four `verify*Contract` functions all take an implementation of one of StitchAPI\'s OWN seams, not a vendor. The parity check that WOULD catch C1(e) is 8 executable lines and catches it exactly ("DISAGREE live=contract violation (drift) fake=ok") — but it needs a real call, so the missing piece is the schedule, not the comparison',
+        'TARGETING YES, SCHEDULING NO. One endpoint object aimed at three targets via `extends: { baseUrl, adapter }` produced exactly the three URLs expected and three verdicts — fixture ok, sandbox ok, PROD `contract violation (drift)` — so the difference between environments IS visible, through the same `output` schema. A `seam` does the same for a whole client and a member may still override either slot; a `baseUrl` THUNK (`string | (() => string)`) is the one hatch that retargets between calls without rebuilding. `.with()` deliberately cannot: it is `Partial<StitchInput>` and `.with({ baseUrl })` is a compile error. What does NOT exist: any named environment concept — zero env/sandbox/environment/profile/variant/stage/mode slots on `StitchConfig`, and an unknown key is a compile error, so there is no informal extension either; and any scheduling or live-verification spelling — the 8 CLI subcommands are run/trace/serve/mcp/diagram/export/from-curl/init and none verifies anything, while the four `conformance` verifiers (`.store`, `.adapter`, `.sink`, `.fingerprint`) all take an implementation of one of StitchAPI\'s OWN seams, not a vendor. The parity check that WOULD catch C1(e) is 8 executable lines and catches it exactly ("DISAGREE live=contract violation (drift) fake=ok") — but it needs a real call, so the missing piece is the schedule, not the comparison',
     );
 }
 

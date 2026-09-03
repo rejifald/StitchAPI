@@ -21,7 +21,7 @@ import { fingerprinters } from 'stitchapi/fingerprint';
 fingerprinters.register(arktypeFingerprinter);
 ```
 
-Compliance is proven against `verifyFingerprintContract` from `stitchapi/testing`.
+Compliance is proven against `conformance.fingerprint` from `stitchapi/testing`.
 
 ## Contributing
 

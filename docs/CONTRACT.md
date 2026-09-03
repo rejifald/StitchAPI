@@ -483,7 +483,7 @@ P24 envelope), `CircuitOptions.cooldown` (its `halfOpenAfter` sibling was widene
 too, then **removed** in the 2026-08-04 P1 fix below — the two named one instant),
 `ReconnectOptions.delay` (was `backoffMs`, de-suffixed to `backoff` and later renamed
 under P2), `OAuth2Options.refreshSkew` (now `refresh.skew`), `CookieSessionOptions.ttl`,
-and `verifyStoreContract`'s `ttl` knob — all `number | string` via the one shared
+and `conformance.store`'s `ttl` knob — all `number | string` via the one shared
 `duration.parse`.
 _Resolved (seam-authored, 2026-08):_ the two positions where a **`Surface`** supplies a
 duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return — take
@@ -493,7 +493,7 @@ duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return �
 _Not widened, deliberately:_ `StitchStore.set`/`increment`'s `ttl` **parameter** stays a
 raw-ms `number` — **core** calls those verbs with an already-resolved value, so it is the
 complement case, not an oversight. The consumer-authored knob of the same name on
-`verifyStoreContract` is widened, which is the pair that shows the rule turns on who
+`conformance.store` is widened, which is the pair that shows the rule turns on who
 supplies the value.
 _Resolved (2026-07 sweep, emitted — de-suffixed):_ `StitchEvent` `waited`,
 `retryAfter`, the `done` event's `elapsed` (was `ms`), `MockResponse.delay`;
@@ -535,9 +535,21 @@ not a [P16](#p16--cross-surface--cross-package-parity) parity break, and a sweep
 unifies them has removed information rather than added consistency. The _shape_ behind
 both stays identical (`boolean | AtLeastOne<StitchErrorOptions>`), which is where parity
 actually binds. Only these two hosts have the slot at all — express/hono/nest/next expose
-standalone helpers with no options object — and each of those helpers is likewise named
-for its own framework (`stitchErrorHandler` on express/fastify, `stitchOnError` on
-hono/elysia, `StitchExceptionFilter` on nest).
+standalone helpers with no options object.
+
+_The mirror clause binds the **slot**, not the **export**._ This paragraph once added that
+each of those helpers was "likewise named for its own framework" (`stitchErrorHandler` on
+express/fastify, `stitchOnError` on hono/elysia). That was a description of the surface as it
+stood, not a licence: the framework-hook argument covers a field a user authors _inside_ a
+config object, where the surrounding option bag supplies the framework context. A named
+import strips exactly that context (ADR 0012's whole premise), so it does not carry over —
+and the family had drifted past any mirror reading anyway, with **four** spellings of one
+mapper (`stitchError`, `stitchErrorResponse` twice, `toHttpException`), of which only
+`toHttpException` even named a framework type. The exports are now one namespace,
+**`stitchError`**, in all six adapters ([§6](#6-migration-record-2026-07-08-hard-break-sweep));
+the `errorHandler` / `onError` **option slots** are untouched, which is this clause still
+doing its job. `StitchExceptionFilter` stays a top-level class on nest — DI-registered, ADR
+0012 rule 1.
 
 ### P19 · The alias obligation is scoped to the GA channel
 
@@ -1002,6 +1014,72 @@ against both — the findings sit at the end of the list:
   `parsers-properties.spec.ts`, not a table of pretty cases, and verified non-vacuous by
   reintroducing `ms`-style rounding and watching all three properties fail.
 
+- **P16/P18 (the error family folds, 2026-08-28)** — the export-surface analogue of
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope): where P24 says a
+  shared field-name prefix inside one house contract is an envelope, a shared symbol prefix
+  across one package's exports is a **namespace**. Six host adapters each carried two or three
+  `stitch*Error*`-prefixed top-level names for a single dimension — "a stitch failed, turn it
+  into HTTP" — and the mapper alone had **four spellings** (`stitchError` on hono,
+  `stitchErrorResponse` on elysia _and_ next, `toHttpException` on nest). hono and elysia were
+  otherwise perfectly parallel, down to an identically named `stitchOnError`, and diverged on
+  exactly this. It is the same defect ADR 0012's own Context section opens with — one concept,
+  four spellings — which that sweep fixed for the logger-sink family and did not come back for.
+  **Fixed** — one `stitchError` namespace per package, identical in all six: `.is(err)` narrows,
+  `.map(err, options?)` returns the host's mapped artifact, `.handler(options?)` builds the
+  host's error hook. Hard break, no alias ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel),
+  `rc` channel); every old spelling is pinned **absent** in each package's own spec — in all six,
+  not just where it lived, so "one dimension, one name" is a property of the family.
+  `toHttpException` was additionally a live [ADR 0012 rule 6](../adr/0012-integration-symbol-naming.md)
+  violation: a bare, non-branded export on an adapter package, which the 2026-06-20 sweep missed
+  because it read the logger-sink family only.
+  _Why a namespace and not a sixth uniform verb-prefixed name:_ the same argument the `secrets`
+  and `duration`/`size`/`rate` folds made in core one release earlier — one name per dimension,
+  the verb at the call site — reused rather than re-argued. The `parseDuration`→`duration` bullet
+  above is this entry's direct precedent; this is the same fold applied across packages instead of
+  within one barrel.
+  _Half the family was never adjudicated._ ADR 0012's conformance table swept ten published
+  packages on 2026-06-20. **`@stitchapi/express` (#207), `@stitchapi/elysia` (#208) and
+  `@stitchapi/next` (#222) all landed 2026-06-19 — one day earlier — and appear nowhere in it**,
+  neither as a ✅ row nor in the migration table. Those three contributed `stitchErrorResponse`
+  twice and half of both handler spellings, so the drift is not a coincidence: it is what an
+  un-adjudicated package looks like. This is the same one-day gap a parallel audit found for
+  `@stitchapi/react-native` / `@stitchapi/expo` (#224, also 2026-06-19); both are recorded as
+  dated addenda on ADR 0012 rather than by rewriting its 2026-06-20 table, which stands as the
+  record of what was actually examined that day.
+  _But full adjudication would not have caught it either, and that is the sharper half._ Every
+  one of these names is `Stitch`-branded, so all six pass rule 6 the moment they are read one
+  symbol at a time — which is the only way ADR 0012's rules read. The rule that was missing is
+  "one concept, one spelling **across** packages", and `toHttpException` proves the point from
+  the other side: nest **was** in the table, marked ⚠️→fixed for five other exports, and its one
+  genuinely bare adapter export was still missed.
+  _The ragged edges are the interesting part._ Not every host supports all three, and the fix is
+  to let a member be **absent**, never to redefine it locally: a member that means something
+  different per package is the drift the fold exists to end. express/fastify have no `.map`
+  (their handler writes onto a mutable `res`/`reply` and returns no artifact to hand back); next
+  has no `.handler` (a route handler is its own `Request → Response`, so there is no central hook
+  to register on); nest has no `.handler` either, because its handler is a DI-registered
+  **class** — `StitchExceptionFilter` stays top-level per ADR 0012 rule 1, and is pinned present
+  as a class so a later tidy-up cannot sweep it in.
+  _No gate could have found this, on any axis — worth writing down like R10's own blind spot._
+  **R8/P24 is the closest rule and it misses on two counts at once**: it groups by leading word
+  across the flat members of **one exported `interface`**, so it never looks at a barrel's
+  exported _symbols_, and it never looks past one package. **R5 is the only cross-package rule
+  in the repo, and it runs the opposite direction** — it flags a watch-listed identifier for
+  being the **same** in ≥2 packages, where this finding is one concept being **different** in
+  six. Nothing in the repo compares spellings across packages at all, and a rule that did would
+  need the concept-level knowledge ("these five names mean one thing") that no source-text
+  signal carries. So this class is found by **reading**, exactly like R8's trailing-word gap
+  above, and the per-package pins are the guard. R5 will not fire on the new `stitchError`
+  either: it is deliberately identical across all six, the same same-name-same-shape-by-design
+  case `StitchErrorLike` and `StitchErrorOptions` are already de-listed for.
+  _Facade discipline, measured._ A namespace object does not tree-shake, so the implementations
+  stay plain module functions and each namespace is a thin facade over them; the packages' own
+  call sites (fastify's and elysia's `plugin.ts`, nest's filter) keep importing the functions
+  directly. Verified with esbuild from source: a consumer importing only `stitch` /
+  `streamStitchSse` bundles **none** of the error module, and a guard-only consumer pays
+  +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
+  siblings. None of the six has a size gate and all are server-side, so the trade is accepted
+  rather than budgeted — recorded here so it is a decision, not an accident.
 - **Export-surface fold, no rule cited (the fingerprinter registry, 2026-08-28)** — the third
   verb-prefixed export group to fold, and the one where the repetition was most literal:
   `registerFingerprinter` / `getFingerprinter` / `listFingerprinters` / `clearFingerprinters` were
@@ -1198,7 +1276,8 @@ shape, not as today's surface: nothing on the surface carries an alias.
   (express/fastify/nest/next) mis-named their error **duck-type** `StitchError`, shadowing core's real
   `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
   so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
-  structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
+  structural contract across all six host adapters (de-listed from R5, the guard stays — it is
+  `stitchError.is` since the 2026-08-28 fold above).
 - **P9/P16 (per-request seam)** — third R5 pair. The per-request seam handle is ecosystem-qualified
   per ADR 0012 (extending hono's `HonoRequestSeam`): express `RequestSeam`→`ExpressRequestSeam`, elysia
   →`ElysiaRequestSeam`, fastify `StitchHost`→`FastifyRequestSeam`, nest `StitchHost`→`NestRequestSeam`.
@@ -1328,6 +1407,54 @@ shape, not as today's surface: nothing on the surface carries an alias.
   `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
   only ever see the object form. **R6 clears** — the baseline is now **0**.
 
+- **Export-surface fold (conformance kit, 2026-08-28)** — the third application of the fold the
+  token grammars started (`parse*` → `duration`/`size`/`rate`, recorded above) and `secrets`
+  continued. **No numbered principle governs this one, and none is claimed.**
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) is written about
+  **fields** in a house contract and **R8** enforces it there; neither reaches the names on a
+  barrel. The argument is P24's read one level out — a shared prefix across sibling names means the
+  prefix is the subject and the suffixes are its members — but it is applied here by judgement, as
+  the two folds before it were, not by a rule that covers it.
+  `stitchapi/testing` had the clearest instance left: four identical `verify<Seam>Contract`
+  functions of one shape (`(impl) => ContractReport`), plus `assertConformance` and
+  `adapterContractFixture` — six names a vendor reads to make **one** decision, "does my seam
+  comply". Note that this family is **not** an instance of R8's leading-word gap recorded above for
+  `total`/`perAttempt`, the cache-transform pair and the endpoint slot: these names share a leading
+  word, `verify`, so a hypothetical R8 pointed at exports would have bucketed all four. It would
+  have bucketed them **under the verb** — the one dimension that is identical across the group and
+  therefore carries no information — and proposed folding on it. The tell that the seam is the real
+  dimension came from elsewhere: the module's own docblock named the group by wildcard (_"the
+  relevant `verify*Contract` function"_), and a name you can only write with a glob is a dimension
+  the export names are refusing to carry.
+  **Fixed** — one `conformance` namespace with `store` / `adapter` / `sink` / `fingerprint` /
+  `assert` / `fixture`. The dimension is the **seam**, and it was already discriminated in the
+  return value: `ContractReport.seam` carries exactly those four values, so the fold only makes the
+  export surface agree with the report every one of them already produced. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the six old names
+  are pinned **absent** in `public-api-surface.spec.ts` beside the parsers and the secret functions,
+  and the namespace is pinned as a whole rather than member-by-member.
+  _Why `fixture` is inside:_ it is the one member that is not a verifier, and the test applied was
+  whether the name is **exhaustive over its contents** — not whether the members share a signature
+  (`secrets` already holds a registrar, a predicate and a transform).
+  `adapterContractFixture` is the SERVER half of the adapter contract, the pure function
+  `conformance.adapter` verifies a transport against, and it has no use apart from it — the same
+  pairing that put `format` beside `parse`. Left standalone it would have been one loose
+  `*Contract*`-spelled name beside the namespace that absorbed the other five, which is the state
+  the fold exists to end.
+  _Cost, and why this seam first:_ genuinely zero. `stitchapi/testing` is imported by `*.spec.ts`
+  and never reaches a production bundle, and the subpath is not size-gated — measured both sides,
+  and all three scenarios the gate does cover are byte-identical (whole entry 24.60 KB,
+  `import { stitch }` 21.82 KB, `stitchapi/auth` 5.22 KB). The implementations stay plain module
+  functions in `testing.ts`, so the namespace is a thin facade rather than an object welding six
+  functions onto a consumer's path.
+  _The one hazard worth recording:_ the churn was ~50 files and all but three were mechanical. A
+  namespace-valued export is **invisible to a flat `Object.keys` scan**, and three scenario proofs
+  enumerate the runtime export surface to prove an ABSENCE — that nothing verifies an inbound
+  signature, that nothing names a fixture's recording date, that no verifier faces a vendor. Two
+  read the live module and now descend one level into namespace exports; the third grepped the
+  source for `export function verify…` and now reads the facade instead. Left alone, all three
+  would have kept passing while measuring less, which is the failure mode a fold like this
+  introduces anywhere an absence is proved by enumeration — in this repo or in a consumer's.
 - **No numbered rule — an export-surface fold (the query key, 2026-08-28)** — this entry cites no
   principle, because none reaches it.
   [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) is the closest in
@@ -1415,6 +1542,37 @@ shape, not as today's surface: nothing on the surface carries an alias.
     verbose name carrying a warning is still a warning that must be repeated at each call site; it
     now sits once on the namespace's JSDoc and once in the reference page, the same relocation
     `size` made when it stopped being `parseBytes`.
+
+- **P16 (the seam-only config slot, 2026-09-03)** — the rule's projection clause says a config
+  field is added to `StitchConfig` and **projected** (`SeamConfig = Omit<StitchConfig, …>`),
+  never re-declared per surface. One field was: `secretStore`, the hardened backend for the auth
+  vault, declared on `SeamOptions = SeamConfig & { secretStore?: StitchStore }`. The cost was not
+  aesthetic. Three surfaces type their config slot as `SeamConfig` and therefore could not reach
+  the capability at all: a standalone `stitch()` (the engine built `vaultView(store)` with no
+  hook, so an RN app wanting SecureStore for its session cookie had to adopt a seam), fastify's
+  `seamConfig`, and a nest **feature** seam's `config` — while nest's `forRoot` had it only
+  because `StitchModuleOptions extends SeamOptions`. **Fixed** — `vault?: StitchStore` on
+  `StitchConfig`, and `SeamOptions` **deleted** (with nothing left to add, the second type was
+  itself the defect). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel).
+  _The name came from the codebase._ ADR 0002 §4, `SharedRuntime.vault`, `AuthContext.vault`, the
+  redaction drop-list and the docs all called this the **vault**; only the option that configured
+  it said `secretStore`, so its JSDoc had to translate — "Backend for the vault" — which is the
+  tell ([P1](#p1--one-word-one-concept-one-value-space): one concept, one word). The config slot
+  names the **backend**, the runtime the namespaced **view** over it — the same two layers `store`
+  already spans, not a [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)
+  collision.
+  **No ratchet could have found it, on two counts** — the same pair the `total`/`perAttempt` entry
+  records. `SeamOptions` is a `type X = A & { … }` **intersection literal**, which no member rule
+  scans (the limitation is written into `check-contract.mjs` itself); and even scanned, **R8** needs
+  a shared _leading_ word, while `store`/`secretStore` share a trailing one. The gate is now a
+  type-level assert instead of a lint: `Exclude<keyof Parameters<typeof seam>[0], keyof StitchConfig>`
+  must be `never` (`extends-inference.test-d.ts` §8b), so the next seam-only slot fails to compile
+  rather than shipping a capability three surfaces cannot name.
+  _Redaction came for free, by construction:_ adding the slot to `StitchConfigAnatomy` as
+  `dropped: 'redact'` broke `contract-p0.spec.ts` until the fixture sampled a live `vault` — the
+  anatomy doing exactly the job [§7](#7-enforcement)'s note describes, a new must-not-appear slot
+  caught at compile time rather than by review.
 
 ## 7. Enforcement
 

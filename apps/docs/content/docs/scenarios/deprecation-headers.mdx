@@ -104,7 +104,7 @@ burn retry attempts (5 configured, 1 request made) and it does **not** open the 
 
 <Callout type="warn">
     **A seam-level `kind` is a compile error that works perfectly at runtime.** `TS2353: 'kind'
-    does not exist in type 'SeamOptions'` — yet members inherited the surface and folded
+    does not exist in type 'SeamConfig'` — yet members inherited the surface and folded
     correctly. A typed codebase writes the surface on all 40 members for a capability that
     already works from one.
 

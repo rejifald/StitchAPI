@@ -104,26 +104,26 @@ app.get('/chat', async (req, res) => {
     your own thing in a separate route.
 </Callout>
 
-## Errors — `stitchErrorHandler`
+## Errors — `stitchError`
 
 A failed stitch throws a `StitchError` carrying the upstream `status`. Register
-`stitchErrorHandler()` **after your routes** (an Express error middleware is
+`stitchError.handler()` **after your routes** (an Express error middleware is
 matched by its 4-arg arity) so handlers need no per-route try/catch — it maps a
 `StitchError` to a JSON response (`502` by default, so an upstream's status is
 never leaked) and `next(err)`s everything else:
 
 ```ts
-import { stitchErrorHandler } from '@stitchapi/express';
+import { stitchError } from '@stitchapi/express';
 import express from 'express';
 
 const app = express();
 
 // default 502 — an upstream's 401/404/etc. is never leaked to your client.
-app.use(stitchErrorHandler());
+app.use(stitchError.handler());
 
 // or propagate the upstream status, or shape your own envelope:
 app.use(
-    stitchErrorHandler({
+    stitchError.handler({
         status: (e) => e.status ?? 502,
         body: (e, status) => ({ code: status, msg: e.message }),
     }),
@@ -132,6 +132,13 @@ app.use(
 
 Because it `next(err)`s any non-Stitch error, Express's default handler — and any
 error middleware you register after it — stays in charge of everything else.
+`stitchError.is(err)` narrows an unknown error to a `StitchError` if you want to
+branch on one yourself.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this
+one concept — `.is` everywhere, `.handler` wherever the framework has an error hook,
+`.map` wherever it has a mapped value to return. Express has no `.map`: its error
+middleware writes onto `res` and returns nothing.
 
 ## See also
 

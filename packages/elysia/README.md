@@ -128,17 +128,22 @@ new Elysia().use(
 ```
 
 Set `onError: false` to register none and wire your own with
-`stitchOnError(options)` or `stitchErrorResponse(err, options)`.
+`stitchError.handler(options)` or `stitchError.map(err, options)`;
+`stitchError.is(err)` is the guard on its own.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this one
+concept: `.is` everywhere, `.map` wherever the framework has a mapped value to return, and
+`.handler` wherever it has an error hook to register on.
+The plugin **option** keeps Elysia's own word (`onError`) while the
+**export** is shared vocabulary.
 
 ## API
 
-| Export                | Kind     | Purpose                                            |
-| --------------------- | -------- | -------------------------------------------------- |
-| `stitch`              | function | The plugin — `.use(stitch({ seam, principal? }))`  |
-| `streamStitchSse`     | function | Stream a stitch's `.stream()` as an SSE `Response` |
-| `stitchOnError`       | function | An `.onError`-compatible StitchError → HTTP mapper |
-| `stitchErrorResponse` | function | Map a StitchError to a `Response` (one-off)        |
-| `isStitchError`       | function | Narrow an unknown error to a `StitchError`         |
+| Export            | Kind     | Purpose                                            |
+| ----------------- | -------- | -------------------------------------------------- |
+| `stitch`          | function | The plugin — `.use(stitch({ seam, principal? }))`  |
+| `streamStitchSse` | function | Stream a stitch's `.stream()` as an SSE `Response` |
+| `stitchError`     | object   | `.is` narrows · `.map` → `Response` · `.handler`   |
 
 `stitchapi` and `elysia` are **peer dependencies** — bring your own.
 
