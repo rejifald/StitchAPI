@@ -1111,6 +1111,16 @@ npm release are grouped under the in-development version that introduced them.
   was `string`, which axios types as its narrower `ResponseType` union, so passing `axios` (or
   `axios.create()`) failed with `TS2345` under `exactOptionalPropertyTypes`. The type-level test
   missed it by casting a client through `AxiosLike`; it now asserts against real `axios` types.
+- **`axiosAdapter` now reports a response `url`.**
+  ([#708](https://github.com/rejifald/StitchAPI/issues/708)) The axios path returned only
+  `{ status, headers, body }` where `fetchAdapter` returns four keys, so `AdapterResponse.url` was
+  always absent on this transport — and with it `StitchError.url`, which was permanently `undefined`
+  for every axios caller, and the `download` filename fallback (ADR 0005 Decision 8), which had
+  nothing to read. Both failed silently. It now reports the url axios dispatched (`response.config.url`,
+  falling back to the request url). Note the semantics differ from `fetch` by transport: axios hands
+  back no final url, so a followed redirect makes this the REQUEST url rather than the url the
+  response actually came from — documented on `AdapterResponse.url`, and strictly better than
+  reporting nothing.
 - **A truncated LLM completion is no longer a silent success.** ([#699](https://github.com/rejifald/StitchAPI/issues/699))
   `finishReason` was lifted by both provider mappings and read by nothing, so a completion cut short
   at the token cap resolved `ok: true` with `findings: []`. It now sets a normalised `truncated` on

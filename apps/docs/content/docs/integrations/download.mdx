@@ -136,13 +136,13 @@ downloadAll(urls, {
 });
 ```
 
-| Field               | Meaning                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------- |
-| `loaded`            | Bytes so far, summed across in-flight and fulfilled items                             |
-| `total`             | Sum of known per-item totals; `undefined` while any **started** item is indeterminate |
-| `completed` `count` | Items settled (fulfilled + rejected + cancelled), and items in the batch              |
-| `ratePerSec`        | Smoothed throughput since the first byte; `undefined` before any bytes arrive         |
-| `eta`               | Estimated ms to completion; `undefined` when `total` is unknown or the rate is zero   |
+| Field               | Meaning                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `loaded`            | Bytes so far, summed across in-flight and fulfilled items                              |
+| `total`             | Sum of known per-item totals; `undefined` while any **started** item is indeterminate  |
+| `completed` `count` | Items settled (fulfilled + rejected + cancelled), and items in the batch               |
+| `throughput`        | Smoothed transfer rate in bytes/sec since the first byte; `undefined` before any bytes |
+| `eta`               | Estimated ms to completion; `undefined` when `total` is unknown or the rate is zero    |
 
 `total` firms up as items are admitted — a queued item's size isn't known until
 it starts, and a chunked response never declares one. A failed or cancelled

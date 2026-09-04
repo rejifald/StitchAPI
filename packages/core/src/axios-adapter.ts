@@ -49,6 +49,13 @@ export interface AxiosLikeResponse {
     status: number;
     headers: Record<string, string | string[] | undefined>;
     data: unknown;
+    // The config axios actually dispatched, echoed back on the response — read for its `url` so
+    // `AdapterResponse.url` is populated on this transport too (#708 §2). Declared as a minimal
+    // OPTIONAL bag rather than reusing `AxiosLikeConfig`, on purpose: real axios types this as
+    // `InternalAxiosRequestConfig`, whose `url`/`method` are optional, so requiring `AxiosLikeConfig`
+    // here would make `AxiosResponse` unassignable to `AxiosLikeResponse` and break
+    // `axiosAdapter(axios)` exactly the way the §1 fix above did. Keep it a structural subset.
+    config?: { url?: string };
 }
 export interface AxiosLike {
     request(config: AxiosLikeConfig): Promise<AxiosLikeResponse>;
@@ -128,7 +135,12 @@ export function axiosAdapter(
             contentTypeResp,
             toArrayBuffer(res.data),
         );
-        return { status: res.status, headers: resHeaders, body: parsed };
+        return {
+            status: res.status,
+            headers: resHeaders,
+            body: parsed,
+            url: responseUrl(res, req.url),
+        };
     };
     // Buffered-only (it rejects `stream`), but axios reports byte progress for BOTH phases, which
     // the adapter now wires — so `supports` carries the two progress phases. Requires an axios that
@@ -138,6 +150,24 @@ export function axiosAdapter(
         supports: ['uploadProgress', 'downloadProgress'],
     };
     return axiosAdapterRequest;
+}
+
+// The URL to report as `AdapterResponse.url`. `fetchAdapter` sets that field from the response
+// it actually got back, so it is the FINAL url after redirects; axios exposes no such thing — its
+// response carries only the config it dispatched. So this is the REQUEST url, and a followed 3xx
+// makes the two differ: what is reported is where the request was aimed, not necessarily where it
+// landed. #708 §2 accepts that explicitly — the request URL is strictly better than `undefined`,
+// which is what this transport reported before, silently breaking `StitchError.url` and the
+// `download` filename fallback (ADR 0005 Decision 8) for every axios caller.
+//
+// `res.config.url` is preferred over the `req.url` we passed in because a request interceptor may
+// have rewritten it, so it is the closer account of what axios actually requested; a client that
+// echoes no config (or an empty url) falls back to `req.url`, which is always a non-empty string.
+function responseUrl(res: AxiosLikeResponse, requestUrl: string): string {
+    const dispatched = res.config?.url;
+    return dispatched !== undefined && dispatched !== ''
+        ? dispatched
+        : requestUrl;
 }
 
 const hasHeader = (headers: Record<string, string>, name: string): boolean =>
