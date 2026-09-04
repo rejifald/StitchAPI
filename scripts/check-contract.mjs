@@ -59,6 +59,21 @@
 // it — the `MockRoute` blind spot of #564 item 2. R10 guards the interface-shaped `*Options`
 // surface, where P4's whole resolved list lived; it is not a claim that class is now covered.
 //
+// R11 finishes what R2 started. P17 legislates the whole class — "the unit lives in JSDoc, not the
+// name", input and emitted — but names only the `Ms` spelling, so R2 guards `Ms` and every other
+// unit went unguarded. That gap shipped `BatchProgress.ratePerSec` in @stitchapi/download (#639),
+// which no rule looked at: R9 reads the duration and size dimensions and a RATE is neither, and R10
+// reads caps. Replayed against the trees that carried them, R11 reports `ratePerSec` (fixed in the
+// commit that adds this rule) and `ServeOptions.maxBodyBytes` (#414, folded into `serve.body.max`
+// by the 2026-08-01 P25 rewrite) — both real, both previously found only by hand.
+//
+// It is a file-level scan like R2, not an interface walk like R8/R10, because P17 binds parameters
+// of exported functions as well as fields, and the defect is not confined to interface bags. Its
+// precision comes from a NUMERIC TYPE GATE rather than a container filter: a unit only ever
+// qualifies a number, so `payloadBytes: number` is a count and `magicBytes: Uint8Array` is a
+// payload, told apart with no type info. Aggregates (`[`/`<`/`{` in the type) are skipped, not
+// guessed at.
+//
 // Still deferred to a type-aware phase (needs the TS checker): shape-diffing (full P9 —
 // R5's watch list is the by-name proxy), default-value inversion (P8), cross-PACKAGE parity
 // of the same capability (P16), and the CONTAINER half of the alias gap — R6 scans only the
@@ -480,6 +495,38 @@ const isMaxCap = (name) => /^max(?:$|[A-Z0-9])/.test(name);
 // instance, fixed in the 2026-07 sweep.
 const isThresholdCap = (name) => /Threshold$/.test(name);
 
+// R11 — the unit vocabulary R2 does NOT cover. P17 states the rule for the whole class ("the unit
+// lives in JSDoc, not the name", input AND emitted) but names only the `Ms` spelling, which R2
+// owns; every OTHER unit went unguarded, which is how `BatchProgress.ratePerSec` shipped.
+//
+// The token must be a whole trailing camel WORD, so `queryParams` is not an `Ms` and `payloadBytes`
+// is (the split is the precision guarantee — a substring match would flag half the surface).
+// `Ms` is deliberately absent: R2 reports it, with its own `*Unix*` instant carve-out, and one
+// finding per defect is the point of separate rules.
+//
+// Only a COMPOUND name matches — the unit must be a capitalised trailing word. A bare lowercase
+// noun (`chars`, `bytes`) is P25's own blessed spelling for an inner cap (`trace.body.chars`,
+// `stream.buffer.chars`), where the envelope supplies the subject and the field supplies the
+// dimension. This rule targets the opposite move: welding the unit onto the field's own name.
+//
+// Two omissions, both deliberate, both to keep the rule from guessing:
+//   - `Min`/`Mins` — unreadable as a unit: `poolMin` is a MINIMUM, not minutes. `Minute(s)` is
+//     unambiguous and is listed; the abbreviation is left to a human.
+//   - percent/pixel words — P17 and P25 legislate durations and sizes. A rule should encode the
+//     contract it enforces, not the units its author can think of.
+const UNIT_SUFFIX_WORD =
+    /(?:^|[a-z0-9])(?:Sec|Secs|Second|Seconds|Minute|Minutes|Hour|Hours|Day|Days|Millis|Micros|Nano|Nanos|Byte|Bytes|Kb|Kib|Mb|Mib|Gb|Gib)$/;
+
+// Keyed by FIELD NAME, not `Owner.member`: like R2, this is a file-level scan that also reaches
+// parameters (P17 binds "a parameter of an exported function"), where there is no owning interface
+// to key on. One entry, one rationale — the R8/R10 idiom.
+const UNIT_SUFFIX_ALLOW = new Map([
+    [
+        'retryAfterSeconds',
+        "MockResponse sets the HTTP `Retry-After` header, whose wire value IS delta-seconds — P17's unit-hazard clause names this exact field as the shape a foreign unit is allowed to take (converted at the edge, and named with its true unit so the second is never silent)",
+    ],
+]);
+
 // P17/P25 — the house duration + byte-size member vocabulary. A value a consumer AUTHORS in one
 // of these positions must take `number | string` ("if it accepts a duration/size at all, it also
 // accepts a string"); a bare `number` is the violation R9 reports.
@@ -752,6 +799,45 @@ function collect() {
                         f[1],
                         `duration field carries Ms suffix → drop it (ms is the house unit; P17)`,
                         lineOf(src, f.index),
+                    );
+                }
+            }
+
+            // R11 — a NUMBER-typed field or parameter whose trailing camel word is a unit
+            // (P17's rule, for every unit except the `Ms` that R2 owns). Same file-level,
+            // declaration-anchored scan as R2, for the same reason: the class is not confined to
+            // interface bags, and P17 binds parameters of exported functions as well as fields.
+            //
+            // The numeric gate is what makes it high-precision. `Bytes` is the ambiguous token —
+            // it names a COUNT in `payloadBytes: number` and a PAYLOAD in `magicBytes: Uint8Array`
+            // — and the type tells the two apart with no type info: a unit only ever qualifies a
+            // number. Types carrying `[`/`<`/`{` are skipped rather than guessed at, so an
+            // aggregate is never flagged; that is deliberate under-flagging, this file's rule.
+            {
+                const ure =
+                    /(?:^|[\n{;,(])\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??:\s*([^;{}\n]*)/g;
+                const seen = new Set();
+                let u;
+                while ((u = ure.exec(src))) {
+                    const [, name, type] = u;
+                    if (!UNIT_SUFFIX_WORD.test(name)) continue;
+                    // R2's carve-out, applied here for the same family: OTLP's epoch INSTANTS
+                    // (`*UnixNano`/`*UnixSeconds`) keep their unit — Unix time is conventionally
+                    // seconds, so a bare `startUnix` would mislead, and these mirror the OTLP
+                    // wire fields (P18). The rule targets measurements, not instants.
+                    if (/Unix(Ms|Nano|Seconds)$/.test(name)) continue;
+                    if (!/\bnumber\b/.test(type) || /[[<{]/.test(type))
+                        continue;
+                    if (UNIT_SUFFIX_ALLOW.has(name)) continue;
+                    if (deprecatedBefore(src, u.index)) continue;
+                    if (seen.has(name)) continue;
+                    seen.add(name);
+                    add(
+                        'R11',
+                        file,
+                        name,
+                        `\`${name}\` welds its unit onto the name → drop the unit and state it in the JSDoc (P17: the unit lives in JSDoc, input and emitted); if a wire format mandates the unit, add it to UNIT_SUFFIX_ALLOW with the reason`,
+                        lineOf(src, u.index),
                     );
                 }
             }
