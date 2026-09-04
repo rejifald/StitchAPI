@@ -97,7 +97,7 @@ export interface WireOpts {
 /**
  * THE transport for this directory: the library's own `fetchAdapter`, fed a fake `fetch` that hands
  * back a real `Response` carrying `text` verbatim. Everything `fetchAdapter` does to a body — the
- * content-type sniff, the `responseType` switch, the `JSON.parse` on line 135 — runs for real.
+ * content-type sniff, the `response` switch, the `JSON.parse` on line 135 — runs for real.
  *
  * `text` is the wire. Nothing between this string and `AdapterResponse.body` is this file's code.
  */

@@ -720,8 +720,9 @@ _Carve-outs:_
 - **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
   nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
   pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
-  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
-  its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
+  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair on
+  `XhrLike` (and its React Native mirror), RTK Query's lifecycle names
+  (`cacheDataLoaded`/`cacheEntryRemoved`),
   and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
 
     **The exemption binds the layer that meets the standard, not every layer above it**
@@ -731,26 +732,33 @@ _Carve-outs:_
     vocabulary and **MAY** fold, provided the engine converts before the value reaches the
     boundary.
 
-    _Applied (2026-08-03):_ `AdapterRequest.responseType` is the XHR/fetch-facing contract and
-    keeps the XHR spelling permanently — an `xhr` adapter assigns it straight through. The
-    authoring slot folded into the `wire` envelope as **`wire.response`**, and the engine maps it
-    onto `AdapterRequest.responseType` when it builds the request. Note the protected **pair** is
-    XHR's `responseType`/`responseText`: StitchAPI has no `responseText`, so the fold this
-    carve-out guards against (`response: { type, text }`) was never live here. What the carve-out
-    still forbids is renaming the **transport** field, which this change does not do.
+    _Applied (2026-08-03), then **reversed** (2026-09-04):_ `AdapterRequest.responseType` was read
+    as "the XHR/fetch-facing contract", to keep the XHR spelling permanently. That was wrong about
+    which layer meets the standard, and the interface itself said so: `AdapterRequest` is
+    StitchAPI's **own normalized** transport contract, the same category P18 names beside
+    `StitchStore` and `RedisDriver`. The tell is in the values — `ResponseType` is
+    `'json' | 'text' | 'arrayBuffer' | 'blob'`: camelCase `arrayBuffer` where XHR spells it
+    `'arraybuffer'`, and no `'document'` arm. A genuine mirror would carry XHR's values. Every
+    adapter already **converts at its own edge** (`xhr.responseType = 'arraybuffer'`, axios's
+    `responseType: 'arraybuffer'`), which is exactly what the paragraph above asks for. So the
+    field was normalized in its values, its member set and its authoring spelling — everything but
+    its name. Renamed to **`AdapterRequest.response`**, matching `wire.response` (P1/P16). The
+    XHR spelling survives where it belongs: on `XhrLike`/`RnStreamingXhr`, the duck-types that
+    structurally meet XHR, and on `AxiosLikeConfig` for axios. The protected **pair** the carve-out
+    guards is XHR's `responseType`/`responseText`; StitchAPI has no `responseText`, so the fold it
+    exists to prevent (`response: { type, text }`) was never live here either.
 
-    _Corrected (2026-09-04) — the exemption is per-field, not per-interface:_
-    `AdapterRequest.arrayFormat` sat beside `responseType` and was read as sharing its shelter,
-    on the strength of resemblance alone. It does not. `responseType` is XHR's **own property
-    name**, assigned straight through by the `xhr` adapter — a layer that genuinely meets a
-    standard. Nothing takes an `arrayFormat`: the walker is ours (`util.ts`), and the values
-    `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins the **values**, never the
-    field. With the authoring slot already renamed to `wire.array` by #591, one capability was
-    spelled two ways across one edge for no reason a standard could supply →
-    **`AdapterRequest.array`** (P1's shortest unambiguous token — there is no competing array
-    concept on that interface — and P16's cross-surface parity). The lesson generalises: a
-    neighbour's carve-out is not contagious, and "it matches the field next to it" is a
-    resemblance argument, which this contract does not accept anywhere else either.
+    _Corrected the same day — the exemption is per-field, not per-interface:_
+    `AdapterRequest.arrayFormat` sat beside `responseType` and was read as sharing its shelter, on
+    the strength of resemblance alone. Nothing takes an `arrayFormat`: the walker is ours
+    (`util.ts`), and the values `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins
+    the **values**, never the field. With the authoring slot already renamed to `wire.array` by
+    #591, one capability was spelled two ways across one edge for no reason a standard could
+    supply → **`AdapterRequest.array`**. Chasing that one down is what exposed `responseType`
+    above: the argument used to shelter `array` turned out not to hold for the field it borrowed
+    it from. The lesson generalises twice over — a neighbour's carve-out is not contagious, and
+    "an adapter assigns it straight through" describes a **conversion at the edge**, which is the
+    thing this rule asks for, not evidence that the contract before the edge is a mirror.
 
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an

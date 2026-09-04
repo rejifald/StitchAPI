@@ -115,7 +115,7 @@ export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
                     status: xhr.status,
                     headers: resHeaders,
                     body: decodeResponseBody(
-                        req.responseType,
+                        req.response,
                         contentTypeResp,
                         bytes,
                     ),

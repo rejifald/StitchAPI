@@ -107,15 +107,15 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             return {
                 status: response.status,
                 headers: resHeaders,
-                body: decodeResponseBody(req.responseType, contentType, bytes),
+                body: decodeResponseBody(req.response, contentType, bytes),
                 url: finalUrl,
             };
         }
 
-        // Read the body. An explicit responseType wins (arrayBuffer/blob for binary
+        // Read the body. An explicit `response` wins (arrayBuffer/blob for binary
         // downloads, text/json to force a shape); otherwise auto-detect by content-type.
         let parsed: unknown;
-        const responseType = req.responseType;
+        const responseType = req.response;
         if (responseType === 'arrayBuffer') {
             parsed = await response.arrayBuffer();
         } else if (responseType === 'blob') {

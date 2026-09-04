@@ -1,4 +1,4 @@
-// Binary/blob responses: `responseType` controls how the adapter reads the body —
+// Binary/blob responses: `wire.response` controls how the adapter reads the body —
 // 'arrayBuffer'/'blob' for downloads, 'text' for raw strings, 'json' to force parsing.
 // Bytes must round-trip exactly, proven by hashing the payload on both ends.
 import { stitch } from '../src';
@@ -29,7 +29,7 @@ const sha = (b: Buffer): string => createHash('sha256').update(b).digest('hex');
 // A deterministic payload spanning every byte value 0..255 (catches encoding corruption).
 const payload = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
 
-test('responseType: "arrayBuffer" round-trips raw bytes (hash matches)', async () => {
+test('response: "arrayBuffer" round-trips raw bytes (hash matches)', async () => {
     server.route('GET', '/blob', { body: payload });
     const download = stitch({
         baseUrl: server.url,
@@ -42,7 +42,7 @@ test('responseType: "arrayBuffer" round-trips raw bytes (hash matches)', async (
     expect(sha(Buffer.from(ab))).toBe(sha(payload));
 });
 
-test('responseType: "blob" round-trips raw bytes (hash matches)', async () => {
+test('response: "blob" round-trips raw bytes (hash matches)', async () => {
     server.route('GET', '/blob', { body: payload });
     const download = stitch({
         baseUrl: server.url,
@@ -55,7 +55,7 @@ test('responseType: "blob" round-trips raw bytes (hash matches)', async () => {
     expect(sha(Buffer.from(await blob.arrayBuffer()))).toBe(sha(payload));
 });
 
-test('responseType: "text" returns the raw decoded string', async () => {
+test('response: "text" returns the raw decoded string', async () => {
     const text = 'hello bytes — ☃ unicode survives';
     server.route('GET', '/text', { body: Buffer.from(text, 'utf8') });
     const read = stitch({
@@ -67,8 +67,8 @@ test('responseType: "text" returns the raw decoded string', async () => {
     await expect(read()).resolves.toBe(text);
 });
 
-test('responseType: "json" forces parsing regardless of content-type', async () => {
-    // Served as octet-stream bytes, but parsed as JSON because responseType says so.
+test('response: "json" forces parsing regardless of content-type', async () => {
+    // Served as octet-stream bytes, but parsed as JSON because `wire.response` says so.
     server.route('GET', '/forced', {
         body: Buffer.from(JSON.stringify({ forced: true }), 'utf8'),
     });
@@ -81,7 +81,7 @@ test('responseType: "json" forces parsing regardless of content-type', async () 
     await expect(f()).resolves.toEqual({ forced: true });
 });
 
-test('default (no responseType) still auto-parses JSON', async () => {
+test('default (no response) still auto-parses JSON', async () => {
     server.route('GET', '/json', { body: { a: 1, nested: { b: 2 } } });
     const j = stitch({ baseUrl: server.url, path: '/json' });
 

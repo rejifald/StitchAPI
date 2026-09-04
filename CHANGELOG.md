@@ -194,6 +194,24 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `AdapterRequest.responseType` is now `response`.** CONTRACT.md pinned this
+  to XHR's spelling in 2026-08 as "the XHR/fetch-facing contract". That read the wrong layer:
+  `AdapterRequest` is StitchAPI's own **normalized** transport contract, the category P18 names
+  beside `StitchStore` and `RedisDriver`. Its values already proved it —
+  `ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob'` is camelCase `arrayBuffer` where XHR
+  spells it `'arraybuffer'`, with no `'document'` arm — and every adapter already converts at its
+  own edge (`xhr.responseType = 'arraybuffer'`). So the field was normalized in values, member set
+  and authoring spelling, and foreign only in its name. It now matches `wire.response`, which is
+  what a consumer writes and which is **unchanged**. The XHR spelling stays on `XhrLike` /
+  `RnStreamingXhr` and axios's on `AxiosLikeConfig` — the duck-types that structurally meet those
+  APIs. Only a **custom adapter** reading the field is affected.
+
+    ```ts
+    // a custom adapter, before → after
+    - if (req.responseType === 'blob') { … }
+    + if (req.response === 'blob') { … }
+    ```
+
 - **BREAKING CHANGE: `AdapterRequest.arrayFormat` is now `array`.** #591 renamed the authoring
   slot to `wire.array` but left the transport field spelled `arrayFormat`, so one capability was
   spelled two ways across one edge. The neighbouring `responseType` keeps XHR's spelling because

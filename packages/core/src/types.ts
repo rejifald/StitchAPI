@@ -229,9 +229,10 @@ export interface WireOptions {
      */
     body?: BodyEncoding;
     /**
-     * How the response body is read. Maps onto `AdapterRequest.responseType`, which keeps the
-     * XHR/fetch spelling at the transport boundary (P22 — follow the standard that governs each
-     * layer, and convert at the edge).
+     * How the response body is read. Maps 1:1 onto {@link AdapterRequest.response} — same word on
+     * both sides of the edge. XHR's `responseType` spelling lives on the duck-type that meets XHR
+     * ({@link XhrLike}), and each adapter converts there (P18/P22 — the standard binds the layer
+     * that meets it, and this contract is not that layer).
      */
     response?: ResponseType;
     /**
@@ -732,8 +733,8 @@ export type WireBodyFixedByGraphql<C> =
  * `Content-Disposition` filename parsing. Relaxing `method` later is non-breaking.
  *
  * Only the AUTHORING slot moves under `wire`. `downloadSurface.buildRequest` still returns a flat
- * `responseType: 'blob'` on its `AdapterRequest`, which is the transport contract and is unchanged
- * (P22 — the XHR spelling belongs to the layer that meets XHR).
+ * `response: 'blob'` on its `AdapterRequest`, which is the transport contract — flat there, nested
+ * here, one word either way.
  *
  * Reads the COMPOSED config via {@link Layers}, so a `method` or `wire.response` inherited through
  * `extends` is seen. {@link AnyLayer} takes each depth's shape as-is, which is why the flat and
@@ -986,14 +987,20 @@ export interface AdapterRequest {
      * Defaults to `'indices'` — the same default the query string uses, so one authored
      * {@link WireOptions.array} means one thing on both urlencoded surfaces.
      *
-     * Spelled `array`, not `arrayFormat`: unlike its neighbour {@link AdapterRequest.responseType}
-     * — which is XHR's own property name, assigned straight through — no transport API takes an
-     * array format, so nothing pins a foreign spelling here (CONTRACT.md P24 (a) binds the layer
-     * that meets the standard, and no layer meets one). One capability, one word, both sides of
-     * the edge (P1/P16).
+     * Spelled `array`, matching {@link WireOptions.array}: no transport API takes an array format
+     * — the walker is ours — so nothing pins a foreign spelling here, and CONTRACT.md P24 (a)
+     * shelters only the layer that MEETS a standard. One capability, one word, both sides of the
+     * edge (P1/P16).
      */
     array?: ArrayFormat;
-    responseType?: ResponseType;
+    /**
+     * How the response body is read, from {@link WireOptions.response}. House vocabulary, not
+     * XHR's `responseType`: the VALUES are already normalised (`'arrayBuffer'` camelCase where XHR
+     * spells it `'arraybuffer'`, and no `'document'` arm), and every adapter converts at its own
+     * edge — `xhr.responseType = 'arraybuffer'`, axios's `responseType: 'arraybuffer'`. A contract
+     * whose values are normalised has no claim on a foreign name (P18/P24 (a)).
+     */
+    response?: ResponseType;
     /**
      * Ask the transport NOT to buffer/parse the response — hand back the live body instead
      * (ADR 0005 Decision 9 / Q1). When set, {@link AdapterResponse.body} is a
