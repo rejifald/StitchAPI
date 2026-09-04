@@ -228,6 +228,25 @@ npm release are grouped under the in-development version that introduced them.
     the default — `dedupe` is still `false`, every item still its own request. The package's bundle
     budget moves 2.65 KB → 3.05 KB gzip for the two mechanisms.
 
+- **The hosted docs MCP (`stitchapi.dev/api/mcp`) moves to MCP SDK v2.** `mcp-handler` 1.x → 2.x,
+  which swaps the peer from `@modelcontextprotocol/sdk` 1.x to `@modelcontextprotocol/server` 2.x.
+  The endpoint now serves the **2026-07-28** MCP specification natively and falls back to stateless
+  Streamable HTTP for 2025-era clients, from the one handler — so an agent on either protocol
+  generation keeps working. The two tools, their schemas and their responses are unchanged.
+
+    Nothing about the surface moved; the call sites did. The variadic `server.tool()` form is
+    removed in favour of `server.registerTool()`, whose middle argument is a config object, and
+    `inputSchema` now takes a full Standard Schema — `z.object({ … })` — rather than a raw Zod
+    shape. `createMcpHandler` drops from three arguments to two, merging the server options and
+    the handler config into one. The 1.x route and transport options (`basePath`, `maxDuration`,
+    `redisUrl`, the SSE endpoint trio, `sessionIdGenerator`) are gone entirely — the handler is
+    mounted by the route file's own path, which for this endpoint was always `/api/mcp`.
+
+    **This route had no test at all**, in either direction: `mcp-e2e` covers the separate stdio
+    library MCP (`stitchapi/mcp`), and the docs `e2e` suite only reaches the rendered site. It now
+    has one — an initialize handshake plus a `tools/list` assertion driven through the real exported
+    handler.
+
 - **BREAKING CHANGE: `AdapterRequest.responseType` is now `response`.** CONTRACT.md pinned this
   to XHR's spelling in 2026-08 as "the XHR/fetch-facing contract". That read the wrong layer:
   `AdapterRequest` is StitchAPI's own **normalized** transport contract, the category P18 names
