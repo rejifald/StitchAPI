@@ -410,7 +410,7 @@ async function main(): Promise<void> {
     );
     {
         // The capture concludes "that makes the `Adapter` the only candidate seam". It is not.
-        // `wire.response` is a published `StitchConfig` option that sets `AdapterRequest.responseType`,
+        // `wire.response` is a published `StitchConfig` option that sets `AdapterRequest.response`,
         // and `fetchAdapter` honours `'text'` at line 123-124 — BEFORE the json branch at 133-135.
         // The body handed to the engine is then the unparsed string, on the STOCK transport.
         let hookBodyType = '';

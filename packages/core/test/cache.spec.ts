@@ -819,7 +819,7 @@ describe('cache — GraphQL opt-in', () => {
 });
 
 describe('cache — non-storable pass-through', () => {
-    test('a binary responseType warns and passes through (never throws)', async () => {
+    test('a binary response type warns and passes through (never throws)', async () => {
         const { adapter, calls } = counting();
         const s = stitch({
             url: URL,

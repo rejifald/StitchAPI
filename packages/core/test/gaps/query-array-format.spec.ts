@@ -1,4 +1,4 @@
-// Pins docs/GAP-AUDIT.md §2.8: Configurable query array serialization: arrayFormat 'indices' | 'brackets' | 'repeat'
+// Pins docs/GAP-AUDIT.md §2.8: Configurable query array serialization: wire.array 'indices' | 'brackets' | 'repeat'
 import { stitch } from '../../src';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
@@ -46,7 +46,7 @@ describe('GAP-AUDIT §2.8 — configurable query array serialization', () => {
     // The current (and post-fix) default must stay indices: ids[0]=1&ids[1]=2.
     // This test is expected to be GREEN today and after the fix (it pins the
     // default contract).
-    test('default arrayFormat is indices: ids%5B0%5D=1&ids%5B1%5D=2 on the wire', async () => {
+    test('default wire.array is indices: ids%5B0%5D=1&ids%5B1%5D=2 on the wire', async () => {
         server.route('GET', '/array-default', { body: { ok: true } });
         const s = stitch({ baseUrl: server.url, path: '/array-default' });
         await s({ query: { ids: [1, 2] } });
@@ -59,10 +59,10 @@ describe('GAP-AUDIT §2.8 — configurable query array serialization', () => {
     });
 
     // ── B. repeat format: ids=1&ids=2 ───────────────────────────────────────
-    // With arrayFormat:'repeat', each array item gets its own key=value pair
+    // With wire.array:'repeat', each array item gets its own key=value pair
     // with no brackets at all.  URLSearchParams collapses duplicate keys in the
     // server's query Record, so we assert on the raw URL from the 'start' event.
-    test("arrayFormat:'repeat' serialises arrays as repeated bare keys (ids=1&ids=2)", async () => {
+    test("wire.array:'repeat' serialises arrays as repeated bare keys (ids=1&ids=2)", async () => {
         server.route('GET', '/array-repeat', { body: { ok: true } });
         const s = stitch({
             baseUrl: server.url,
@@ -79,10 +79,10 @@ describe('GAP-AUDIT §2.8 — configurable query array serialization', () => {
     });
 
     // ── C. brackets format: ids[]=1&ids[]=2 ─────────────────────────────────
-    // With arrayFormat:'brackets', each array item gets the bracket suffix []
+    // With wire.array:'brackets', each array item gets the bracket suffix []
     // with no numeric index.  [] is percent-encoded on the wire exactly like the
     // current indices format encodes [0]/[1]: as %5B%5D.
-    test("arrayFormat:'brackets' serialises arrays as ids%5B%5D=1&ids%5B%5D=2", async () => {
+    test("wire.array:'brackets' serialises arrays as ids%5B%5D=1&ids%5B%5D=2", async () => {
         server.route('GET', '/array-brackets', { body: { ok: true } });
         const s = stitch({
             baseUrl: server.url,

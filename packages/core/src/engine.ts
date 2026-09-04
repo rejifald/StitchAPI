@@ -246,14 +246,15 @@ function buildRequest(
         headers,
         body: input.body,
         // The `wire` envelope is the AUTHORING shape; `AdapterRequest` stays flat, and
-        // `responseType` keeps the XHR/fetch spelling at that boundary (CONTRACT.md P22 — follow
-        // the standard that governs each layer, and convert at the edge). This IS that edge.
+        // Both sides now spell the wire-format fields the same way; the FOREIGN spellings live
+        // on the duck-types that meet a foreign API (`XhrLike.responseType`), and each adapter
+        // converts there (CONTRACT.md P18/P24 (a)).
         bodyType: cfg.wire?.body,
         multipart: cfg.wire?.multipart,
         // Read by the transport only for a `'form'` body; the query string was already serialised
         // into `url` above, by the same walker and the same `wire.array`.
-        arrayFormat: cfg.wire?.array,
-        responseType: cfg.wire?.response,
+        array: cfg.wire?.array,
+        response: cfg.wire?.response,
     });
     // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded
     // BEFORE the surface shapes the request so a surface that spreads `base` (e.g. `download`)
@@ -1638,12 +1639,9 @@ async function* runCached(
     }
     // A non-storable response (binary read straight into the store) warns and passes through —
     // configuring `cache` here is a no-op-with-warning, never a crash (ADR 0003 §3). Read the
-    // RESOLVED request's responseType so a surface that forces blob (`download`) is caught too.
-    if (
-        baseReq.responseType === 'blob' ||
-        baseReq.responseType === 'arrayBuffer'
-    ) {
-        yield cacheEvt('bypass: non-storable responseType');
+    // RESOLVED request's `response` so a surface that forces blob (`download`) is caught too.
+    if (baseReq.response === 'blob' || baseReq.response === 'arrayBuffer') {
+        yield cacheEvt('bypass: non-storable response type');
         yield* runFrom(rt, baseReq, name, state, t0, run, budget);
         return;
     }

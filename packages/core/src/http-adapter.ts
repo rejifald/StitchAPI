@@ -107,15 +107,15 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             return {
                 status: response.status,
                 headers: resHeaders,
-                body: decodeResponseBody(req.responseType, contentType, bytes),
+                body: decodeResponseBody(req.response, contentType, bytes),
                 url: finalUrl,
             };
         }
 
-        // Read the body. An explicit responseType wins (arrayBuffer/blob for binary
+        // Read the body. An explicit `response` wins (arrayBuffer/blob for binary
         // downloads, text/json to force a shape); otherwise auto-detect by content-type.
         let parsed: unknown;
-        const responseType = req.responseType;
+        const responseType = req.response;
         if (responseType === 'arrayBuffer') {
             parsed = await response.arrayBuffer();
         } else if (responseType === 'blob') {
@@ -345,14 +345,14 @@ export function encodeRequestBody(req: AdapterRequest): {
     if (req.body === undefined || req.body === null) return { body: undefined };
     if (typeof req.body === 'string') return { body: req.body };
     if (req.bodyType === 'form') {
-        // Same walker the query string uses, so one `arrayFormat` governs both urlencoded
+        // Same walker the query string uses, so one `wire.array` governs both urlencoded
         // surfaces and a nested object no longer stringifies to `[object Object]`
         // (ADR 0005 Decision 6, extended to the form arm). `URLSearchParams` does the
         // encoding, which keeps a space spelled `+` here as it always has been.
         const params = new URLSearchParams();
         for (const [k, v] of flattenParams(
             req.body as Record<string, unknown>,
-            req.arrayFormat,
+            req.array,
         )) {
             params.append(k, v);
         }
