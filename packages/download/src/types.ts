@@ -39,8 +39,8 @@ export interface BatchProgress {
     completed: number;
     /** Total items in the batch. */
     count: number;
-    /** Smoothed throughput in bytes/sec since the first byte; `undefined` before any bytes arrive. */
-    ratePerSec?: number;
+    /** Smoothed transfer rate in bytes/sec since the first byte; `undefined` before any bytes arrive. */
+    throughput?: number;
     /** Estimated time to completion, in ms; `undefined` when `total` is unknown or the rate is zero. */
     eta?: number;
 }

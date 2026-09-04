@@ -22,7 +22,7 @@ import {
     type NoUnknownKeys,
     type NoUnknownNestedKeys,
     type Seam,
-    type SeamOptions,
+    type SeamConfig,
     type Stitch,
     type StitchConfig,
     type StitchInput,
@@ -359,7 +359,7 @@ function bindSeam(s: Seam): LlmSeamApi {
 export const llm = Object.assign(llmStitch, {
     surface: llmSurface,
     stitch: llmStitch,
-    bind: (arg: Seam | SeamOptions): LlmSeamApi =>
+    bind: (arg: Seam | SeamConfig): LlmSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });
 

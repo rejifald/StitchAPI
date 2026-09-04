@@ -21,6 +21,10 @@ import { fileURLToPath } from 'node:url';
 // queries. Lowering BM25's share demotes that spurious literal match while
 // leaving the boosts (a page *about* a term beats a passing mention) intact.
 // Swept over the golden set: R@1 0.880→0.920, MRR 0.927→0.953, no regressions.
+// Those are the numbers that sweep measured, not today's — content edits have
+// since moved the absolute values (0.880 / 0.933 as of 2026-08-28, i.e. the
+// post-sweep figure drifted back down to the pre-sweep one). The *relative* win
+// is what pins these weights; see scripts/search-eval.mts for the live gate.
 export const HYBRID_WEIGHTS = { text: 0.2, vector: 0.8 };
 export const FIELD_BOOST = { pageTitle: 3, heading: 2 };
 

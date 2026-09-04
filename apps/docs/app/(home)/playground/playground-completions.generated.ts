@@ -192,6 +192,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Pluggable state store for throttle + session. Default in-memory.",
         },
         {
+            label: "vault",
+            type: "property",
+            detail: "StitchStore",
+            info: "Backend for the **vault** — the reserved, redacted namespace auth tokens and sessions live in (ADR 0002 §4). Defaults to a namespace over `store`, so secrets and throttle counters share one backend; point this at a KMS/Vault/keychain store (`expoSecureStore`) to harden the secrets alone. The split is by **visibility**, not backend — either may be distributed. Live object — stripped from `__config`.",
+        },
+        {
             label: "trace",
             type: "property",
             detail: "TraceSink | 'console' | false",

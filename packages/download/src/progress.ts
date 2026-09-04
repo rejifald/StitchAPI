@@ -79,11 +79,11 @@ export class ProgressAggregator {
         if (this.#firstByteAt !== undefined) {
             const elapsedMs = this.#clock.now() - this.#firstByteAt;
             if (elapsedMs > 0) {
-                const ratePerSec = (loaded / elapsedMs) * 1000;
-                progress.ratePerSec = ratePerSec;
-                if (totalKnown && ratePerSec > 0) {
+                const throughput = (loaded / elapsedMs) * 1000;
+                progress.throughput = throughput;
+                if (totalKnown && throughput > 0) {
                     const remaining = Math.max(0, total - loaded);
-                    progress.eta = (remaining / ratePerSec) * 1000;
+                    progress.eta = (remaining / throughput) * 1000;
                 }
             }
         }

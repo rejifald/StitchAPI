@@ -26,7 +26,6 @@ import {
     type AtLeastOne,
     type Seam,
     type SeamConfig,
-    type SeamOptions,
     type StitchStore,
     type TraceSink,
     memoryStore,
@@ -34,7 +33,7 @@ import {
 } from 'stitchapi';
 
 /** forRoot options: the shared `SeamConfig` defaults + infra, plus the Nest `logger` bridge. */
-export interface StitchModuleOptions extends SeamOptions {
+export interface StitchModuleOptions extends SeamConfig {
     /**
      * Bridge stitch events into a Nest `Logger` (via {@link nestLoggerSink}) as the seam's
      * `TraceSink`. **Default `true`** — aligned with `@stitchapi/fastify`'s plugin `logger`
@@ -95,7 +94,7 @@ export interface StitchScopedFeatureOptions extends StitchFeatureOptions {
 interface Infra {
     store: StitchStore;
     trace: TraceSink | 'console' | false;
-    defaults: Omit<SeamOptions, 'store' | 'trace'>;
+    defaults: Omit<SeamConfig, 'store' | 'trace'>;
 }
 
 // Normalise module options into shared infra: borrow an app-provided store (else own a

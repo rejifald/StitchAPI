@@ -8,8 +8,8 @@
 //
 //   - `linked(body)` — SEQUENTIAL: plain `await`s through `run`; ancestors are variables (no `ctx`).
 //   - `all({ k: node })` / `all([...])` / `all(a, b)` — resolve when ALL succeed (fail-fast); object or tuple.
-//   - `any([...])` / `any(a, b)` — resolve on the FIRST success (else `AggregateError`); failover across mirrors.
-//   - `race([...])` / `race(a, b)` — resolve on the FIRST to settle (win or lose); hedging a slow call.
+//   - `any([...])` / `any(a, b)` — resolve on the FIRST success (else `AggregateError`); hedging across mirrors.
+//   - `race([...])` / `race(a, b)` — resolve on the FIRST to settle (win or lose); a fast failure is an answer.
 //
 // The array members and the bare-argument members are the SAME thing — `all([a, b])` and `all(a, b)`
 // build the identical group. The bracketed form is the `Promise.all`/`Promise.any`/`Promise.race`
@@ -272,11 +272,18 @@ export function all(...args: readonly unknown[]): Composable<unknown> {
 }
 
 /**
- * Run nodes CONCURRENTLY and resolve with the FIRST to SUCCEED — failover across interchangeable
- * sources. If every member fails, rejects with an `AggregateError`. The losers are auto-cancelled.
- * Distinct from a stitch's built-in `retry` (which re-hits the SAME endpoint): `any` is redundancy
- * across DIFFERENT ones — a primary and a mirror, two regions, two providers of the same shape. Pass
- * the members as an ARRAY (`any([a, b])`) or as bare ARGUMENTS (`any(a, b)`) — same combinator.
+ * Run nodes CONCURRENTLY and resolve with the FIRST to SUCCEED — HEDGING a latency-sensitive call
+ * across interchangeable sources. Every member starts at once and a failure never decides the group:
+ * `any` waits past it for a success, which is precisely what a hedge is protecting. The losers are
+ * auto-cancelled. Distinct from a stitch's built-in `retry` (which re-hits the SAME endpoint): `any`
+ * is redundancy across DIFFERENT ones — a primary and a mirror, two regions, two providers of the
+ * same shape.
+ *
+ * That guarantee is paid for on the failure path. If EVERY member fails, `any` waits for the SLOWEST
+ * and rejects with an `AggregateError` whose `status` is `undefined`; the per-member `StitchError`s,
+ * and so the statuses you would route on, are one level down in `.errors`. ({@link race} rejects with
+ * a `StitchError` carrying `status` directly.) Pass the members as an ARRAY (`any([a, b])`) or as
+ * bare ARGUMENTS (`any(a, b)`) — same combinator.
  */
 export function any<M extends readonly Member[]>(
     members: M,
@@ -291,10 +298,20 @@ export function any(...args: readonly unknown[]): Composable<unknown> {
 }
 
 /**
- * Run nodes CONCURRENTLY and resolve/reject with the FIRST to SETTLE (success OR failure) — hedging a
- * latency-sensitive call against a faster mirror. The slower members are auto-cancelled. Where `any`
- * waits past failures for a success, `race` takes the first result of any kind. Pass the members as an
- * ARRAY (`race([a, b])`) or as bare ARGUMENTS (`race(a, b)`) — same combinator.
+ * Run nodes CONCURRENTLY and resolve/reject with the FIRST to SETTLE (success OR failure) — a
+ * FIRST-ANSWER race, for when a fast failure is itself a legitimate answer: a liveness probe, or
+ * interchangeable mirrors where a miss from the nearest is the same miss the far one would report.
+ * The slower members are auto-cancelled. Where `any` waits past failures for a success, `race` takes
+ * the first result of any kind.
+ *
+ * NOT a hedge. A hedge exists to beat a slow SUCCESS, and under `race` the first FAILURE wins —
+ * cancelling the slower member that was about to answer, and destroying the very thing the hedge was
+ * protecting. {@link any} is the combinator for that.
+ *
+ * What settling early buys is the error itself: `race` rejects with that member's own `StitchError`,
+ * `status` and all, so you can route on it directly — where `any`'s all-failed `AggregateError`
+ * carries no `status` and keeps the per-member ones one level down, in `.errors`. Pass the members as
+ * an ARRAY (`race([a, b])`) or as bare ARGUMENTS (`race(a, b)`) — same combinator.
  */
 export function race<M extends readonly Member[]>(
     members: M,
