@@ -1660,6 +1660,28 @@ npm release are grouped under the in-development version that introduced them.
     objects have no migration concern — `[object Object]` was never usable. A space in a form
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
+- **`race`'s docstring claimed a job only `any` can do.**
+  ([#687](https://github.com/rejifald/StitchAPI/issues/687)) The `stitchapi/pipe` module header and
+  `race`'s own docstring both sold it as "hedging a latency-sensitive call against a faster mirror".
+  The mechanism sentence beside it was right and the purpose sentence was wrong: a hedge exists to
+  beat a slow **success**, and `race` settles on the first result of any kind — so a fast **failure**
+  wins, cancels the slower member that was about to answer, and destroys the very thing the hedge was
+  protecting. Against a slow `200`, a fast `500` returns the error under `race` and the answer under
+  `any`.
+
+    Hedging now belongs to `any`, which waits past failures for a success. `race` is described by
+    what it is actually for — a first-answer race, where a fast failure is itself a legitimate
+    answer. Both docstrings now carry the trade-off in the other direction too: `any`'s guarantee
+    costs latency and error detail, because every member failing means waiting for the **slowest**
+    and then rejecting with an `AggregateError` whose `status` is `undefined` (the per-member
+    statuses are one level down, in `.errors`), where `race` rejects with a `StitchError` carrying
+    `status` directly. The parallel-combinator blog post repeated the same claim and is corrected
+    with it.
+
+    **Documentation only — no behaviour change.** This is §1 of
+    [#687](https://github.com/rejifald/StitchAPI/issues/687); the issue's remaining sections are
+    untouched and it stays open.
+
 ### Security
 
 - **`@stitchapi/swr` redacts caller-registered credential headers from the cache key.**
