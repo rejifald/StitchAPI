@@ -194,6 +194,22 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **`@stitchapi/nest` supports NestJS 12.** `peerDependencies` widen to
+  `^10.0.0 || ^11.0.0 || ^12.0.0` for both `@nestjs/common` and `@nestjs/core` — additive, so
+  nothing changes for a host on Nest 10 or 11. The adapter itself needed no code change; all 65
+  of its tests pass unmodified against Nest 12.
+
+    The bump has to be taken as **one coupled decision** rather than per-package. `@nestjs/common`
+    12 relocates the `interfaces` entry point that `@nestjs/core` 11 resolves against, so moving
+    `common` alone leaves every suite failing at import with
+    `Cannot find module '.../@nestjs/common/interfaces.js'`. `@nestjs/config` is pulled along for
+    the same reason: its 4.x line peers on `@nestjs/common` `^10.0.0 || ^11.0.0` and so cannot see
+    Nest 12 at all — the supporting line is `12.0.0`, which is where that package's versioning
+    realigned with the framework's.
+
+    Nest 12's own dependency moves ride along in the lockfile: `@nestjs/config` swaps `dotenv`
+    16 → 17 with `dotenv-expand` 12 → 13, and replaces `lodash` with `es-toolkit`.
+
 - **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
   `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
   was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
