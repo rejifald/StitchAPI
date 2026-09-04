@@ -8,7 +8,7 @@ import { seam as makeSeam } from './seam';
 import { graphql as graphqlStitch } from './stitch';
 import { graphqlSurface } from './surface';
 import { isSeam } from './types';
-import type { Seam, SeamOptions } from './types';
+import type { Seam, SeamConfig } from './types';
 
 /** graphql members bound to a seam. `stitch(config)` creates a graphql member of `seam`; `seam`
  *  is the underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
@@ -32,6 +32,6 @@ const bindSeam = (s: Seam): GraphqlSeamApi => ({
 export const graphql = Object.assign(graphqlStitch, {
     surface: graphqlSurface,
     stitch: graphqlStitch,
-    bind: (arg: Seam | SeamOptions): GraphqlSeamApi =>
+    bind: (arg: Seam | SeamConfig): GraphqlSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

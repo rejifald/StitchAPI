@@ -21,6 +21,13 @@ npm release are grouped under the in-development version that introduced them.
   dependencies and its own size gate. Every item is an ordinary stitch, so `retry`, `throttle`,
   `timeout` and tracing apply unchanged.
 
+    **Documented** at [Integrations → Batch downloads](https://stitchapi.dev/docs/integrations/download)
+    ([#460](https://github.com/rejifald/StitchAPI/issues/460)) — the whole surface on one page:
+    `downloadAll` and `DownloadManager`, the `ItemResult` arms, FIFO admission against
+    `throttle.concurrency`, the cancel-one/cancel-all split, the progress + ETA fields, the two
+    clocks (`idle` vs wall-clock `timeout`), the retryable/terminal classification, and the
+    dedupe caveat that a follower cannot be cancelled independently of the shared fetch.
+
 - **`QUERY` is a first-class method — a read that carries a request body.**
   ([draft-ietf-httpbis-safe-method-w-body](https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/))
   `method: 'QUERY'` already sent its body and already cached correctly under
@@ -186,6 +193,30 @@ npm release are grouped under the in-development version that introduced them.
     No behaviour change — the parser, its grammar, and its throw are exactly as they were.
 
 ### Changed
+
+- **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
+  `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
+  was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
+  capability: a standalone `stitch()` built its vault over `store` with no way to point it
+  elsewhere, and the two host integrations that build a seam from config — fastify's `seamConfig`
+  and a `@stitchapi/nest` **feature** seam's `config` — type that slot as `SeamConfig` and so could
+  not name it either. CONTRACT.md P16 says a config field is declared once on `StitchConfig` and
+  projected; this one was re-declared per surface.
+
+    ```ts
+    // was — seam only
+    const api = seam({ secretStore: expoSecureStore(SecureStore) });
+    // now — anywhere a config goes, `stitch()` included
+    const api = seam({ vault: expoSecureStore(SecureStore) });
+    const me = stitch({ url: '…', vault: expoSecureStore(SecureStore), auth: cookieSession(…) });
+    ```
+
+    The name is the one the rest of the codebase already used for this thing (ADR 0002 §4,
+    `AuthContext.vault`, the docs); `secretStore` was a third spelling for it. Behaviour is
+    unchanged where it was reachable: the vault still defaults to a reserved, redacted namespace
+    over `store`, the split is still by visibility rather than backend, and a seam still shares one
+    vault across its members and closes a distinct backend on `close()`. `vault` is redacted from
+    `__config` exactly like `store`. Hard break, no alias (P19, `rc` channel).
 
 - **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
   — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
@@ -1652,7 +1683,67 @@ npm release are grouped under the in-development version that introduced them.
     objects have no migration concern — `[object Object]` was never usable. A space in a form
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
+- **`race`'s docstring claimed a job only `any` can do.**
+  ([#687](https://github.com/rejifald/StitchAPI/issues/687)) The `stitchapi/pipe` module header and
+  `race`'s own docstring both sold it as "hedging a latency-sensitive call against a faster mirror".
+  The mechanism sentence beside it was right and the purpose sentence was wrong: a hedge exists to
+  beat a slow **success**, and `race` settles on the first result of any kind — so a fast **failure**
+  wins, cancels the slower member that was about to answer, and destroys the very thing the hedge was
+  protecting. Against a slow `200`, a fast `500` returns the error under `race` and the answer under
+  `any`.
+
+    Hedging now belongs to `any`, which waits past failures for a success. `race` is described by
+    what it is actually for — a first-answer race, where a fast failure is itself a legitimate
+    answer. Both docstrings now carry the trade-off in the other direction too: `any`'s guarantee
+    costs latency and error detail, because every member failing means waiting for the **slowest**
+    and then rejecting with an `AggregateError` whose `status` is `undefined` (the per-member
+    statuses are one level down, in `.errors`), where `race` rejects with a `StitchError` carrying
+    `status` directly. The parallel-combinator blog post repeated the same claim and is corrected
+    with it.
+
+    **Documentation only — no behaviour change.** This is §1 of
+    [#687](https://github.com/rejifald/StitchAPI/issues/687); the issue's remaining sections are
+    untouched and it stays open.
+
 ### Security
+
+- **`@stitchapi/swr` redacts caller-registered credential headers from the cache key.**
+  `swrKey` forks query-core's key derivation rather than importing it — swr is one of the three
+  stream-less adapters that deliberately carry no `@stitchapi/query-core` dependency
+  ([P9](docs/CONTRACT.md#p9--unique-by-shape-exported-types)) — and the fork had drifted: its
+  `isSecretHeader` checked the static header denylist and the `*-token` / `*-api-key` suffix rules,
+  but omitted query-core's closing `|| secrets.has(k)` clause. That clause is what pulls in core's
+  secret **stems** and, crucially, anything a host widened via `secrets.register`.
+
+    The effect was a redaction gap that only opened where a host had registered its own credential
+    name: `secrets.register('x-acme-cred')` redacted that header from the query key on
+    react/vue/svelte/solid/angular (all query-core-backed) while `@stitchapi/swr` wrote it into the
+    SWR key **in cleartext** — and SWR keys are persisted by cache providers and shown in devtools.
+    It contradicted `@stitchapi/query-core`'s documented guarantee ("plus core's `secrets.has`
+    names — including anything widened via `secrets.register`") and its own JSDoc claim that every
+    binding, "the swr key builder" included, derives from one implementation.
+
+    The clause is restored, so the two spellings agree again. `stitchapi` was already a peer
+    dependency and a tsup external; it is now imported for a value (`secrets`) rather than only a
+    type — exactly what query-core does — which adds no bundled runtime. Headers that were already
+    redacted are unaffected, since the clause only widens: a key changes only for a host that had
+    registered a name the static list missed, which is the leak being closed.
+
+    **Both parity tests now actually pin the behaviour.** query-core's fixture was
+    `x-querycore-spec-credential`, which contains the built-in `credential` stem — it passed via the
+    stem whether or not it was ever registered, so the test meant to guard `secrets.register` would
+    not have caught this drift in either package. Both suites now use a neutral `x-acme-cred`,
+    matched by no static entry, no suffix rule and no stem, so only the registration can redact it;
+    an unregistered `x-acme-region` asserts benign headers still vary the cache.
+
+    **The docs now state the reach.** `secrets.register`'s reference page listed only the trace
+    scrubbers it feeds (`start.url`, OTLP `url.full`, `input.query`, the traced body) and never
+    mentioned cache keys — true of query-core since it gained the clause, not just of swr. It now
+    names the query bindings, and the `secrets.has` anti-pattern callout ("headers are widened with
+    `redactHeaders`, not with `secrets.register`") is scoped to the trace-sink boundary, with the
+    query-key path called out as the place the two denylists meet. The
+    [swr integration page](https://stitchapi.dev/docs/integrations/swr) now documents what `swrKey`
+    drops and redacts, rather than describing it as just "the cache key".
 
 - **Five Dependabot alerts closed by `pnpm.overrides` — `fast-uri` and `ip-address`.** Both are
   transitive-only: no manifest in the workspace names either one, so Dependabot could not open a

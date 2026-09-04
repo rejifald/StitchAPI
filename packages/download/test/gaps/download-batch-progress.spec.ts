@@ -45,7 +45,7 @@ test('aggregate loaded/total/rate/ETA are EXACT under a known byte schedule (man
     expect(s.count).toBe(2);
     expect(s.completed).toBe(0);
     // 1000 bytes in 1000ms → 1000 B/s; remaining 1000 bytes → ETA exactly 1000ms. No wall-clock.
-    expect(s.ratePerSec).toBe(1000);
+    expect(s.throughput).toBe(1000);
     expect(s.eta).toBe(1000);
 });
 
@@ -79,7 +79,7 @@ test('an indeterminate (chunked) item makes the aggregate total + ETA undefined,
     expect(s.loaded).toBe(50);
     expect(s.total).toBeUndefined();
     expect(s.eta).toBeUndefined(); // no total ⇒ no ETA…
-    expect(s.ratePerSec).toBe(100); // …but the rate is still known: 50 bytes in 0.5s = 100 B/s
+    expect(s.throughput).toBe(100); // …but the rate is still known: 50 bytes in 0.5s = 100 B/s
 });
 
 test('downloadAll rolls per-item progress into a correct aggregate across concurrent streams', async () => {
@@ -146,7 +146,7 @@ test('a slow head stops inflating the ETA once the batch is streaming fast again
     // Overall average: 80_000 B over 24_000 ms = 3333 B/s → a ~6-second ETA for the last 20 kB,
     // three times too long, because the dead first 20 s is still in the denominator. The decayed
     // rate has all but forgotten the crawl and reads the live 20 kB/s.
-    expect(s.ratePerSec!).toBeGreaterThan(10_000);
+    expect(s.throughput!).toBeGreaterThan(10_000);
     expect(s.eta!).toBeLessThan(2000);
 });
 
@@ -159,7 +159,7 @@ test('a fast head stops hiding a stalled tail — the ETA reflects the stall (#4
     await clock.advance(1000);
     agg.item('a', { loaded: 5000, total: 10_000 });
     const fast = agg.snapshot(1);
-    expect(fast.ratePerSec).toBe(5000); // first sample: 5000 B in 1000 ms, exactly
+    expect(fast.throughput).toBe(5000); // first sample: 5000 B in 1000 ms, exactly
     expect(fast.eta).toBe(1000); // 5000 B left at 5 kB/s
 
     // Then it crawls: 50 bytes per ten seconds, twice.
@@ -172,7 +172,7 @@ test('a fast head stops hiding a stalled tail — the ETA reflects the stall (#4
     const s = agg.snapshot(1);
     // Overall average: 5100 B over 21_000 ms = 243 B/s → a ~20-second ETA, still carrying the fast
     // first second. Recent throughput is 5 B/s, so the true wait is minutes, not seconds.
-    expect(s.ratePerSec!).toBeLessThan(50);
+    expect(s.throughput!).toBeLessThan(50);
     expect(s.eta!).toBeGreaterThan(100_000);
 });
 
@@ -189,7 +189,7 @@ test('an idle stretch with no new bytes decays the rate with no chunk to report 
     await clock.advance(60_000);
     const after = agg.snapshot(1);
 
-    expect(after.ratePerSec!).toBeLessThan(before.ratePerSec!);
+    expect(after.throughput!).toBeLessThan(before.throughput!);
     expect(after.eta!).toBeGreaterThan(before.eta!);
 });
 
@@ -201,10 +201,10 @@ test('repeated snapshots at one instant are idempotent — polling cannot skew t
     agg.item('a', { loaded: 2000, total: 4000 });
 
     const first = agg.snapshot(1);
-    expect(first.ratePerSec).toBe(2000);
+    expect(first.throughput).toBe(2000);
     for (let i = 0; i < 5; i += 1) {
         const again = agg.snapshot(1);
-        expect(again.ratePerSec).toBe(first.ratePerSec);
+        expect(again.throughput).toBe(first.throughput);
         expect(again.eta).toBe(first.eta);
     }
 });
@@ -226,14 +226,14 @@ test('a dropped item costs the rate exactly what a stalled one does — nothing 
     const loads: number[] = [];
     for (const { clock, agg, dropB } of runs) {
         await clock.advance(1000);
-        expect(agg.snapshot(2).ratePerSec).toBe(2000); // 2000 B in 1000 ms, both runs
+        expect(agg.snapshot(2).throughput).toBe(2000); // 2000 B in 1000 ms, both runs
 
         if (dropB) agg.dropped('b'); // 1000 partial bytes leave the aggregate
         await clock.advance(1000);
         agg.item('a', { loaded: 2000, total: 4000 }); // 'a' pulls 1000 more in both runs
 
         const s = agg.snapshot(2);
-        rates.push(s.ratePerSec!);
+        rates.push(s.throughput!);
         loads.push(s.loaded);
     }
 

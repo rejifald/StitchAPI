@@ -31,13 +31,13 @@ history so the reasoning survives the renames.
 
 Five forks were decided by the maintainer; the rules below assume them.
 
-| #   | Decision                   | Resolution                                                                                                                                                                                                                                                       | Drives                                                                    |
-| --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                  | [P5](#p5--one-success-field-one-failure-field)                            |
-| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                       | [P4](#p4--one-cap-vocabulary)                                             |
-| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `duration.parse`.                                | [P17](#p17--one-canonical-duration-form)                                  |
-| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                    | [§7](#7-enforcement)                                                      |
-| D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major. | [P19](#p19--breaking-changes-sanctioned-pre-ga-deprecation-cycle-from-ga) |
+| #   | Decision                   | Resolution                                                                                                                                                                                                                                                       | Drives                                                        |
+| --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                  | [P5](#p5--one-success-field-one-failure-field)                |
+| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                       | [P4](#p4--one-cap-vocabulary)                                 |
+| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `duration.parse`.                                | [P17](#p17--one-canonical-duration-form)                      |
+| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                    | [§7](#7-enforcement)                                          |
+| D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major. | [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) |
 
 ---
 
@@ -506,6 +506,22 @@ Cloudflare KV `expirationTtl`. Every StitchAPI-_authored_ duration stays ms; a f
 that must speak a foreign unit converts at the adapter edge and is named with its true
 unit (`MockResponse.retryAfterSeconds` — it sets the wire header) so the unit is never
 silent.
+
+_Resolved (2026-09-03, an emitted **rate** — de-suffixed):_
+`BatchProgress.ratePerSec` → **`throughput`** (`@stitchapi/download`). The unit hazard
+above licences a unit **in the name** only where a wire format imposes the unit; a
+house-authored readout carries no such mandate, so `PerSec` was the `Ms` suffix in
+another dimension — while its immediate sibling `eta` already states "in ms"
+in its JSDoc rather than its name. The de-suffixed spelling could **not** be `rate`
+([P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)):
+`throttle`'s `rate` is the `Rate` token grammar (`'2/s'`), a different value-space, so
+this is the rename-one remedy and not a shared word. The package was still unreleased,
+so it is not a [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) break.
+_What let it through:_ R9 reads the duration and size dimensions, and a rate is neither,
+so no rule looked at the name — it surfaced in a by-hand census of multi-word field
+names. The class (a house field spelling its own unit) is at zero tree-wide: the only
+unit-suffixed names left are OTLP's `*UnixMs` instants and the two wire-mandated
+seconds fields named above.
 
 ### P18 · Adapter mirrors keep upstream spelling; house contracts use house vocabulary
 
@@ -1542,6 +1558,37 @@ shape, not as today's surface: nothing on the surface carries an alias.
     verbose name carrying a warning is still a warning that must be repeated at each call site; it
     now sits once on the namespace's JSDoc and once in the reference page, the same relocation
     `size` made when it stopped being `parseBytes`.
+
+- **P16 (the seam-only config slot, 2026-09-03)** — the rule's projection clause says a config
+  field is added to `StitchConfig` and **projected** (`SeamConfig = Omit<StitchConfig, …>`),
+  never re-declared per surface. One field was: `secretStore`, the hardened backend for the auth
+  vault, declared on `SeamOptions = SeamConfig & { secretStore?: StitchStore }`. The cost was not
+  aesthetic. Three surfaces type their config slot as `SeamConfig` and therefore could not reach
+  the capability at all: a standalone `stitch()` (the engine built `vaultView(store)` with no
+  hook, so an RN app wanting SecureStore for its session cookie had to adopt a seam), fastify's
+  `seamConfig`, and a nest **feature** seam's `config` — while nest's `forRoot` had it only
+  because `StitchModuleOptions extends SeamOptions`. **Fixed** — `vault?: StitchStore` on
+  `StitchConfig`, and `SeamOptions` **deleted** (with nothing left to add, the second type was
+  itself the defect). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel).
+  _The name came from the codebase._ ADR 0002 §4, `SharedRuntime.vault`, `AuthContext.vault`, the
+  redaction drop-list and the docs all called this the **vault**; only the option that configured
+  it said `secretStore`, so its JSDoc had to translate — "Backend for the vault" — which is the
+  tell ([P1](#p1--one-word-one-concept-one-value-space): one concept, one word). The config slot
+  names the **backend**, the runtime the namespaced **view** over it — the same two layers `store`
+  already spans, not a [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)
+  collision.
+  **No ratchet could have found it, on two counts** — the same pair the `total`/`perAttempt` entry
+  records. `SeamOptions` is a `type X = A & { … }` **intersection literal**, which no member rule
+  scans (the limitation is written into `check-contract.mjs` itself); and even scanned, **R8** needs
+  a shared _leading_ word, while `store`/`secretStore` share a trailing one. The gate is now a
+  type-level assert instead of a lint: `Exclude<keyof Parameters<typeof seam>[0], keyof StitchConfig>`
+  must be `never` (`extends-inference.test-d.ts` §8b), so the next seam-only slot fails to compile
+  rather than shipping a capability three surfaces cannot name.
+  _Redaction came for free, by construction:_ adding the slot to `StitchConfigAnatomy` as
+  `dropped: 'redact'` broke `contract-p0.spec.ts` until the fixture sampled a live `vault` — the
+  anatomy doing exactly the job [§7](#7-enforcement)'s note describes, a new must-not-appear slot
+  caught at compile time rather than by review.
 
 ## 7. Enforcement
 

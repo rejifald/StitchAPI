@@ -22,7 +22,7 @@ const RATE_HALF_LIFE_MS = 2_000;
  * own term but never corrupts the siblings' aggregate. `total` is the sum of known per-item totals and
  * goes `undefined` the moment any started item is indeterminate (chunked / no `Content-Length`).
  *
- * **The rate tracks RECENT throughput, not the batch's lifetime average** (#456). `ratePerSec` was
+ * **The rate tracks RECENT throughput, not the batch's lifetime average** (#456). `throughput` was
  * once `loaded / (now - firstByte)`, which answers "how fast has this batch gone overall?" — a
  * question nobody asked. `eta` is a forecast, so it needs the rate the batch is moving at *now*: a
  * dead first minute kept inflating the ETA long after the transfer recovered, and a fast first
@@ -49,7 +49,7 @@ export class ProgressAggregator {
     /** Aggregate `loaded` at {@link #readAt} — the other half of the reading. */
     #readLoaded = 0;
     /** The decayed throughput estimate; `undefined` until the first reading with elapsed time. */
-    #ratePerSec: number | undefined;
+    #throughput: number | undefined;
 
     constructor(clock: Clock) {
         this.#clock = clock;
@@ -110,12 +110,12 @@ export class ProgressAggregator {
         if (totalKnown) progress.total = total;
 
         this.#read(loaded);
-        const ratePerSec = this.#ratePerSec;
-        if (ratePerSec !== undefined) {
-            progress.ratePerSec = ratePerSec;
-            if (totalKnown && ratePerSec > 0) {
+        const throughput = this.#throughput;
+        if (throughput !== undefined) {
+            progress.throughput = throughput;
+            if (totalKnown && throughput > 0) {
                 const remaining = Math.max(0, total - loaded);
-                progress.eta = (remaining / ratePerSec) * 1000;
+                progress.eta = (remaining / throughput) * 1000;
             }
         }
         return progress;
@@ -135,16 +135,15 @@ export class ProgressAggregator {
         // clock tick idempotent.
         if (elapsedMs <= 0) return;
 
-        const readingPerSec = ((loaded - this.#readLoaded) / elapsedMs) * 1000;
+        const reading = ((loaded - this.#readLoaded) / elapsedMs) * 1000;
         // Decay by elapsed time, so the weight of the previous estimate depends on how long ago it was
         // taken and not on the sampling cadence: half-life `RATE_HALF_LIFE_MS`, i.e. an interval of one
         // half-life gives the new reading half the say.
         const weight = 1 - 2 ** (-elapsedMs / RATE_HALF_LIFE_MS);
-        this.#ratePerSec =
-            this.#ratePerSec === undefined
-                ? readingPerSec
-                : this.#ratePerSec +
-                  weight * (readingPerSec - this.#ratePerSec);
+        this.#throughput =
+            this.#throughput === undefined
+                ? reading
+                : this.#throughput + weight * (reading - this.#throughput);
         this.#readAt = now;
         this.#readLoaded = loaded;
     }

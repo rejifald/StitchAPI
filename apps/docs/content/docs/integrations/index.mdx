@@ -133,6 +133,19 @@ stitch is the fetcher; the library owns caching, dedup, and invalidation.
     />
 </Cards>
 
+## File transfers
+
+Sequence a list of downloads over core's `download` surface — every item still an
+ordinary stitch, with the batch adding what a single call can't express.
+
+<Cards>
+    <Card
+        title="Batch downloads"
+        href="/docs/integrations/download"
+        description="downloadAll / DownloadManager — FIFO admission under a concurrency ceiling, per-item settling, cancel, aggregate progress + ETA, and an idle timeout for stalled transfers."
+    />
+</Cards>
+
 ## State stores
 
 Attach a `StitchStore` to move a stitch's throttle counters, sessions, and cache

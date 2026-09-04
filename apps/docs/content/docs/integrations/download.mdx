@@ -1,0 +1,259 @@
+---
+title: Batch downloads
+description: downloadAll and DownloadManager sequence a list of downloads over core's download surface — FIFO admission under a concurrency ceiling, per-item settling, cancellation, aggregate progress with an ETA, an idle timeout for stalled transfers, and opt-in dedupe.
+prerequisites: ['/docs/concepts/the-stitch', '/docs/reference/surfaces']
+---
+
+Core's [`download` surface](/docs/reference/surfaces#download) fetches **one**
+file: a buffered `GET` with byte progress, a `Content-Disposition` filename, and
+a per-call `AbortSignal`. `@stitchapi/download` sequences a **list** of them and
+adds what a single call can't express — FIFO admission under a `concurrency`
+ceiling, per-item settling, cancellation, aggregate progress with an ETA, a
+forward-progress `idle` timeout, and opt-in dedupe.
+
+**Every item is an ordinary stitch.** Each download is a real `download()` call,
+so [`retry`](/docs/guides/resilience/retry),
+[`throttle`](/docs/guides/resilience/throttle),
+[`timeout`](/docs/guides/resilience/timeout), `auth`, the
+[circuit breaker](/docs/guides/resilience/circuit-breaker), and the
+[event stream](/docs/concepts/event-stream) apply per item exactly as they do on
+a lone call. This package only orchestrates the batch.
+
+**Browser-first, zero runtime dependencies.** The surface returns `Blob`s and
+never writes to disk, so the same code runs on the server and in the browser.
+
+## Example
+
+```package-install
+@stitchapi/download stitchapi
+```
+
+`stitchapi` is the only peer dependency.
+
+`downloadAll(items, options)` returns a batch that is **awaitable** — and never
+rejects. Each item settles on its own, so one failure can't sink the rest:
+
+```ts
+import { downloadAll } from '@stitchapi/download';
+
+const batch = downloadAll(
+    [
+        'https://api.example.com/reports/q1.pdf',
+        'https://api.example.com/reports/q2.pdf',
+    ],
+    {
+        concurrency: 4,
+        onProgress: (p) => console.log(`${p.completed}/${p.count}`, p.eta),
+    },
+);
+
+const results = await batch; // ItemResult[] — in enqueue order, never throws
+```
+
+## Per-item results
+
+Results come back in **enqueue order**, shaped like `Promise.allSettled` plus a
+`cancelled` arm:
+
+```ts
+for (const r of results) {
+    if (r.status === 'fulfilled') save(r.value.blob, r.value.filename);
+    else if (r.status === 'rejected')
+        console.warn(r.id, r.code, r.retryable ? '(retryable)' : '(terminal)');
+    // r.status === 'cancelled' → the item never finished; nothing to save
+}
+```
+
+| `status`      | Also carries                                                                            |
+| ------------- | --------------------------------------------------------------------------------------- |
+| `'fulfilled'` | `value` — the `download()` result: a `blob`, and a `filename` when the server named one |
+| `'rejected'`  | `reason` (a `StitchError`), plus a `retryable` verdict and a best-effort machine `code` |
+| `'cancelled'` | nothing more — cancelling isn't a failure, so it carries no classification              |
+
+Every arm carries the item's `id`, which is how progress, cancellation, and
+results correlate. An id defaults to the item's URL and falls back to its enqueue
+index, so give colliding URLs an explicit `id` when you need to tell them apart.
+
+## Items and shared config
+
+An item is either a URL string or a partial stitch config with an optional `id`.
+Shared config goes in `defaults`, merged **under** every item — the item's own
+fields win:
+
+```ts
+downloadAll(
+    [
+        { path: '/reports/q1.pdf' },
+        { path: '/reports/q2.pdf', retry: { attempts: 5 } },
+    ],
+    {
+        defaults: {
+            baseUrl: 'https://api.example.com',
+            throttle: { concurrency: 4, pool: 'host' },
+        },
+    },
+);
+```
+
+## Bounded concurrency
+
+Items are admitted in **FIFO order** as slots free, up to `concurrency` (default
+`4`). `onItemStart` fires at the moment an item leaves the queue for a slot.
+
+This is a different ceiling from
+[`throttle.concurrency`](/docs/guides/resilience/throttle), and they compose. The
+batch's `concurrency` governs the queue this package owns — the one you can
+`snapshot()` and cancel out of. A stitch's `throttle` governs the engine's own
+in-flight budget, pooled per stitch or per host, and so is shared with every
+other caller of that host rather than scoped to this batch.
+
+## Cancellation
+
+```ts
+const batch = downloadAll(urls, { concurrency: 2 });
+
+batch.cancel(id); // cancel ONE item
+batch.cancel(); // omit the id to cancel EVERYTHING
+```
+
+An **in-flight** item aborts, and its freed slot goes to the next queued item. A
+**still-queued** item simply drops: it held no slot, so nothing else is skipped.
+Either way the item settles as `cancelled` and the batch still never rejects. The
+abort reason is a `DownloadCancelledError` (exported, so you can identify it).
+
+Pass an `AbortSignal` as `signal` to wire cancel-all to a controller you already
+own.
+
+## Progress and ETA
+
+`onProgress` reports the batch in aggregate; `onItemProgress` reports one item's
+bytes:
+
+```ts
+downloadAll(urls, {
+    onProgress: (p) => overall.set(p.loaded, p.total),
+    onItemProgress: (id, p) => rows[id].set(p.loaded, p.total),
+});
+```
+
+| Field               | Meaning                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `loaded`            | Bytes so far, summed across in-flight and fulfilled items                                                                        |
+| `total`             | Sum of known per-item totals; `undefined` while any **started** item is indeterminate                                            |
+| `completed` `count` | Items settled (fulfilled + rejected + cancelled), and items in the batch                                                         |
+| `throughput`        | **Recent** throughput — a decayed average of the last few seconds, not the lifetime average; `undefined` before any bytes arrive |
+| `eta`               | Estimated ms to completion at the current `throughput`; `undefined` when `total` is unknown or the rate has decayed to zero      |
+
+`total` firms up as items are admitted — a queued item's size isn't known until
+it starts, and a chunked response never declares one. A failed or cancelled
+item's partial bytes are **discarded** from the aggregate, so one dead stream
+can't inflate the total downloaded.
+
+`batch.snapshot()` reads the same aggregate plus each item's phase (`queued`,
+`active`, or `settled`) at any moment.
+
+## Forward progress: `idle`
+
+A stitch's `timeout` is **wall-clock** — it fires on elapsed time whether or not
+bytes are arriving, so a healthy-but-slow download dies by the same clock as a
+dead one. `idle` is a different clock: it resets on **every** progress chunk, so
+a slow stream survives while a genuinely stalled one is cut.
+
+```ts
+downloadAll(urls, { idle: '10s' }); // abort an item after 10s of NO new bytes
+```
+
+A stall surfaces as a retryable rejection with code `IDLE_TIMEOUT` (the abort
+reason is an exported `DownloadIdleTimeoutError`). Both clocks take
+`number | string`, and both are available: `idle` is the batch's, while the
+wall-clock `timeout` is set per item or under `defaults`.
+
+<Callout type="warn">
+    **Anti-pattern:** don't shrink `timeout` to cut stalled transfers — it's the
+    total-elapsed clock, so any value tight enough to catch a stall also kills
+    the large file that is downloading perfectly well. Set `idle` instead and
+    leave `timeout` as the outer bound.
+</Callout>
+
+## Why an item failed
+
+A bare `fetch failed` says nothing about whether retrying is worth it. Each
+rejection is classified, so the caller can act on it without parsing a message:
+
+```ts
+// { id, status: 'rejected', reason, retryable: true, code: 'UND_ERR_SOCKET' }
+```
+
+`retryable` is `true` for transport faults (`UND_ERR_SOCKET`, `ECONNRESET`,
+`ENOTFOUND`, and friends), `5xx`, `429`, `408`, and idle timeouts — and `false`
+for a terminal `4xx`, where a retry can't fix a `404` or a `401`. `code` is a
+best-effort machine code: an undici transport code, `HTTP_<status>`,
+`IDLE_TIMEOUT`, or absent when nothing identifiable was recovered.
+
+## Same-request dedupe
+
+By default every item is an **independent** fetch — predictable, with no
+cross-item coupling. Opt in to collapse duplicates onto a single in-flight
+request:
+
+```ts
+downloadAll([url, url], { dedupe: true }); // one request on the wire
+```
+
+Items dedupe by their explicit `id`, else by URL. Followers share the leader's
+result and its progress — so a follower **cannot be cancelled independently** of
+the shared fetch. Leave `dedupe` off when each item must be separately
+cancellable.
+
+## `DownloadManager`
+
+`downloadAll` is a one-shot wrapper over the manager. Use the manager directly to
+enqueue over time — the same options, plus a handle per item:
+
+```ts
+import { DownloadManager } from '@stitchapi/download';
+
+const mgr = new DownloadManager({
+    concurrency: 3,
+    onItemSettled: (r) => log(r),
+});
+
+const handle = mgr.add('https://api.example.com/reports/q3.pdf');
+handle.cancel(); // cancel just this item
+const result = await handle.done; // this item's ItemResult — never rejects
+
+await mgr.drained(); // resolves when the queue is fully drained
+const all = await mgr.results(); // every result so far, in enqueue order
+```
+
+`drained()` is named for the **queue**, not for idleness: `idle` is the per-item
+forward-progress window above, a different clock over a different subject.
+
+## Options
+
+Shared by `downloadAll` and `DownloadManager`:
+
+| Option           | Type                            | Default       | What it does                                                         |
+| ---------------- | ------------------------------- | ------------- | -------------------------------------------------------------------- |
+| `concurrency`    | `number`                        | `4`           | Max items downloading at once (floored at 1)                         |
+| `defaults`       | `Partial<StitchConfig>`         | —             | Config merged under every item; the item's own fields win            |
+| `idle`           | `number \| string`              | off           | Abort an item after this long with no new bytes                      |
+| `dedupe`         | `boolean`                       | `false`       | Collapse items sharing a key onto one in-flight request              |
+| `onProgress`     | `(p: BatchProgress) => void`    | —             | Aggregate progress; fires on every per-item chunk                    |
+| `onItemProgress` | `(id, p: ItemProgress) => void` | —             | One item's byte progress                                             |
+| `onItemStart`    | `(id) => void`                  | —             | Fires as an item is admitted, in FIFO order                          |
+| `onItemSettled`  | `(r: ItemResult) => void`       | —             | Fires as each item settles                                           |
+| `signal`         | `AbortSignal`                   | —             | External cancel-all                                                  |
+| `clock`          | `Clock`                         | `systemClock` | Time seam for the idle timer and ETA math — `manualClock()` in tests |
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="Timeouts" href="/docs/guides/resilience/timeout" />
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+    <Card
+        title="Cancel an in-flight call"
+        href="/docs/recipes/cancel-an-in-flight-call"
+    />
+</Cards>

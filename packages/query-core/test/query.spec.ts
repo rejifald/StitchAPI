@@ -500,11 +500,19 @@ describe('stitchKey.input()', () => {
     });
 
     test("reuses core's secrets.has: secrets.register widens header redaction", () => {
-        secrets.register('x-querycore-spec-credential');
+        // NEUTRAL by construction: `x-acme-cred` matches neither the static
+        // `SECRET_HEADERS` list, nor the `-token` / `-api-key` suffix rules, nor any
+        // built-in stem — so the registration is the ONLY thing that can redact it.
+        // (The previous fixture, `x-querycore-spec-credential`, contained the
+        // `credential` stem, so it passed via `secrets.has`'s built-in set whether or
+        // not it was ever registered — it pinned the stems, not `secrets.register`.)
+        secrets.register('x-acme-cred');
         const out = stitchKey.input({
-            headers: { 'x-querycore-spec-credential': 'v' },
+            headers: { 'x-acme-cred': 'v', 'x-acme-region': 'eu' },
         }) as { headers: Record<string, unknown> };
-        expect(out.headers['x-querycore-spec-credential']).toBe('[redacted]');
+        expect(out.headers['x-acme-cred']).toBe('[redacted]');
+        // An unregistered neutral header is untouched, so it still varies the key.
+        expect(out.headers['x-acme-region']).toBe('eu');
     });
 });
 

@@ -21,7 +21,7 @@ import {
     type NoUnknownNestedKeys,
     type OneEndpointSpelling,
     type Seam,
-    type SeamOptions,
+    type SeamConfig,
     type Stitch,
     type StitchConfig,
     type StitchInput,
@@ -242,6 +242,6 @@ function bindSeam(s: Seam): DownloadSeamApi {
 export const download = Object.assign(downloadStitch, {
     surface: downloadSurface,
     stitch: downloadStitch,
-    bind: (arg: Seam | SeamOptions): DownloadSeamApi =>
+    bind: (arg: Seam | SeamConfig): DownloadSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

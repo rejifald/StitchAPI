@@ -45,9 +45,9 @@ export interface BatchProgress {
      * within a couple of seconds and a recovery pulls it back up just as fast, which is what makes
      * {@link eta} a forecast rather than a report on how the batch has gone so far.
      */
-    ratePerSec?: number;
+    throughput?: number;
     /**
-     * Estimated time to completion, in ms, at {@link ratePerSec}; `undefined` when `total` is unknown
+     * Estimated time to completion, in ms, at {@link throughput}; `undefined` when `total` is unknown
      * or the rate has decayed to zero. It is a projection of the CURRENT rate, so it moves — a batch
      * that stalls watches its ETA climb.
      */
