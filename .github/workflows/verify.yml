@@ -31,7 +31,18 @@ concurrency:
 jobs:
     verify:
         runs-on: ubuntu-latest
-        timeout-minutes: 10
+        # 20, not 10: this job is the serial one — frozen install, format, lint, both
+        # contract ratchets, the workspace typecheck (which builds every package's d.ts),
+        # tsd, the full test suite, `check:exports`, the docs-app build, and a measured
+        # yakir pass. It ran 8m46s on `9b98bfe5` and then timed out at 10m16s and 10m17s
+        # on the next two `main` commits — the cap was firing on runner variance, not on a
+        # runaway job, and a re-run of an unchanged commit flipped 10m18s → 8m47s. A cap
+        # that close to the honest runtime reports infrastructure noise as a red build,
+        # which is the one thing a required check must not do. 20 restores the headroom
+        # this job had when the cap was written. Splitting the job so the typecheck and the
+        # docs build stop being serial is the real fix; this is the stopgap that unblocks
+        # every PR in the meantime.
+        timeout-minutes: 20
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
             - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
