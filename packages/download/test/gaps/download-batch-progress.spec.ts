@@ -45,7 +45,7 @@ test('aggregate loaded/total/rate/ETA are EXACT under a known byte schedule (man
     expect(s.count).toBe(2);
     expect(s.completed).toBe(0);
     // 1000 bytes in 1000ms → 1000 B/s; remaining 1000 bytes → ETA exactly 1000ms. No wall-clock.
-    expect(s.ratePerSec).toBe(1000);
+    expect(s.throughput).toBe(1000);
     expect(s.eta).toBe(1000);
 });
 
@@ -79,7 +79,7 @@ test('an indeterminate (chunked) item makes the aggregate total + ETA undefined,
     expect(s.loaded).toBe(50);
     expect(s.total).toBeUndefined();
     expect(s.eta).toBeUndefined(); // no total ⇒ no ETA…
-    expect(s.ratePerSec).toBe(100); // …but the rate is still known: 50 bytes in 0.5s = 100 B/s
+    expect(s.throughput).toBe(100); // …but the rate is still known: 50 bytes in 0.5s = 100 B/s
 });
 
 test('downloadAll rolls per-item progress into a correct aggregate across concurrent streams', async () => {
