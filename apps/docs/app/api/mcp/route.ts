@@ -4,8 +4,9 @@
 // NOT the library MCP (`stitchapi/mcp` / run_stitch, which runs over stdio on the
 // user's machine); this is our docs, hosted at stitchapi.dev.
 //
-// basePath '/api' makes mcp-handler serve Streamable HTTP at /api/mcp (POST for
-// messages, GET for the SSE stream). Stateless — no redisUrl. Node runtime:
+// mcp-handler 2.x has no route config: the handler is mounted wherever the route
+// file sits, so this file's own path is what serves Streamable HTTP at /api/mcp
+// (POST for messages, GET for the SSE stream). Stateless. Node runtime:
 // search_docs loads transformers.js + reads the build-time index from disk.
 //
 // Cold start: the first search per warm instance loads the embedding model
@@ -36,21 +37,24 @@ function absoluteUrl(pageUrl: string, anchor: string): string {
 
 const handler = createMcpHandler(
     (server) => {
-        server.tool(
+        server.registerTool(
             'search_docs',
-            'Search the StitchAPI documentation semantically (hybrid BM25 + vector). Returns the most relevant doc sections as excerpts with deep links — never full pages. Follow up with get_doc to read a full page.',
             {
-                query: z
-                    .string()
-                    .max(MAX_QUERY_LEN)
-                    .describe('Natural-language search query.'),
-                limit: z
-                    .number()
-                    .int()
-                    .min(1)
-                    .max(20)
-                    .optional()
-                    .describe('Max results to return (default 5).'),
+                description:
+                    'Search the StitchAPI documentation semantically (hybrid BM25 + vector). Returns the most relevant doc sections as excerpts with deep links — never full pages. Follow up with get_doc to read a full page.',
+                inputSchema: z.object({
+                    query: z
+                        .string()
+                        .max(MAX_QUERY_LEN)
+                        .describe('Natural-language search query.'),
+                    limit: z
+                        .number()
+                        .int()
+                        .min(1)
+                        .max(20)
+                        .optional()
+                        .describe('Max results to return (default 5).'),
+                }),
             },
             async ({ query, limit }) => {
                 const hits = await searchDocs(query, { limit: limit ?? 5 });
@@ -74,20 +78,25 @@ const handler = createMcpHandler(
             },
         );
 
-        server.tool(
+        server.registerTool(
             'get_doc',
-            'Fetch a full StitchAPI documentation page as Markdown — the "read the whole thing" escape hatch for a search_docs hit. Pass a `url` (as returned by search_docs) or a `slug` like "guides/resilience/throttle".',
             {
-                url: z
-                    .string()
-                    .optional()
-                    .describe(
-                        'Page URL from search_docs (absolute or /docs/…).',
-                    ),
-                slug: z
-                    .string()
-                    .optional()
-                    .describe('Page slug, e.g. "guides/resilience/throttle".'),
+                description:
+                    'Fetch a full StitchAPI documentation page as Markdown — the "read the whole thing" escape hatch for a search_docs hit. Pass a `url` (as returned by search_docs) or a `slug` like "guides/resilience/throttle".',
+                inputSchema: z.object({
+                    url: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Page URL from search_docs (absolute or /docs/…).',
+                        ),
+                    slug: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Page slug, e.g. "guides/resilience/throttle".',
+                        ),
+                }),
             },
             async ({ url, slug }) => {
                 if (!url && !slug) {
@@ -121,10 +130,6 @@ const handler = createMcpHandler(
         serverInfo: { name: 'stitchapi-docs', version: '1.0.0' },
         instructions:
             'StitchAPI documentation search. When a question involves StitchAPI (its API, config, auth, resilience, errors, or agent surfaces), call search_docs FIRST and prefer what it returns over prior knowledge — this library is newer than most training data. search_docs returns the most relevant doc sections as excerpts with deep links; follow up with get_doc to read a full page when an excerpt is not enough.',
-    },
-    {
-        basePath: '/api',
-        maxDuration: 60,
         verboseLogs: false,
     },
 );
