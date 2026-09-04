@@ -985,8 +985,14 @@ export interface AdapterRequest {
      * string is already serialised into `url` by the time a request reaches the transport).
      * Defaults to `'indices'` — the same default the query string uses, so one authored
      * {@link WireOptions.array} means one thing on both urlencoded surfaces.
+     *
+     * Spelled `array`, not `arrayFormat`: unlike its neighbour {@link AdapterRequest.responseType}
+     * — which is XHR's own property name, assigned straight through — no transport API takes an
+     * array format, so nothing pins a foreign spelling here (CONTRACT.md P24 (a) binds the layer
+     * that meets the standard, and no layer meets one). One capability, one word, both sides of
+     * the edge (P1/P16).
      */
-    arrayFormat?: ArrayFormat;
+    array?: ArrayFormat;
     responseType?: ResponseType;
     /**
      * Ask the transport NOT to buffer/parse the response — hand back the live body instead

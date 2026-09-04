@@ -739,6 +739,19 @@ _Carve-outs:_
     carve-out guards against (`response: { type, text }`) was never live here. What the carve-out
     still forbids is renaming the **transport** field, which this change does not do.
 
+    _Corrected (2026-09-04) — the exemption is per-field, not per-interface:_
+    `AdapterRequest.arrayFormat` sat beside `responseType` and was read as sharing its shelter,
+    on the strength of resemblance alone. It does not. `responseType` is XHR's **own property
+    name**, assigned straight through by the `xhr` adapter — a layer that genuinely meets a
+    standard. Nothing takes an `arrayFormat`: the walker is ours (`util.ts`), and the values
+    `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins the **values**, never the
+    field. With the authoring slot already renamed to `wire.array` by #591, one capability was
+    spelled two ways across one edge for no reason a standard could supply →
+    **`AdapterRequest.array`** (P1's shortest unambiguous token — there is no competing array
+    concept on that interface — and P16's cross-surface parity). The lesson generalises: a
+    neighbour's carve-out is not contagious, and "it matches the field next to it" is a
+    resemblance argument, which this contract does not accept anywhere else either.
+
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an
   independent knob), the pair **stays flat** — nesting would turn a scalar-plus-tag into a
@@ -747,6 +760,17 @@ _Carve-outs:_
   (`X?: never`, or a `ConfigError<…>` brand where a bare `never` would collapse the whole config
   and report every unrelated field). Staying flat is a licence to skip the envelope, never a
   licence to let a tag/option pairing typecheck when the option is inert.
+
+    _Applied to a whole option (2026-09-04):_ the inertness clause is not only about pairs.
+    `portChannel(port, { allowedOrigins })` carried the same option its two sibling builders
+    take, "for symmetry" — but the origin gate reads `origin === '' || allowed.includes(origin)`
+    and a `MessagePort` always delivers `''`, so the list could never change one decision. An
+    option that cannot alter behaviour is worse than an asymmetry when it is **shaped like a
+    security control**: a caller who writes `allowedOrigins: ['https://trusted']` has gated
+    nothing. Not one test ever passed it. The parameter is **removed** rather than renamed or
+    documented — a port is gated by who you hand it to. `channel` and `windowChannel`, where the
+    transport does carry an origin, keep it.
+
 - **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
   family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
   capability.

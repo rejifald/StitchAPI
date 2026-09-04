@@ -252,7 +252,7 @@ function buildRequest(
         multipart: cfg.wire?.multipart,
         // Read by the transport only for a `'form'` body; the query string was already serialised
         // into `url` above, by the same walker and the same `wire.array`.
-        arrayFormat: cfg.wire?.array,
+        array: cfg.wire?.array,
         responseType: cfg.wire?.response,
     });
     // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded

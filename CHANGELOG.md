@@ -194,6 +194,35 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `AdapterRequest.arrayFormat` is now `array`.** #591 renamed the authoring
+  slot to `wire.array` but left the transport field spelled `arrayFormat`, so one capability was
+  spelled two ways across one edge. The neighbouring `responseType` keeps XHR's spelling because
+  an `xhr` adapter assigns it straight through (CONTRACT.md P24 carve-out (a) binds _the layer
+  that meets the standard_) — but nothing takes an `arrayFormat`: the walker is ours, and the
+  values `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins the values, never the
+  field name. Only a **custom adapter** that reads the field is affected; `wire.array`, the
+  spelling every consumer actually writes, is unchanged.
+
+    ```ts
+    // a custom adapter, before → after
+    - const fmt = req.arrayFormat;
+    + const fmt = req.array;
+    ```
+
+- **BREAKING CHANGE: `portChannel()` no longer takes an `allowedOrigins` option.** It accepted one
+  "for symmetry" with `channel()`/`windowChannel()` and threaded it into the gate — where it could
+  never be read. The gate is `origin === '' || allowed.includes(origin)` and a `MessagePort` always
+  delivers `''`, so the list short-circuited every time. An inert option is bad anywhere and worse
+  when it is shaped like a security control: `portChannel(port, { allowedOrigins: ['https://ok'] })`
+  gated nothing while reading as though it did. A port is gated by who you hand it to — it is
+  already a private, capability-style channel. Drop the argument; there is no behaviour to replace,
+  because there never was any.
+
+    ```ts
+    -portChannel(port, { allowedOrigins: ['https://app.example.com'] });
+    +portChannel(port);
+    ```
+
 - **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
   `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
   was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
