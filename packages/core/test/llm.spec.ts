@@ -221,8 +221,8 @@ test('the surface owns method + wire.body (compile-time, ADR 0005 D1)', () => {
 // untouched, which is why it is not guarded.
 //
 // The dead config is authored as `wire.body`; the assertions read the FLAT `bodyType` /
-// `responseType`, because `AdapterRequest` keeps the transport spelling and the engine converts on
-// the way down (CONTRACT.md P22).
+// `response`, because `AdapterRequest` keeps the wire-format fields flat while the config nests
+// them — same words, different depth.
 test('forces POST + json over whatever a runtime config carries; the response decoding survives', async () => {
     const { adapter, calls } = captureAdapter({
         choices: [{ message: { content: 'hi' } }],
@@ -241,5 +241,5 @@ test('forces POST + json over whatever a runtime config carries; the response de
 
     expect(calls[0]!.method).toBe('POST');
     expect(calls[0]!.bodyType).toBe('json');
-    expect(calls[0]!.responseType).toBe('text');
+    expect(calls[0]!.response).toBe('text');
 });

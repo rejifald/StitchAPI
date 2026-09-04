@@ -51,7 +51,11 @@ jobs:
 
     drift-executable:
         runs-on: ubuntu-latest
-        timeout-minutes: 10
+        # 20, for the same reason as `verify` above it in verify.yml: the executable tier
+        # BUILDS core before it can measure the advertised bundle size, so it carries the
+        # same install+build cost and the same variance. Seen at 2m0s and at 10m14s (a
+        # timeout) on the same commit.
+        timeout-minutes: 20
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
             - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6

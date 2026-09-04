@@ -448,7 +448,7 @@ is `StatusMatch` trades a real composition property for a presentational one.
 ### B. Fold `acceptStatus` into the `wire` envelope — **rejected: wrong addressee**
 
 Every member of `wire` is the authoring spelling of an adapter-facing codec field,
-converted at the transport edge (P22): `body`→`bodyType`, `response`→`responseType`,
+converted at the transport edge (P22): `body`→`bodyType`,
 `array`→`arrayFormat`, `multipart`→`multipart`. `acceptStatus` has no
 `AdapterRequest` counterpart and never reaches the adapter. `wire` tells the
 transport how to turn values into bytes; `acceptStatus` tells the engine what the

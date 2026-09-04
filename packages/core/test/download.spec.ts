@@ -1,5 +1,5 @@
 // The `download` surface (ADR 0005 Decision 8): a buffered binary GET → `{ blob, filename }`.
-// GET + responseType:'blob' (forced by the surface), byte progress (Decision 9 `onProgress`),
+// GET + response:'blob' (forced by the surface), byte progress (Decision 9 `onProgress`),
 // `Content-Disposition` filename (filename* / filename) with a URL-last-segment fallback, and a
 // per-call `AbortSignal`. Never writes to disk — it returns a Blob. Tests drive a fake adapter for
 // the unit cases and the real fetch + mock server for the round-trip (browser-first).
@@ -20,7 +20,7 @@ import { join } from 'node:path';
 
 const CORE = join(import.meta.dirname, '..');
 
-// A fake adapter that hands back a Blob body (as the blob responseType would decode to), plus
+// A fake adapter that hands back a Blob body (as the blob `response` would decode to), plus
 // optional response headers / final url. Records the last request it saw.
 function blobAdapter(
     bytes: string,
@@ -71,10 +71,10 @@ describe('download shaping (Decision 8)', () => {
     // therefore stay deterministic rather than drifting into "sometimes the caller's", which is what
     // the `Partial<StitchConfig>` laundering below models: it is the shape the guard cannot see.
     //
-    // Note the two spellings in play. The dead config is authored as `wire.response` (the config
-    // layer, where the guard lives); the assertion reads `adapter.last?.responseType`, because
-    // `AdapterRequest` keeps the flat wire-format fields and the engine converts on the way down.
-    // The surface then overwrites that flat field in `buildRequest`.
+    // Note the two DEPTHS in play — the word is now the same at both. The dead config is
+    // authored as `wire.response` (the config layer, where the guard lives); the assertion reads
+    // the flat `adapter.last?.response`, because `AdapterRequest` keeps the wire-format fields
+    // flat. The surface then overwrites that flat field in `buildRequest`.
     const deadShapes: Partial<StitchConfig>[] = [
         { method: 'POST' },
         { wire: { response: 'text' } },
@@ -90,7 +90,7 @@ describe('download shaping (Decision 8)', () => {
             };
             await download(rebuilt)();
             expect(adapter.last?.method).toBe('GET');
-            expect(adapter.last?.responseType).toBe('blob');
+            expect(adapter.last?.response).toBe('blob');
         }
     });
 
@@ -98,7 +98,7 @@ describe('download shaping (Decision 8)', () => {
         const adapter = blobAdapter('x');
         await download({ url: 'https://x.test/f', adapter })();
         expect(adapter.last?.method).toBe('GET');
-        expect(adapter.last?.responseType).toBe('blob');
+        expect(adapter.last?.response).toBe('blob');
     });
 
     test('resolves to { blob, filename }; the blob carries the bytes', async () => {

@@ -57,8 +57,8 @@ function streamingAdapter(
                 }),
             };
         }
-        // The buffered arm — `download` asks for a blob, so honour `responseType`.
-        if (req.responseType === 'blob') {
+        // The buffered arm — `download` asks for a blob, so honour `response`.
+        if (req.response === 'blob') {
             return {
                 status: 200,
                 headers: { 'content-type': contentType },

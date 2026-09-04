@@ -380,11 +380,15 @@ export function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
  * across a `postMessage`). `post` is `port.postMessage`; `subscribe` adds a `'message'` listener and
  * `port.start()`s delivery. A port carries NO origin — it is already a private, capability-style
  * channel — so origin gating is BYPASSED (every message has origin `''`, which the gate skips).
+ *
+ * It therefore takes NO `allowedOrigins`, where {@link channel} and {@link windowChannel} both do.
+ * It used to accept one "for symmetry" and thread it through, which was worse than asymmetry: the
+ * gate short-circuits on `origin === ''` before consulting the list, so the option could never
+ * change a single decision, while reading exactly like the security control it was not
+ * (CONTRACT.md P24 carve-out (b) — a flat shape is never a licence to let inert config typecheck).
+ * A port is gated by who you hand it to, not by an origin list.
  */
-export function portChannel(
-    port: MessagePort,
-    opts?: { allowedOrigins?: string | string[] },
-): PostMessageChannel {
+export function portChannel(port: MessagePort): PostMessageChannel {
     const transport: MessageTransport = {
         post: (message, transfer) => {
             port.postMessage(message, transfer ?? []);
@@ -400,8 +404,9 @@ export function portChannel(
             };
         },
     };
-    // A port has no origin, so allowedOrigins is moot; carry whatever was passed for symmetry.
-    return makeChannel(transport, originList(opts?.allowedOrigins));
+    // No origin list: every message off a port arrives with origin `''`, which the gate lets
+    // through by construction. An empty list is the honest argument, not a discarded one.
+    return makeChannel(transport, []);
 }
 
 // The single implementation behind all three builders. Holds the per-channel registry (pending

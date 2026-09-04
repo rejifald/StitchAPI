@@ -228,6 +228,53 @@ npm release are grouped under the in-development version that introduced them.
     the default — `dedupe` is still `false`, every item still its own request. The package's bundle
     budget moves 2.65 KB → 3.05 KB gzip for the two mechanisms.
 
+- **BREAKING CHANGE: `AdapterRequest.responseType` is now `response`.** CONTRACT.md pinned this
+  to XHR's spelling in 2026-08 as "the XHR/fetch-facing contract". That read the wrong layer:
+  `AdapterRequest` is StitchAPI's own **normalized** transport contract, the category P18 names
+  beside `StitchStore` and `RedisDriver`. Its values already proved it —
+  `ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob'` is camelCase `arrayBuffer` where XHR
+  spells it `'arraybuffer'`, with no `'document'` arm — and every adapter already converts at its
+  own edge (`xhr.responseType = 'arraybuffer'`). So the field was normalized in values, member set
+  and authoring spelling, and foreign only in its name. It now matches `wire.response`, which is
+  what a consumer writes and which is **unchanged**. The XHR spelling stays on `XhrLike` /
+  `RnStreamingXhr` and axios's on `AxiosLikeConfig` — the duck-types that structurally meet those
+  APIs. Only a **custom adapter** reading the field is affected.
+
+    ```ts
+    // a custom adapter, before → after
+    - if (req.responseType === 'blob') { … }
+    + if (req.response === 'blob') { … }
+    ```
+
+- **BREAKING CHANGE: `AdapterRequest.arrayFormat` is now `array`.** #591 renamed the authoring
+  slot to `wire.array` but left the transport field spelled `arrayFormat`, so one capability was
+  spelled two ways across one edge. The neighbouring `responseType` keeps XHR's spelling because
+  an `xhr` adapter assigns it straight through (CONTRACT.md P24 carve-out (a) binds _the layer
+  that meets the standard_) — but nothing takes an `arrayFormat`: the walker is ours, and the
+  values `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins the values, never the
+  field name. Only a **custom adapter** that reads the field is affected; `wire.array`, the
+  spelling every consumer actually writes, is unchanged.
+
+    ```ts
+    // a custom adapter, before → after
+    - const fmt = req.arrayFormat;
+    + const fmt = req.array;
+    ```
+
+- **BREAKING CHANGE: `portChannel()` no longer takes an `allowedOrigins` option.** It accepted one
+  "for symmetry" with `channel()`/`windowChannel()` and threaded it into the gate — where it could
+  never be read. The gate is `origin === '' || allowed.includes(origin)` and a `MessagePort` always
+  delivers `''`, so the list short-circuited every time. An inert option is bad anywhere and worse
+  when it is shaped like a security control: `portChannel(port, { allowedOrigins: ['https://ok'] })`
+  gated nothing while reading as though it did. A port is gated by who you hand it to — it is
+  already a private, capability-style channel. Drop the argument; there is no behaviour to replace,
+  because there never was any.
+
+    ```ts
+    -portChannel(port, { allowedOrigins: ['https://app.example.com'] });
+    +portChannel(port);
+    ```
+
 - **`@stitchapi/nest` supports NestJS 12.** `peerDependencies` widen to
   `^10.0.0 || ^11.0.0 || ^12.0.0` for both `@nestjs/common` and `@nestjs/core` — additive, so
   nothing changes for a host on Nest 10 or 11. The adapter itself needed no code change; all 65
