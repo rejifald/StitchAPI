@@ -1009,9 +1009,14 @@ export interface AdapterResponse {
     // Parsed JSON when possible, else text — OR a `ReadableStream<Uint8Array>` when `stream` was set.
     body: unknown;
     /**
-     * The final response URL (after redirects), when the transport exposes it (`fetchAdapter` sets
-     * it from `response.url`). The `download` surface uses it for the filename fallback (ADR 0005
-     * Decision 8); other readers may ignore it.
+     * The response URL, when the transport exposes one. The `download` surface uses it for the
+     * filename fallback (ADR 0005 Decision 8) and it is carried onto {@link StitchError.url}; other
+     * readers may ignore it.
+     *
+     * How exact it is depends on the transport, because not every client exposes the same thing:
+     * `fetchAdapter` follows redirects itself, so it reports the FINAL url after the last hop;
+     * `axiosAdapter` gets no final url back from axios and so reports the REQUEST url, which a
+     * followed 3xx makes differ from where the response actually came from.
      */
     url?: string;
 }

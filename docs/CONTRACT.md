@@ -499,7 +499,9 @@ _Resolved (2026-07 sweep, emitted — de-suffixed):_ `StitchEvent` `waited`,
 `retryAfter`, the `done` event's `elapsed` (was `ms`), `MockResponse.delay`;
 `SseEvent.retry` stays (already bare; it mirrors the SSE `retry:` wire field).
 _Enforced by lint **R9** (§7)_ — see [P25](#p25--one-canonical-size-form), which the same
-rule and the same gate cover for the byte dimension.
+rule and the same gate cover for the byte dimension. The naming half is **R2** (the `Ms`
+suffix) and **R11** (every other unit welded onto a name), which is the pair that would
+have caught the `ratePerSec` recorded below without a census.
 _Unit hazard (the exception to "all JS time is ms"):_ a few fields are **seconds**
 because they mirror a wire format — the HTTP `Retry-After` header (delta-seconds),
 Cloudflare KV `expirationTtl`. Every StitchAPI-_authored_ duration stays ms; a field
@@ -517,11 +519,13 @@ in its JSDoc rather than its name. The de-suffixed spelling could **not** be `ra
 `throttle`'s `rate` is the `Rate` token grammar (`'2/s'`), a different value-space, so
 this is the rename-one remedy and not a shared word. The package was still unreleased,
 so it is not a [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) break.
-_What let it through:_ R9 reads the duration and size dimensions, and a rate is neither,
-so no rule looked at the name — it surfaced in a by-hand census of multi-word field
-names. The class (a house field spelling its own unit) is at zero tree-wide: the only
-unit-suffixed names left are OTLP's `*UnixMs` instants and the two wire-mandated
-seconds fields named above.
+_What let it through, and what now guards it:_ R9 reads the duration and size dimensions,
+and a rate is neither, so no rule looked at the name — it surfaced in a by-hand census of
+multi-word field names. **R11** (§7) closes that gap the same day: R2 guarded the `Ms`
+spelling P17 names, and R11 guards every other unit welded onto a field name, so this
+class no longer needs a census to find. The class is at zero tree-wide — the only
+unit-suffixed names left are OTLP's `*Unix*` instants and the two wire-mandated seconds
+fields named above, each carved out by name.
 
 ### P18 · Adapter mirrors keep upstream spelling; house contracts use house vocabulary
 
@@ -1607,7 +1611,11 @@ shape, not as today's surface: nothing on the surface carries an alias.
   violation. Two of the first three rule additions turned up a pre-existing match, which is
   the argument for writing the gate with the rule rather than after it; the third,
   **R10** (2026-08-06), landed **green** — the P4 sweep it gates had already been done by
-  hand, so it is a regression guard, not a fix. The ratchet mechanics
+  hand, so it is a regression guard, not a fix. **R11** (2026-09-04) makes it three of four:
+  its one match, `BatchProgress.ratePerSec`, was found by a by-hand census days earlier and
+  fixed in the very commit that adds the rule, so R11 too enters at **zero** — but as the
+  guard for a defect the surface had actually shipped, not a hypothetical one. The ratchet
+  mechanics
   stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
   guarantee: the surface can only get more consistent, never less.
 - Rules implemented (high-precision, source-text level): **R1** banned type-name
@@ -1663,6 +1671,18 @@ shape, not as today's surface: nothing on the surface carries an alias.
   (`CacheOptions.maxEntries`, `ReconnectOptions.maxAttempts`, `CircuitOptions.failureThreshold`,
   `DenoKvStoreOptions.maxIncrRetries`, `RetryOptions.maxMs`/`maxDelay`) on the trees that
   carried them, and finds nothing on today's surface.
+  **R11** a number-typed field or parameter whose trailing camel word is a **unit**
+  (`Sec`, `Seconds`, `Bytes`, `Kb`, `Nanos`, …) — P17's rule for every unit except the `Ms`
+  that **R2** owns, so one defect is reported once. It is R2's file-level scan, not an
+  interface walk, because P17 binds a parameter of an exported function as well as a field.
+  Precision comes from a **numeric type gate** instead of a container filter: a unit only ever
+  qualifies a number, which separates `payloadBytes: number` (a count) from
+  `magicBytes: Uint8Array` (a payload) with no type info, and an aggregate type is skipped
+  rather than guessed at. Only a **compound** name matches — a bare lowercase `chars`/`bytes`
+  is P25's blessed inner-cap spelling, where the envelope names the subject and the field names
+  the dimension. `Min`/`Mins` are deliberately left out (`poolMin` is a minimum, not minutes);
+  OTLP's `*UnixNano`/`*UnixSeconds` instants take R2's carve-out. One allow-list entry today:
+  `retryAfterSeconds`, the `Retry-After` delta-seconds P17's unit-hazard clause already names.
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
   same-name-different-**shape** detection, default-value inversion (P8), and the
   **parse half** of P17/P25 — R9 pins the type, but whether the widened value actually
