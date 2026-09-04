@@ -65,14 +65,10 @@ export class ProgressAggregator {
         if (p.total === undefined) this.#anyIndeterminate = true;
     }
 
-    /** An item fulfilled with `finalBytes` (and, when the server declared one, its `total`). */
-    fulfilled(
-        id: DownloadId,
-        finalBytes: number,
-        total: number | undefined,
-    ): void {
+    /** An item fulfilled with `bytes` (and, when the server declared one, its `total`). */
+    fulfilled(id: DownloadId, bytes: number, total: number | undefined): void {
         this.#live.delete(id);
-        this.#doneBytes += finalBytes;
+        this.#doneBytes += bytes;
         if (total !== undefined) this.#doneTotal += total;
         else this.#anyIndeterminate = true;
         this.#completed += 1;

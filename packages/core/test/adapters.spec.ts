@@ -46,6 +46,7 @@ describe('axiosAdapter', () => {
             status: 200,
             headers: { 'content-type': 'application/json' },
             body: { id: 7 },
+            url: 'http://h/u', // every axios response reports a url (#708 §2)
         });
         const cfg = client.calls[0];
         expect(cfg?.url).toBe('http://h/u');
@@ -134,6 +135,75 @@ describe('axiosAdapter', () => {
         expect(cfg?.['proxy']).toBe(false);
         expect(cfg?.headers).toMatchObject({ 'x-base': '1', 'x-call': '2' });
         expect(cfg?.signal).toBe(ac.signal);
+    });
+
+    // #708 §2: this transport used to return only { status, headers, body } while fetchAdapter
+    // returned four keys, so `AdapterResponse.url` — and everything downstream of it, StitchError.url
+    // and the `download` filename fallback — was ALWAYS undefined on axios, silently.
+    describe('response url', () => {
+        test('reports the request url', async () => {
+            const client = recordingClient(() => jsonResp(200, {}));
+            const res = await axiosAdapter(client)({
+                url: 'https://api.test/users/7',
+                method: 'GET',
+                headers: {},
+            });
+            expect(res.url).toBe('https://api.test/users/7');
+        });
+
+        test('prefers the url axios actually dispatched over the one we handed it', async () => {
+            // A request interceptor may rewrite config.url; the response echoes the config that
+            // was really sent, so that is the closer account of what was requested.
+            const client: AxiosLike = {
+                request: async () => ({
+                    ...jsonResp(200, {}),
+                    config: { url: 'https://api.test/v2/users/7' },
+                }),
+            };
+            const res = await axiosAdapter(client)({
+                url: 'https://api.test/v1/users/7',
+                method: 'GET',
+                headers: {},
+            });
+            expect(res.url).toBe('https://api.test/v2/users/7');
+        });
+
+        test('falls back to the request url when the client echoes no usable config', async () => {
+            // A hand-rolled AxiosLike need not echo a config at all, and an empty url is no url.
+            const urlFor = async (
+                extra: Partial<AxiosLikeResponse>,
+            ): Promise<string | undefined> => {
+                const client: AxiosLike = {
+                    request: async () => ({ ...jsonResp(200, {}), ...extra }),
+                };
+                const res = await axiosAdapter(client)({
+                    url: 'https://api.test/x',
+                    method: 'GET',
+                    headers: {},
+                });
+                return res.url;
+            };
+            expect(await urlFor({})).toBe('https://api.test/x'); // no config echoed
+            expect(await urlFor({ config: {} })).toBe('https://api.test/x'); // config, no url
+            expect(await urlFor({ config: { url: '' } })).toBe(
+                'https://api.test/x', // an empty url is no url
+            );
+        });
+
+        test('is reported on a failing response too, so StitchError.url is set', async () => {
+            const client = recordingClient(() =>
+                jsonResp(404, { error: 'nope' }),
+            );
+            const getUser = stitch({
+                url: 'https://api.example.com/users/{id}',
+                adapter: axiosAdapter(client),
+            });
+            await expect(getUser({ params: { id: 7 } })).rejects.toMatchObject({
+                name: 'StitchError',
+                status: 404,
+                url: 'https://api.example.com/users/7',
+            });
+        });
     });
 
     test('passes the response status through unchanged', async () => {
