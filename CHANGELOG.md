@@ -21,6 +21,13 @@ npm release are grouped under the in-development version that introduced them.
   dependencies and its own size gate. Every item is an ordinary stitch, so `retry`, `throttle`,
   `timeout` and tracing apply unchanged.
 
+    **Documented** at [Integrations → Batch downloads](https://stitchapi.dev/docs/integrations/download)
+    ([#460](https://github.com/rejifald/StitchAPI/issues/460)) — the whole surface on one page:
+    `downloadAll` and `DownloadManager`, the `ItemResult` arms, FIFO admission against
+    `throttle.concurrency`, the cancel-one/cancel-all split, the progress + ETA fields, the two
+    clocks (`idle` vs wall-clock `timeout`), the retryable/terminal classification, and the
+    dedupe caveat that a follower cannot be cancelled independently of the shared fetch.
+
 - **`QUERY` is a first-class method — a read that carries a request body.**
   ([draft-ietf-httpbis-safe-method-w-body](https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/))
   `method: 'QUERY'` already sent its body and already cached correctly under
