@@ -338,7 +338,7 @@
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.68.0",
         "vitest": "^4.1.11",
-        "zod": "^4.4.3"
+        "zod": "^4.5.4"
     },
     "tsd": {
         "directory": "test-d",
