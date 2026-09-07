@@ -58,7 +58,7 @@
         "elysia": "^1.0.0"
     },
     "devDependencies": {
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.4.1",
         "elysia": "^1.0.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
