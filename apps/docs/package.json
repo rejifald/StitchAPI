@@ -78,7 +78,7 @@
         "eslint": "^10.9.1",
         "eslint-config-next": "16.3.2",
         "fastify": "^5.12.1",
-        "hono": "^4.13.4",
+        "hono": "^4.13.5",
         "pino": "^10.3.1",
         "postcss": "^8.5.26",
         "reflect-metadata": "^0.2.2",
