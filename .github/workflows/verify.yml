@@ -30,6 +30,7 @@ concurrency:
 
 jobs:
     verify-static:
+        runs-on: ubuntu-latest
         # Static/source-scan slice of the old serial `verify` job: formatting,
         # lint, and the five checks that are explicitly tool-free or text-only
         # scans with no compiler or build involved (docs-links, both contract
@@ -84,6 +85,7 @@ jobs:
             - run: pnpm check:release
 
     verify-compile-test:
+        runs-on: ubuntu-latest
         # Compile + test slice of the old serial `verify` job: the workspace
         # typecheck (which builds every package's d.ts), the tsd assertion
         # suite, the full test suite, and both attw export-shape checks. The
@@ -120,6 +122,7 @@ jobs:
             - run: pnpm check:exports:companions
 
     verify-docs:
+        runs-on: ubuntu-latest
         # Docs slice of the old serial `verify` job: regenerate the docs
         # content, fail on drift, then build the docs app (a Fumadocs static
         # build over every page — see the render-gate comment on the build
