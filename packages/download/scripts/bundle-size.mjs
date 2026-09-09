@@ -26,14 +26,24 @@ const KB = 1024;
 
 // Budget for 1.0.0-rc.4 — the initial @stitchapi/download entry. The batch
 // orchestrator (FIFO scheduler + progress/ETA + classifier + cancel + idle timer)
-// measures ~2.46 KB gzip with `stitchapi` externalised; the 2.65 KB ceiling keeps the
-// same tight ~0.2 KB headroom core's gate holds, so growth stays deliberate.
+// measured ~2.46 KB gzip with `stitchapi` externalised, under a 2.65 KB ceiling.
+//
+// RAISED to 3.05 KB for #455, which hardened the opt-in `dedupe` on both axes the
+// v1 note listed: keys off the RESOLVED request target (a local ~15-line endpoint
+// resolver — core exports no URL builder, and a dedupe key is not a good reason to
+// widen core's public surface), and REF-COUNTED sharers, so one sharer's cancel no
+// longer decides the fetch for the rest. That measures ~2.85 KB gzip; ~0.38 KB of
+// the growth is the two mechanisms themselves, and it was trimmed where it could be
+// (the group lives on the existing per-item `Active` record rather than in a second
+// id-keyed map). The ceiling keeps the same tight ~0.2 KB headroom core's gate holds,
+// so the NEXT increment is still a conscious act.
+//
 // `stitchapi` and every `stitchapi/*` subpath are external (peer dep).
 const SCENARIOS = [
     {
         name: '@stitchapi/download — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 2.65 * KB,
+        budget: 3.05 * KB,
     },
 ];
 
