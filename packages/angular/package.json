@@ -65,11 +65,11 @@
         }
     },
     "devDependencies": {
-        "@angular/common": "^22.1.3",
-        "@angular/compiler": "^22.1.3",
-        "@angular/core": "^22.1.3",
-        "@angular/platform-browser": "^22.1.3",
-        "@angular/platform-browser-dynamic": "^22.1.1",
+        "@angular/common": "^22.1.5",
+        "@angular/compiler": "^22.1.5",
+        "@angular/core": "^22.1.5",
+        "@angular/platform-browser": "^22.1.5",
+        "@angular/platform-browser-dynamic": "^22.1.5",
         "@stitchapi/query-core": "workspace:*",
         "@types/node": "^26.4.1",
         "jsdom": "^30.0.1",
@@ -78,6 +78,6 @@
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
         "vitest": "^4.1.11",
-        "zone.js": "~0.16.2"
+        "zone.js": "~0.16.3"
     }
 }

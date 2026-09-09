@@ -65,7 +65,7 @@
     },
     "devDependencies": {
         "@types/node": "^26.4.1",
-        "fastify": "^5.12.1",
+        "fastify": "^5.12.3",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
