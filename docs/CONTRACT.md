@@ -723,7 +723,8 @@ _Carve-outs:_
   6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair on
   `XhrLike` (and its React Native mirror), RTK Query's lifecycle names
   (`cacheDataLoaded`/`cacheEntryRemoved`),
-  and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
+  and Orama's own index-document schema (`IndexedDoc.pageUrl`/`pageTitle`, plus the `boost` and
+  `properties` keys that address it) — all exempt.
 
     **The exemption binds the layer that meets the standard, not every layer above it**
     ([P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): follow the standard
@@ -826,8 +827,22 @@ hard breaks, no aliases (P19).
 _Named exemptions verified against this rule_ (carve-out (a); named explicitly because each is the
 literal shape this rule would otherwise flag): **`StitchQueryOptions.queryKey`/`queryFn`** (the
 TanStack mirror, P3 — note this rule's own motivating example is itself exempt);
-**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`DocSearchHit.pageUrl`/
-`pageTitle`** (mirrors the persisted Orama index document schema; maintainer-exempted 2026-07-08).
+**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`IndexedDoc.pageUrl`/
+`pageTitle`** in `@stitchapi/docs-mcp` (the persisted Orama index document schema — Orama boosts
+and searches BY field name, so `FieldBoost.pageTitle` and the `properties` list key on them too).
+
+_Re-pointed (2026-09-09), the third instance of the same error:_ this exemption was written
+against **`DocSearchHit`**, the type `searchDocs` RETURNS — one layer above the boundary, exactly
+like `AdapterRequest.responseType` before it. The stored document is what meets Orama; the search
+result is a house-owned produced shape, and the MCP server was already converting it to `title` /
+`url` at its own edge, so nothing downstream ever wanted the index's spelling. `DocSearchHit` is
+now `path` / `title` (`path`, not `url`: the value is site-relative and composes with `anchor`),
+converted field-by-field at the one point the index is read. That conversion also retired an
+`as unknown as Omit<DocSearchHit, 'score'>` cast which asserted the stored document and the
+published hit were the same object — the coupling that let the names leak upward in the first
+place, and one that would have kept typechecking after a schema change. **The pattern to watch
+for: a mirror exemption is suspicious wherever a conversion to house vocabulary already exists
+somewhere above it.** That conversion is the edge; everything above it is house.
 
 Enforced by lint **R8** (§7); its allow-list carries the one-line rationale for every verified
 exemption beyond this rule's named list — a discriminated-union pair (mutually exclusive by

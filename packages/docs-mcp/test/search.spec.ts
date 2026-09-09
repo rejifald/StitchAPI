@@ -82,7 +82,7 @@ describe('searchDocs hit mapping', () => {
         embedOne.mockClear();
     });
 
-    it('maps every Orama hit field through to DocSearchHit unchanged, alongside the hit score', async () => {
+    it('converts the stored index document to house vocabulary — pageUrl→path, pageTitle→title — and carries the hit score', async () => {
         searchMock.mockResolvedValueOnce({
             hits: [
                 {
@@ -100,10 +100,13 @@ describe('searchDocs hit mapping', () => {
 
         const hits = await searchDocs('anything');
 
+        // The stored document above keeps the INDEX's spelling (it is Orama's schema); the
+        // published hit is the house view of it. Asserting both halves is what pins the
+        // conversion — a spread would satisfy neither shape by accident.
         expect(hits).toEqual([
             {
-                pageUrl: '/docs/guides/x',
-                pageTitle: 'X Guide',
+                path: '/docs/guides/x',
+                title: 'X Guide',
                 heading: 'Retries',
                 anchor: 'retries',
                 text: 'body text',

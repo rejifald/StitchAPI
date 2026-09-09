@@ -194,6 +194,27 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `@stitchapi/docs-mcp`'s `DocSearchHit` speaks house vocabulary — `pageUrl` is
+  `path`, `pageTitle` is `title`.** The Orama mirror exemption had been written against the type
+  `searchDocs` _returns_, one layer above the boundary. What meets Orama is the persisted index
+  document (Orama boosts and searches BY field name, so `FieldBoost.pageTitle` and the `properties`
+  list key on it) — and that schema is **unchanged**, so no reindex, no bundle rebuild, no
+  embedding regeneration. The MCP server was already converting to `title`/`url` at its own edge,
+  so the tool output every consumer actually reads is byte-identical.
+
+    `path` rather than `url` because the value is site-relative and composes with `anchor` into the
+    absolute link; naming it `url` would promise a whole address and hand back half of one.
+
+    The conversion also retires an `as unknown as Omit<DocSearchHit, 'score'>` cast that asserted
+    the stored document and the published hit were the same object — the coupling that let the
+    index's names leak onto the published type, and one that would have kept typechecking the day
+    the schema changed. The stored shape is now a named internal `IndexedDoc`, mapped field by field.
+
+    ```ts
+    -hits.map((h) => ({ title: h.pageTitle, href: h.pageUrl }));
+    +hits.map((h) => ({ title: h.title, href: h.path }));
+    ```
+
 - **`@stitchapi/download`'s opt-in `dedupe` keys off the RESOLVED request and ref-counts its
   sharers — a behaviour change to a shipped opt-in feature.**
   ([#455](https://github.com/rejifald/StitchAPI/issues/455)) Nothing moves unless you passed
