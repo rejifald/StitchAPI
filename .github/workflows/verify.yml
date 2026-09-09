@@ -29,20 +29,16 @@ concurrency:
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-    verify:
-        runs-on: ubuntu-latest
-        # 20, not 10: this job is the serial one — frozen install, format, lint, both
-        # contract ratchets, the workspace typecheck (which builds every package's d.ts),
-        # tsd, the full test suite, `check:exports`, the docs-app build, and a measured
-        # yakir pass. It ran 8m46s on `9b98bfe5` and then timed out at 10m16s and 10m17s
-        # on the next two `main` commits — the cap was firing on runner variance, not on a
-        # runaway job, and a re-run of an unchanged commit flipped 10m18s → 8m47s. A cap
-        # that close to the honest runtime reports infrastructure noise as a red build,
-        # which is the one thing a required check must not do. 20 restores the headroom
-        # this job had when the cap was written. Splitting the job so the typecheck and the
-        # docs build stop being serial is the real fix; this is the stopgap that unblocks
-        # every PR in the meantime.
-        timeout-minutes: 20
+    verify-static:
+        # Static/source-scan slice of the old serial `verify` job: formatting,
+        # lint, and the five checks that are explicitly tool-free or text-only
+        # scans with no compiler or build involved (docs-links, both contract
+        # ratchets, changelog shape, release coherence). This is the cheapest
+        # of the three split jobs. 10 is a conservative, generous-headroom
+        # estimate, not a measurement — there is no per-job timing history yet
+        # since this is the first run after the split; tighten once real runs
+        # land.
+        timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
             - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -62,18 +58,6 @@ jobs:
             # Cheap → expensive: a fast failure surfaces first.
             - run: pnpm check:format
             - run: pnpm check:lint
-            - run: pnpm check:types
-            # The tsd assertion suite — inference expectations (`expectType`,
-            # `@ts-expect-error`) that `check:types` does NOT cover, because tsc only
-            # proves the code compiles, not that a stitch still INFERS the output type a
-            # consumer relies on. It ran on the pre-push hook but never in CI, so a push
-            # with `--no-verify` could land an inference regression unseen.
-            - run: pnpm check:types-d
-            - run: pnpm test
-            - run: pnpm check:exports
-            # attw on every COMPANION too (core is covered by check:exports above). Uses core's
-            # installed @arethetypeswrong/cli binary — no companion devDep / lockfile change.
-            - run: pnpm check:exports:companions
             # Docs internal-link integrity: every /docs/... link in the .mdx content must resolve
             # to a real page (catches a dead link like the removed fluent-builder page or a section
             # with no index). Static scan — no build needed.
@@ -98,6 +82,66 @@ jobs:
             # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
             # the PR, not the publish.
             - run: pnpm check:release
+
+    verify-compile-test:
+        # Compile + test slice of the old serial `verify` job: the workspace
+        # typecheck (which builds every package's d.ts), the tsd assertion
+        # suite, the full test suite, and both attw export-shape checks. The
+        # typecheck and full test run were historically the heaviest stretch
+        # of the combined job (see the `verify` aggregator job's comment for
+        # the pre-split timing), so this gets the largest timeout of the three
+        # split jobs. 15 is a conservative, generous-headroom estimate, not a
+        # measurement — there is no per-job timing history yet since this is
+        # the first run after the split; tighten once real runs land.
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            # Repeated per job now that `verify` is split into independent jobs
+            # that each need their own frozen install — see the `verify-static`
+            # job above for why this is a lockfile-integrity gate, not just
+            # dependency setup.
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm check:types
+            # The tsd assertion suite — inference expectations (`expectType`,
+            # `@ts-expect-error`) that `check:types` does NOT cover, because tsc only
+            # proves the code compiles, not that a stitch still INFERS the output type a
+            # consumer relies on. It ran on the pre-push hook but never in CI, so a push
+            # with `--no-verify` could land an inference regression unseen.
+            - run: pnpm check:types-d
+            - run: pnpm test
+            - run: pnpm check:exports
+            # attw on every COMPANION too (core is covered by check:exports above). Uses core's
+            # installed @arethetypeswrong/cli binary — no companion devDep / lockfile change.
+            - run: pnpm check:exports:companions
+
+    verify-docs:
+        # Docs slice of the old serial `verify` job: regenerate the docs
+        # content, fail on drift, then build the docs app (a Fumadocs static
+        # build over every page — see the render-gate comment on the build
+        # step below). The docs-app build was one of the heavier steps in the
+        # combined job, comparable in cost to the compile + test slice, so it
+        # gets the same 15-minute cap. 15 is a conservative, generous-headroom
+        # estimate, not a measurement — there is no per-job timing history yet
+        # since this is the first run after the split; tighten once real runs
+        # land.
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            # Repeated per job now that `verify` is split into independent jobs
+            # that each need their own frozen install — see the `verify-static`
+            # job above for why this is a lockfile-integrity gate, not just
+            # dependency setup.
+            - run: pnpm install --frozen-lockfile
             # README badge/table drift (code health, coverage, license, package tables)
             # is now yakir tethers (readme-badges / readme-packages / core-integrations),
             # enforced by the `drift-executable` job in drift.yml. Refresh the badge
@@ -118,6 +162,57 @@ jobs:
             # generator throw all pass type-check and only fail at build. Building the
             # docs app runs generateStaticParams over every page and surfaces those.
             - run: pnpm --filter @stitchapi/docs build
+
+    verify:
+        # This job's ONLY purpose is to keep the required-check name `verify`
+        # alive for branch protection on `main`. Branch protection requires a
+        # status check named exactly `verify`; if the split above had replaced
+        # it outright with verify-static/verify-compile-test/verify-docs and
+        # nothing named `verify` remained, every future PR would block forever
+        # on a required check that can no longer report — and only a repo
+        # admin can fix that, from GitHub's branch-protection settings, not
+        # from this file. So `verify` stays: a no-op that does none of the
+        # actual checking itself and goes green only when every job it depends
+        # on does. Do not "clean up" or remove this job, and do not fold its
+        # dependencies back into one job without first repointing branch
+        # protection's required-check list.
+        #
+        # History: this used to be one serial job — frozen install, format,
+        # lint, both contract ratchets, the workspace typecheck (which builds
+        # every package's d.ts), tsd, the full test suite, `check:exports`,
+        # and the docs-app build, all end to end. It ran 8m46s on `9b98bfe5`,
+        # then timed out at 10m16s and 10m17s on the next two `main` commits —
+        # a re-run of that unchanged commit went 10m18s → 8m47s, so the cap
+        # was firing on runner variance, not a runaway job. PR #796 raised the
+        # cap 10 → 20 as a stopgap and said splitting the job was the real
+        # fix. This is that split: the three jobs above now run in parallel,
+        # so wall time is max(job) instead of sum(steps).
+        needs: [verify-static, verify-compile-test, verify-docs]
+        # Default `needs` semantics SKIP this job when a dependency fails, and
+        # a skipped job is not this required check honestly reporting failure.
+        # `always()` makes the job run regardless of its dependencies' outcome,
+        # so the step's own `if` below is what actually decides green/red —
+        # "goes green only when all three do" is true by construction, not by
+        # accident of the default skip behaviour.
+        #
+        # The step tests for `skipped` too, not just failure/cancellation. No
+        # job above can be skipped today — none carries an `if:` or a path
+        # filter — but the day one gains either, a skipped dependency would
+        # otherwise let this required check report GREEN for work that never
+        # ran, which is the same "reports something other than the truth"
+        # failure the whole job exists to prevent. Cheaper to be exhaustive
+        # about what "not success" means than to rediscover it later.
+        if: always()
+        runs-on: ubuntu-latest
+        # Trivial — one conditional over three already-finished jobs. 5 is
+        # pure headroom, not a real budget.
+        timeout-minutes: 5
+        steps:
+            - name: Fail if any split verify job failed or was cancelled
+              if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+              run: |
+                  echo "::error::one or more of verify-static/verify-compile-test/verify-docs did not succeed"
+                  exit 1
 
     # Bundle-size budget gate (packages/core/scripts/bundle-size.mjs): the core entry
     # has a min+gzip ceiling, so a change that bloats `import { stitch }` fails here
