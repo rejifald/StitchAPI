@@ -59,7 +59,7 @@ test('anthropic: builds the Messages API body (system out of messages) and parse
     expect(out).toMatchObject({
         text: 'hello',
         model: 'claude-opus-4-8',
-        usage: { inputTokens: 5, outputTokens: 2 },
+        usage: { input: 5, output: 2 },
         finishReason: 'end_turn',
     });
 });
@@ -89,7 +89,7 @@ test('openai: builds the Chat Completions body (system prepended) and parses the
 
     expect(out).toMatchObject({
         text: 'hey',
-        usage: { inputTokens: 7, outputTokens: 3 },
+        usage: { input: 7, output: 3 },
         finishReason: 'stop',
     });
 });
