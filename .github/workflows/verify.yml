@@ -42,12 +42,40 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            # Workflow-SCHEMA lint, first because it needs no toolchain and fails in ~2s.
+            #
+            # Nothing here validated workflow files, and the gap is not academic: this very
+            # split shipped with no `runs-on` on its three new jobs. A missing required key
+            # makes GitHub reject the WHOLE FILE, not the job — so no run happened at all,
+            # and the PR sat BLOCKED with nothing pending and nothing failed, because the
+            # required check could not report. Two independent parse-based checks missed it,
+            # because `yaml.parse()` proves a file is well-formed YAML and says nothing about
+            # the Actions schema. actionlint reads the schema: on that exact file it says
+            # `"runs-on" section is missing in job "verify-static" [syntax-check]` and exits 1.
+            #
+            # The official release binary, version-pinned and checksum-verified against the
+            # published checksums.txt — NOT the `actionlint` npm package, which is a
+            # third-party wasm republish, last touched in 2022 (upstream ships 1.7.x), with no
+            # repository field. A required gate in a repo that SHA-pins every action should not
+            # rest on that. Bump by editing the two env values together.
+            - name: actionlint (workflow schema)
+              env:
+                  ACTIONLINT_VERSION: 1.7.12
+                  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+              run: |
+                  set -euo pipefail
+                  curl -fsSL -o actionlint.tar.gz \
+                      "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+                  echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+                  tar -xzf actionlint.tar.gz actionlint
+                  ./actionlint -color
+                  rm -f actionlint actionlint.tar.gz
             - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
-            # Lockfile-integrity gate (step 1, so drift fails this job in ~20s). A frozen
+            # Lockfile-integrity gate (step 1 of the node half, so drift fails this job in ~20s). A frozen
             # install fails when pnpm-lock.yaml has drifted from any workspace manifest OR
             # from the root pnpm.overrides — the case that broke the Vercel deploy: a
             # security override (esbuild@<0.28.1 → >=0.28.1) rewrote a manifest spec the
