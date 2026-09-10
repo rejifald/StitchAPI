@@ -52,7 +52,16 @@ export interface LlmRequest {
 export interface LlmResult {
     text: string;
     model?: string;
-    usage?: { inputTokens?: number; outputTokens?: number };
+    /**
+     * Token usage, when the provider reports it. `input` / `output`, not `inputTokens` /
+     * `outputTokens`: the envelope already says "tokens", and the two vendors disagree about
+     * the wire spelling anyway — anthropic sends `input_tokens`/`output_tokens`, openai sends
+     * `prompt_tokens`/`completion_tokens`. Echoing either one here would make the NORMALISED
+     * shape speak one vendor's dialect (CONTRACT.md P24: the envelope names the subject, the
+     * field names the dimension — the same reading that took `LlmOptions.maxTokens` to
+     * `tokens`). Each provider's `parse` converts at the edge, just below.
+     */
+    usage?: { input?: number; output?: number };
     /** Why the provider stopped generating, in the PROVIDER's own vocabulary — anthropic's
      *  `stop_reason` (`end_turn`, `max_tokens`, …), openai's `finish_reason` (`stop`, `length`, …).
      *  The field name is normalised; the VALUE is not, because there is no cross-vendor standard to
@@ -410,8 +419,8 @@ export const anthropic: LlmProvider = {
         if (b.model !== undefined) result.model = b.model;
         if (b.usage)
             result.usage = compact({
-                inputTokens: b.usage.input_tokens,
-                outputTokens: b.usage.output_tokens,
+                input: b.usage.input_tokens,
+                output: b.usage.output_tokens,
             });
         if (b.stop_reason) result.finishReason = b.stop_reason;
         return result;
@@ -457,8 +466,8 @@ export const openai: LlmProvider = {
         if (b.model !== undefined) result.model = b.model;
         if (b.usage)
             result.usage = compact({
-                inputTokens: b.usage.prompt_tokens,
-                outputTokens: b.usage.completion_tokens,
+                input: b.usage.prompt_tokens,
+                output: b.usage.completion_tokens,
             });
         const fr = b.choices?.[0]?.finish_reason;
         if (fr) result.finishReason = fr;

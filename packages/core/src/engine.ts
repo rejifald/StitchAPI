@@ -246,14 +246,15 @@ function buildRequest(
         headers,
         body: input.body,
         // The `wire` envelope is the AUTHORING shape; `AdapterRequest` stays flat, and
-        // `responseType` keeps the XHR/fetch spelling at that boundary (CONTRACT.md P22 — follow
-        // the standard that governs each layer, and convert at the edge). This IS that edge.
+        // Both sides now spell the wire-format fields the same way; the FOREIGN spellings live
+        // on the duck-types that meet a foreign API (`XhrLike.responseType`), and each adapter
+        // converts there (CONTRACT.md P18/P24 (a)).
         bodyType: cfg.wire?.body,
         multipart: cfg.wire?.multipart,
         // Read by the transport only for a `'form'` body; the query string was already serialised
         // into `url` above, by the same walker and the same `wire.array`.
-        arrayFormat: cfg.wire?.array,
-        responseType: cfg.wire?.response,
+        array: cfg.wire?.array,
+        response: cfg.wire?.response,
     });
     // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded
     // BEFORE the surface shapes the request so a surface that spreads `base` (e.g. `download`)
@@ -1451,6 +1452,20 @@ async function* runStreaming(
         // chunk; matches the buffered path's drift→error handling in `runFrom`.
         try {
             for await (const chunk of streamHook(res, cfg)) {
+                // A caller that aborted after the PREVIOUS delta must not have this one delivered,
+                // even though it already arrived off the transport — under load, the next chunk is
+                // often decoded before the abort reaches the transport's own read, so relying on
+                // that read to throw is a race, not a contract. Checked first, above every other
+                // effect below (token bookkeeping, drift, `chunks.push`, the `delta` yield), so an
+                // aborted chunk leaves no trace in either the awaited result or `.stream()`, and
+                // `lastToken` never advances past data nobody received.
+                //
+                // THROW, not break: a plain loop exit falls through to `return 'closed'` — the
+                // clean-finish path, which yields `done.ok === true`. An abort must keep today's
+                // error+done outcome, so it throws the same error the transport would have (just
+                // earlier and deterministically); the existing `catch` below turns it into
+                // `return 'error'` exactly as a genuine transport-level AbortError already does.
+                if (baseReq.signal?.aborted) throw abortReason(baseReq.signal);
                 // Track the resume token / server backoff off each delta (sse → `id` / `retry`) so a
                 // later drop resumes from here. Unchanged when the surface isn't resumable (no hook).
                 const tok = resumeToken?.(chunk);
@@ -1490,6 +1505,17 @@ async function* runStreaming(
                 // memory without limit. A consumer of an unbounded stream should read the `delta`
                 // events incrementally (via `.stream()`) and MUST NOT rely on the accumulated final
                 // result; awaiting such a stitch to completion is intentionally not memory-bounded.
+                // Re-checked here, not only at loop entry: with an `output` contract set, the
+                // validation above is an AWAIT, so an abort can land AFTER the entry guard and
+                // before this point — and the chunk would still be collected and delivered, the
+                // same defect displaced by one await. Found by review with a validator that
+                // aborted as a side effect; the regression test pins exactly that shape.
+                //
+                // `lastToken` may already have advanced for a chunk dropped here. That is
+                // unobservable: it is read only by the reconnect path (`applyResume` on a reopen,
+                // and `recoverable` below), and an aborted stream never reopens — the reconnect
+                // predicate disqualifies it outright.
+                if (baseReq.signal?.aborted) throw abortReason(baseReq.signal);
                 chunks.push(chunk);
                 yield { type: 'delta', chunk, at: now() };
             }
@@ -1521,8 +1547,12 @@ async function* runStreaming(
         // body ran out, which is the stream FINISHING — reopening it re-requests a body that
         // already arrived in full (issue #640). Otherwise behave exactly as the reconnect-off path
         // does — a clean close finalizes with what we collected, a mid-stream error surfaces as
-        // error + done.
+        // error + done. An aborted run is disqualified outright, even when it is otherwise
+        // `recoverable` with attempts left: the abort guard above turns it into an `'error'` drop,
+        // and without this check that drop looks reconnectable — reopening a stream the caller just
+        // cancelled.
         if (
+            baseReq.signal?.aborted ||
             !canResume ||
             ended === 'closed' ||
             !recoverable ||
@@ -1638,12 +1668,9 @@ async function* runCached(
     }
     // A non-storable response (binary read straight into the store) warns and passes through —
     // configuring `cache` here is a no-op-with-warning, never a crash (ADR 0003 §3). Read the
-    // RESOLVED request's responseType so a surface that forces blob (`download`) is caught too.
-    if (
-        baseReq.responseType === 'blob' ||
-        baseReq.responseType === 'arrayBuffer'
-    ) {
-        yield cacheEvt('bypass: non-storable responseType');
+    // RESOLVED request's `response` so a surface that forces blob (`download`) is caught too.
+    if (baseReq.response === 'blob' || baseReq.response === 'arrayBuffer') {
+        yield cacheEvt('bypass: non-storable response type');
         yield* runFrom(rt, baseReq, name, state, t0, run, budget);
         return;
     }

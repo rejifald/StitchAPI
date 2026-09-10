@@ -720,9 +720,11 @@ _Carve-outs:_
 - **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
   nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
   pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
-  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
-  its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
-  and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
+  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair on
+  `XhrLike` (and its React Native mirror), RTK Query's lifecycle names
+  (`cacheDataLoaded`/`cacheEntryRemoved`),
+  and Orama's own index-document schema (`IndexedDoc.pageUrl`/`pageTitle`, plus the `boost` and
+  `properties` keys that address it) — all exempt.
 
     **The exemption binds the layer that meets the standard, not every layer above it**
     ([P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): follow the standard
@@ -731,13 +733,33 @@ _Carve-outs:_
     vocabulary and **MAY** fold, provided the engine converts before the value reaches the
     boundary.
 
-    _Applied (2026-08-03):_ `AdapterRequest.responseType` is the XHR/fetch-facing contract and
-    keeps the XHR spelling permanently — an `xhr` adapter assigns it straight through. The
-    authoring slot folded into the `wire` envelope as **`wire.response`**, and the engine maps it
-    onto `AdapterRequest.responseType` when it builds the request. Note the protected **pair** is
-    XHR's `responseType`/`responseText`: StitchAPI has no `responseText`, so the fold this
-    carve-out guards against (`response: { type, text }`) was never live here. What the carve-out
-    still forbids is renaming the **transport** field, which this change does not do.
+    _Applied (2026-08-03), then **reversed** (2026-09-04):_ `AdapterRequest.responseType` was read
+    as "the XHR/fetch-facing contract", to keep the XHR spelling permanently. That was wrong about
+    which layer meets the standard, and the interface itself said so: `AdapterRequest` is
+    StitchAPI's **own normalized** transport contract, the same category P18 names beside
+    `StitchStore` and `RedisDriver`. The tell is in the values — `ResponseType` is
+    `'json' | 'text' | 'arrayBuffer' | 'blob'`: camelCase `arrayBuffer` where XHR spells it
+    `'arraybuffer'`, and no `'document'` arm. A genuine mirror would carry XHR's values. Every
+    adapter already **converts at its own edge** (`xhr.responseType = 'arraybuffer'`, axios's
+    `responseType: 'arraybuffer'`), which is exactly what the paragraph above asks for. So the
+    field was normalized in its values, its member set and its authoring spelling — everything but
+    its name. Renamed to **`AdapterRequest.response`**, matching `wire.response` (P1/P16). The
+    XHR spelling survives where it belongs: on `XhrLike`/`RnStreamingXhr`, the duck-types that
+    structurally meet XHR, and on `AxiosLikeConfig` for axios. The protected **pair** the carve-out
+    guards is XHR's `responseType`/`responseText`; StitchAPI has no `responseText`, so the fold it
+    exists to prevent (`response: { type, text }`) was never live here either.
+
+    _Corrected the same day — the exemption is per-field, not per-interface:_
+    `AdapterRequest.arrayFormat` sat beside `responseType` and was read as sharing its shelter, on
+    the strength of resemblance alone. Nothing takes an `arrayFormat`: the walker is ours
+    (`util.ts`), and the values `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins
+    the **values**, never the field. With the authoring slot already renamed to `wire.array` by
+    #591, one capability was spelled two ways across one edge for no reason a standard could
+    supply → **`AdapterRequest.array`**. Chasing that one down is what exposed `responseType`
+    above: the argument used to shelter `array` turned out not to hold for the field it borrowed
+    it from. The lesson generalises twice over — a neighbour's carve-out is not contagious, and
+    "an adapter assigns it straight through" describes a **conversion at the edge**, which is the
+    thing this rule asks for, not evidence that the contract before the edge is a mirror.
 
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an
@@ -747,6 +769,17 @@ _Carve-outs:_
   (`X?: never`, or a `ConfigError<…>` brand where a bare `never` would collapse the whole config
   and report every unrelated field). Staying flat is a licence to skip the envelope, never a
   licence to let a tag/option pairing typecheck when the option is inert.
+
+    _Applied to a whole option (2026-09-04):_ the inertness clause is not only about pairs.
+    `portChannel(port, { allowedOrigins })` carried the same option its two sibling builders
+    take, "for symmetry" — but the origin gate reads `origin === '' || allowed.includes(origin)`
+    and a `MessagePort` always delivers `''`, so the list could never change one decision. An
+    option that cannot alter behaviour is worse than an asymmetry when it is **shaped like a
+    security control**: a caller who writes `allowedOrigins: ['https://trusted']` has gated
+    nothing. Not one test ever passed it. The parameter is **removed** rather than renamed or
+    documented — a port is gated by who you hand it to. `channel` and `windowChannel`, where the
+    transport does carry an origin, keep it.
+
 - **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
   family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
   capability.
@@ -794,8 +827,22 @@ hard breaks, no aliases (P19).
 _Named exemptions verified against this rule_ (carve-out (a); named explicitly because each is the
 literal shape this rule would otherwise flag): **`StitchQueryOptions.queryKey`/`queryFn`** (the
 TanStack mirror, P3 — note this rule's own motivating example is itself exempt);
-**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`DocSearchHit.pageUrl`/
-`pageTitle`** (mirrors the persisted Orama index document schema; maintainer-exempted 2026-07-08).
+**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`IndexedDoc.pageUrl`/
+`pageTitle`** in `@stitchapi/docs-mcp` (the persisted Orama index document schema — Orama boosts
+and searches BY field name, so `FieldBoost.pageTitle` and the `properties` list key on them too).
+
+_Re-pointed (2026-09-09), the third instance of the same error:_ this exemption was written
+against **`DocSearchHit`**, the type `searchDocs` RETURNS — one layer above the boundary, exactly
+like `AdapterRequest.responseType` before it. The stored document is what meets Orama; the search
+result is a house-owned produced shape, and the MCP server was already converting it to `title` /
+`url` at its own edge, so nothing downstream ever wanted the index's spelling. `DocSearchHit` is
+now `path` / `title` (`path`, not `url`: the value is site-relative and composes with `anchor`),
+converted field-by-field at the one point the index is read. That conversion also retired an
+`as unknown as Omit<DocSearchHit, 'score'>` cast which asserted the stored document and the
+published hit were the same object — the coupling that let the names leak upward in the first
+place, and one that would have kept typechecking after a schema change. **The pattern to watch
+for: a mirror exemption is suspicious wherever a conversion to house vocabulary already exists
+somewhere above it.** That conversion is the edge; everything above it is house.
 
 Enforced by lint **R8** (§7); its allow-list carries the one-line rationale for every verified
 exemption beyond this rule's named list — a discriminated-union pair (mutually exclusive by

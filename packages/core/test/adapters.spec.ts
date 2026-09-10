@@ -102,7 +102,7 @@ describe('axiosAdapter', () => {
         expect(res.body).toEqual({ ok: true });
     });
 
-    test('honors responseType arrayBuffer for binary downloads', async () => {
+    test('honors response arrayBuffer for binary downloads', async () => {
         const bytes = new Uint8Array([1, 2, 3]);
         const client = recordingClient(() => ({
             status: 200,
@@ -113,7 +113,7 @@ describe('axiosAdapter', () => {
             url: 'http://h/bin',
             method: 'GET',
             headers: {},
-            responseType: 'arrayBuffer',
+            response: 'arrayBuffer',
         });
         expect(res.body).toBeInstanceOf(ArrayBuffer);
         expect(new Uint8Array(res.body as ArrayBuffer)).toEqual(bytes);

@@ -22,7 +22,7 @@ import type { AdapterRequest, AdapterResponse } from 'stitchapi';
 type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
 ```
 
-The request carries everything the transport needs and nothing about policy: `{ url, method, headers, body?, bodyType?, multipart?, responseType?, stream?, onProgress?, signal? }`. The response is `{ status, headers, body, url? }`, where `body` is the parsed value — JSON when the content type allows, otherwise text — or a `ReadableStream<Uint8Array>` when `stream` was set.
+The request carries everything the transport needs and nothing about policy: `{ url, method, headers, body?, bodyType?, multipart?, array?, response?, stream?, onProgress?, signal? }`. The response is `{ status, headers, body, url? }`, where `body` is the parsed value — JSON when the content type allows, otherwise text — or a `ReadableStream<Uint8Array>` when `stream` was set.
 
 One rule separates an adapter from the engine above it: **an adapter never throws on a non-2xx status.** A 500 is a returned `{ status: 500, ... }`, not a rejected promise. Only a genuine network failure or an abort propagates. The stitch decides what a status _means_ — whether 503 triggers a retry, whether 404 is an error or an empty result — so the adapter stays a dumb pipe and the policy stays in one place.
 

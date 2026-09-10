@@ -131,7 +131,7 @@ export function axiosAdapter(
         const resHeaders = normalizeHeaders(res.headers);
         const contentTypeResp = resHeaders['content-type'] ?? '';
         const parsed = decodeResponseBody(
-            req.responseType,
+            req.response,
             contentTypeResp,
             toArrayBuffer(res.data),
         );

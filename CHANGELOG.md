@@ -194,6 +194,156 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `LlmResult.usage` is `{ input, output }`, not `{ inputTokens, outputTokens }`.**
+  The envelope already says "usage", and the two vendors disagree about the wire spelling anyway —
+  anthropic sends `input_tokens`/`output_tokens`, openai sends `prompt_tokens`/`completion_tokens`.
+  Ours echoed anthropic's, camelCased, which made the **normalised** shape speak one vendor's
+  dialect. Each provider's `parse` already converts at the edge; only the house name moves. Same
+  reading that took `LlmOptions.maxTokens` to `tokens` (CONTRACT.md P4/P24: the envelope names the
+  subject, the field names the dimension).
+
+    ```ts
+    - const inTok = res.usage?.inputTokens;
+    + const inTok = res.usage?.input;
+    ```
+
+- **BREAKING CHANGE: `@stitchapi/docs-mcp`'s `DocSearchHit` speaks house vocabulary — `pageUrl` is
+  `path`, `pageTitle` is `title`.** The Orama mirror exemption had been written against the type
+  `searchDocs` _returns_, one layer above the boundary. What meets Orama is the persisted index
+  document (Orama boosts and searches BY field name, so `FieldBoost.pageTitle` and the `properties`
+  list key on it) — and that schema is **unchanged**, so no reindex, no bundle rebuild, no
+  embedding regeneration. The MCP server was already converting to `title`/`url` at its own edge,
+  so the tool output every consumer actually reads is byte-identical.
+
+    `path` rather than `url` because the value is site-relative and composes with `anchor` into the
+    absolute link; naming it `url` would promise a whole address and hand back half of one.
+
+    The conversion also retires an `as unknown as Omit<DocSearchHit, 'score'>` cast that asserted
+    the stored document and the published hit were the same object — the coupling that let the
+    index's names leak onto the published type, and one that would have kept typechecking the day
+    the schema changed. The stored shape is now a named internal `IndexedDoc`, mapped field by field.
+
+    ```ts
+    -hits.map((h) => ({ title: h.pageTitle, href: h.pageUrl }));
+    +hits.map((h) => ({ title: h.title, href: h.path }));
+    ```
+
+- **`@stitchapi/download`'s opt-in `dedupe` keys off the RESOLVED request and ref-counts its
+  sharers — a behaviour change to a shipped opt-in feature.**
+  ([#455](https://github.com/rejifald/StitchAPI/issues/455)) Nothing moves unless you passed
+  `dedupe: true`; if you did, both halves of what it does changed. v1 documented two limits, and
+  these are them.
+
+    **The key is the resolved target, not the spelling.** It was `item.url`, else an explicit `id`,
+    else the enqueue index — so two `{ path: '/x' }` items sharing a `defaults.baseUrl` had two keys
+    and made two requests, and only items given a whole `url` ever collapsed. The key is now
+    `defaults` merged under the item and resolved: `baseUrl` + `path` (or a whole `url`), with the
+    query string sorted. `{ path: '/x' }` twice under one `baseUrl` is one fetch, and so are
+    `?a=1&b=2` and `?b=2&a=1`. An item's own `id` still wins where it has one — naming two items
+    alike declares them one download whatever their URLs, and naming them apart keeps them apart.
+    **More items collapse than before**, which is the point; give items you want fetched separately
+    distinct `id`s. A thunked `baseUrl`/`url` is resolved once more per item to build the key.
+
+    **Cancel is ref-counted.** Sharers used to hold a bare shared promise: cancelling a follower only
+    detached it — the fetch ran on and the follower still settled `fulfilled` when it finished — and
+    cancelling the leader aborted the one request everyone was waiting on, failing the followers.
+    Each sharer now settles `cancelled` on its own, and the request on the wire is aborted only when
+    the **last** sharer cancels. Cancelling the item that opened the request no longer fails the
+    others: the fetch outlives it, and its byte progress and `idle` window pass to a survivor.
+
+    **A settled group is no longer joinable.** Settling is what pumps the queue, and the key was
+    dropped a microtask later — so the item admitted by a group's own settlement could still find
+    that key and adopt its finished result, or its finished **failure**, without ever reaching the
+    wire (a 404 for a request it never sent, which is how a batch quietly stops retrying). The key
+    is dropped the instant the request settles. `dedupe` coalesces requests **in flight**; it is not
+    a cache, and a just-finished blob is never replayed onto a later item.
+
+    Unchanged: FIFO admission, the `concurrency` ceiling, per-item settling, `idle` semantics, and
+    the default — `dedupe` is still `false`, every item still its own request. The package's bundle
+    budget moves 2.65 KB → 3.05 KB gzip for the two mechanisms.
+
+- **The hosted docs MCP (`stitchapi.dev/api/mcp`) moves to MCP SDK v2.** `mcp-handler` 1.x → 2.x,
+  which swaps the peer from `@modelcontextprotocol/sdk` 1.x to `@modelcontextprotocol/server` 2.x.
+  The endpoint now serves the **2026-07-28** MCP specification natively and falls back to stateless
+  Streamable HTTP for 2025-era clients, from the one handler — so an agent on either protocol
+  generation keeps working. The two tools, their schemas and their responses are unchanged.
+
+    Nothing about the surface moved; the call sites did. The variadic `server.tool()` form is
+    removed in favour of `server.registerTool()`, whose middle argument is a config object, and
+    `inputSchema` now takes a full Standard Schema — `z.object({ … })` — rather than a raw Zod
+    shape. `createMcpHandler` drops from three arguments to two, merging the server options and
+    the handler config into one. The 1.x route and transport options (`basePath`, `maxDuration`,
+    `redisUrl`, the SSE endpoint trio, `sessionIdGenerator`) are gone entirely — the handler is
+    mounted by the route file's own path, which for this endpoint was always `/api/mcp`.
+
+    **This route had no test at all**, in either direction: `mcp-e2e` covers the separate stdio
+    library MCP (`stitchapi/mcp`), and the docs `e2e` suite only reaches the rendered site. It now
+    has one — an initialize handshake plus a `tools/list` assertion driven through the real exported
+    handler.
+
+- **BREAKING CHANGE: `AdapterRequest.responseType` is now `response`.** CONTRACT.md pinned this
+  to XHR's spelling in 2026-08 as "the XHR/fetch-facing contract". That read the wrong layer:
+  `AdapterRequest` is StitchAPI's own **normalized** transport contract, the category P18 names
+  beside `StitchStore` and `RedisDriver`. Its values already proved it —
+  `ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob'` is camelCase `arrayBuffer` where XHR
+  spells it `'arraybuffer'`, with no `'document'` arm — and every adapter already converts at its
+  own edge (`xhr.responseType = 'arraybuffer'`). So the field was normalized in values, member set
+  and authoring spelling, and foreign only in its name. It now matches `wire.response`, which is
+  what a consumer writes and which is **unchanged**. The XHR spelling stays on `XhrLike` /
+  `RnStreamingXhr` and axios's on `AxiosLikeConfig` — the duck-types that structurally meet those
+  APIs. Only a **custom adapter** reading the field is affected.
+
+    ```ts
+    // a custom adapter, before → after
+    - if (req.responseType === 'blob') { … }
+    + if (req.response === 'blob') { … }
+    ```
+
+- **BREAKING CHANGE: `AdapterRequest.arrayFormat` is now `array`.** #591 renamed the authoring
+  slot to `wire.array` but left the transport field spelled `arrayFormat`, so one capability was
+  spelled two ways across one edge. The neighbouring `responseType` keeps XHR's spelling because
+  an `xhr` adapter assigns it straight through (CONTRACT.md P24 carve-out (a) binds _the layer
+  that meets the standard_) — but nothing takes an `arrayFormat`: the walker is ours, and the
+  values `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins the values, never the
+  field name. Only a **custom adapter** that reads the field is affected; `wire.array`, the
+  spelling every consumer actually writes, is unchanged.
+
+    ```ts
+    // a custom adapter, before → after
+    - const fmt = req.arrayFormat;
+    + const fmt = req.array;
+    ```
+
+- **BREAKING CHANGE: `portChannel()` no longer takes an `allowedOrigins` option.** It accepted one
+  "for symmetry" with `channel()`/`windowChannel()` and threaded it into the gate — where it could
+  never be read. The gate is `origin === '' || allowed.includes(origin)` and a `MessagePort` always
+  delivers `''`, so the list short-circuited every time. An inert option is bad anywhere and worse
+  when it is shaped like a security control: `portChannel(port, { allowedOrigins: ['https://ok'] })`
+  gated nothing while reading as though it did. A port is gated by who you hand it to — it is
+  already a private, capability-style channel. Drop the argument; there is no behaviour to replace,
+  because there never was any.
+
+    ```ts
+    -portChannel(port, { allowedOrigins: ['https://app.example.com'] });
+    +portChannel(port);
+    ```
+
+- **`@stitchapi/nest` supports NestJS 12.** `peerDependencies` widen to
+  `^10.0.0 || ^11.0.0 || ^12.0.0` for both `@nestjs/common` and `@nestjs/core` — additive, so
+  nothing changes for a host on Nest 10 or 11. The adapter itself needed no code change; all 65
+  of its tests pass unmodified against Nest 12.
+
+    The bump has to be taken as **one coupled decision** rather than per-package. `@nestjs/common`
+    12 relocates the `interfaces` entry point that `@nestjs/core` 11 resolves against, so moving
+    `common` alone leaves every suite failing at import with
+    `Cannot find module '.../@nestjs/common/interfaces.js'`. `@nestjs/config` is pulled along for
+    the same reason: its 4.x line peers on `@nestjs/common` `^10.0.0 || ^11.0.0` and so cannot see
+    Nest 12 at all — the supporting line is `12.0.0`, which is where that package's versioning
+    realigned with the framework's.
+
+    Nest 12's own dependency moves ride along in the lockfile: `@nestjs/config` swaps `dotenv`
+    16 → 17 with `dotenv-expand` 12 → 13, and replaces `lodash` with `es-toolkit`.
+
 - **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
   `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
   was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
@@ -1058,6 +1208,27 @@ npm release are grouped under the in-development version that introduced them.
     `total` under-counting while items are still queued (sizes are unknown until an item starts) is
     a separate matter, tracked in
     [#461](https://github.com/rejifald/StitchAPI/issues/461).
+
+- **An aborted stream no longer risks delivering one buffered delta too many.** The only thing
+  that stopped `delta` delivery after a caller's `ctl.abort()` was the transport's own body read
+  throwing `AbortError` — and under load, the next chunk is often already decoded off the wire
+  before that abort reaches the transport, so a second `delta` event could still land after the
+  caller had already cancelled. `runStreaming`'s per-chunk loop now checks the caller's `signal` at
+  the very top, before the resume-token bookkeeping and before the chunk reaches either the
+  awaited result or `.stream()`, and throws the caller's own abort reason the instant it finds the
+  signal aborted — deterministically, instead of racing the transport for it. The throw flows
+  through the existing mid-stream-error handling unchanged, so the outcome is exactly what it
+  always was (`error` + `done: { ok: false }`); only the race is gone. A resumable stream
+  (`sse.reconnect`) that drops this way is no longer reconnected either — the reconnect predicate
+  now refuses an aborted signal outright, so cancelling a stream never reopens a connection the
+  caller just asked to stop.
+
+    The signal is checked **twice** per chunk, and the second check is not redundant: with an
+    `output` contract set, validation is an `await` sitting between the loop-entry check and the
+    point the chunk reaches `chunks`/`.stream()`, so an abort landing during that await would
+    otherwise still deliver it — the same defect displaced by one await, reachable by any streaming
+    stitch with an output schema. Review caught that after the first guard was written; both windows
+    are now closed and each has a regression test that fails without its own guard.
 
 - **A transport failure reaches the caller as a `StitchError` carrying the original on `.cause`.**
   ([#450](https://github.com/rejifald/StitchAPI/issues/450)) A socket reset, a DNS failure or an

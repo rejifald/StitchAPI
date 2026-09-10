@@ -115,6 +115,31 @@ collapse duplicates onto a single in-flight request:
 downloadAll([url, url], { dedupe: true }); // one request on the wire; both handles get the same Blob
 ```
 
+**Keyed off the resolved request**, not off how you spelled it. Items collapse when they resolve to
+the same target — `defaults` merged under the item, then `baseUrl` + `path` (or a whole `url`), with
+the query string sorted — so all of these are one fetch:
+
+```ts
+downloadAll([{ path: '/a' }, { path: '/a' }], {
+    dedupe: true,
+    defaults: { baseUrl: 'https://cdn.example.com' },
+});
+downloadAll([{ path: '/a?x=1&y=2' }, { path: '/a?y=2&x=1' }], { dedupe: true });
+```
+
+An item's own `id` still wins where it has one: naming two items alike declares them one download
+(whatever their URLs), and naming them apart keeps them apart (whatever their URLs).
+
+**Cancel is ref-counted.** Every sharer cancels independently and settles `cancelled` on its own; the
+request on the wire is aborted only when the **last** sharer cancels. Cancelling the item that opened
+the request does not fail the others — the fetch outlives it, and its progress and `idle` window pass
+to a survivor.
+
+**It coalesces requests in flight; it is not a cache.** Only items whose lifetimes overlap collapse.
+An item admitted after the shared request has settled starts a fresh one — a just-finished `Blob` is
+never replayed onto a later item, and neither is a just-finished failure. With `concurrency: 1`, two
+identical items are therefore two requests: the second is admitted only once the first has settled.
+
 ## License
 
 Apache-2.0

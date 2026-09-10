@@ -1,5 +1,5 @@
 // The `stitchapi/download` surface subpath (ADR 0005 Decision 8): a buffered binary GET that
-// resolves to `{ blob, filename }`. The surface forces `GET` + `responseType: 'blob'`, buffers the
+// resolves to `{ blob, filename }`. The surface forces `GET` + `response: 'blob'`, buffers the
 // whole body into a `Blob` (reporting byte progress as it arrives when a caller passes
 // `onProgress` — Decision 9), and names it from `Content-Disposition` (`filename*` preferred, then
 // `filename`), falling back to the response URL's last path segment. It NEVER writes to disk —
@@ -98,10 +98,10 @@ function filenameFromUrl(url: string | undefined): string | undefined {
  * the result of a POST, use a plain `stitch()` with `wire: { response: 'blob' }`; the only thing
  * given up is the `Content-Disposition` filename parsing.
  *
- * Note the two spellings below are two LAYERS, not a leftover rename. `buildRequest` returns an
- * `AdapterRequest`, whose wire-format fields are still flat (`responseType`) because that contract
- * keeps the XHR/fetch vocabulary at the boundary that meets it (CONTRACT.md P22). The guard reads
- * the AUTHORING config one layer up, where the same choice is spelled `wire.response`.
+ * Note the two shapes below are two LAYERS, not a leftover rename. `buildRequest` returns an
+ * `AdapterRequest`, whose wire-format fields are FLAT (`response`); the guard reads the AUTHORING
+ * config one layer up, where the same choice is nested as `wire.response`. Same word, two depths —
+ * the foreign spelling (`XhrLike.responseType`) lives only on the duck-type that meets XHR.
  *
  * The literal `id: 'download'` (rather than `Surface`'s widened `string`) is load-bearing: it is
  * what lets `RequestShapeFixedByDownload` recognise this surface in `stitch({ kind: downloadSurface })`.
@@ -113,7 +113,7 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> & {
     buildRequest: (_cfg, _input, base) => ({
         ...base,
         method: 'GET',
-        responseType: 'blob',
+        response: 'blob',
     }),
     // A 500 is a failure BEFORE it is a downloaded Blob (ADR 0022 Decision 4). This hook returned
     // `{ ok: true }` UNCONDITIONALLY, correct only because the engine guaranteed it never saw a
