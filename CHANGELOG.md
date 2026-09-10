@@ -1186,6 +1186,27 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **An aborted stream no longer risks delivering one buffered delta too many.** The only thing
+  that stopped `delta` delivery after a caller's `ctl.abort()` was the transport's own body read
+  throwing `AbortError` — and under load, the next chunk is often already decoded off the wire
+  before that abort reaches the transport, so a second `delta` event could still land after the
+  caller had already cancelled. `runStreaming`'s per-chunk loop now checks the caller's `signal` at
+  the very top, before the resume-token bookkeeping and before the chunk reaches either the
+  awaited result or `.stream()`, and throws the caller's own abort reason the instant it finds the
+  signal aborted — deterministically, instead of racing the transport for it. The throw flows
+  through the existing mid-stream-error handling unchanged, so the outcome is exactly what it
+  always was (`error` + `done: { ok: false }`); only the race is gone. A resumable stream
+  (`sse.reconnect`) that drops this way is no longer reconnected either — the reconnect predicate
+  now refuses an aborted signal outright, so cancelling a stream never reopens a connection the
+  caller just asked to stop.
+
+    The signal is checked **twice** per chunk, and the second check is not redundant: with an
+    `output` contract set, validation is an `await` sitting between the loop-entry check and the
+    point the chunk reaches `chunks`/`.stream()`, so an abort landing during that await would
+    otherwise still deliver it — the same defect displaced by one await, reachable by any streaming
+    stitch with an output schema. Review caught that after the first guard was written; both windows
+    are now closed and each has a regression test that fails without its own guard.
+
 - **A transport failure reaches the caller as a `StitchError` carrying the original on `.cause`.**
   ([#450](https://github.com/rejifald/StitchAPI/issues/450)) A socket reset, a DNS failure or an
   abort surfaced as whatever the transport happened to throw, so the awaited and `.safe()` paths
