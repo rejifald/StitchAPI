@@ -194,6 +194,19 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `LlmResult.usage` is `{ input, output }`, not `{ inputTokens, outputTokens }`.**
+  The envelope already says "usage", and the two vendors disagree about the wire spelling anyway —
+  anthropic sends `input_tokens`/`output_tokens`, openai sends `prompt_tokens`/`completion_tokens`.
+  Ours echoed anthropic's, camelCased, which made the **normalised** shape speak one vendor's
+  dialect. Each provider's `parse` already converts at the edge; only the house name moves. Same
+  reading that took `LlmOptions.maxTokens` to `tokens` (CONTRACT.md P4/P24: the envelope names the
+  subject, the field names the dimension).
+
+    ```ts
+    - const inTok = res.usage?.inputTokens;
+    + const inTok = res.usage?.input;
+    ```
+
 - **BREAKING CHANGE: `@stitchapi/docs-mcp`'s `DocSearchHit` speaks house vocabulary — `pageUrl` is
   `path`, `pageTitle` is `title`.** The Orama mirror exemption had been written against the type
   `searchDocs` _returns_, one layer above the boundary. What meets Orama is the persisted index
