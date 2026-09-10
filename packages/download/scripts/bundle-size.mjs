@@ -35,8 +35,18 @@ const KB = 1024;
 // longer decides the fetch for the rest. That measures ~2.85 KB gzip; ~0.38 KB of
 // the growth is the two mechanisms themselves, and it was trimmed where it could be
 // (the group lives on the existing per-item `Active` record rather than in a second
-// id-keyed map). The ceiling keeps the same tight ~0.2 KB headroom core's gate holds,
-// so the NEXT increment is still a conscious act.
+// id-keyed map). That raise left ~0.2 KB headroom, matching core's gate.
+//
+// #456 then spent most of it. The aggregate ETA moved off the batch's lifetime average
+// onto a time-decayed throughput estimate (three fields and a fold — no window buffer,
+// which is part of why it is cheap; see progress.ts). Measured together with #455 the
+// entry is ~2.94 KB gzip, leaving ~0.11 KB. The ceiling is deliberately NOT raised again
+// for it — the EWMA fits inside the #455 raise rather than on top of it — but the
+// headroom is now genuinely thin, so the next increment needs a raise, not a trim.
+//
+// Note both numbers are measured AFTER `pnpm --filter @stitchapi/download build`: this
+// gate reads `lib/`, which is gitignored, so it happily measures a stale artifact from
+// another branch if you skip the build.
 //
 // `stitchapi` and every `stitchapi/*` subpath are external (peer dep).
 const SCENARIOS = [

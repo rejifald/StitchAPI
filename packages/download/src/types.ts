@@ -39,9 +39,18 @@ export interface BatchProgress {
     completed: number;
     /** Total items in the batch. */
     count: number;
-    /** Smoothed transfer rate in bytes/sec since the first byte; `undefined` before any bytes arrive. */
+    /**
+     * **Recent** throughput in bytes/sec — an exponentially-decayed average of the batch's last few
+     * seconds, not its lifetime average. `undefined` before any bytes arrive. A stall pulls it down
+     * within a couple of seconds and a recovery pulls it back up just as fast, which is what makes
+     * {@link eta} a forecast rather than a report on how the batch has gone so far.
+     */
     throughput?: number;
-    /** Estimated time to completion, in ms; `undefined` when `total` is unknown or the rate is zero. */
+    /**
+     * Estimated time to completion, in ms, at {@link throughput}; `undefined` when `total` is unknown
+     * or the rate has decayed to zero. It is a projection of the CURRENT rate, so it moves — a batch
+     * that stalls watches its ETA climb.
+     */
     eta?: number;
 }
 
