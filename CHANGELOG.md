@@ -538,6 +538,29 @@ npm release are grouped under the in-development version that introduced them.
     credentials still never originate from the caller. The implementation's local is renamed
     `loginInput` → `credentials` to match.
 
+- **BREAKING CHANGE: `CookieSessionOptions.onAuthFailure` is now `onFailure`.**
+  ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space)) The envelope
+  already names the subject — inside `CookieSessionOptions` the only observable failure is a login
+  attempt, which is exactly what its sibling `onRefresh` watches — so the `Auth` stem restated what
+  the container had already said. This is the same envelope-supplies-the-subject reading that lets
+  an inner cap be spelled `chars` rather than `bodyChars`.
+
+    ```ts
+    auth: cookieSession({
+        login,
+        cookie: 'sid',
+    -   onAuthFailure: (info) => metrics.count('login.failed', { phase: info.step }),
+    +   onFailure: (info) => metrics.count('login.failed', { phase: info.step }),
+    }),
+    ```
+
+    The payload type stays **`AuthFailureResult`**, deliberately: an exported type sits in a flat
+    namespace where the subject has to be explicit, while a field sits inside an envelope that
+    already supplies it — the same rule read at two levels, not an inconsistency. Nothing about when
+    the hook fires changes: once per actual attempt, only when no cookie was captured, with a throw
+    still caught and announced on the `auth` trace topic. No other auth strategy carries hooks, so
+    there is no parity to keep.
+
 - **BREAKING CHANGE (`@stitchapi/fastify`): `seamConfig` is merged into `seam` — one option carries
   the seam.**
   ([CONTRACT.md P20](docs/CONTRACT.md#p20--no-empty-object-config-enable-with-defaults-is-a-scalar))
