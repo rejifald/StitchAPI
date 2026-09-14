@@ -62,8 +62,8 @@ function channelPair(): {
     closeBoth: () => Promise<void>;
 } {
     const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-    const parent = channel(a, { from: [ORIGIN_B] });
-    const iframe = channel(b, { from: [ORIGIN_A] });
+    const parent = channel.over(a, { from: [ORIGIN_B] });
+    const iframe = channel.over(b, { from: [ORIGIN_A] });
     return {
         parent,
         iframe,

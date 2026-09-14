@@ -25,7 +25,7 @@ type Result<S extends (...args: never[]) => { then: unknown }> = Awaited<
 
 // A throwaway transport just to mint a channel for the type assertions (never executed).
 const transport = null as unknown as MessageTransport;
-const ch = channel(transport, { from: ['https://x.test'] });
+const ch = channel.over(transport, { from: ['https://x.test'] });
 
 // 1) request: result inferred from `opts.output`, call argument from `opts.input`.
 const sum = ch.request('sum', {
@@ -101,7 +101,8 @@ expectAssignable<ChannelOptions['from']>(
 // 11) `from` means ONE thing across the surface: `ChannelOptions.from` and the envelope's inbound
 //     half are the same type, so a value authored for one builder is authored for the other. This
 //     is what `origins` on both could not give — the two unions were INCOMPARABLE (an array is
-//     legal on `channel`, a compile error on `windowChannel`), so one token named two value-spaces.
+//     legal on `channel.over`, a compile error on `channel.window`), so one token named two
+//     value-spaces.
 type ChannelFrom = ChannelOptions['from'];
 type EnvelopeFrom = NonNullable<OriginOptions['from']>;
 expectType<EnvelopeFrom>(null as unknown as ChannelFrom);
@@ -111,3 +112,12 @@ expectType<ChannelFrom>(null as unknown as EnvelopeFrom);
 // where a second dimension (`to`) exists, so there is no cross-surface spelling to get wrong.
 expectError<ChannelOptions>({ origins: ['https://a.test'] });
 expectAssignable<ChannelOptions>({ from: ['https://a.test'] });
+
+// 12) the namespace is three PEERS and is NOT itself callable. P12 reserves a bare call for the
+//     DOMINANT case, and the generic transport builder is the rare one (the README and every doc
+//     reach for `channel.window`), so making it bare would invert the hierarchy.
+expectType<typeof channel.over>(channel.over);
+expectType<typeof channel.window>(channel.window);
+expectType<typeof channel.port>(channel.port);
+// @ts-expect-error — `channel` is a namespace object, not a function: there is no bare call.
+channel(transport, { from: ['https://x.test'] });

@@ -9,10 +9,8 @@ import {
     type PostMessageChannel,
     type WindowChannelOptions,
     channel,
-    portChannel,
     postMessageEventSurface,
     postMessageSurface,
-    windowChannel,
 } from '../src/postmessage';
 import type { Adapter } from '../src/types';
 import { toValidator } from '../src/validator';
@@ -80,9 +78,9 @@ function channelPair(): {
     closeBoth: () => Promise<void>;
 } {
     const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-    const parent = channel(a, { from: [ORIGIN_B] });
+    const parent = channel.over(a, { from: [ORIGIN_B] });
     // A single origin passes as a bare string (`T | T[]` — CONTRACT.md P7).
-    const iframe = channel(b, { from: ORIGIN_A });
+    const iframe = channel.over(b, { from: ORIGIN_A });
     return {
         parent,
         iframe,
@@ -164,8 +162,8 @@ describe('request → response (correlated RPC)', () => {
 
     test('the reply must match BOTH id and type — a same-type unsolicited message does not resolve it', async () => {
         const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-        const parent = channel(a, { from: [ORIGIN_B] });
-        const iframe = channel(b, { from: [ORIGIN_A] });
+        const parent = channel.over(a, { from: [ORIGIN_B] });
+        const iframe = channel.over(b, { from: [ORIGIN_A] });
         // The iframe emits an UNSOLICITED `sum-result` (no id) BEFORE any responder — it must NOT
         // resolve the pending request (whose reply correlates on the minted id too).
         const sum = parent.request('sum', {
@@ -208,8 +206,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
         // The iframe posts from an origin the parent does NOT allow. The parent's gate drops the
         // reply before correlation, so the request never resolves and times out.
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { from: [ORIGIN_B] }); // only the REAL iframe origin
-        const evil = channel(b, { from: [ORIGIN_A] });
+        const parent = channel.over(a, { from: [ORIGIN_B] }); // only the REAL iframe origin
+        const evil = channel.over(b, { from: [ORIGIN_A] });
         evil.respond('sum', () => ({ total: 999 }));
         const sum = parent.request('sum', {
             timeout: { each: 40 },
@@ -223,8 +221,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
 
     test('an event from a disallowed origin is never delivered', async () => {
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { from: [ORIGIN_B] });
-        const evil = channel(b, { from: [ORIGIN_A] });
+        const parent = channel.over(a, { from: [ORIGIN_B] });
+        const evil = channel.over(b, { from: [ORIGIN_A] });
         const events = parent.events('tick');
         const ctl = new AbortController();
         const collected: unknown[] = [];
@@ -249,8 +247,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
         // alone its handler. A validator that records every value it is handed proves the gate
         // runs first — an implementation that validated then gated would tick the counter.
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { from: [ORIGIN_B] }); // only the REAL iframe origin
-        const evil = channel(b, { from: [ORIGIN_A] });
+        const parent = channel.over(a, { from: [ORIGIN_B] }); // only the REAL iframe origin
+        const evil = channel.over(b, { from: [ORIGIN_A] });
         const validated: unknown[] = [];
         const handled: unknown[] = [];
         parent.respond(
@@ -526,7 +524,7 @@ describe('abort + close', () => {
                 detached = true;
             },
         };
-        const ch = channel(transport, { from: [ORIGIN_B] });
+        const ch = channel.over(transport, { from: [ORIGIN_B] });
         const call = ch.request('pending');
         // A stitch is lazy — start consuming so `execute` actually posts and registers the pending
         // entry, then let the resilience chain reach the transport before closing.
@@ -541,7 +539,7 @@ describe('abort + close', () => {
 });
 
 // ---------------------------------------------------------------------------
-// windowChannel / portChannel guards
+// channel.window / channel.port guards
 // ---------------------------------------------------------------------------
 
 const fakeWindow = (posts: { msg: unknown; origin: string }[]): Window =>
@@ -551,7 +549,7 @@ const fakeWindow = (posts: { msg: unknown; origin: string }[]): Window =>
         },
     }) as unknown as Window;
 
-// `windowChannel` subscribes to the GLOBAL `'message'` event, so the only way to exercise its
+// `channel.window` subscribes to the GLOBAL `'message'` event, so the only way to exercise its
 // INBOUND gate is to capture the listeners it installs and synthesise `MessageEvent`s at chosen
 // origins. Asserting on what a channel POSTS can never see that half: the outbound address comes
 // from `origins.to` alone, so a gate that quietly narrowed back to `[to]` would keep every
@@ -594,11 +592,11 @@ const settle = (): Promise<void> =>
         }, 10),
     );
 
-describe('windowChannel guards', () => {
+describe('channel.window guards', () => {
     test('a wildcard origin throws at runtime, through the scalar shorthand (defense in depth beyond the Origin type)', () => {
         expect(
             () =>
-                windowChannel({
+                channel.window({
                     target: fakeWindow([]),
                     // The Origin type forbids '*'; cast to prove the RUNTIME guard also bites.
                     origins: '*' as unknown as `https://${string}`,
@@ -611,14 +609,14 @@ describe('windowChannel guards', () => {
 
     test('a wildcard origin throws through the explicit envelope too, naming the half that is wrong', () => {
         expect(() =>
-            windowChannel({
+            channel.window({
                 target: fakeWindow([]),
                 origins: { to: '*' as unknown as `https://${string}` },
             }),
         ).toThrow(/wildcard origin is forbidden in `origins\.to`, got '\*'/);
         expect(
             () =>
-                windowChannel({
+                channel.window({
                     target: fakeWindow([]),
                     origins: {
                         to: 'https://app.example.com',
@@ -646,11 +644,11 @@ describe('windowChannel guards', () => {
             target: fakeWindow([]),
             targetOrigin: 'https://app.example.com',
         } as unknown as WindowChannelOptions;
-        expect(() => windowChannel(staleWindowOpts)).toThrow(
+        expect(() => channel.window(staleWindowOpts)).toThrow(
             /`origins` is required/,
         );
         // Specifically NOT `TypeError: Cannot read properties of undefined (reading 'to')`.
-        expect(() => windowChannel(staleWindowOpts)).not.toThrow(TypeError);
+        expect(() => channel.window(staleWindowOpts)).not.toThrow(TypeError);
 
         const staleChannelOpts = {
             allowedOrigins: ['https://app.example.com'],
@@ -662,17 +660,17 @@ describe('windowChannel guards', () => {
         // Each builder names the slot the CALLER would have written, not a shared one: `channel`
         // takes the inbound half as `from`, so an error naming `origins` would send them looking
         // for a key that does not exist on `ChannelOptions` at all.
-        expect(() => channel(transport, staleChannelOpts)).toThrow(
+        expect(() => channel.over(transport, staleChannelOpts)).toThrow(
             /`from` is required/,
         );
-        expect(() => channel(transport, staleChannelOpts)).not.toThrow(
+        expect(() => channel.over(transport, staleChannelOpts)).not.toThrow(
             TypeError,
         );
 
         // Same for an envelope that names only the inbound half: the missing `to` names its own
         // slot instead of dying on `.includes` of undefined.
         expect(() =>
-            windowChannel({
+            channel.window({
                 target: fakeWindow([]),
                 origins: { from: 'https://app.example.com' },
             } as unknown as WindowChannelOptions),
@@ -687,13 +685,13 @@ describe('windowChannel guards', () => {
         ] as `https://${string}`[];
         for (const origin of nonBare) {
             expect(() =>
-                windowChannel({ target: fakeWindow([]), origins: origin }),
+                channel.window({ target: fakeWindow([]), origins: origin }),
             ).toThrow(/bare origin/);
         }
         // The error names the normalised spelling AND the slot the caller wrote, so the fix is
         // in the message: the shorthand reports `origins`…
         expect(() =>
-            windowChannel({
+            channel.window({
                 target: fakeWindow([]),
                 origins: 'https://app.example.com/',
             }),
@@ -702,13 +700,13 @@ describe('windowChannel guards', () => {
         );
         // …and the envelope reports the half that is wrong, on either half.
         expect(() =>
-            windowChannel({
+            channel.window({
                 target: fakeWindow([]),
                 origins: { to: 'https://app.example.com/' },
             }),
         ).toThrow(/`origins\.to` must be a bare origin/);
         expect(() =>
-            windowChannel({
+            channel.window({
                 target: fakeWindow([]),
                 origins: {
                     to: 'https://app.example.com',
@@ -718,11 +716,11 @@ describe('windowChannel guards', () => {
         ).toThrow(/`origins\.from` must be a bare origin/);
     });
 
-    test('windowChannel posts to the resolved target with the bound origin', async () => {
+    test('channel.window posts to the resolved target with the bound origin', async () => {
         const posts: { msg: unknown; origin: string }[] = [];
         const target = fakeWindow(posts);
         // A thunk target is resolved per post (the natural shape when the frame mounts late).
-        const ch = windowChannel({
+        const ch = channel.window({
             target: () => target,
             origins: 'https://app.example.com',
         });
@@ -741,11 +739,11 @@ describe('windowChannel guards', () => {
         await withMessageListeners(async (deliver) => {
             const shorthandPosts: { msg: unknown; origin: string }[] = [];
             const envelopePosts: { msg: unknown; origin: string }[] = [];
-            const shorthand = windowChannel({
+            const shorthand = channel.window({
                 target: fakeWindow(shorthandPosts),
                 origins: 'https://app.example.com',
             });
-            const envelope = windowChannel({
+            const envelope = channel.window({
                 target: fakeWindow(envelopePosts),
                 origins: {
                     to: 'https://app.example.com',
@@ -796,7 +794,7 @@ describe('windowChannel guards', () => {
     test('`from` widens the inbound gate without widening the outbound address', async () => {
         await withMessageListeners(async (deliver) => {
             const posts: { msg: unknown; origin: string }[] = [];
-            const ch = windowChannel({
+            const ch = channel.window({
                 target: fakeWindow(posts),
                 origins: {
                     to: 'https://app.example.com',
@@ -850,7 +848,7 @@ describe('windowChannel guards', () => {
 
     test('`from` REPLACES the `[to]` default rather than extending it', async () => {
         await withMessageListeners(async (deliver) => {
-            const ch = windowChannel({
+            const ch = channel.window({
                 target: fakeWindow([]),
                 origins: {
                     to: 'https://app.example.com',
@@ -882,11 +880,11 @@ describe('windowChannel guards', () => {
     });
 });
 
-describe('portChannel (origin gating bypassed for ports)', () => {
+describe('channel.port (origin gating bypassed for ports)', () => {
     test('a MessagePort channel does an RPC round-trip with no origin', async () => {
         const mc = new MessageChannel();
-        const parent = portChannel(mc.port1);
-        const worker = portChannel(mc.port2);
+        const parent = channel.port(mc.port1);
+        const worker = channel.port(mc.port2);
         worker.respond<{ x: number }, { y: number }>('double', ({ x }) => ({
             y: x * 2,
         }));
@@ -904,7 +902,7 @@ describe('portChannel (origin gating bypassed for ports)', () => {
 // `cfg.kind.execute ?? rt.adapter` — so an adapter handed to a verb can NEVER be called. The three
 // verb option types therefore Omit `adapter` (behind one shared `PostMessageVerbConfig` alias, so
 // they cannot drift apart), making `request(type, { adapter })` a COMPILE error instead of config
-// that typechecks and sits dead. Same defect, same fix as #795's `portChannel({ allowedOrigins })`
+// that typechecks and sits dead. Same defect, same fix as #795's `channel.port({ allowedOrigins })`
 // above: CONTRACT.md P24 carve-out (b) — a flat shape is never a licence to let inert config
 // typecheck. The `@ts-expect-error` directives are enforced by `check:types`; the closure is never
 // invoked, and the runtime test beside them proves the transport really is the channel's, not the
@@ -941,11 +939,11 @@ describe('the verb options carry no inert `adapter` (P24)', () => {
 // the raw `channel` builder over a fake transport (the core path the others delegate to)
 // ---------------------------------------------------------------------------
 
-describe('channel() over an arbitrary transport', () => {
+describe('channel.over() over an arbitrary transport', () => {
     test('an empty `from` over an origin-bearing transport fails closed (drops everything)', async () => {
         const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-        const parent = channel(a, { from: [] }); // allow NOTHING
-        const iframe = channel(b, { from: [ORIGIN_A] });
+        const parent = channel.over(a, { from: [] }); // allow NOTHING
+        const iframe = channel.over(b, { from: [ORIGIN_A] });
         iframe.respond('x', () => 'ok');
         const call = parent.request('x', { timeout: { each: 40 } });
         // The iframe's reply carries origin ORIGIN_B, which is not in [] → dropped → times out.
@@ -966,12 +964,12 @@ describe('channel() over an arbitrary transport', () => {
         // that is actually on `ChannelOptions`. `origins` does not exist on this builder, and an
         // error naming it would describe a different surface's shape.
         expect(() =>
-            channel(transport, {
+            channel.over(transport, {
                 from: '*' as unknown as `https://${string}`,
             }),
         ).toThrow(/wildcard origin is forbidden in `from`, got '\*'/);
         expect(() =>
-            channel(transport, { from: ['https://app.example.com/'] }),
+            channel.over(transport, { from: ['https://app.example.com/'] }),
         ).toThrow(
             /`from` must be a bare origin.*did you mean 'https:\/\/app\.example\.com'/,
         );

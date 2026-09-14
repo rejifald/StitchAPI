@@ -890,8 +890,10 @@ _Carve-outs:_
     option that cannot alter behaviour is worse than an asymmetry when it is **shaped like a
     security control**: a caller who writes `allowedOrigins: ['https://trusted']` has gated
     nothing. Not one test ever passed it. The parameter is **removed** rather than renamed or
-    documented — a port is gated by who you hand it to. `channel` and `windowChannel`, where the
-    transport does carry an origin, keep it (spelled `origins` since the 2026-09-14 fold above).
+    documented — a port is gated by who you hand it to. The other two builders, where the transport
+    does carry an origin, keep it: `channel.over` takes `from` and `channel.window` takes the
+    `origins` envelope, per the 2026-09-14 folds above. (All three are reached through the one
+    `channel` namespace since the same release — the port builder is `channel.port`.)
 
 - **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
   family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
