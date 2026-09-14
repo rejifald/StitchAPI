@@ -225,6 +225,74 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: a `postMessage` channel's origin policy is one `origins` envelope.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+  / [P12](docs/CONTRACT.md#p12--envelope--scalar-shorthand)
+  / [P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity))
+  `windowChannel`'s `targetOrigin` and `allowedOrigins` were one dimension — the channel's origin
+  policy — spelled as two fields, and the proof was in their own docs: one was documented as the
+  other's default. They fold into `origins`, with the bare origin as the P12 shorthand.
+  `channel()`'s `allowedOrigins` is renamed to `origins` in lockstep (P16).
+
+    ```ts
+    const ch = windowChannel({
+        target: iframe.contentWindow!,
+    -   targetOrigin: 'https://app.example.com',
+    +   origins: 'https://app.example.com', // ≡ { to: X, from: [X] }
+    });
+
+    // asymmetric: post to one frame, accept from several
+    const wide = windowChannel({
+        target: iframe.contentWindow!,
+    -   targetOrigin: 'https://app.example.com',
+    -   allowedOrigins: ['https://app.example.com', 'https://widget.example.com'],
+    +   origins: {
+    +       to: 'https://app.example.com',
+    +       from: ['https://app.example.com', 'https://widget.example.com'],
+    +   },
+    });
+
+    -channel(transport, { allowedOrigins: ['https://app.example.com'] });
+    +channel(transport, { origins: ['https://app.example.com'] });
+    ```
+
+    | Was                                                        | Now                                          |
+    | ---------------------------------------------------------- | -------------------------------------------- |
+    | `WindowChannelOptions.targetOrigin: Origin`                | `origins.to` (or the bare `origins: X`)      |
+    | `WindowChannelOptions.allowedOrigins?: string \| string[]` | `origins.from?: Origin \| Origin[]`          |
+    | `ChannelOptions.allowedOrigins: string \| string[]`        | `ChannelOptions.origins: Origin \| Origin[]` |
+    | —                                                          | `OriginOptions` (`{ to, from? }`), exported  |
+
+    **The lint allow-list entry is deleted, not reworded.** It defended the flat pair on P22:
+    `targetOrigin` is `window.postMessage()`'s own parameter name. It is — and that is not what the
+    mirror carve-out protects. The value is passed **positionally**
+    (`resolveTarget().postMessage(message, opts.targetOrigin, transfer ?? [])`), so no DOM code ever
+    reads a property of that name off our object and renaming it adds **no** translation: there was
+    no identity mapping to preserve. `XhrLike.responseType` is exempt because it is literally
+    `xhr.responseType = …` on a foreign object; an IDL _parameter_ name is documentation, not a
+    seam. Third instance of this reversal, after `AdapterRequest.responseType` and
+    `OAuth2Options.client`. The entry also grouped by the shared **prefix**, which is what the lint
+    mechanically detects, where P24 treats a shared prefix as a _signal_ of an envelope rather than
+    its boundary — so `target`, the transport handle, stays flat beside `origins`.
+
+    **Both halves narrow from `string` to `Origin`,** which closes a live trap:
+    `allowedOrigins: '*'` type-checked and then silently dropped **every** inbound message, because
+    the gate is a literal `includes`, not a wildcard match — a channel that looked configured and
+    received nothing. The `Origin` template literal cannot express the rest of that trap, so the
+    construction-time guard that threw on `targetOrigin === '*'` now runs over **both** halves and
+    rejects any authored origin that is not `new URL(x).origin`: `'https://*.example.com'`,
+    `'https://app.example.com/'`, `'https://App.Example.com'` and `'https://app.example.com:443'`
+    all satisfied the type and all matched nothing. The error names the corrected spelling.
+
+    Narrowing to `Origin` also means a **dynamic** origin — `location.origin`, a value read from
+    config, a plain `const ALLOWED = ['https://a', 'https://b']` that widens to `string[]` — must
+    assert itself (`const ALLOWED: Origin[] = [...]`, or a `satisfies`) at the boundary. That is
+    the intended cost, not a free win. It also rejects `'null'`, the origin a **sandboxed** iframe
+    posts with: deliberate, since every sandboxed frame everywhere shares it — hand such a frame a
+    `MessagePort` and use `portChannel`, which is gated by who you hand the port to. Hard break, no
+    alias ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc`
+    channel).
+
 - **BREAKING CHANGE: `oauth2`'s `clientId`/`clientSecret`/`clientAuth` fold into one `client`
   envelope.**
   ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)

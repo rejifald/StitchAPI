@@ -78,9 +78,9 @@ function channelPair(): {
     closeBoth: () => Promise<void>;
 } {
     const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-    const parent = channel(a, { allowedOrigins: [ORIGIN_B] });
+    const parent = channel(a, { origins: [ORIGIN_B] });
     // A single origin passes as a bare string (`T | T[]` — CONTRACT.md P7).
-    const iframe = channel(b, { allowedOrigins: ORIGIN_A });
+    const iframe = channel(b, { origins: ORIGIN_A });
     return {
         parent,
         iframe,
@@ -162,8 +162,8 @@ describe('request → response (correlated RPC)', () => {
 
     test('the reply must match BOTH id and type — a same-type unsolicited message does not resolve it', async () => {
         const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-        const parent = channel(a, { allowedOrigins: [ORIGIN_B] });
-        const iframe = channel(b, { allowedOrigins: [ORIGIN_A] });
+        const parent = channel(a, { origins: [ORIGIN_B] });
+        const iframe = channel(b, { origins: [ORIGIN_A] });
         // The iframe emits an UNSOLICITED `sum-result` (no id) BEFORE any responder — it must NOT
         // resolve the pending request (whose reply correlates on the minted id too).
         const sum = parent.request('sum', {
@@ -206,8 +206,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
         // The iframe posts from an origin the parent does NOT allow. The parent's gate drops the
         // reply before correlation, so the request never resolves and times out.
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { allowedOrigins: [ORIGIN_B] }); // only the REAL iframe origin
-        const evil = channel(b, { allowedOrigins: [ORIGIN_A] });
+        const parent = channel(a, { origins: [ORIGIN_B] }); // only the REAL iframe origin
+        const evil = channel(b, { origins: [ORIGIN_A] });
         evil.respond('sum', () => ({ total: 999 }));
         const sum = parent.request('sum', {
             timeout: { each: 40 },
@@ -221,8 +221,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
 
     test('an event from a disallowed origin is never delivered', async () => {
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { allowedOrigins: [ORIGIN_B] });
-        const evil = channel(b, { allowedOrigins: [ORIGIN_A] });
+        const parent = channel(a, { origins: [ORIGIN_B] });
+        const evil = channel(b, { origins: [ORIGIN_A] });
         const events = parent.events('tick');
         const ctl = new AbortController();
         const collected: unknown[] = [];
@@ -237,6 +237,39 @@ describe('origin gate (structural, gate-before-validation)', () => {
         ctl.abort();
         await drain.catch(() => undefined);
         expect(collected).toEqual([]); // nothing crossed the gate
+        await parent.close();
+        await evil.close();
+    });
+
+    test('an origin outside the policy is dropped BEFORE dispatch or validation', async () => {
+        // The security bar (ADR 0009 Decision 5), pinned positively rather than by a timeout: a
+        // message from a disallowed origin must not reach the responder's INPUT VALIDATOR, let
+        // alone its handler. A validator that records every value it is handed proves the gate
+        // runs first — an implementation that validated then gated would tick the counter.
+        const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
+        const parent = channel(a, { origins: [ORIGIN_B] }); // only the REAL iframe origin
+        const evil = channel(b, { origins: [ORIGIN_A] });
+        const validated: unknown[] = [];
+        const handled: unknown[] = [];
+        parent.respond(
+            'ping',
+            (p) => {
+                handled.push(p);
+                return 'pong';
+            },
+            {
+                input: (v: unknown): boolean => {
+                    validated.push(v);
+                    return true;
+                },
+            },
+        );
+        const ping = evil.request('ping', { timeout: { each: 40 } });
+        await expect(ping({ body: { n: 1 } })).rejects.toMatchObject({
+            name: 'StitchError',
+        });
+        expect(validated).toEqual([]); // the validator never saw it
+        expect(handled).toEqual([]); // and neither did the handler
         await parent.close();
         await evil.close();
     });
@@ -491,7 +524,7 @@ describe('abort + close', () => {
                 detached = true;
             },
         };
-        const ch = channel(transport, { allowedOrigins: [ORIGIN_B] });
+        const ch = channel(transport, { origins: [ORIGIN_B] });
         const call = ch.request('pending');
         // A stitch is lazy — start consuming so `execute` actually posts and registers the pending
         // entry, then let the resilience chain reach the transport before closing.
@@ -509,37 +542,171 @@ describe('abort + close', () => {
 // windowChannel / portChannel guards
 // ---------------------------------------------------------------------------
 
+const fakeWindow = (posts: { msg: unknown; origin: string }[]): Window =>
+    ({
+        postMessage: (msg: unknown, origin: string) => {
+            posts.push({ msg, origin });
+        },
+    }) as unknown as Window;
+
 describe('windowChannel guards', () => {
-    test("targetOrigin '*' throws at runtime (defense in depth beyond the Origin type)", () => {
-        const fakeWindow = {
-            postMessage: () => undefined,
-        } as unknown as Window;
+    test('a wildcard origin throws at runtime, through the scalar shorthand (defense in depth beyond the Origin type)', () => {
         expect(() =>
             windowChannel({
-                target: fakeWindow,
+                target: fakeWindow([]),
                 // The Origin type forbids '*'; cast to prove the RUNTIME guard also bites.
-                targetOrigin: '*' as unknown as `https://${string}`,
+                origins: '*' as unknown as `https://${string}`,
             }),
         ).toThrow(/'\*'/);
     });
 
+    test('a wildcard origin throws through the explicit envelope too, on either half', () => {
+        expect(() =>
+            windowChannel({
+                target: fakeWindow([]),
+                origins: { to: '*' as unknown as `https://${string}` },
+            }),
+        ).toThrow(/'\*'/);
+        expect(() =>
+            windowChannel({
+                target: fakeWindow([]),
+                origins: {
+                    to: 'https://app.example.com',
+                    // The Origin TYPE cannot forbid this one — a `*` pattern satisfies
+                    // `https://${string}` — and the gate's literal `includes` would silently
+                    // match nothing, dropping every inbound message. The runtime guard is what
+                    // makes it loud.
+                    from: 'https://*.example.com',
+                },
+            }),
+        ).toThrow(/'\*'/);
+    });
+
+    test('a non-bare origin is rejected at construction rather than silently matching nothing', () => {
+        const nonBare = [
+            'https://app.example.com/', // trailing slash
+            'https://App.Example.com', // upper-cased host
+            'https://app.example.com:443', // explicit default port
+        ] as `https://${string}`[];
+        for (const origin of nonBare) {
+            expect(() =>
+                windowChannel({ target: fakeWindow([]), origins: origin }),
+            ).toThrow(/bare origin/);
+        }
+        // The error names the normalised spelling, so the fix is in the message.
+        expect(() =>
+            windowChannel({
+                target: fakeWindow([]),
+                origins: 'https://app.example.com/',
+            }),
+        ).toThrow(/did you mean 'https:\/\/app\.example\.com'/);
+    });
+
     test('windowChannel posts to the resolved target with the bound origin', async () => {
         const posts: { msg: unknown; origin: string }[] = [];
-        const fakeWindow = {
-            postMessage: (msg: unknown, origin: string) => {
-                posts.push({ msg, origin });
-            },
-        } as unknown as Window;
+        const target = fakeWindow(posts);
         // A thunk target is resolved per post (the natural shape when the frame mounts late).
         const ch = windowChannel({
-            target: () => fakeWindow,
-            targetOrigin: 'https://app.example.com',
+            target: () => target,
+            origins: 'https://app.example.com',
         });
         // Fire-and-forget so no reply is awaited; we only assert the post shape.
         await ch.emit('hi')({ body: { a: 1 } });
         expect(posts).toHaveLength(1);
         expect(posts[0]?.origin).toBe('https://app.example.com');
         expect(posts[0]?.msg).toMatchObject({ type: 'hi', payload: { a: 1 } });
+        await ch.close();
+    });
+
+    test('the scalar shorthand IS `{ to: X, from: [X] }` — same outbound address, same gate', async () => {
+        // Same fake global for both, so the two channels see the same inbound stream. The
+        // shorthand and the explicit envelope must agree on BOTH halves: where posts go, and
+        // which inbound origins survive the gate.
+        const listeners = new Set<(e: MessageEvent) => void>();
+        interface EventTargetish {
+            addEventListener:
+                ((t: string, l: (e: MessageEvent) => void) => void) | undefined;
+            removeEventListener:
+                ((t: string, l: (e: MessageEvent) => void) => void) | undefined;
+        }
+        const g = globalThis as unknown as EventTargetish;
+        const realAdd = g.addEventListener;
+        const realRemove = g.removeEventListener;
+        g.addEventListener = (t, l) => {
+            if (t === 'message') listeners.add(l);
+        };
+        g.removeEventListener = (t, l) => {
+            if (t === 'message') listeners.delete(l);
+        };
+        try {
+            const shorthandPosts: { msg: unknown; origin: string }[] = [];
+            const envelopePosts: { msg: unknown; origin: string }[] = [];
+            const shorthand = windowChannel({
+                target: fakeWindow(shorthandPosts),
+                origins: 'https://app.example.com',
+            });
+            const envelope = windowChannel({
+                target: fakeWindow(envelopePosts),
+                origins: {
+                    to: 'https://app.example.com',
+                    from: ['https://app.example.com'],
+                },
+            });
+
+            // Outbound: identical target origin.
+            await shorthand.emit('hi')({ body: { a: 1 } });
+            await envelope.emit('hi')({ body: { a: 1 } });
+            expect(shorthandPosts).toEqual(envelopePosts);
+
+            // Inbound: identical gate. Both accept the policy origin…
+            const seenShorthand: unknown[] = [];
+            const seenEnvelope: unknown[] = [];
+            shorthand.respond('probe', (p) => {
+                seenShorthand.push(p);
+                return null;
+            });
+            envelope.respond('probe', (p) => {
+                seenEnvelope.push(p);
+                return null;
+            });
+            const deliver = (origin: string, payload: unknown): void => {
+                for (const l of [...listeners])
+                    l({
+                        data: { type: 'probe', id: 'x', payload },
+                        origin,
+                    } as MessageEvent);
+            };
+            deliver('https://app.example.com', { ok: 1 });
+            await new Promise((r) => setTimeout(r, 10));
+            expect(seenShorthand).toEqual([{ ok: 1 }]);
+            expect(seenEnvelope).toEqual(seenShorthand);
+
+            // …and both drop anything else.
+            deliver('https://evil.example.com', { ok: 2 });
+            await new Promise((r) => setTimeout(r, 10));
+            expect(seenShorthand).toEqual([{ ok: 1 }]);
+            expect(seenEnvelope).toEqual(seenShorthand);
+
+            await shorthand.close();
+            await envelope.close();
+        } finally {
+            g.addEventListener = realAdd;
+            g.removeEventListener = realRemove;
+        }
+    });
+
+    test('`from` widens the inbound gate without widening the outbound address', async () => {
+        const posts: { msg: unknown; origin: string }[] = [];
+        const ch = windowChannel({
+            target: fakeWindow(posts),
+            origins: {
+                to: 'https://app.example.com',
+                from: ['https://app.example.com', 'https://widget.example.com'],
+            },
+        });
+        await ch.emit('hi')({ body: {} });
+        // One address out, two accepted in — the asymmetry the envelope exists to express.
+        expect(posts[0]?.origin).toBe('https://app.example.com');
         await ch.close();
     });
 });
@@ -604,10 +771,10 @@ describe('the verb options carry no inert `adapter` (P24)', () => {
 // ---------------------------------------------------------------------------
 
 describe('channel() over an arbitrary transport', () => {
-    test('an empty allowedOrigins over an origin-bearing transport fails closed (drops everything)', async () => {
+    test('an empty `origins` over an origin-bearing transport fails closed (drops everything)', async () => {
         const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-        const parent = channel(a, { allowedOrigins: [] }); // allow NOTHING
-        const iframe = channel(b, { allowedOrigins: [ORIGIN_A] });
+        const parent = channel(a, { origins: [] }); // allow NOTHING
+        const iframe = channel(b, { origins: [ORIGIN_A] });
         iframe.respond('x', () => 'ok');
         const call = parent.request('x', { timeout: { each: 40 } });
         // The iframe's reply carries origin ORIGIN_B, which is not in [] → dropped → times out.

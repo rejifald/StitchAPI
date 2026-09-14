@@ -751,19 +751,23 @@ const status = await git({ body: ['status', '--porcelain'] }); // stdout string
 
 ### postMessage
 
-`postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `allowedOrigins` is the security gate, and a wildcard `targetOrigin` is forbidden — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
+`postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `origins` is the security gate, and a wildcard is forbidden by the type _and_ at construction — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
 
 ```ts
 import { windowChannel } from 'stitchapi/postmessage';
 
 const channel = windowChannel({
     target: iframe.contentWindow!,
-    targetOrigin: 'https://app.example.com',
+    // where messages go, and whom they may come from — one policy.
+    // The bare origin is shorthand for `{ to: X, from: [X] }`.
+    origins: 'https://app.example.com',
 });
 
-const getUser = channel.request({ type: 'getUser' });
+const getUser = channel.request('getUser');
 const user = await getUser({ body: { id: 7 } });
 ```
+
+Post to one frame while accepting from several with the envelope form: `origins: { to: 'https://app.example.com', from: ['https://app.example.com', 'https://widget.example.com'] }`.
 
 Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, and `output` / `drift` compose with all of them.
 

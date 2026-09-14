@@ -4,7 +4,11 @@
 // and on the call-ARGUMENT via `CallArg` (the `Stitch<…>`-bound / `expectType<Stitch<…>>` recursive-
 // `with` quirk, same as the core inference tests in input-inference.test-d.ts).
 import { channel } from '../src/postmessage';
-import type { MessageTransport } from '../src/postmessage';
+import type {
+    ChannelOptions,
+    MessageTransport,
+    WindowChannelOptions,
+} from '../src/postmessage';
 import { type CallArg, output } from './_util';
 
 import { expectAssignable, expectError, expectType } from 'tsd';
@@ -20,7 +24,7 @@ type Result<S extends (...args: never[]) => { then: unknown }> = Awaited<
 
 // A throwaway transport just to mint a channel for the type assertions (never executed).
 const transport = null as unknown as MessageTransport;
-const ch = channel(transport, { allowedOrigins: ['https://x.test'] });
+const ch = channel(transport, { origins: ['https://x.test'] });
 
 // 1) request: result inferred from `opts.output`, call argument from `opts.input`.
 const sum = ch.request('sum', {
@@ -59,3 +63,36 @@ expectType<unknown[]>(output(loose));
 // 6) a no-input request keeps a fully-OPTIONAL call argument (backward-compatible with StitchInput).
 const noInput = ch.request('noop');
 expectAssignable<CallArg<typeof noInput>>(undefined);
+
+// 7) the origin policy is ONE envelope with a P12 scalar shorthand, and the shorthand is the
+//    ordinary case — `origins: X` ≡ `origins: { to: X, from: [X] }`.
+expectAssignable<WindowChannelOptions['origins']>('https://app.example.com');
+expectAssignable<WindowChannelOptions['origins']>({
+    to: 'https://app.example.com',
+});
+expectAssignable<WindowChannelOptions['origins']>({
+    to: 'https://app.example.com',
+    from: ['https://app.example.com', 'https://widget.example.com'],
+});
+
+// 8) `'*'` is unspellable on EITHER half — the trap `allowedOrigins: string | string[]` used to
+//    let through, where the gate's literal `includes` silently dropped every inbound message.
+expectError<WindowChannelOptions['origins']>('*');
+expectError<WindowChannelOptions['origins']>({ to: '*' });
+expectError<WindowChannelOptions['origins']>({
+    to: 'https://app.example.com',
+    from: '*',
+});
+expectError<ChannelOptions['origins']>('*');
+expectError<ChannelOptions['origins']>(['https://a.test', '*']);
+
+// 9) the envelope is not `{}`-constructible (P20/P15): `to` has no correct default.
+expectError<WindowChannelOptions['origins']>({});
+expectError<WindowChannelOptions['origins']>({ from: 'https://a.test' });
+
+// 10) a dynamic origin must assert itself at the boundary — `location.origin` is `string`, and
+//     that is the point: an unvalidated string is exactly what used to typecheck.
+expectError<ChannelOptions['origins']>(null as unknown as string);
+expectAssignable<ChannelOptions['origins']>(
+    null as unknown as `https://${string}`,
+);

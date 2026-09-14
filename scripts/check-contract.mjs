@@ -615,12 +615,27 @@ const PREFIX_GROUP_ALLOW = new Map([
         'AdapterRequest.body',
         'bodyType is a discriminator tag for the dominant body payload, not a second option — carve-out (b), the canonical case',
     ],
-    // A REAL group that P22 pins flat — the standard owns the spelling, so folding it would
-    // break the mirror the other half of the rule requires:
-    [
-        'WindowChannelOptions.target',
-        "a real group, not a collision: target (the receiving Window, or a thunk for one) and targetOrigin are the receiver and the address of ONE call — `resolveTarget().postMessage(msg, opts.targetOrigin, …)` in windowChannel() — and targetOrigin is also the default for allowedOrigins. It stays FLAT on P22: `targetOrigin` is window.postMessage()'s own parameter name for exactly this value, and folding it to `target: { window, origin }` would rename the half whose spelling the DOM owns",
-    ],
+    // ('WindowChannelOptions.target' was here — DELETED, not reworded. Its P22 defense was false
+    //  on the same test the OAuth2Options.client entry above failed: there was no identity mapping
+    //  to protect. `targetOrigin` was passed POSITIONALLY —
+    //  `resolveTarget().postMessage(message, opts.targetOrigin, transfer ?? [])` — so no DOM code
+    //  ever read a property of that name off our object, and renaming it put a different
+    //  expression in the same argument slot with zero translation added. An IDL *parameter* name
+    //  is not a wire contract the way a property read is: XhrLike.responseType is exempt because
+    //  it is literally `xhr.responseType = …` on a foreign object, which this never was. And
+    //  P24 carve-out (a)'s binding clause settles the rest — the exemption binds the layer that
+    //  meets the standard, not every layer above it; an authoring surface MAY fold provided the
+    //  engine converts before the value reaches the boundary, which is exactly what windowChannel
+    //  does. Third instance of this reversal, after AdapterRequest.responseType (2026-09-04) and
+    //  OAuth2Options.client above.
+    //  The entry also mis-drew the boundary it was defending. It grouped by the shared PREFIX —
+    //  which is what R8 mechanically detects — where P24 treats a shared prefix as a SIGNAL of an
+    //  envelope, not as the envelope's edge. The real dimension was the channel's ORIGIN POLICY:
+    //  the entry's own rationale admitted "targetOrigin is also the default for allowedOrigins",
+    //  and one field being another's default is the proof they are one decision. `target` is the
+    //  transport handle, a different kind of thing. So the fold is `origins: Origin |
+    //  OriginOptions` (`{ to, from? }`, from defaulting to [to]) with `target` left flat beside
+    //  it, and the group is gone rather than exempted.)
 ]);
 
 // P4/D2 — the ONE cap vocabulary. A **count** upper bound is a bare plural noun (`attempts`,

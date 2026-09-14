@@ -831,6 +831,33 @@ _Carve-outs:_
     [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults)
     reading `CacheOptions.ttl` gets.
 
+    _Reversed (2026-09-14), the third instance — an IDL **parameter** name is not a wire contract:_
+    `WindowChannelOptions.target`/`targetOrigin` was exempted on the grounds that `targetOrigin` is
+    `window.postMessage()`'s own parameter name. It is — and that is not what this carve-out
+    protects. The value is passed **positionally**:
+    `resolveTarget().postMessage(message, opts.targetOrigin, transfer ?? [])`. No DOM code ever
+    reads a property of that name off our object, so renaming the field puts a different expression
+    in the same argument slot and adds **no** translation — there was never an identity mapping
+    here to preserve. That is the P22 test above, failed. `XhrLike.responseType` is exempt because
+    it is literally `xhr.responseType = …` **on a foreign object**; a parameter's spelling in an IDL
+    is documentation, not a seam. The binding clause settles the rest: the exemption binds the layer
+    that meets the standard, and `windowChannel` is the authoring surface above it, converting
+    before the value reaches `postMessage`.
+
+    The entry was also wrong about **where the group was**. It grouped by the shared prefix —
+    which is what R8 mechanically detects — where this rule treats a shared prefix as a **signal**
+    of an envelope, never as the envelope's boundary. The dimension is the channel's **origin
+    policy**, and the entry's own rationale said so: "`targetOrigin` is also the default for
+    `allowedOrigins`". One field being another's default is proof they are one decision; `target`,
+    the transport handle, is a different kind of thing and stays flat. Folded to
+    **`origins: Origin | OriginOptions`** (`{ to, from? }`, `from` defaulting to `[to]`), with the
+    bare origin as the [P12](#p12--envelope--scalar-shorthand) shorthand for `{ to: X, from: [X] }`
+    — the parent↔iframe case, where the frame you post to is the only frame you accept from.
+    `ChannelOptions.allowedOrigins` was renamed to `origins` in lockstep
+    ([P16](#p16--cross-surface--cross-package-parity)): one concept, two builders a caller picks
+    between, one spelling. Both halves narrowed from `string` to `Origin`, which turns the
+    silently-inert `allowedOrigins: '*'` into a compile error.
+
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an
   independent knob), the pair **stays flat** — nesting would turn a scalar-plus-tag into a
@@ -848,7 +875,7 @@ _Carve-outs:_
     security control**: a caller who writes `allowedOrigins: ['https://trusted']` has gated
     nothing. Not one test ever passed it. The parameter is **removed** rather than renamed or
     documented — a port is gated by who you hand it to. `channel` and `windowChannel`, where the
-    transport does carry an origin, keep it.
+    transport does carry an origin, keep it (spelled `origins` since the 2026-09-14 fold above).
 
 - **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
   family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
@@ -899,7 +926,8 @@ literal shape this rule would otherwise flag): **`StitchQueryOptions.queryKey`/`
 TanStack mirror, P3 — note this rule's own motivating example is itself exempt); **`IndexedDoc.pageUrl`/
 `pageTitle`** in `@stitchapi/docs-mcp` (the persisted Orama index document schema — Orama boosts
 and searches BY field name, so `FieldBoost.pageTitle` and the `properties` list key on them too).
-(`OAuth2Options`' client credentials were named here too, until the 2026-09-14 reversal above.)
+(`OAuth2Options`' client credentials and `WindowChannelOptions.target`/`targetOrigin` were named
+here too, until the 2026-09-14 reversals above.)
 
 _Re-pointed (2026-09-09), the third instance of the same error:_ this exemption was written
 against **`DocSearchHit`**, the type `searchDocs` RETURNS — one layer above the boundary, exactly
@@ -2028,7 +2056,11 @@ Three entries were **kept but rewritten**, because a wrong reason is worse than 
   default for `allowedOrigins`. It is a real P24 group that stays flat on
   [P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): `targetOrigin` is
   `window.postMessage()`'s own parameter name for exactly this value, and `target: { window,
-origin }` would rename the half the DOM owns.
+origin }` would rename the half the DOM owns. **(Deleted 2026-09-14 — the rewrite got the group
+  right and the exemption wrong.** The `postMessage` call is **positional**, so no identity
+  mapping existed to protect, and the rewrite's own clinching sentence — one field is the other's
+  default — names a dimension that does not include `target`. Folded to `origins: { to, from? }`;
+  see the reversal under P24 carve-out (a).**)**
 - The R1 note on `AppState` was wrong twice over. There are **two** byte-identical ambient
   mirrors (`packages/react-native/src/native-modules.d.ts` **and**
   `packages/expo/src/native-modules.d.ts`), and what keeps them out of R1 is **not** the
