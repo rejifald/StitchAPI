@@ -29,8 +29,7 @@ async function staticParams(): Promise<void> {
         adapter: provider.resourceAdapter(),
         auth: oauth2({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             key: KEY,
             // The escape hatch: override the grant and carry the stored refresh token.
             params: { grant_type: 'refresh_token', refresh_token: 'RT-0' },
@@ -128,8 +127,7 @@ async function getterParamsPlusCapturingAdapter(): Promise<void> {
         adapter: provider.resourceAdapter(),
         auth: oauth2({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             key: KEY,
             params: {
                 grant_type: 'refresh_token',
@@ -196,8 +194,7 @@ async function getterParamsInProcessConcurrency(): Promise<void> {
         adapter: staggered,
         auth: oauth2({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             key: KEY,
             params: {
                 grant_type: 'refresh_token',
@@ -255,8 +252,7 @@ async function getterParamsTwoWorkers(): Promise<void> {
             adapter: provider.resourceAdapter({ delayMs: 5 }),
             auth: oauth2({
                 tokenUrl: 'https://auth.example.com/token',
-                clientId: 'cid',
-                clientSecret: 'csecret',
+                client: { id: 'cid', secret: 'csecret' },
                 key: KEY,
                 params: {
                     grant_type: 'refresh_token',
@@ -309,8 +305,7 @@ async function getterCannotBeAsync(): Promise<void> {
         adapter: provider.resourceAdapter(),
         auth: oauth2({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             key: KEY,
             params: {
                 grant_type: 'refresh_token',

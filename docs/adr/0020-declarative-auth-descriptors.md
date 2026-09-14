@@ -4,6 +4,8 @@
 - **Date:** 2026-07-23
 - **Tags:** auth, config, descriptor, contract-not-dependency, P0-json-config, P16-parity, browser-first, additive
 
+> **Amendment — the oauth2 client credentials are one `client` envelope.** `Q1` below lists `value`/`token`/`clientSecret` as trace secret-name stems to add. `OAuth2Options` no longer has a `clientSecret`: `clientId`/`clientSecret`/`clientAuth` folded into **`client: OAuth2ClientOptions`** — `{ id, secret, auth }` — as a hard break with no alias ([CONTRACT.md P24](../CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) / [P18](../CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary); the RFC 6749 mirror exemption was withdrawn because `OAuth2Options` translates every member into a `snake_case` wire key rather than exporting it as an identity mapping). Read `clientSecret` as `client.secret` throughout. The redaction point the sentence makes is unaffected — `secret` is matched as a **stem**, so it catches `client.secret`, `client_secret` and `clientSecret` alike (`isSecretKey` in [`packages/core/src/util.ts`](../../packages/core/src/util.ts)). This ADR's own decision, already superseded before implementation, is untouched.
+
 > [!WARNING]
 >
 > **Superseded — `auth` accepts an `AuthStrategy` only; there is no `AuthDescriptor`.**

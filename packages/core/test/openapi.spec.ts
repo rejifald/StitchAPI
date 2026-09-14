@@ -355,8 +355,10 @@ describe('toOpenApi security schemes', () => {
                 url: 'https://api.example.com/grant',
                 auth: oauth2({
                     tokenUrl: 'https://auth.example.com/token',
-                    clientId: 'zzz-client-id',
-                    clientSecret: 'zzz-client-secret',
+                    client: {
+                        id: 'zzz-client-id',
+                        secret: 'zzz-client-secret',
+                    },
                     scope: 'read write',
                 }),
             }),

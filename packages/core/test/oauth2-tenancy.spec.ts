@@ -35,8 +35,10 @@ const protectedSeam = (tenancy?: 'principal' | 'app'): Seam =>
         baseUrl: server.url,
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
-            clientId: env('OAUTH_CLIENT_ID'),
-            clientSecret: env('OAUTH_CLIENT_SECRET'),
+            client: {
+                id: env('OAUTH_CLIENT_ID'),
+                secret: env('OAUTH_CLIENT_SECRET'),
+            },
             ...(tenancy ? { tenancy } : {}),
         }),
     });
@@ -101,8 +103,10 @@ test("tenancy 'principal' fails closed when no principal is bound", async () => 
         path: '/data',
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
-            clientId: env('OAUTH_CLIENT_ID'),
-            clientSecret: env('OAUTH_CLIENT_SECRET'),
+            client: {
+                id: env('OAUTH_CLIENT_ID'),
+                secret: env('OAUTH_CLIENT_SECRET'),
+            },
             tenancy: 'principal',
         }),
     });

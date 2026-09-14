@@ -50,6 +50,18 @@ before expiry, and attaches it as `Authorization: Bearer …`.
 
 <AutoTypeTable path="../../packages/core/src/auth.ts" name="OAuth2Options" />
 
+### OAuth2ClientOptions
+
+The shape behind `oauth2({ client })` — who the client is at the token endpoint,
+and how it proves it. `id` and `secret` are both required, so `client: {}` is a
+compile error; there is no scalar shorthand, because neither field dominates the
+other. `auth` picks `client_secret_post` (the default) or `client_secret_basic`.
+
+<AutoTypeTable
+    path="../../packages/core/src/auth.ts"
+    name="OAuth2ClientOptions"
+/>
+
 ## env
 
 Resolves a **required** secret from an environment variable at call time. It

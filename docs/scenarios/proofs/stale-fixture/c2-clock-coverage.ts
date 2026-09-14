@@ -475,8 +475,7 @@ async function main(): Promise<void> {
                 clock,
                 auth: oauth2({
                     tokenUrl: `${BASE}/oauth/token`,
-                    clientId: () => 'id',
-                    clientSecret: () => 'secret',
+                    client: { id: () => 'id', secret: () => 'secret' },
                     adapter: transport,
                 }),
             });

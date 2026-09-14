@@ -18,8 +18,7 @@ typecheck, and **succeed on the first call**:
 ```ts
 oauth2({
     tokenUrl,
-    clientId: env('ID'),
-    clientSecret: env('SECRET'),
+    client: { id: env('ID'), secret: env('SECRET') },
     params: { grant_type: 'refresh_token', refresh_token: storedRefreshToken },
 });
 ```

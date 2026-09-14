@@ -33,8 +33,7 @@ const build = (
         adapter: resource,
         auth: rotatingRefresh({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             key: KEY,
             seedRefreshToken: 'RT-0',
             adapter: provider.tokenAdapter({ delayMs: tokenDelayMs }),
