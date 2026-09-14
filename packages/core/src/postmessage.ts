@@ -331,10 +331,18 @@ export interface OriginOptions {
 // this is the second, the same defense-in-depth the wildcard target has always had, extended to the
 // half where the trap is actually reachable. `new URL(x).origin` is the browser's own normaliser:
 // if the round-trip is not the identity, the authored string is not an origin.
-function assertOrigin(value: string, slot: string): void {
+function assertOrigin(value: unknown, slot: string): void {
+    // Taken as `unknown`, not `Origin`: every caller below is typed, but the whole point of this
+    // second line of defense is the call sites the TYPE never saw (an `as any`, a JS caller, a
+    // stale `.d.ts`, options parsed from JSON). A non-string here — most often a `to` the caller
+    // simply did not write — must name its slot, not die on `.includes` of undefined.
+    if (typeof value !== 'string')
+        throw new Error(
+            `postmessage: \`${slot}\` must be a bare origin string (scheme://host[:port]), got ${value === undefined ? 'undefined' : JSON.stringify(value)}.`,
+        );
     if (value.includes('*'))
         throw new Error(
-            `postmessage: a wildcard origin ('*') is forbidden in \`${slot}\` — name each exact origin (e.g. 'https://app.example.com'). Outbound a wildcard posts to whatever document occupies the frame; inbound the gate is a literal match, so a pattern matches nothing and silently drops everything.`,
+            `postmessage: a wildcard origin is forbidden in \`${slot}\`, got '${value}' — name each exact origin (e.g. 'https://app.example.com'). Outbound a wildcard posts to whatever document occupies the frame; inbound the gate is a literal match, so a pattern matches nothing and silently drops everything.`,
         );
     let normalized: string | undefined;
     try {
@@ -360,6 +368,18 @@ const originList = (v: Origin | Origin[], slot: string): string[] => {
     for (const origin of list) assertOrigin(origin, slot);
     return list;
 };
+
+// `origins` is REQUIRED in the type, so no TypeScript call site can omit it — but a JS caller, an
+// `as any`, a stale `.d.ts`, or channel options round-tripped through JSON can, and a call site
+// still spelling the pre-envelope `targetOrigin` / `allowedOrigins` produces exactly that shape.
+// Without this the missing value reaches `assertOrigin` as `undefined` and the caller gets
+// `TypeError: Cannot read properties of undefined` — the one construction-time failure in a file
+// whose thesis is that failing LOUD at construction replaces failing silent at the first message.
+// Read through `unknown` so the guard survives the type that forbids the case it exists for.
+function requireOrigins(value: unknown, hint: string): void {
+    if (value === undefined || value === null)
+        throw new Error(`postmessage: \`origins\` is required — ${hint}`);
+}
 
 /** Options for {@link channel}. */
 export interface ChannelOptions {
@@ -387,6 +407,10 @@ export function channel(
     transport: MessageTransport,
     opts: ChannelOptions,
 ): PostMessageChannel {
+    requireOrigins(
+        opts.origins,
+        "name the origin(s) inbound messages may come from (e.g. origins: 'https://app.example.com'), or `[]` to allow none. It is the former `allowedOrigins`, renamed.",
+    );
     return makeChannel(transport, originList(opts.origins, 'origins'));
 }
 
@@ -421,11 +445,20 @@ export interface WindowChannelOptions {
 }
 
 export function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
+    requireOrigins(
+        opts.origins,
+        "name the origin you post to (e.g. origins: 'https://app.example.com'), or the `{ to, from }` envelope when inbound is wider than outbound. It is the former `targetOrigin` / `allowedOrigins`, now one envelope.",
+    );
     // The P12 shorthand normalises through the ONE envelope — `origins: X` IS `{ to: X, from: [X] }`
-    // — so the wildcard/bare-origin guard below sees the same shape either way.
-    const policy: OriginOptions =
-        typeof opts.origins === 'string' ? { to: opts.origins } : opts.origins;
-    assertOrigin(policy.to, 'origins.to');
+    // — so the wildcard/bare-origin guard below sees the same shape either way. The SLOT it reports
+    // does not follow the normalisation, though: a shorthand caller wrote `origins`, never
+    // `origins.to`, and an error naming a property path that is absent from their source sends them
+    // looking for a key they would have to add to fix a value they already have.
+    const shorthand = typeof opts.origins === 'string';
+    const policy: OriginOptions = shorthand
+        ? { to: opts.origins as Origin }
+        : (opts.origins as OriginOptions);
+    assertOrigin(policy.to, shorthand ? 'origins' : 'origins.to');
     const resolveTarget = (): Window =>
         typeof opts.target === 'function' ? opts.target() : opts.target;
     const transport: MessageTransport = {

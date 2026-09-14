@@ -4,8 +4,10 @@
 // `origin` — simulating parent↔iframe with zero DOM. The four verbs (request/emit/events/respond),
 // the origin gate, validation, timeout/abort, and `close()` are all exercised through it.
 import {
+    type ChannelOptions,
     type MessageTransport,
     type PostMessageChannel,
+    type WindowChannelOptions,
     channel,
     portChannel,
     postMessageEventSurface,
@@ -549,37 +551,129 @@ const fakeWindow = (posts: { msg: unknown; origin: string }[]): Window =>
         },
     }) as unknown as Window;
 
+// `windowChannel` subscribes to the GLOBAL `'message'` event, so the only way to exercise its
+// INBOUND gate is to capture the listeners it installs and synthesise `MessageEvent`s at chosen
+// origins. Asserting on what a channel POSTS can never see that half: the outbound address comes
+// from `origins.to` alone, so a gate that quietly narrowed back to `[to]` would keep every
+// post-shape assertion green. Restores the real (possibly undefined) globals afterwards.
+interface EventTargetish {
+    addEventListener:
+        ((t: string, l: (e: MessageEvent) => void) => void) | undefined;
+    removeEventListener:
+        ((t: string, l: (e: MessageEvent) => void) => void) | undefined;
+}
+
+const withMessageListeners = async (
+    body: (deliver: (origin: string, data: unknown) => void) => Promise<void>,
+): Promise<void> => {
+    const listeners = new Set<(e: MessageEvent) => void>();
+    const g = globalThis as unknown as EventTargetish;
+    const realAdd = g.addEventListener;
+    const realRemove = g.removeEventListener;
+    g.addEventListener = (t, l) => {
+        if (t === 'message') listeners.add(l);
+    };
+    g.removeEventListener = (t, l) => {
+        if (t === 'message') listeners.delete(l);
+    };
+    try {
+        await body((origin, data) => {
+            for (const l of [...listeners]) l({ data, origin } as MessageEvent);
+        });
+    } finally {
+        g.addEventListener = realAdd;
+        g.removeEventListener = realRemove;
+    }
+};
+
+// Let every listener run and the responder's async answer settle.
+const settle = (): Promise<void> =>
+    new Promise((r) =>
+        setTimeout(() => {
+            r();
+        }, 10),
+    );
+
 describe('windowChannel guards', () => {
     test('a wildcard origin throws at runtime, through the scalar shorthand (defense in depth beyond the Origin type)', () => {
-        expect(() =>
-            windowChannel({
-                target: fakeWindow([]),
-                // The Origin type forbids '*'; cast to prove the RUNTIME guard also bites.
-                origins: '*' as unknown as `https://${string}`,
-            }),
-        ).toThrow(/'\*'/);
+        expect(
+            () =>
+                windowChannel({
+                    target: fakeWindow([]),
+                    // The Origin type forbids '*'; cast to prove the RUNTIME guard also bites.
+                    origins: '*' as unknown as `https://${string}`,
+                }),
+            // The SLOT is the property the caller wrote — `origins`. The shorthand normalises to
+            // `{ to: X }` internally, but an error naming `origins.to` sends a caller looking for
+            // a key that is absent from their source. Pinned here because nothing else does.
+        ).toThrow(/wildcard origin is forbidden in `origins`, got '\*'/);
     });
 
-    test('a wildcard origin throws through the explicit envelope too, on either half', () => {
+    test('a wildcard origin throws through the explicit envelope too, naming the half that is wrong', () => {
         expect(() =>
             windowChannel({
                 target: fakeWindow([]),
                 origins: { to: '*' as unknown as `https://${string}` },
             }),
-        ).toThrow(/'\*'/);
+        ).toThrow(/wildcard origin is forbidden in `origins\.to`, got '\*'/);
+        expect(
+            () =>
+                windowChannel({
+                    target: fakeWindow([]),
+                    origins: {
+                        to: 'https://app.example.com',
+                        // The Origin TYPE cannot forbid this one — a `*` pattern satisfies
+                        // `https://${string}` — and the gate's literal `includes` would silently
+                        // match nothing, dropping every inbound message. The runtime guard is what
+                        // makes it loud.
+                        from: 'https://*.example.com',
+                    },
+                }),
+            // Echoes the PATTERN the caller actually wrote. A message that only quotes a bare
+            // '*' names a string absent from their source, and reads as a different mistake.
+        ).toThrow(
+            /wildcard origin is forbidden in `origins\.from`, got 'https:\/\/\*\.example\.com'/,
+        );
+    });
+
+    test('a missing `origins` is the directed construction error, not an opaque TypeError', () => {
+        // Exactly the shape a call site still spelling the pre-envelope `targetOrigin` /
+        // `allowedOrigins` produces. TypeScript rejects it, but a JS caller, an `as any`, a stale
+        // `.d.ts`, or options round-tripped through JSON all reach the constructor without
+        // `origins` — and this file's whole thesis is that construction fails LOUD, which an
+        // undefined dereference two lines later does not honour.
+        const staleWindowOpts = {
+            target: fakeWindow([]),
+            targetOrigin: 'https://app.example.com',
+        } as unknown as WindowChannelOptions;
+        expect(() => windowChannel(staleWindowOpts)).toThrow(
+            /`origins` is required/,
+        );
+        // Specifically NOT `TypeError: Cannot read properties of undefined (reading 'to')`.
+        expect(() => windowChannel(staleWindowOpts)).not.toThrow(TypeError);
+
+        const staleChannelOpts = {
+            allowedOrigins: ['https://app.example.com'],
+        } as unknown as ChannelOptions;
+        const transport: MessageTransport = {
+            post: () => undefined,
+            subscribe: () => () => undefined,
+        };
+        expect(() => channel(transport, staleChannelOpts)).toThrow(
+            /`origins` is required/,
+        );
+        expect(() => channel(transport, staleChannelOpts)).not.toThrow(
+            TypeError,
+        );
+
+        // Same for an envelope that names only the inbound half: the missing `to` names its own
+        // slot instead of dying on `.includes` of undefined.
         expect(() =>
             windowChannel({
                 target: fakeWindow([]),
-                origins: {
-                    to: 'https://app.example.com',
-                    // The Origin TYPE cannot forbid this one — a `*` pattern satisfies
-                    // `https://${string}` — and the gate's literal `includes` would silently
-                    // match nothing, dropping every inbound message. The runtime guard is what
-                    // makes it loud.
-                    from: 'https://*.example.com',
-                },
-            }),
-        ).toThrow(/'\*'/);
+                origins: { from: 'https://app.example.com' },
+            } as unknown as WindowChannelOptions),
+        ).toThrow(/`origins\.to` must be a bare origin string.*got undefined/);
     });
 
     test('a non-bare origin is rejected at construction rather than silently matching nothing', () => {
@@ -593,13 +687,32 @@ describe('windowChannel guards', () => {
                 windowChannel({ target: fakeWindow([]), origins: origin }),
             ).toThrow(/bare origin/);
         }
-        // The error names the normalised spelling, so the fix is in the message.
+        // The error names the normalised spelling AND the slot the caller wrote, so the fix is
+        // in the message: the shorthand reports `origins`…
         expect(() =>
             windowChannel({
                 target: fakeWindow([]),
                 origins: 'https://app.example.com/',
             }),
-        ).toThrow(/did you mean 'https:\/\/app\.example\.com'/);
+        ).toThrow(
+            /`origins` must be a bare origin.*did you mean 'https:\/\/app\.example\.com'/,
+        );
+        // …and the envelope reports the half that is wrong, on either half.
+        expect(() =>
+            windowChannel({
+                target: fakeWindow([]),
+                origins: { to: 'https://app.example.com/' },
+            }),
+        ).toThrow(/`origins\.to` must be a bare origin/);
+        expect(() =>
+            windowChannel({
+                target: fakeWindow([]),
+                origins: {
+                    to: 'https://app.example.com',
+                    from: ['https://app.example.com:443'],
+                },
+            }),
+        ).toThrow(/`origins\.from` must be a bare origin/);
     });
 
     test('windowChannel posts to the resolved target with the bound origin', async () => {
@@ -622,23 +735,7 @@ describe('windowChannel guards', () => {
         // Same fake global for both, so the two channels see the same inbound stream. The
         // shorthand and the explicit envelope must agree on BOTH halves: where posts go, and
         // which inbound origins survive the gate.
-        const listeners = new Set<(e: MessageEvent) => void>();
-        interface EventTargetish {
-            addEventListener:
-                ((t: string, l: (e: MessageEvent) => void) => void) | undefined;
-            removeEventListener:
-                ((t: string, l: (e: MessageEvent) => void) => void) | undefined;
-        }
-        const g = globalThis as unknown as EventTargetish;
-        const realAdd = g.addEventListener;
-        const realRemove = g.removeEventListener;
-        g.addEventListener = (t, l) => {
-            if (t === 'message') listeners.add(l);
-        };
-        g.removeEventListener = (t, l) => {
-            if (t === 'message') listeners.delete(l);
-        };
-        try {
+        await withMessageListeners(async (deliver) => {
             const shorthandPosts: { msg: unknown; origin: string }[] = [];
             const envelopePosts: { msg: unknown; origin: string }[] = [];
             const shorthand = windowChannel({
@@ -669,45 +766,116 @@ describe('windowChannel guards', () => {
                 seenEnvelope.push(p);
                 return null;
             });
-            const deliver = (origin: string, payload: unknown): void => {
-                for (const l of [...listeners])
-                    l({
-                        data: { type: 'probe', id: 'x', payload },
-                        origin,
-                    } as MessageEvent);
-            };
-            deliver('https://app.example.com', { ok: 1 });
-            await new Promise((r) => setTimeout(r, 10));
+            deliver('https://app.example.com', {
+                type: 'probe',
+                id: 'x',
+                payload: { ok: 1 },
+            });
+            await settle();
             expect(seenShorthand).toEqual([{ ok: 1 }]);
             expect(seenEnvelope).toEqual(seenShorthand);
 
             // …and both drop anything else.
-            deliver('https://evil.example.com', { ok: 2 });
-            await new Promise((r) => setTimeout(r, 10));
+            deliver('https://evil.example.com', {
+                type: 'probe',
+                id: 'y',
+                payload: { ok: 2 },
+            });
+            await settle();
             expect(seenShorthand).toEqual([{ ok: 1 }]);
             expect(seenEnvelope).toEqual(seenShorthand);
 
             await shorthand.close();
             await envelope.close();
-        } finally {
-            g.addEventListener = realAdd;
-            g.removeEventListener = realRemove;
-        }
+        });
     });
 
     test('`from` widens the inbound gate without widening the outbound address', async () => {
-        const posts: { msg: unknown; origin: string }[] = [];
-        const ch = windowChannel({
-            target: fakeWindow(posts),
-            origins: {
-                to: 'https://app.example.com',
-                from: ['https://app.example.com', 'https://widget.example.com'],
-            },
+        await withMessageListeners(async (deliver) => {
+            const posts: { msg: unknown; origin: string }[] = [];
+            const ch = windowChannel({
+                target: fakeWindow(posts),
+                origins: {
+                    to: 'https://app.example.com',
+                    from: [
+                        'https://app.example.com',
+                        'https://widget.example.com',
+                    ],
+                },
+            });
+            const seen: unknown[] = [];
+            ch.respond('probe', (p) => {
+                seen.push(p);
+                return null;
+            });
+
+            // Outbound: ONE address — the `to` half. Widening `from` must not widen this.
+            await ch.emit('hi')({ body: {} });
+            expect(posts).toHaveLength(1);
+            expect(posts[0]?.origin).toBe('https://app.example.com');
+
+            // Inbound: BOTH listed origins reach the responder. This is the half the envelope
+            // exists to add, and the ONLY assertion that can see it — `posts[0].origin` comes
+            // from `policy.to` alone, so a gate that silently narrowed back to `[to]` (turning a
+            // working parent/app/widget channel into one that drops every widget message, with
+            // no error) would leave a post-shape assertion green.
+            deliver('https://app.example.com', {
+                type: 'probe',
+                id: 'a',
+                payload: { via: 'app' },
+            });
+            deliver('https://widget.example.com', {
+                type: 'probe',
+                id: 'b',
+                payload: { via: 'widget' },
+            });
+            await settle();
+            expect(seen).toEqual([{ via: 'app' }, { via: 'widget' }]);
+
+            // …and an origin outside `from` is still dropped before dispatch.
+            deliver('https://evil.example.com', {
+                type: 'probe',
+                id: 'c',
+                payload: { via: 'evil' },
+            });
+            await settle();
+            expect(seen).toEqual([{ via: 'app' }, { via: 'widget' }]);
+
+            await ch.close();
         });
-        await ch.emit('hi')({ body: {} });
-        // One address out, two accepted in — the asymmetry the envelope exists to express.
-        expect(posts[0]?.origin).toBe('https://app.example.com');
-        await ch.close();
+    });
+
+    test('`from` REPLACES the `[to]` default rather than extending it', async () => {
+        await withMessageListeners(async (deliver) => {
+            const ch = windowChannel({
+                target: fakeWindow([]),
+                origins: {
+                    to: 'https://app.example.com',
+                    // Only the widget is named. `to`'s own origin is NOT implicitly retained —
+                    // the footgun for a caller who reads `from` as "one MORE origin" and thereby
+                    // stops accepting replies from the very frame they post to.
+                    from: ['https://widget.example.com'],
+                },
+            });
+            const seen: unknown[] = [];
+            ch.respond('probe', (p) => {
+                seen.push(p);
+                return null;
+            });
+            deliver('https://app.example.com', {
+                type: 'probe',
+                id: 'a',
+                payload: { via: 'app' },
+            });
+            deliver('https://widget.example.com', {
+                type: 'probe',
+                id: 'b',
+                payload: { via: 'widget' },
+            });
+            await settle();
+            expect(seen).toEqual([{ via: 'widget' }]);
+            await ch.close();
+        });
     });
 });
 

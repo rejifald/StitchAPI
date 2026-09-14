@@ -282,7 +282,13 @@ npm release are grouped under the in-development version that introduced them.
     construction-time guard that threw on `targetOrigin === '*'` now runs over **both** halves and
     rejects any authored origin that is not `new URL(x).origin`: `'https://*.example.com'`,
     `'https://app.example.com/'`, `'https://App.Example.com'` and `'https://app.example.com:443'`
-    all satisfied the type and all matched nothing. The error names the corrected spelling.
+    all satisfied the type and all matched nothing. The error names the corrected spelling, echoes
+    the value the caller actually wrote, and names the slot they actually wrote it in — the P12
+    shorthand reports `origins`, not the `origins.to` it normalises to internally. A **missing**
+    `origins` — the shape a stale `targetOrigin` / `allowedOrigins` call site produces once this
+    alias-free break lands, reachable from JS, an `as any`, a stale `.d.ts`, or options parsed from
+    JSON — is its own directed error naming the rename, rather than an undefined dereference two
+    lines later. Failing loud at construction is only worth anything if the noise says what to fix.
 
     Narrowing to `Origin` also means a **dynamic** origin — `location.origin`, a value read from
     config, a plain `const ALLOWED = ['https://a', 'https://b']` that widens to `string[]` — must
