@@ -35,8 +35,7 @@ const makeWorker = (
         adapter: provider.resourceAdapter({ delayMs: 5 }),
         auth: lockedRotatingRefresh({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             key: KEY,
             seedRefreshToken: 'RT-0',
             adapter: provider.tokenAdapter({ delayMs: 15 }),

@@ -492,8 +492,10 @@ const listOrders = stitch({
     path: 'https://api.example.com/users/{id}/orders',
     auth: oauth2({
         tokenUrl: 'https://api.example.com/oauth/token',
-        clientId: env('OAUTH_CLIENT_ID'),
-        clientSecret: env('OAUTH_CLIENT_SECRET'),
+        client: {
+            id: env('OAUTH_CLIENT_ID'),
+            secret: env('OAUTH_CLIENT_SECRET'),
+        },
         scope: 'orders:read', // optional, space-delimited
     }),
 });

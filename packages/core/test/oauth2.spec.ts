@@ -4,6 +4,7 @@
 import { memoryStore, stitch } from '../src';
 import type { Stitch, StitchStore } from '../src';
 import { env, oauth2 } from '../src/auth';
+import type { OAuth2ClientOptions, OAuth2Options } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -30,23 +31,32 @@ beforeEach(() => {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// A stitch protected by an oauth2 client_credentials token, with knobs per test.
+// A stitch protected by an oauth2 client_credentials token, with knobs per test. `extra` is
+// TYPED so a stale flat spelling (`clientId`, `clientAuth`, …) cannot slip past the compiler;
+// `client` merges into the default credentials instead of replacing them.
 const protectedStitch = (
     path: string,
-    extra: Record<string, unknown> = {},
+    extra: Partial<Omit<OAuth2Options, 'client'>> & {
+        client?: Partial<OAuth2ClientOptions>;
+    } = {},
     store?: StitchStore,
-): Stitch =>
-    stitch({
+): Stitch => {
+    const { client, ...rest } = extra;
+    return stitch({
         baseUrl: server.url,
         path,
         ...(store ? { store } : {}),
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
-            clientId: env('OAUTH_CLIENT_ID'),
-            clientSecret: env('OAUTH_CLIENT_SECRET'),
-            ...extra,
+            client: {
+                id: env('OAUTH_CLIENT_ID'),
+                secret: env('OAUTH_CLIENT_SECRET'),
+                ...client,
+            },
+            ...rest,
         }),
     });
+};
 
 test('fetches one token, reuses it across calls, and sends it as a Bearer', async () => {
     server.route('POST', '/token', {

@@ -562,10 +562,19 @@ const leadingWord = (name) => splitCamel(name)[0].toLowerCase();
 const PREFIX_GROUP_ALLOW = new Map([
     // (a) Foreign-SDK/standard mirrors (P18/P22) — the pair IS the mirrored contract's own
     // vocabulary, not house-coined, so there is nothing to fold:
-    [
-        'OAuth2Options.client',
-        'clientId/clientSecret/clientAuth mirror RFC 6749 (P18/P22)',
-    ],
+    // ('OAuth2Options.client' was here — DELETED, not reworded. Two things were wrong with it.
+    //  `clientAuth` is not an RFC 6749 parameter at all: §2.3.1 describes the client
+    //  authentication METHODS (client_secret_post / client_secret_basic) and defines no such
+    //  request field — the nearest standardized one is RFC 7591's `token_endpoint_auth_method`.
+    //  And more decisively, OAuth2Options is not a MIRROR in the sense this list means: its
+    //  sibling OAuth2ClientCredentialsFlow states the real test in its own JSDoc — spelled
+    //  "exactly as the spec spells it … so `stitch export --openapi` emits it as an identity
+    //  mapping" — and OAuth2Options has no identity mapping, because auth.ts TRANSLATES every
+    //  member into a snake_case wire key when it builds the token-request form body. A contract
+    //  that already re-cases the RFC's own names is governed by P18's second half: house
+    //  contracts use house vocabulary. So the group was real, and it folded into the exported
+    //  OAuth2ClientOptions envelope — `client: { id, secret, auth }` — which dissolves the
+    //  prefix rather than exempting it.)
     [
         'StitchQueryOptions.query',
         "queryKey/queryFn mirror TanStack's own queryOptions() vocabulary (P3/P18/P22) — this rule's own motivating example is itself exempt",

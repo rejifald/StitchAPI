@@ -22,8 +22,7 @@ const build = (provider: FakeRotatingProvider, resource: Adapter): Stitch =>
         adapter: resource,
         auth: oauth2({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             adapter: provider.tokenAdapter({ delayMs: 10 }),
         }),
     });

@@ -153,8 +153,7 @@ describe('manualClock drives OAuth2 token expiry (ADR 0010)', () => {
             clock,
             auth: oauth2({
                 tokenUrl: 'https://api.test/token',
-                clientId: 'cid',
-                clientSecret: 'csecret',
+                client: { id: 'cid', secret: 'csecret' },
                 adapter: mock,
             }),
         });
@@ -190,8 +189,7 @@ describe('manualClock drives OAuth2 token expiry (ADR 0010)', () => {
             clock,
             auth: oauth2({
                 tokenUrl: 'https://api.test/token',
-                clientId: 'cid',
-                clientSecret: 'csecret',
+                client: { id: 'cid', secret: 'csecret' },
                 adapter: mock,
                 refresh: { skew: '10s' }, // fresh until virtual 50s (60s expiry − 10s skew)
             }),
@@ -217,8 +215,7 @@ describe('manualClock drives OAuth2 token expiry (ADR 0010)', () => {
             adapter: mock,
             auth: oauth2({
                 tokenUrl: 'https://api.test/token',
-                clientId: 'cid',
-                clientSecret: 'csecret',
+                client: { id: 'cid', secret: 'csecret' },
                 adapter: mock,
             }),
         });

@@ -66,8 +66,10 @@ test('5 concurrent cold calls coalesce into exactly ONE token-endpoint POST', as
         path: '/data',
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
-            clientId: env('OAUTH_CLIENT_ID'),
-            clientSecret: env('OAUTH_CLIENT_SECRET'),
+            client: {
+                id: env('OAUTH_CLIENT_ID'),
+                secret: env('OAUTH_CLIENT_SECRET'),
+            },
         }),
     });
 

@@ -362,8 +362,7 @@ const call = stitch({
     clock,
     auth: oauth2({
         tokenUrl: 'https://api.test/token',
-        clientId: 'cid',
-        clientSecret: 'csecret',
+        client: { id: 'cid', secret: 'csecret' },
         adapter: api,
     }),
 });

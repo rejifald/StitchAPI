@@ -1,10 +1,11 @@
-// oauth2 `clientAuth`: how the client authenticates to the token endpoint (RFC 6749 §2.3.1).
+// oauth2 `client.auth`: how the client authenticates to the token endpoint (RFC 6749 §2.3.1).
 // Default 'post' (client_secret_post) keeps id/secret in the form body; 'basic'
 // (client_secret_basic) moves them into an HTTP Basic header — what providers like Kyivstar SMS
 // require. Also covers the token-request escape hatches: `audience`, `params`, and `headers`.
 import { stitch } from '../src';
 import type { Stitch } from '../src';
 import { env, oauth2 } from '../src/auth';
+import type { OAuth2ClientOptions, OAuth2Options } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -29,21 +30,32 @@ beforeEach(() => {
     process.env['OAUTH_CLIENT_SECRET'] = 'csecret';
 });
 
-// A stitch protected by an oauth2 token, with per-test knobs spread onto the strategy.
+// A stitch protected by an oauth2 token, with per-test knobs spread onto the strategy. `extra`
+// is TYPED (it used to be `Record<string, unknown>`): an untyped bag is what let the old flat
+// `clientAuth` spelling keep type-checking here after the P24 fold, so the compiler now pins
+// these call sites to the real surface. `client` merges INTO the default credentials rather than
+// replacing them, so a test that only wants `auth: 'basic'` writes exactly that.
 const protectedStitch = (
     path: string,
-    extra: Record<string, unknown> = {},
-): Stitch =>
-    stitch({
+    extra: Partial<Omit<OAuth2Options, 'client'>> & {
+        client?: Partial<OAuth2ClientOptions>;
+    } = {},
+): Stitch => {
+    const { client, ...rest } = extra;
+    return stitch({
         baseUrl: server.url,
         path,
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
-            clientId: env('OAUTH_CLIENT_ID'),
-            clientSecret: env('OAUTH_CLIENT_SECRET'),
-            ...extra,
+            client: {
+                id: env('OAUTH_CLIENT_ID'),
+                secret: env('OAUTH_CLIENT_SECRET'),
+                ...client,
+            },
+            ...rest,
         }),
     });
+};
 
 // The token POST body is form-encoded; parse it back into params for assertions.
 const tokenBody = (i = 0): URLSearchParams =>
@@ -53,14 +65,14 @@ const tokenHeaders = (i = 0): Record<string, string> =>
 
 const okToken = { access_token: 'T1', token_type: 'Bearer', expires_in: 3600 };
 
-test("clientAuth: 'basic' sends Basic <base64(id:secret)> and keeps creds out of the body", async () => {
+test("client.auth: 'basic' sends Basic <base64(id:secret)> and keeps creds out of the body", async () => {
     server.route('POST', '/token', { body: okToken });
     server.route('GET', '/data', {
         requireHeader: { name: 'authorization', value: 'Bearer T1' },
         body: { ok: true },
     });
 
-    const data = protectedStitch('/data', { clientAuth: 'basic' });
+    const data = protectedStitch('/data', { client: { auth: 'basic' } });
     await expect(data()).resolves.toEqual({ ok: true });
     await expect(data()).resolves.toEqual({ ok: true }); // reuse the cached token
 
@@ -76,14 +88,14 @@ test("clientAuth: 'basic' sends Basic <base64(id:secret)> and keeps creds out of
     expect(body.get('client_secret')).toBeNull();
 });
 
-test("default clientAuth is 'post': creds in the body, no Authorization header on the token request", async () => {
+test("default client.auth is 'post': creds in the body, no Authorization header on the token request", async () => {
     server.route('POST', '/token', { body: okToken });
     server.route('GET', '/data', {
         requireHeader: { name: 'authorization' },
         body: { ok: true },
     });
 
-    const data = protectedStitch('/data'); // no clientAuth → 'post'
+    const data = protectedStitch('/data'); // no client.auth → 'post'
     await expect(data()).resolves.toEqual({ ok: true });
 
     const body = tokenBody();
@@ -93,7 +105,7 @@ test("default clientAuth is 'post': creds in the body, no Authorization header o
     expect(tokenHeaders()['authorization']).toBeUndefined();
 });
 
-test("clientAuth: 'basic' refreshes on a 401 like the post flow does", async () => {
+test("client.auth: 'basic' refreshes on a 401 like the post flow does", async () => {
     server.route('POST', '/token', {
         body: (i: number) => ({
             access_token: i === 0 ? 'STALE' : 'FRESH',
@@ -104,7 +116,7 @@ test("clientAuth: 'basic' refreshes on a 401 like the post flow does", async () 
     // First hit 401s (token rejected); after the forced refresh the retry succeeds.
     server.route('GET', '/data', { statuses: [401, 200], body: { ok: true } });
 
-    const data = protectedStitch('/data', { clientAuth: 'basic' });
+    const data = protectedStitch('/data', { client: { auth: 'basic' } });
     await expect(data()).resolves.toEqual({ ok: true });
 
     expect(server.callCount('/token')).toBe(2); // initial fetch + forced refresh on 401
@@ -160,7 +172,7 @@ test('headers add to the token request but cannot clobber the basic Authorizatio
     server.route('GET', '/data', { body: { ok: true } });
 
     const data = protectedStitch('/data', {
-        clientAuth: 'basic',
+        client: { auth: 'basic' },
         headers: { 'X-Tenant': 'acme', authorization: 'must-not-win' },
     });
     await data();

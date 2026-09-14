@@ -704,6 +704,16 @@ a field whose entire job is to carry that standard's value. Match the standard's
 translation seam. As with P18, follow the standard that governs **each** layer and convert
 at the edge — never blend two standards' vocabularies in one place.
 
+**The test — is the mapping already an identity?** A contract is pinned by this rule only where
+the export is field-for-field identical: rename the field and the boundary code would have to
+start translating. Where the boundary **already** translates — a re-casing into the wire's own
+`snake_case`, a value set that is ours rather than the standard's, members the standard does not
+define — the contract in front of that translation is house vocabulary under P18, and spelling
+its fields after the standard buys a resemblance no reader can rely on. `OAuth2Options` failed
+this test ([P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) carve-out
+(a)): `clientId`/`clientSecret` were RFC 6749's names re-cased at the form-body builder, so there
+was never an identity mapping there to protect.
+
 _Why:_ a private alias on an interop field is paid for twice — a translation step at the
 boundary where it meets the standard, and a lookup for every reader who knows the standard
 but not our word for it. P18 keeps duck-type mirrors **structurally** matching; P22 keeps
@@ -760,12 +770,11 @@ _Carve-outs:_
 
 - **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
   nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
-  pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
-  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair on
-  `XhrLike` (and its React Native mirror), RTK Query's lifecycle names
-  (`cacheDataLoaded`/`cacheEntryRemoved`),
-  and Orama's own index-document schema (`IndexedDoc.pageUrl`/`pageTitle`, plus the `boost` and
-  `properties` keys that address it) — all exempt.
+  pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, the XHR
+  `responseType`/`responseText` pair on `XhrLike` (and its React Native mirror), RTK Query's
+  lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`), and Orama's own index-document schema
+  (`IndexedDoc.pageUrl`/`pageTitle`, plus the `boost` and `properties` keys that address it) —
+  all exempt.
 
     **The exemption binds the layer that meets the standard, not every layer above it**
     ([P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): follow the standard
@@ -801,6 +810,26 @@ _Carve-outs:_
     it from. The lesson generalises twice over — a neighbour's carve-out is not contagious, and
     "an adapter assigns it straight through" describes a **conversion at the edge**, which is the
     thing this rule asks for, not evidence that the contract before the edge is a mirror.
+
+    _Reversed (2026-09-14) — a mirror is an **identity mapping**, and this one was a translation:_
+    `OAuth2Options.clientId`/`clientSecret`/`clientAuth` was exempted as "RFC 6749". Two things
+    were wrong with that. `clientAuth` is not an RFC 6749 parameter at all — §2.3.1 describes the
+    client authentication **methods** (`client_secret_post`/`client_secret_basic`) and defines no
+    such request field; the nearest standardized one is RFC 7591's `token_endpoint_auth_method`.
+    So the rationale covered two of the three members it claimed. More decisively, `OAuth2Options`
+    is not a mirror in this document's sense: its sibling `OAuth2ClientCredentialsFlow` states the
+    test in its own JSDoc — spelled "exactly as the spec spells it … so `stitch export --openapi`
+    emits it as an identity mapping" — and `OAuth2Options` has none, because `auth.ts` translates
+    every member into a `snake_case` wire key where it builds the token-request form body. A
+    contract that already re-cases the standard's own names is the translated house contract of
+    [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary)'s
+    second half, so the group was real. Folded to **`client: OAuth2ClientOptions`**
+    (`{ id, secret, auth }`); `tokenUrl` stays flat beside it — the endpoint is a different
+    subject from the identity calling it (P1). No shorthand: `id` and `secret` are co-equal, so
+    no field dominates (P12/P14), and the envelope is plain-required rather than `AtLeastOne<…>`
+    because two required members already make `client: {}` a compile error — the
+    [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults)
+    reading `CacheOptions.ttl` gets.
 
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an
@@ -867,10 +896,10 @@ hard breaks, no aliases (P19).
 
 _Named exemptions verified against this rule_ (carve-out (a); named explicitly because each is the
 literal shape this rule would otherwise flag): **`StitchQueryOptions.queryKey`/`queryFn`** (the
-TanStack mirror, P3 — note this rule's own motivating example is itself exempt);
-**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`IndexedDoc.pageUrl`/
+TanStack mirror, P3 — note this rule's own motivating example is itself exempt); **`IndexedDoc.pageUrl`/
 `pageTitle`** in `@stitchapi/docs-mcp` (the persisted Orama index document schema — Orama boosts
 and searches BY field name, so `FieldBoost.pageTitle` and the `properties` list key on them too).
+(`OAuth2Options`' client credentials were named here too, until the 2026-09-14 reversal above.)
 
 _Re-pointed (2026-09-09), the third instance of the same error:_ this exemption was written
 against **`DocSearchHit`**, the type `searchDocs` RETURNS — one layer above the boundary, exactly

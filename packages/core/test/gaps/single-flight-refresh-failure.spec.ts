@@ -88,8 +88,10 @@ test('a rejected single-flight token fetch does not poison the slot; recovery su
         path: '/data',
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
-            clientId: env('OAUTH_CLIENT_ID'),
-            clientSecret: env('OAUTH_CLIENT_SECRET'),
+            client: {
+                id: env('OAUTH_CLIENT_ID'),
+                secret: env('OAUTH_CLIENT_SECRET'),
+            },
         }),
     });
 

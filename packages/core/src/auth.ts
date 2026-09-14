@@ -367,23 +367,67 @@ export interface OAuth2RefreshOptions {
     skew?: number | string;
 }
 
-export interface OAuth2Options {
-    /** The `client_credentials` token endpoint (POST, form-encoded). */
-    tokenUrl: string;
-    /** OAuth2 client id; resolved at call time (env/secretsFile), never committed. */
-    clientId: Secret;
-    /** OAuth2 client secret; resolved at call time. */
-    clientSecret: Secret;
-    /** Optional space-delimited scopes. */
-    scope?: string;
+/**
+ * Envelope for {@link OAuth2Options.client} — WHO the client is at the token endpoint, and how it
+ * proves it (CONTRACT.md P24: `clientId`/`clientSecret`/`clientAuth` shared the `client` prefix,
+ * so they fold into one envelope). Named and exported per P14.
+ *
+ * No scalar shorthand: P12/P14 offer one only for an **unambiguously dominant** field, and `id`
+ * and `secret` are co-equal — both required, neither usable without the other — so no single
+ * scalar could name the pair. A positional `[id, secret]` tuple (the `circuit` form) is rejected
+ * for the same reason it would be unsafe: both members are {@link Secret}, so a transposed tuple
+ * type-checks and fails at the provider. `tokenUrl` stays FLAT beside this envelope — the endpoint
+ * is the address, a different subject from the identity calling it (P1).
+ *
+ * Not `AtLeastOne<OAuth2ClientOptions>`: that wrapper exists to make `{}` a compile error on an
+ * ALL-OPTIONAL bag (P20), and here `id`/`secret` are already required, so `client: {}` is a type
+ * error without it — the `CacheOptions.ttl` reading of P15. Applied to this envelope
+ * `AtLeastOne` would be actively wrong: each of its arms re-optionalises the members it did not
+ * pick, so `client: { id }` — a client with no secret — would start type-checking.
+ */
+export interface OAuth2ClientOptions {
+    /**
+     * OAuth2 client id (`client_id` on the wire); resolved at call time (env/secretsFile), never
+     * committed.
+     */
+    id: Secret;
+    /** OAuth2 client secret (`client_secret` on the wire); resolved at call time. */
+    secret: Secret;
     /**
      * How the client authenticates to the token endpoint (RFC 6749 §2.3.1). Default `'post'`
      * (`client_secret_post`) puts `client_id`/`client_secret` in the form body. `'basic'`
      * (`client_secret_basic`) sends them as an HTTP Basic `Authorization` header and keeps only
      * `grant_type` (plus `scope`/`audience`/`params`) in the body — what providers like Kyivstar
      * SMS require. The header is Base64 of `id:secret`, encoded browser-safe (no `Buffer`).
+     *
+     * Spelled `auth` rather than RFC 7591's `tokenEndpointAuthMethod`: this envelope is house
+     * vocabulary, not a mirror (see {@link OAuth2Options}), and inside `client` the one-word token
+     * is unambiguous. RFC 6749 §2.3.1 names the METHODS, not a request parameter, so there is no
+     * wire spelling to keep faith with here either — the two values are the house short forms of
+     * `client_secret_post` / `client_secret_basic`.
      */
-    clientAuth?: 'post' | 'basic';
+    auth?: 'post' | 'basic';
+}
+
+/**
+ * Options for {@link oauth2}. House vocabulary, NOT an RFC 6749 mirror: every member is
+ * translated into its `snake_case` wire key where the token-request form body is built, so there
+ * is no identity mapping to protect. `OAuth2ClientCredentialsFlow` states the test the contracts
+ * that ARE mirrors have to meet — "spelled exactly as the spec spells it … so
+ * `stitch export --openapi` emits it as an identity mapping" — and this one does not meet it, so
+ * CONTRACT.md P18's second half governs: a house contract uses house vocabulary. That is why the
+ * client credentials fold into {@link OAuth2ClientOptions} (P24) instead of staying flat.
+ */
+export interface OAuth2Options {
+    /** The `client_credentials` token endpoint (POST, form-encoded). */
+    tokenUrl: string;
+    /**
+     * The client's identity at that endpoint — `{ id, secret }`, plus `auth` to pick
+     * `client_secret_post` (default) or `client_secret_basic` (CONTRACT.md P24 envelope).
+     */
+    client: OAuth2ClientOptions;
+    /** Optional space-delimited scopes. */
+    scope?: string;
     /** OAuth2 `audience` (Auth0 / RFC 8693); added to the token-request body when set. */
     audience?: string;
     /**
@@ -395,7 +439,7 @@ export interface OAuth2Options {
     params?: Record<string, string>;
     /**
      * Extra headers on the token request (e.g. a provider-required header). Keys are lower-cased;
-     * cannot override the `Authorization` header that `clientAuth: 'basic'` sets.
+     * cannot override the `Authorization` header that `client.auth: 'basic'` sets.
      */
     headers?: Record<string, string>;
     /**
@@ -414,7 +458,7 @@ export interface OAuth2Options {
      * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
      * principal is bound**, mirroring {@link CookieSessionOptions.tenancy}); each tenant then caches its
      * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
-     * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
+     * per-tenant `client.id`/`client.secret`/`scope` for full multi-tenant separation.
      */
     tenancy?: 'principal' | 'app';
     /** Test seam / custom transport for the token request (default `fetchAdapter()`). */
@@ -484,7 +528,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
-    const clientAuth = opts.clientAuth ?? 'post';
+    const authMethod = opts.client.auth ?? 'post';
     const flight = singleFlight<string>();
 
     // The vault key for THIS call. Default 'app' shares one token across all callers (correct for
@@ -530,17 +574,17 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         for (const [k, v] of Object.entries(opts.headers ?? {}))
             headers[k.toLowerCase()] = v;
 
-        if (clientAuth === 'basic') {
+        if (authMethod === 'basic') {
             // client_secret_basic: credentials ride in an HTTP Basic header (set last, so a
             // caller-supplied header can't clobber it) and stay OUT of the body.
             const creds = base64(
-                `${resolve(opts.clientId)}:${resolve(opts.clientSecret)}`,
+                `${resolve(opts.client.id)}:${resolve(opts.client.secret)}`,
             );
             headers['authorization'] = `Basic ${creds}`;
         } else {
             // client_secret_post: credentials in the form body, applied last so `params` can't shadow them.
-            body['client_id'] = resolve(opts.clientId);
-            body['client_secret'] = resolve(opts.clientSecret);
+            body['client_id'] = resolve(opts.client.id);
+            body['client_secret'] = resolve(opts.client.secret);
         }
 
         const res = await adapter({
@@ -552,7 +596,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         });
         if (res.status >= 400)
             throw new Error(
-                `oauth2 token request failed: HTTP ${res.status}. Fix: check tokenUrl, clientId/clientSecret, and scope.`,
+                `oauth2 token request failed: HTTP ${res.status}. Fix: check tokenUrl, client.id/client.secret, and scope.`,
             );
 
         const payload = (res.body ?? {}) as {
@@ -561,7 +605,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         };
         if (!payload.access_token)
             throw new Error(
-                'oauth2 token response missing access_token. Fix: check tokenUrl, clientId/clientSecret, and scope.',
+                'oauth2 token response missing access_token. Fix: check tokenUrl, client.id/client.secret, and scope.',
             );
 
         const ttlMs =

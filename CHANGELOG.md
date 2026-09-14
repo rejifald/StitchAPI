@@ -225,6 +225,63 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `oauth2`'s `clientId`/`clientSecret`/`clientAuth` fold into one `client`
+  envelope.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+  / [P18](docs/CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary))
+  Three flat members shared the leading word `client`, which is the literal shape P24 folds. They
+  stayed flat only because the lint allow-list carried a carve-out calling them an RFC 6749 mirror.
+
+    ```ts
+    auth: oauth2({
+        tokenUrl: 'https://api.example.com/oauth/token',
+    -   clientId: env('CLIENT_ID'),
+    -   clientSecret: env('CLIENT_SECRET'),
+    -   clientAuth: 'basic',
+    +   client: {
+    +       id: env('CLIENT_ID'),
+    +       secret: env('CLIENT_SECRET'),
+    +       auth: 'basic',
+    +   },
+        scope: 'orders.read',
+    }),
+    ```
+
+    | Was                             | Now             |
+    | ------------------------------- | --------------- |
+    | `clientId: Secret`              | `client.id`     |
+    | `clientSecret: Secret`          | `client.secret` |
+    | `clientAuth: 'post' \| 'basic'` | `client.auth`   |
+
+    **The carve-out was wrong twice over.** `clientAuth` is not an RFC 6749 parameter at all —
+    §2.3.1 describes the client authentication _methods_ (`client_secret_post` /
+    `client_secret_basic`) and defines no such request field; the nearest standardized one is RFC
+    7591's `token_endpoint_auth_method`. So the rationale covered two of the three members it
+    claimed. And `OAuth2Options` is not a mirror in the sense this repo uses: its sibling
+    `OAuth2ClientCredentialsFlow` states the test in its own JSDoc — spelled "exactly as the spec
+    spells it … so `stitch export --openapi` emits it as an identity mapping" — while
+    `OAuth2Options` translates every member into a `snake_case` wire key where the token-request
+    form body is built. A contract that already re-cases the RFC's own names is the translated
+    house contract of P18's second half. The allow-list entry is **deleted**, not reworded; R8 now
+    passes because the group is gone.
+
+    **The envelope is `OAuth2ClientOptions`, exported** (P14), and the slot is a plain required
+    `client: OAuth2ClientOptions` — **not** `AtLeastOne<…>`. That wrapper exists to make `{}` a
+    compile error on an all-optional bag; here `id` and `secret` are required, so `client: {}`
+    already is one (the `CacheOptions.ttl` reading of P15), and `AtLeastOne` would have been
+    actively harmful — each of its arms re-optionalises the members it did not pick, so
+    `client: { id }` would have started type-checking. No scalar shorthand either: `id` and
+    `secret` are co-equal, so no field dominates (P12/P14). `tokenUrl` **stays flat** — the
+    endpoint is a different subject from the identity calling it.
+
+    Nothing about the wire changes: `client_id`/`client_secret` still go in the form body under
+    the default `client.auth: 'post'` and into the Basic header under `'basic'`, still applied
+    last so `params` can never shadow them. Redaction is unaffected — `secret` is matched as a
+    stem. Hard break, no alias
+    ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel);
+    type-level tests pin all three old spellings, `client: {}`, and each half-filled `client`, as
+    compile errors.
+
 - **BREAKING CHANGE: `AdapterResponse` is now `AdapterResult`, repo-wide.**
   ([CONTRACT.md P3](docs/CONTRACT.md#p3--one-suffix-system)) The suffix system reserves `*Response`
   for the platform object or a faithful mirror of it, and `*Result` for a shape the house coined.
