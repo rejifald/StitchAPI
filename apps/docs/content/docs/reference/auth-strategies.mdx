@@ -1,6 +1,6 @@
 ---
 title: 'Auth strategies'
-description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env(), optionalEnv(), secretsFile(), and secretFrom() resolvers.'
+description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env and credential secret resolvers.'
 ---
 
 The signatures for every auth strategy and secret resolver. Each strategy holds
@@ -64,37 +64,64 @@ other. `auth` picks `client_secret_post` (the default) or `client_secret_basic`.
 
 ## env
 
+The environment-variable resolver, and the only one whose source is the process
+environment. It is **callable** for the required case, with the optional variant
+hanging off it as a modifier — one name for one source, requiredness named at the
+call site.
+
 Resolves a **required** secret from an environment variable at call time. It
 needs a non-empty value: an unset variable _and_ a set-but-empty one (`MY_TOKEN=`)
 both throw, so a blank credential is never silently sent. For the
-may-or-may-not-be-set case use [`optionalEnv`](#optionalenv).
+may-or-may-not-be-set case use [`env.optional`](#envoptional).
 
 ```ts twoslash
 import { env } from 'stitchapi/auth';
 ```
 
-## optionalEnv
+### env.optional
 
 Like `env`, but optional: resolves the variable's value, or _absent_ when it is
 unset or empty — it never throws. Pass it to `bearer` to attach the credential
-only when present (`bearer(optionalEnv('GITHUB_TOKEN'))`); a missing variable
+only when present (`bearer(env.optional('GITHUB_TOKEN'))`); a missing variable
 just sends the request unauthenticated. See
 [the Bearer guide](/docs/guides/auth/bearer).
 
 ```ts twoslash
-import { optionalEnv } from 'stitchapi/auth';
+import { env } from 'stitchapi/auth';
+
+const token = env.optional('GITHUB_TOKEN');
 ```
 
-## secretsFile
+## credential
+
+The resolvers whose source is **not** the process environment, grouped under one
+noun with the source named at the call site. Both members are required resolvers
+— they throw rather than hand back a blank credential, mirroring [`env`](#env) —
+and both return the same `() => string` thunk every strategy accepts.
+
+The noun is `credential` rather than `secrets` because `secrets` is already the
+root barrel's trace-redaction namespace (`secrets.register` / `has` / `redact`);
+two different objects behind one word on two entry points is the one-word-one-concept
+rule this project holds itself to.
+
+### credential.file
 
 Resolves a secret from `~/.stitch/secrets.json` (plaintext JSON — keep it
-private), falling back to the environment.
+private), falling back to the environment variable of the same name when the file
+is absent or lacks the key, and throwing when neither has it.
 
 ```ts twoslash
-import { secretsFile } from 'stitchapi/auth';
+import { credential } from 'stitchapi/auth';
+
+const token = credential.file('BILLING_TOKEN');
 ```
 
-## secretFrom
+<Callout type="warn">
+    `~/.stitch/secrets.json` is **unencrypted plaintext JSON**. Restrict its
+    permissions (`chmod 600 ~/.stitch/secrets.json`) and never commit it.
+</Callout>
+
+### credential.from
 
 Resolves a **required** secret from an arbitrary injected `source` at call time —
 for DI'd apps that supply config without touching `process.env` (a
@@ -104,12 +131,12 @@ function; a missing or empty value throws, mirroring [`env`](#env). Compose it
 with any strategy exactly like `env()`.
 
 ```ts twoslash
-import { bearer, secretFrom } from 'stitchapi/auth';
+import { bearer, credential } from 'stitchapi/auth';
 
 // Any object with a `get(name)` method — e.g. a NestJS ConfigService.
 declare const configService: { get(name: string): string | undefined };
 
-const auth = bearer(secretFrom(configService, 'GITHUB_TOKEN'));
+const auth = bearer(credential.from(configService, 'GITHUB_TOKEN'));
 ```
 
 ## See also

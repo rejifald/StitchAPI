@@ -52,7 +52,7 @@ existing or proposed — passes through all three before it ships.
 
 - Auth strategies — `bearer`, `apiKey`, `basic`, `cookieSession`, and OAuth2
   `client_credentials` — [`src/auth.ts`](../src/auth.ts)
-- Secret resolvers — `env()` and `secretsFile()`, resolved at **call time**
+- Secret resolvers — `env()` and `credential.file()`, resolved at **call time**
 - The caller gets a capability, not a credential — the stitch holds the secret; an agent
   invoking it never sees the token
 - Session handling — cookie capture + replay, TTL, refresh on `refresh` (`refresh.on` / `refresh.when`),

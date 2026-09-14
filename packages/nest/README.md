@@ -10,7 +10,7 @@ It is a **thin** package: `StitchModule` wires StitchAPI's `seam` into Nest's DI
 graph, plus bridge helpers (a `Logger` sink, `ConfigService` secrets), an exception
 filter, and an SSE bridge. It adds **no capability** — every piece sits on a core
 extension point, and the `Logger` sink and `ConfigService` bridge **delegate** to core's
-`loggerSink` / `secretFrom` rather than reimplement them. So `stitchapi` stays a peer
+`loggerSink` / `credential.from` rather than reimplement them. So `stitchapi` stays a peer
 dependency and the package forks nothing (contract-not-dependency).
 
 ```sh

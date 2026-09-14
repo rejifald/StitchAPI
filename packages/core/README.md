@@ -112,7 +112,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Leveled drift detection** - live responses are validated against the declared schema (the contract); a required field missing/incompatible **throws**, while soft drift (a coercion, an undeclared or defaulted field) surfaces as a non-fatal `warn` / `info` / `verbose` finding instead of a silent `undefined`.
 - **Declared resilience** - retry with backoff and `Retry-After`, proactive throttle (rate + concurrency, per stitch or per host), total / per-attempt timeouts with real aborts, a circuit breaker, and idempotency keys.
 - **Read-through caching** - an opt-in response cache with in-process request coalescing, keyed by a derived, principal-scoped key — sound by construction (it refuses to cache a shape it can't fingerprint) and loaded lazily from `stitchapi/cache`.
-- **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `secretsFile()` and never reach the caller.
+- **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `credential.file()` and never reach the caller.
 - **Data shaping** - `pick` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
 - **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
 - **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
@@ -468,7 +468,7 @@ Concurrent identical in-flight calls in one process **coalesce** onto a single s
 
 ## Auth as a boundary
 
-Auth is a field on the stitch (or on a fragment it extends) — never global. Secrets resolve **at call time**: `env()` reads an environment variable, `secretsFile()` reads `~/.stitch/secrets.json` (falling back to env). The stitch declaration is committable, and the caller — your code or an agent — invokes the stitch and gets data without ever seeing the credential.
+Auth is a field on the stitch (or on a fragment it extends) — never global. Secrets resolve **at call time**: `env()` reads an environment variable, `credential.file()` reads `~/.stitch/secrets.json` (falling back to env). The stitch declaration is committable, and the caller — your code or an agent — invokes the stitch and gets data without ever seeing the credential.
 
 Header strategies — `bearer`, `apiKey` (default header `x-api-key`), `basic`:
 
@@ -507,7 +507,7 @@ Give two stitches the same `key` plus a shared [store](#pluggable-state-store) a
 
 ```ts
 import { stitch } from 'stitchapi';
-import { cookieSession, env, secretsFile } from 'stitchapi/auth';
+import { cookieSession, credential, env } from 'stitchapi/auth';
 
 const signIn = stitch({
     method: 'POST',
@@ -526,7 +526,7 @@ const listUsers = stitch({
         credentialsOf: () => ({
             body: {
                 email: env('APP_USER')(),
-                password: secretsFile('APP_PASS')(),
+                password: credential.file('APP_PASS')(),
             },
         }),
         refresh: [401], // the wall → re-login, then retry (default)
