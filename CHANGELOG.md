@@ -232,7 +232,8 @@ npm release are grouped under the in-development version that introduced them.
   `windowChannel`'s `targetOrigin` and `allowedOrigins` were one dimension — the channel's origin
   policy — spelled as two fields, and the proof was in their own docs: one was documented as the
   other's default. They fold into `origins`, with the bare origin as the P12 shorthand.
-  `channel()`'s `allowedOrigins` is renamed to `origins` in lockstep (P16).
+  `channel()`'s `allowedOrigins` becomes `from` — the inbound half's own name, byte-identical to
+  `OriginOptions.from` (P1/P16).
 
     ```ts
     const ch = windowChannel({
@@ -253,15 +254,34 @@ npm release are grouped under the in-development version that introduced them.
     });
 
     -channel(transport, { allowedOrigins: ['https://app.example.com'] });
-    +channel(transport, { origins: ['https://app.example.com'] });
+    +channel(transport, { from: ['https://app.example.com'] });
     ```
 
-    | Was                                                        | Now                                          |
-    | ---------------------------------------------------------- | -------------------------------------------- |
-    | `WindowChannelOptions.targetOrigin: Origin`                | `origins.to` (or the bare `origins: X`)      |
-    | `WindowChannelOptions.allowedOrigins?: string \| string[]` | `origins.from?: Origin \| Origin[]`          |
-    | `ChannelOptions.allowedOrigins: string \| string[]`        | `ChannelOptions.origins: Origin \| Origin[]` |
-    | —                                                          | `OriginOptions` (`{ to, from? }`), exported  |
+    | Was                                                        | Now                                         |
+    | ---------------------------------------------------------- | ------------------------------------------- |
+    | `WindowChannelOptions.targetOrigin: Origin`                | `origins.to` (or the bare `origins: X`)     |
+    | `WindowChannelOptions.allowedOrigins?: string \| string[]` | `origins.from?: Origin \| Origin[]`         |
+    | `ChannelOptions.allowedOrigins: string \| string[]`        | `ChannelOptions.from: Origin \| Origin[]`   |
+    | —                                                          | `OriginOptions` (`{ to, from? }`), exported |
+
+    **`channel()` takes `from`, not `origins`** — the one place this entry's own cross-surface-parity
+    argument cuts against the envelope. `origins` on both builders would be a single token over two
+    **incomparable** value-spaces: neither union is a superset of the other, so
+    `origins: ['https://a', 'https://b']` is valid on `channel` and a compile error on
+    `windowChannel`, and the scalar shorthand `origins: X` would mean `{ to: X, from: [X] }` on one
+    surface and `[X]` on the other. That is the P1/P16 collision an envelope exists to avoid, not to
+    create, and P24 carve-out (b)'s **endpoint-slot** record is the governing precedent: it declined
+    a dominant-field shorthand for `url` precisely because that "would mean two different things on
+    the two surfaces". Under `from` the inbound half has ONE meaning and ONE value-space across the
+    whole surface (`ChannelOptions.from` and `OriginOptions.from` are identical in name and type),
+    and `origins` appears only where a second dimension actually exists. The differing **nesting
+    level** is fine and carries the same precedent — that slot's members "do not share a level"
+    either, with `baseUrl` as seam vocabulary beside per-endpoint `url`/`path`.
+
+    Honest about severity: unlike the endpoint slot, this collision has **no silent failure mode**.
+    Every divergence between the two builders is a compile error, so nothing was ever mis-gated by
+    it. It is taken as surface hygiene because the API freezes at the stable tag, not because it
+    was a defect.
 
     **The lint allow-list entry is deleted, not reworded.** It defended the flat pair on P22:
     `targetOrigin` is `window.postMessage()`'s own parameter name. It is — and that is not what the
@@ -286,11 +306,12 @@ npm release are grouped under the in-development version that introduced them.
     `'https://app.example.com/'`, `'https://App.Example.com'` and `'https://app.example.com:443'`
     all satisfied the type and all matched nothing. The error names the corrected spelling, echoes
     the value the caller actually wrote, and names the slot they actually wrote it in — the P12
-    shorthand reports `origins`, not the `origins.to` it normalises to internally. A **missing**
-    `origins` — the shape a stale `targetOrigin` / `allowedOrigins` call site produces once this
-    alias-free break lands, reachable from JS, an `as any`, a stale `.d.ts`, or options parsed from
-    JSON — is its own directed error naming the rename, rather than an undefined dereference two
-    lines later. Failing loud at construction is only worth anything if the noise says what to fix.
+    shorthand reports `origins`, not the `origins.to` it normalises to internally, and `channel()`
+    reports `from`, the only origin key that exists on `ChannelOptions`. A **missing** policy — the
+    shape a stale `targetOrigin` / `allowedOrigins` call site produces once this alias-free break
+    lands, reachable from JS, an `as any`, a stale `.d.ts`, or options parsed from JSON — is its own
+    directed error naming the rename on each builder, rather than an undefined dereference two lines
+    later. Failing loud at construction is only worth anything if the noise says what to fix.
 
     Narrowing to `Origin` also means a **dynamic** origin — `location.origin`, a value read from
     config, a plain `const ALLOWED = ['https://a', 'https://b']` that widens to `string[]` — must

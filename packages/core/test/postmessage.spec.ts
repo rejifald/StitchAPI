@@ -80,9 +80,9 @@ function channelPair(): {
     closeBoth: () => Promise<void>;
 } {
     const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-    const parent = channel(a, { origins: [ORIGIN_B] });
+    const parent = channel(a, { from: [ORIGIN_B] });
     // A single origin passes as a bare string (`T | T[]` — CONTRACT.md P7).
-    const iframe = channel(b, { origins: ORIGIN_A });
+    const iframe = channel(b, { from: ORIGIN_A });
     return {
         parent,
         iframe,
@@ -164,8 +164,8 @@ describe('request → response (correlated RPC)', () => {
 
     test('the reply must match BOTH id and type — a same-type unsolicited message does not resolve it', async () => {
         const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-        const parent = channel(a, { origins: [ORIGIN_B] });
-        const iframe = channel(b, { origins: [ORIGIN_A] });
+        const parent = channel(a, { from: [ORIGIN_B] });
+        const iframe = channel(b, { from: [ORIGIN_A] });
         // The iframe emits an UNSOLICITED `sum-result` (no id) BEFORE any responder — it must NOT
         // resolve the pending request (whose reply correlates on the minted id too).
         const sum = parent.request('sum', {
@@ -208,8 +208,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
         // The iframe posts from an origin the parent does NOT allow. The parent's gate drops the
         // reply before correlation, so the request never resolves and times out.
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { origins: [ORIGIN_B] }); // only the REAL iframe origin
-        const evil = channel(b, { origins: [ORIGIN_A] });
+        const parent = channel(a, { from: [ORIGIN_B] }); // only the REAL iframe origin
+        const evil = channel(b, { from: [ORIGIN_A] });
         evil.respond('sum', () => ({ total: 999 }));
         const sum = parent.request('sum', {
             timeout: { each: 40 },
@@ -223,8 +223,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
 
     test('an event from a disallowed origin is never delivered', async () => {
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { origins: [ORIGIN_B] });
-        const evil = channel(b, { origins: [ORIGIN_A] });
+        const parent = channel(a, { from: [ORIGIN_B] });
+        const evil = channel(b, { from: [ORIGIN_A] });
         const events = parent.events('tick');
         const ctl = new AbortController();
         const collected: unknown[] = [];
@@ -249,8 +249,8 @@ describe('origin gate (structural, gate-before-validation)', () => {
         // alone its handler. A validator that records every value it is handed proves the gate
         // runs first — an implementation that validated then gated would tick the counter.
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
-        const parent = channel(a, { origins: [ORIGIN_B] }); // only the REAL iframe origin
-        const evil = channel(b, { origins: [ORIGIN_A] });
+        const parent = channel(a, { from: [ORIGIN_B] }); // only the REAL iframe origin
+        const evil = channel(b, { from: [ORIGIN_A] });
         const validated: unknown[] = [];
         const handled: unknown[] = [];
         parent.respond(
@@ -526,7 +526,7 @@ describe('abort + close', () => {
                 detached = true;
             },
         };
-        const ch = channel(transport, { origins: [ORIGIN_B] });
+        const ch = channel(transport, { from: [ORIGIN_B] });
         const call = ch.request('pending');
         // A stitch is lazy — start consuming so `execute` actually posts and registers the pending
         // entry, then let the resilience chain reach the transport before closing.
@@ -636,11 +636,11 @@ describe('windowChannel guards', () => {
         );
     });
 
-    test('a missing `origins` is the directed construction error, not an opaque TypeError', () => {
+    test('a missing origin policy is the directed construction error, not an opaque TypeError', () => {
         // Exactly the shape a call site still spelling the pre-envelope `targetOrigin` /
         // `allowedOrigins` produces. TypeScript rejects it, but a JS caller, an `as any`, a stale
-        // `.d.ts`, or options round-tripped through JSON all reach the constructor without
-        // `origins` — and this file's whole thesis is that construction fails LOUD, which an
+        // `.d.ts`, or options round-tripped through JSON all reach the constructor without the
+        // policy — and this file's whole thesis is that construction fails LOUD, which an
         // undefined dereference two lines later does not honour.
         const staleWindowOpts = {
             target: fakeWindow([]),
@@ -659,8 +659,11 @@ describe('windowChannel guards', () => {
             post: () => undefined,
             subscribe: () => () => undefined,
         };
+        // Each builder names the slot the CALLER would have written, not a shared one: `channel`
+        // takes the inbound half as `from`, so an error naming `origins` would send them looking
+        // for a key that does not exist on `ChannelOptions` at all.
         expect(() => channel(transport, staleChannelOpts)).toThrow(
-            /`origins` is required/,
+            /`from` is required/,
         );
         expect(() => channel(transport, staleChannelOpts)).not.toThrow(
             TypeError,
@@ -939,10 +942,10 @@ describe('the verb options carry no inert `adapter` (P24)', () => {
 // ---------------------------------------------------------------------------
 
 describe('channel() over an arbitrary transport', () => {
-    test('an empty `origins` over an origin-bearing transport fails closed (drops everything)', async () => {
+    test('an empty `from` over an origin-bearing transport fails closed (drops everything)', async () => {
         const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
-        const parent = channel(a, { origins: [] }); // allow NOTHING
-        const iframe = channel(b, { origins: [ORIGIN_A] });
+        const parent = channel(a, { from: [] }); // allow NOTHING
+        const iframe = channel(b, { from: [ORIGIN_A] });
         iframe.respond('x', () => 'ok');
         const call = parent.request('x', { timeout: { each: 40 } });
         // The iframe's reply carries origin ORIGIN_B, which is not in [] → dropped → times out.
@@ -951,5 +954,26 @@ describe('channel() over an arbitrary transport', () => {
         });
         await parent.close();
         await iframe.close();
+    });
+
+    test('a bad origin names `from` — the slot the caller wrote, not `origins`', () => {
+        const transport: MessageTransport = {
+            post: () => undefined,
+            subscribe: () => () => undefined,
+        };
+        // `channel` takes the inbound half alone, so its slot is `from` end to end: the guard that
+        // rejects a wildcard and the one that rejects a non-bare origin both report the property
+        // that is actually on `ChannelOptions`. `origins` does not exist on this builder, and an
+        // error naming it would describe a different surface's shape.
+        expect(() =>
+            channel(transport, {
+                from: '*' as unknown as `https://${string}`,
+            }),
+        ).toThrow(/wildcard origin is forbidden in `from`, got '\*'/);
+        expect(() =>
+            channel(transport, { from: ['https://app.example.com/'] }),
+        ).toThrow(
+            /`from` must be a bare origin.*did you mean 'https:\/\/app\.example\.com'/,
+        );
     });
 });

@@ -811,7 +811,8 @@ _Carve-outs:_
     "an adapter assigns it straight through" describes a **conversion at the edge**, which is the
     thing this rule asks for, not evidence that the contract before the edge is a mirror.
 
-    _Reversed (2026-09-14) — a mirror is an **identity mapping**, and this one was a translation:_
+    _Reversed (2026-09-14), the fourth instance of the same error — a mirror is an
+    **identity mapping**, and this one was a translation:_
     `OAuth2Options.clientId`/`clientSecret`/`clientAuth` was exempted as "RFC 6749". Two things
     were wrong with that. `clientAuth` is not an RFC 6749 parameter at all — §2.3.1 describes the
     client authentication **methods** (`client_secret_post`/`client_secret_basic`) and defines no
@@ -854,10 +855,24 @@ _Carve-outs:_
     **`origins: Origin | OriginOptions`** (`{ to, from? }`, `from` defaulting to `[to]`), with the
     bare origin as the [P12](#p12--envelope--scalar-shorthand) shorthand for `{ to: X, from: [X] }`
     — the parent↔iframe case, where the frame you post to is the only frame you accept from.
-    `ChannelOptions.allowedOrigins` was renamed to `origins` in lockstep
-    ([P16](#p16--cross-surface--cross-package-parity)): one concept, two builders a caller picks
-    between, one spelling. Both halves narrowed from `string` to `Origin`, which turns the
-    silently-inert `allowedOrigins: '*'` into a compile error.
+    `ChannelOptions.allowedOrigins` became **`from`** — not `origins` — in lockstep
+    ([P1](#p1--one-word-one-concept-one-value-space)/[P16](#p16--cross-surface--cross-package-parity)).
+    Reusing
+    `origins` for the raw-transport builder was the first cut and was wrong: it would put one token
+    over two **incomparable** value-spaces (`Origin | Origin[]` against `Origin | OriginOptions`),
+    so neither union contains the other, `origins: ['https://a', 'https://b']` would be valid on one
+    builder and a compile error on the other, and the P12 scalar shorthand `origins: X` would mean
+    `{ to: X, from: [X] }` here and `[X]` there. That is the collision an envelope exists to avoid,
+    not to create — the same reasoning the **endpoint slot** under carve-out (b) below used to
+    decline a `url` shorthand that "would mean two different things on the two surfaces". Named
+    `from`, the inbound half has one meaning and one value-space everywhere it appears
+    (`ChannelOptions.from` is identical in name and type to `OriginOptions.from`), and `origins`
+    names only the surface where a second dimension exists. That the two sit at different **nesting
+    levels** is not a P16 breach: the endpoint slot is precedent for members that "do not share a
+    level". Recorded for honesty — the collision had **no silent failure mode**, since every
+    divergence between the builders is a compile error; it is surface hygiene taken before the
+    stable tag freezes the names, not a defect fixed. Both halves narrowed from `string` to
+    `Origin`, which turns the silently-inert `allowedOrigins: '*'` into a compile error.
 
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an
