@@ -17,7 +17,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 export const BASE = 'https://api.vendor.test';
@@ -73,15 +73,15 @@ export interface WireRequest {
 }
 
 /** How a route answers. Returning a response is the normal path; throwing models a transport failure. */
-export type Route = (req: WireRequest) => AdapterResponse;
+export type Route = (req: WireRequest) => AdapterResult;
 
-const json = (status: number, body: unknown): AdapterResponse => ({
+const json = (status: number, body: unknown): AdapterResult => ({
     status,
     headers: { 'content-type': 'application/json' },
     body,
 });
 
-const UNAUTHORIZED = (what: string): AdapterResponse =>
+const UNAUTHORIZED = (what: string): AdapterResult =>
     json(401, { error: 'unauthorized', detail: `bad or missing ${what}` });
 
 /** Read a cookie pair out of a `Cookie` request header. */
@@ -103,7 +103,7 @@ function cookieValue(header: string | undefined, name: string): string | null {
  * (`path: '/v1/orders?tenant=acme'`), and echoes the tenant it received back in the body. That
  * echo is how C2 measures whether a model-supplied `query` can overwrite an operator's pin.
  */
-export function route(req: WireRequest): AdapterResponse {
+export function route(req: WireRequest): AdapterResult {
     const url = new URL(req.url);
     const path = url.pathname;
     const auth = req.headers['authorization'];
@@ -185,7 +185,7 @@ export class Wire {
     constructor(private readonly handler: Route = route) {}
 
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const seen: WireRequest = {
                 url: req.url,
                 method: req.method,

@@ -26,7 +26,7 @@ import type {
     AcquireOptions,
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     AuthContext,
     Clock,
     DriftFinding,
@@ -313,7 +313,7 @@ const pinSource = <E extends object>(evt: E, err: unknown): E => {
 //     can tell a socket reset from a generic "fetch failed". A StitchError the engine minted itself
 //     is excluded: it keeps being rebuilt from the event (unchanged behaviour).
 const ridesThrough = (err: unknown): boolean =>
-    (err as { response?: AdapterResponse }).response !== undefined ||
+    (err as { response?: AdapterResult }).response !== undefined ||
     err instanceof RateLimitError ||
     (err instanceof Error && !(err instanceof StitchError));
 
@@ -625,7 +625,7 @@ async function drainErrorBody(body: unknown): Promise<unknown> {
  * transport-level failure threw instead, back at the terminal-verdict site.
  */
 interface AttemptResult {
-    res: AdapterResponse;
+    res: AdapterResult;
     outcome: SurfaceOutcome;
 }
 
@@ -694,7 +694,7 @@ async function* attemptLoop(
             // of the HTTP adapter, still inside the resilience chain (retry/throttle/circuit/
             // timeout/trace/auth all wrap it). Absent, the ordinary HTTP adapter runs.
             const transport = cfg.kind.execute ?? rt.adapter;
-            let res: AdapterResponse;
+            let res: AdapterResult;
             try {
                 res = await withTimeout(
                     (signal) => transport({ ...req, signal }),
@@ -857,7 +857,7 @@ async function* attemptLoop(
             if (!outcome.ok && classifyStatus(res.status, cfg)) {
                 const e = new Error(outcome.message) as Error & {
                     status: number;
-                    response: AdapterResponse;
+                    response: AdapterResult;
                 };
                 e.status = res.status;
                 e.response = res;
@@ -971,7 +971,7 @@ async function* paginated(
 
     for (;;) {
         const req = buildRequest(cfg, pageInput);
-        let res: AdapterResponse;
+        let res: AdapterResult;
         let outcome: SurfaceOutcome;
         try {
             // Each page is interpreted inside its own attempt loop now (ADR 0022 Decision 1) rather
@@ -1203,7 +1203,7 @@ async function* runFrom(
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, RunOutcome> {
     const { cfg } = rt;
-    let res: AdapterResponse;
+    let res: AdapterResult;
     let outcome: SurfaceOutcome;
     try {
         // The surface's verdict is rendered inside the attempt loop now (ADR 0022 Decision 1), so
@@ -1245,7 +1245,7 @@ async function* runFrom(
     // the call the way it ran: what the surface noticed while interpreting the response
     // (`SurfaceOutcome.findings` — llm's truncated completion, issue #699), then the verdict
     // config's inert flag, then the `output` contract's drift. None of the first two is levelled by
-    // `drift.severity`: that resolves inside the diff, over the kinds the diff produces, and these
+    // `drift.level`: that resolves inside the diff, over the kinds the diff produces, and these
     // two are authored at a fixed level rather than derived from a comparison.
     const findings = [
         ...(outcome.findings ?? []),
@@ -1387,7 +1387,7 @@ async function* runStreaming(
                 at: now(),
             };
 
-        let res: AdapterResponse;
+        let res: AdapterResult;
         try {
             // Rebuild the per-open request from `baseReq` each time; on a reconnect, inject the
             // resume token (sse → set `Last-Event-ID`) BEFORE auth so it rides the reopened request.
@@ -1424,7 +1424,7 @@ async function* runStreaming(
             // body (a small `{ error: "…" }`, not a real stream the caller wants) so
             // StitchError.body is the PARSED payload, matching the buffered path. Pin it (with
             // `.url`) via ERROR_SOURCE.
-            const errored: AdapterResponse = {
+            const errored: AdapterResult = {
                 status: res.status,
                 headers: res.headers,
                 body: await drainErrorBody(res.body),
@@ -1433,7 +1433,7 @@ async function* runStreaming(
             };
             const e = new Error(`HTTP ${res.status}`) as Error & {
                 status: number;
-                response: AdapterResponse;
+                response: AdapterResult;
             };
             e.status = res.status;
             e.response = errored; // body + url for StitchError.body/.url (pinned via ERROR_SOURCE)
@@ -1893,7 +1893,7 @@ export async function cacheKeyOf(
 export async function executeRaw(
     rt: Runtime,
     input: StitchInput = {},
-): Promise<AdapterResponse> {
+): Promise<AdapterResult> {
     const baseReq = buildRequest(rt.cfg, input);
     const state = { attempts: 0 };
     const gen = attemptLoop(
@@ -1922,7 +1922,7 @@ export async function executeRawTraced(
     input: StitchInput,
     sink: TraceSink,
     run: RunContext,
-): Promise<AdapterResponse> {
+): Promise<AdapterResult> {
     const { cfg } = rt;
     const name = nameOf(cfg);
     const t0 = now();

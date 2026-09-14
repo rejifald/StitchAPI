@@ -10,7 +10,7 @@
 import { anthropic, llm, makeLlmSurface, openai } from '../src/llm';
 import type { LlmProvider, LlmResult } from '../src/llm';
 import { stitch } from '../src/stitch';
-import type { Adapter, AdapterResponse } from '../src/types';
+import type { Adapter, AdapterResult } from '../src/types';
 
 const respond =
     (body: unknown): Adapter =>
@@ -251,7 +251,7 @@ describe('makeLlmSurface is exported and wrappable', () => {
         const strict = {
             ...base,
             interpret: (
-                res: AdapterResponse,
+                res: AdapterResult,
                 cfg: Parameters<NonNullable<typeof base.interpret>>[1],
             ) => {
                 const out = base.interpret!(res, cfg);

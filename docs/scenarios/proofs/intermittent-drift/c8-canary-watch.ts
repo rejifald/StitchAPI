@@ -4,7 +4,7 @@
 //
 // The assembled answer is TWO declarative lines plus a sink:
 //
-//   output: drift(StrictCharge, { severity: { undeclared: 'verbose' } }),
+//   output: drift(StrictCharge, { level: { undeclared: 'verbose' } }),
 //   trace: new DriftRate({ clock, window: '1m', zeroWatch: ['transaction_id', 'amount'] }),
 //
 // The schema is STRICT on purpose. Every softening — `.catch()`, `.optional()`, `.nullable()`,
@@ -46,7 +46,7 @@ function countedLines(file: string): number {
 }
 
 /** The `DriftOptions` the soft-schema comparison in (c) reuses. */
-const CANARY_DRIFT = { severity: { undeclared: 'verbose' } } as const;
+const CANARY_DRIFT = { level: { undeclared: 'verbose' } } as const;
 
 /** The equivalent declaration for the hand-rolled baseline. */
 const SHAPE: Shape = {
@@ -139,7 +139,7 @@ async function runHand(m: Mutation, rate: number): Promise<Verdict> {
 async function main(): Promise<void> {
     heading('C8 — the assembled canary watch');
 
-    // ── (a) the six workloads through the assembled configuration ───────────────────────────
+    // ── (a) the six workloads through the assembled configuration ────────────────────────────
     {
         const rows: string[] = [];
         for (const w of WORKLOADS) {
@@ -388,7 +388,7 @@ async function main(): Promise<void> {
 
     finish(
         'C8',
-        'ACHIEVABLE, AND THE STRICT POSTURE IS THE ONE THAT WORKS. Two declarative lines — `output: drift(StrictCharge, { severity: { undeclared: "verbose" } })` and `trace: new DriftRate(...)` — measured over six workloads at 100 calls each: SILENT on a 100% addition rollout, and one alert line per breaking class at 5%, each carrying the rate, the field and both types (`5.0% of calls: error|invalid|transaction_id|Invalid input: expected number, received null (5/100)`). ZERO $0 charges on every workload. The same six against the SOFT schema people write for availability keep 100% of calls and produce TEN $0 charges. The price is a WASH: 9 declarative lines + an 84-line sink = 93, against 92 hand-rolled. The detection half is 9 lines against ~35; the aggregation half is ~84 lines of user code either way. What the 92 lines do not have is the resilience stack, measured here as one `retry` line absorbing 8 x 503 across the canary with the rate still counting 100 LOGICAL calls out of 108 wire requests. And the hand-rolled classifier BEATS `DriftOptions` on one row: it levels a null `warn` and passes the value through, the fourth industry class C5 found inexpressible. The residual gap is C3(e): the moment a field is softened, the benign coercion and the $0 charge share one finding identity, and only the sink\'s `spanId` join to the `result` event (`10/10, 5 landed 0`) separates them',
+        'ACHIEVABLE, AND THE STRICT POSTURE IS THE ONE THAT WORKS. Two declarative lines — `output: drift(StrictCharge, { level: { undeclared: "verbose" } })` and `trace: new DriftRate(...)` — measured over six workloads at 100 calls each: SILENT on a 100% addition rollout, and one alert line per breaking class at 5%, each carrying the rate, the field and both types (`5.0% of calls: error|invalid|transaction_id|Invalid input: expected number, received null (5/100)`). ZERO $0 charges on every workload. The same six against the SOFT schema people write for availability keep 100% of calls and produce TEN $0 charges. The price is a WASH: 9 declarative lines + an 84-line sink = 93, against 92 hand-rolled. The detection half is 9 lines against ~35; the aggregation half is ~84 lines of user code either way. What the 92 lines do not have is the resilience stack, measured here as one `retry` line absorbing 8 x 503 across the canary with the rate still counting 100 LOGICAL calls out of 108 wire requests. And the hand-rolled classifier BEATS `DriftOptions` on one row: it levels a null `warn` and passes the value through, the fourth industry class C5 found inexpressible. The residual gap is C3(e): the moment a field is softened, the benign coercion and the $0 charge share one finding identity, and only the sink\'s `spanId` join to the `result` event (`10/10, 5 landed 0`) separates them',
     );
 }
 

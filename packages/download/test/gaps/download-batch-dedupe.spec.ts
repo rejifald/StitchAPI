@@ -22,10 +22,10 @@ beforeEach(() => {
 const blobText = async (b: Blob): Promise<string> =>
     new TextDecoder().decode(await b.arrayBuffer());
 
-const okValue = (r: ItemResult): DownloadResult => {
+const okData = (r: ItemResult): DownloadResult => {
     if (r.status !== 'fulfilled')
         throw new Error(`expected fulfilled but got ${r.status}`);
-    return r.value;
+    return r.data;
 };
 const byId = (results: ItemResult[]): Map<ItemResult['id'], ItemResult> =>
     new Map(results.map((r) => [r.id, r]));
@@ -76,8 +76,8 @@ test('by DEFAULT, duplicate URLs are INDEPENDENT fetches — two requests on the
 
     expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
     expect(server.callCount('/dup')).toBe(2); // independent → two wire requests
-    expect(await blobText(okValue(results[0]!).blob)).toBe('dup-body');
-    expect(await blobText(okValue(results[1]!).blob)).toBe('dup-body');
+    expect(await blobText(okData(results[0]!).blob)).toBe('dup-body');
+    expect(await blobText(okData(results[1]!).blob)).toBe('dup-body');
 });
 
 test('dedupe:true collapses concurrent duplicate URLs onto ONE in-flight request', async () => {
@@ -97,9 +97,9 @@ test('dedupe:true collapses concurrent duplicate URLs onto ONE in-flight request
     expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
     expect(server.callCount('/dup')).toBe(1); // deduped → ONE wire request
     // Both handles resolved to the SAME underlying result (one fetch, shared).
-    expect(await blobText(okValue(results[0]!).blob)).toBe('dup-body');
-    expect(await blobText(okValue(results[1]!).blob)).toBe('dup-body');
-    expect(okValue(results[0]!).blob).toBe(okValue(results[1]!).blob);
+    expect(await blobText(okData(results[0]!).blob)).toBe('dup-body');
+    expect(await blobText(okData(results[1]!).blob)).toBe('dup-body');
+    expect(okData(results[0]!).blob).toBe(okData(results[1]!).blob);
 });
 
 // ---- #455: resolved-URL keys ------------------------------------------------------------------
@@ -127,8 +127,8 @@ test('dedupe keys off the RESOLVED target — two `{ path }` items under one `ba
 
     expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
     expect(server.callCount('/shared')).toBe(1); // ONE wire request
-    expect(await blobText(okValue(results[0]!).blob)).toBe('shared-body');
-    expect(okValue(results[0]!).blob).toBe(okValue(results[1]!).blob);
+    expect(await blobText(okData(results[0]!).blob)).toBe('shared-body');
+    expect(okData(results[0]!).blob).toBe(okData(results[1]!).blob);
 });
 
 test('the key is canonical: one query written in two orders is ONE request', async () => {
@@ -209,7 +209,7 @@ test('cancelling a FOLLOWER leaves the shared fetch running — the leader still
 
     expect(map.get(1)!.status).toBe('cancelled'); // it really is cancelled, not quietly fulfilled
     expect(map.get('dup')!.status).toBe('fulfilled'); // and the leader is untouched
-    expect(await blobText(okValue(map.get('dup')!).blob)).toBe('hold-body');
+    expect(await blobText(okData(map.get('dup')!).blob)).toBe('hold-body');
     expect(server.callCount('/hold')).toBe(1);
 });
 
@@ -231,7 +231,7 @@ test('cancelling the LEADER does NOT fail its followers — the fetch survives i
 
     expect(map.get('dup')!.status).toBe('cancelled');
     expect(map.get(1)!.status).toBe('fulfilled'); // NOT rejected: it never asked to be cancelled
-    expect(await blobText(okValue(map.get(1)!).blob)).toBe('hold-body');
+    expect(await blobText(okData(map.get(1)!).blob)).toBe('hold-body');
     expect(server.callCount('/hold')).toBe(1);
 });
 
@@ -292,7 +292,7 @@ test('the `idle` window follows the group to the survivor when the leader cancel
 
     expect(map.get('dup')!.status).toBe('cancelled');
     expect(map.get(1)!.status).toBe('fulfilled'); // not cut by a stale IDLE_TIMEOUT
-    expect(await blobText(okValue(map.get(1)!).blob)).toBe('abcdef');
+    expect(await blobText(okData(map.get(1)!).blob)).toBe('abcdef');
 });
 
 // ---- #455: the scope line ---------------------------------------------------------------------

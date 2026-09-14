@@ -1,5 +1,5 @@
 // @stitchapi/hono integration tests. Everything runs over Hono's `app.request()` test client and a
-// FAKE adapter (no socket): a stitch's `adapter` is just `(req) => Promise<AdapterResponse>`, so we
+// FAKE adapter (no socket): a stitch's `adapter` is just `(req) => Promise<AdapterResult>`, so we
 // inject canned responses — buffered JSON for the middleware/error paths, a live `ReadableStream`
 // for the SSE path (mirroring core's test/support/streams.ts, inlined here to avoid a cross-package
 // import). Asserts the three public surfaces: seam-on-context (+ principal binding), the SSE bridge,

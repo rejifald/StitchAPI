@@ -107,7 +107,7 @@ async function main(): Promise<void> {
     }
 
     // The login stitch is registered, so the model can invoke it — and gets nothing. Its
-    // credential is not on the stitch at all: `cookieSession` supplies it through `loginInput`
+    // credential is not on the stitch at all: `cookieSession` supplies it through `credentialsOf`
     // (stitches.ts), which the MCP path never reaches. Calling `login` directly therefore sends an
     // unauthenticated login and the vendor rejects it.
     wire.reset();
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     checkClean('run_stitch login (direct)', directLogin.raw, HELD_SECRETS);
     note(
         'a registered login stitch is NOT a session-harvesting tool',
-        'the login credential lives in cookieSession.loginInput, not on the stitch — the agent cannot supply it',
+        'the login credential lives in cookieSession.credentialsOf, not on the stitch — the agent cannot supply it',
     );
 
     heading(

@@ -40,7 +40,7 @@ export interface StitchModuleOptions extends SeamConfig {
      * default, so every host integration traces through its framework logger out of the box.
      * Pass sink options to customise (`{ lifecycle: false }`), or `false` to leave tracing as
      * core configures it (off). Ignored when `trace` is set — an explicit trace sink wins,
-     * exactly as a `trace` on a Fastify `seamConfig` wins over its `logger` bridge.
+     * exactly as a `trace` on a Fastify `seam` config wins over its `logger` bridge.
      */
     logger?: boolean | AtLeastOne<NestLoggerSinkOptions>;
     /** Register as a global module (default `true`). */
@@ -86,9 +86,16 @@ export interface StitchFeatureOptions {
 /** forFeatureScoped options — {@link StitchFeatureOptions} plus a `principal` derived
  *  from the request, so each tenant gets its own session/token over the shared store. */
 export interface StitchScopedFeatureOptions extends StitchFeatureOptions {
-    // Derive the principal id (e.g. a tenant) from the incoming request. `any` because the
-    // request type is platform-specific (express/fastify) — the caller narrows it.
-    principal: (req: any) => string;
+    /**
+     * Derive the request's principal id (e.g. a tenant) from the incoming request. When it
+     * returns a string, that request's handle is `base.as(id)` — a separate session/token over
+     * the *shared* store + throttle. Return `undefined` to fall back to the **unbound** base
+     * seam for that request (an anonymous caller), the same seam and the same fallback every
+     * other host adapter documents (`@stitchapi/express`'s `principal`, `@stitchapi/fastify`'s
+     * plugin `principal`, …). `any` on the parameter because the request type is
+     * platform-specific (express/fastify) — the caller narrows it.
+     */
+    principal: (req: any) => string | undefined;
 }
 
 interface Infra {
@@ -112,7 +119,7 @@ function resolveInfra(options: StitchModuleOptions): Infra {
     return {
         store: store ? nestBorrowStore(store) : memoryStore(),
         // An explicit `trace` wins; otherwise bridge the Nest Logger unless `logger: false`
-        // (the same precedence as the Fastify plugin's `seamConfig.trace` vs `logger`).
+        // (the same precedence as the Fastify plugin's `seam.trace` vs `logger`).
         trace:
             trace !== undefined
                 ? trace
@@ -247,10 +254,13 @@ export class StitchModule {
     }
 
     /**
-     * Like {@link forFeature}, but **request-scoped per principal**: each request gets a
-     * `seam.as(principal(req))` handle — a separate session/token over the *shared* store
-     * and throttle (never a per-request store; ADR 0006 Decision 5) — and the stitches are
-     * built from it. Packages the request-scoped wiring the README otherwise hand-rolls.
+     * Like {@link forFeature}, but **request-scoped per principal**: each request whose
+     * `principal` resolves an id gets a `seam.as(id)` handle — a separate session/token over
+     * the *shared* store and throttle (never a per-request store; ADR 0006 Decision 5) — and
+     * the stitches are built from it. When `principal` returns `undefined` (an anonymous
+     * request) that request falls back to the **unbound** base seam instead, matching
+     * `@stitchapi/express` and `@stitchapi/fastify`. Packages the request-scoped wiring the
+     * README otherwise hand-rolls.
      *
      * Caveats inherent to request scope (not this helper): a request-scoped provider makes
      * its consumers request-scoped too (per-request instantiation cost); and `REQUEST` only
@@ -283,11 +293,16 @@ export class StitchModule {
 
         // The per-request principal handle. `seam.as()` is lifecycle-free (it shares the
         // base seam's runtime), so it is intentionally NOT tracked in SeamRegistry.
+        // An `undefined` principal is the anonymous seam: hand back the unbound base seam
+        // rather than binding `as(undefined)` — the same branch @stitchapi/express's
+        // middleware and @stitchapi/fastify's onRequest hook take.
         providers.push({
             provide: principalToken,
             scope: Scope.REQUEST,
-            useFactory: (base: Seam, req: any): NestRequestSeam =>
-                base.as(opts.principal(req)),
+            useFactory: (base: Seam, req: any): NestRequestSeam => {
+                const id = opts.principal(req);
+                return id !== undefined ? base.as(id) : base;
+            },
             inject: [baseToken, REQUEST],
         });
 

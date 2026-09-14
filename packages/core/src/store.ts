@@ -87,7 +87,7 @@ export function memoryStore(): StitchStore {
         },
         // The counting semaphore (ADR 0025). Atomic for free, like the two verbs above: one JS
         // thread, nothing awaited between the read and the write.
-        async lease(key, token, limit, ttl, at) {
+        async lease(key, token, concurrency, ttl, at) {
             let held = sems.get(key);
             if (!held) sems.set(key, (held = new Map<string, number>()));
             // Prune first, ALWAYS — an attempt that goes on to refuse still has to drop the
@@ -95,7 +95,7 @@ export function memoryStore(): StitchStore {
             for (const [t, expiresAt] of held)
                 if (expiresAt <= at) held.delete(t);
             // Already holding it ⇒ a renewal, never a second slot.
-            const got = held.has(token) || held.size < limit;
+            const got = held.has(token) || held.size < concurrency;
             if (got) held.set(token, at + ttl);
             return got;
         },
@@ -136,8 +136,8 @@ export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
     const lease = store.lease?.bind(store);
     const release = store.release?.bind(store);
     if (lease && release) {
-        view.lease = (key, token, limit, ttl, at) =>
-            lease(prefix + key, token, limit, ttl, at);
+        view.lease = (key, token, concurrency, ttl, at) =>
+            lease(prefix + key, token, concurrency, ttl, at);
         view.release = (key, token) => release(prefix + key, token);
     }
     // Delegate lifecycle to the backend (bind keeps `this` for stores that need it).
@@ -220,7 +220,7 @@ export function createStoreThrottle(
     store: StitchStore,
     clock: Clock = systemClock,
 ): Throttle {
-    const limit = opts?.concurrency;
+    const concurrency = opts?.concurrency;
     const paced = opts?.rate ? parseRate(opts.rate) : undefined;
     // The lease pair is all-or-nothing (ADR 0025); resolved once so the hot path is one check.
     const leases =
@@ -251,9 +251,9 @@ export function createStoreThrottle(
         return s;
     };
     const takeSlot = (key: string): Promise<void> => {
-        if (limit == null) return Promise.resolve();
+        if (concurrency == null) return Promise.resolve();
         const s = stateFor(key);
-        if (s.inFlight < limit) {
+        if (s.inFlight < concurrency) {
             s.inFlight++;
             return Promise.resolve();
         }
@@ -268,11 +268,19 @@ export function createStoreThrottle(
     // least once. The first `lease` call is a store round-trip whose duration is not a wait on
     // anyone; only a retry means a slot was genuinely held elsewhere.
     const takeLease = async (key: string): Promise<boolean> => {
-        if (limit == null || !leases) return false;
+        if (concurrency == null || !leases) return false;
         const token = hex(8);
         let polled = false;
         for (;;) {
-            if (await leases.lease(key, token, limit, leaseTtl, clock.now())) {
+            if (
+                await leases.lease(
+                    key,
+                    token,
+                    concurrency,
+                    leaseTtl,
+                    clock.now(),
+                )
+            ) {
                 // `stateFor` is resolved HERE, not before the loop. A poller that captured the
                 // state object up front could be holding an orphan: `release` drops a key's entry
                 // once its last token goes, so a caller that was still polling across that moment
@@ -308,7 +316,8 @@ export function createStoreThrottle(
                 if (await takeLease(key)) waited = clock.now() - blockStart;
             } else {
                 const blocked =
-                    limit != null && stateFor(key).inFlight >= limit;
+                    concurrency != null &&
+                    stateFor(key).inFlight >= concurrency;
                 await takeSlot(key);
                 if (blocked) waited = clock.now() - blockStart;
             }
@@ -391,7 +400,7 @@ export function createStoreThrottle(
     }
 
     function release(key: string): void {
-        if (limit == null) return;
+        if (concurrency == null) return;
         const s = local.get(key);
         if (!s) return;
         if (leases) {

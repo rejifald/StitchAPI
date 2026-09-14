@@ -1,18 +1,19 @@
 // C5 — can the four change classes be given DIFFERENT severities, declaratively?
 //
-// The real config is `DriftOptions` (types.ts:83-116) with exactly two keys: `severity` and
-// `ignore`. `severity` is keyed by `SoftDriftChange` = `'undeclared' | 'coerced' | 'defaulted'`
-// (types.ts:72) and its values are `DriftSeverity` = `'warn' | 'info' | 'verbose'` (types.ts:74).
+// The real config is `DriftOptions` (types.ts:83-116) with exactly two keys: `level` and
+// `ignore`. `level` is keyed by `SoftDriftChange` = `'undeclared' | 'coerced' | 'defaulted'`
+// (types.ts:72) and its values are `Exclude<DriftLevel, 'error'>` = `'warn' | 'info' | 'verbose'`
+// (types.ts:74).
 //
 // So the answer is a qualified yes with one sharp edge and one hole:
 //
 //   - The vocabulary is keyed by MECHANISM (what your schema did to the value), not by CHANGE
 //     CLASS (what the vendor did to the shape). Addition maps cleanly onto `undeclared`; the other
 //     three do not have a stable home.
-//   - `error` is not in `DriftSeverity`, so you cannot promote a soft finding to fatal — the docs
-//     say fatality is the schema's job. The RUNTIME honours `'error'` anyway if you cast past the
-//     type. That is measured here, both directions.
-//   - `ignore` is per-PATH, `severity` is per-KIND. There is no per-path severity, so "a coercion
+//   - `error` is not in `Exclude<DriftLevel, 'error'>`, so you cannot promote a soft finding to
+//     fatal — the docs say fatality is the schema's job. The RUNTIME honours `'error'` anyway if
+//     you cast past the type. That is measured here, both directions.
+//   - `ignore` is per-PATH, `level` is per-KIND. There is no per-path severity, so "a coercion
 //     on `transaction_id` is a page, a coercion on `description` is noise" is not expressible.
 //
 //   pnpm exec tsx docs/scenarios/proofs/intermittent-drift/c5-severity.ts
@@ -90,7 +91,7 @@ async function main(): Promise<void> {
     // "addition silent-ish, coercion loud, default loud" — expressible in one object literal.
     {
         const r = await run({
-            severity: {
+            level: {
                 undeclared: 'verbose',
                 coerced: 'warn',
                 defaulted: 'warn',
@@ -108,29 +109,25 @@ async function main(): Promise<void> {
     }
 
     // ── (c) the allowlist form DROPS findings entirely ───────────────────────────────────────
-    // `severity: 'warn'` is not "show warn prominently", it is "emit only warn". The dropped
+    // `level: 'warn'` is not "show warn prominently", it is "emit only warn". The dropped
     // findings never reach the event stream, so they never reach a counter either (C6).
     {
-        const r = await run({ severity: 'warn' });
-        checkSeq('(c) findings with `severity: "warn"`', r.findings, [
+        const r = await run({ level: 'warn' });
+        checkSeq('(c) findings with `level: "warn"`', r.findings, [
             'warn|coerced|transaction_id|string -> number',
         ]);
-        const two = await run({ severity: ['warn', 'info'] });
-        checkSeq(
-            '(c) findings with `severity: ["warn","info"]`',
-            two.findings,
-            [
-                'info|undeclared|settlement_delay_ms|undeclared field (number)',
-                'warn|coerced|transaction_id|string -> number',
-            ],
-        );
+        const two = await run({ level: ['warn', 'info'] });
+        checkSeq('(c) findings with `level: ["warn","info"]`', two.findings, [
+            'info|undeclared|settlement_delay_ms|undeclared field (number)',
+            'warn|coerced|transaction_id|string -> number',
+        ]);
         note(
             '(c) → filtering happens at EMISSION (drift.ts:147), not at consumption. A finding you filtered out is invisible to the trace sink, so you cannot filter and count the same kind',
             '',
         );
     }
 
-    // ── (d) `ignore` is per-PATH; `severity` is per-KIND. There is no per-path severity ──────
+    // ── (d) `ignore` is per-PATH; `level` is per-KIND. There is no per-path severity ─────────
     // The thing a payments team actually wants — coercion on `transaction_id` is a page, coercion
     // on `description` is noise — has no spelling. You can only silence a path completely.
     {
@@ -152,7 +149,7 @@ async function main(): Promise<void> {
                 description: 99,
                 amount: 4200,
             }),
-            output: drift(Two, { severity: { coerced: 'warn' } }),
+            output: drift(Two, { level: { coerced: 'warn' } }),
             trace: sink,
         });
         await call.safe();
@@ -182,20 +179,21 @@ async function main(): Promise<void> {
             'warn|coerced|transaction_id|string -> number',
         ]);
         note(
-            '(d) → the only per-path lever is ON/OFF. `resolveSeverity` (drift.ts:90-101) takes the CHANGE KIND and nothing else — the path never reaches it',
+            '(d) → the only per-path lever is ON/OFF. `resolveLevel` (drift.ts:90-101) takes the CHANGE KIND and nothing else — the path never reaches it',
             '',
         );
     }
 
     // ── (e) you cannot promote a soft finding to `error` through the type ────────────────────
-    // `DriftSeverity` excludes `'error'` by construction (types.ts:74) and the JSDoc is explicit:
+    // `DriftOptions.level` excludes `'error'` by construction (types.ts:74) and the JSDoc is
+    // explicit:
     // "to fail on a change, make the field required/strict in the schema". That is the documented
     // route, and it is the one C2(a) and C3(a) measured.
     {
-        // @ts-expect-error `'error'` is not assignable to DriftSeverity — this is the point.
-        const rejected: DriftOptions = { severity: { coerced: 'error' } };
+        // @ts-expect-error `'error'` is not assignable to Exclude<DriftLevel, 'error'> — the point.
+        const rejected: DriftOptions = { level: { coerced: 'error' } };
         check(
-            '(e) the type REJECTS `severity: { coerced: "error" }`',
+            '(e) the type REJECTS `level: { coerced: "error" }`',
             typeof rejected,
             'object',
         );
@@ -211,7 +209,7 @@ async function main(): Promise<void> {
     // Reported in both directions: it works, and it is not something to build on.
     {
         const cast = {
-            severity: { coerced: 'error' },
+            level: { coerced: 'error' },
         } as unknown as DriftOptions;
         const r = await run(cast);
         check('(f) the call FAILED', r.ok, false);
@@ -244,7 +242,7 @@ async function main(): Promise<void> {
 
     finish(
         'C5',
-        'PARTLY EXPRESSIBLE, AND KEYED ON THE WRONG AXIS. The three SOFT kinds are fully re-levelable in one literal — `severity: { undeclared: "verbose", coerced: "warn", defaulted: "warn" }` measured exactly that — and `severity: "warn"` / `["warn","info"]` is an emission-time allowlist. But `severity` is keyed by MECHANISM (`undeclared`/`coerced`/`defaulted`, types.ts:72), not by the four industry CHANGE CLASSES, and only ADDITION maps 1:1. Removal, type change and nullability each land on a kind decided by your schema, so their loudness is a schema decision. There is NO per-path severity — `ignore` is the only path-aware lever and it is on/off (drift.ts:90-101 never sees the path) — so "coercion on `transaction_id` pages, coercion on `description` does not" has no spelling. And `error` is not in `DriftSeverity`, so a soft finding cannot be promoted to fatal through the type (the `@ts-expect-error` in (e) asserts it) — though a cast past the type DOES fail the call at runtime, measured in (f)',
+        'PARTLY EXPRESSIBLE, AND KEYED ON THE WRONG AXIS. The three SOFT kinds are fully re-levelable in one literal — `level: { undeclared: "verbose", coerced: "warn", defaulted: "warn" }` measured exactly that — and `level: "warn"` / `["warn","info"]` is an emission-time allowlist. But `level` is keyed by MECHANISM (`undeclared`/`coerced`/`defaulted`, types.ts:72), not by the four industry CHANGE CLASSES, and only ADDITION maps 1:1. Removal, type change and nullability each land on a kind decided by your schema, so their loudness is a schema decision. There is NO per-path severity — `ignore` is the only path-aware lever and it is on/off (drift.ts:90-101 never sees the path) — so "coercion on `transaction_id` pages, coercion on `description` does not" has no spelling. And `error` is not in `Exclude<DriftLevel, \'error\'>`, so a soft finding cannot be promoted to fatal through the type (the `@ts-expect-error` in (e) asserts it) — though a cast past the type DOES fail the call at runtime, measured in (f)',
     );
 }
 

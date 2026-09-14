@@ -9,7 +9,7 @@
 //
 //   pnpm exec tsx docs/scenarios/proofs/unstable-pagination/c6-total-reconciliation.ts
 import { stitch } from '../../../../packages/core/src/index';
-import type { AdapterResponse } from '../../../../packages/core/src/types';
+import type { AdapterResult } from '../../../../packages/core/src/types';
 import type { Row } from './fake-collection';
 import {
     LiveCollection,
@@ -119,7 +119,7 @@ async function main(): Promise<void> {
             hooks: {
                 onResponse: (ctx) => {
                     viaHook.push(
-                        totalOf((ctx.res as AdapterResponse).body) ?? -1,
+                        totalOf((ctx.res as AdapterResult).body) ?? -1,
                     );
                 },
             },

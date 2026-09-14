@@ -21,7 +21,7 @@
 // its sunset.
 import type {
     Adapter,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 /** Frozen "today" for every script in this directory: 2025-12-20T00:00:00Z. */
@@ -113,7 +113,7 @@ export class FakeVendor {
     readonly requests = new Map<string, number>();
 
     adapter(): Adapter {
-        return async (req): Promise<AdapterResponse> => {
+        return async (req): Promise<AdapterResult> => {
             const path = new URL(req.url).pathname;
             const hit = FLEET.find((e) => e.path === path);
             if (!hit) throw new Error(`fake vendor: unrouted path ${path}`);
@@ -134,7 +134,7 @@ export class FakeVendor {
 
 /**
  * The header map one endpoint puts on the wire. Lowercased keys, because that is what every HTTP
- * client normalises to and what `AdapterResponse.headers` carries in practice (the engine reads
+ * client normalises to and what `AdapterResult.headers` carries in practice (the engine reads
  * `res.headers['retry-after']` lowercased at engine.ts:750).
  */
 export function headersFor(e: Endpoint): Record<string, string> {
@@ -147,7 +147,7 @@ export function headersFor(e: Endpoint): Record<string, string> {
 
 /** A one-endpoint adapter, for the scripts that only need a single response shape. */
 export function serving(e: Endpoint): Adapter {
-    return async (): Promise<AdapterResponse> => ({
+    return async (): Promise<AdapterResult> => ({
         status: 200,
         headers: headersFor(e),
         body: e.body,

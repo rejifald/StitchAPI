@@ -130,8 +130,8 @@ describe('every legitimate resilience shape still constructs', () => {
         expect(ok({ retry: { on: 503 } })).not.toThrow();
         expect(ok({ timeout: { total: '1s' } })).not.toThrow();
         expect(ok({ throttle: { pool: 'host', rate: '1/s' } })).not.toThrow();
-        // `circuit` with neither required field still defers to `createCircuit`'s
-        // required-by-design throw at CALL time (CONTRACT.md P15) — this guard must not pre-empt it.
+        // `circuit` with neither knob set is a complete config: `createCircuit` resolves the house
+        // defaults (5 / 30s) at CALL time (CONTRACT.md P15). This guard has nothing to say about it.
         expect(ok({ circuit: { key: 'k' } })).not.toThrow();
     });
 });

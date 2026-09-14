@@ -34,7 +34,7 @@ import Fastify from 'fastify';
 const app = Fastify({ logger: true });
 
 app.register(stitchPlugin, {
-    seamConfig: { baseUrl: 'https://api.example.com', retry: { attempts: 3 } },
+    seam: { baseUrl: 'https://api.example.com', retry: { attempts: 3 } },
     principal: (req) => req.headers['x-tenant'] as string | undefined,
 });
 
@@ -47,9 +47,10 @@ the principal lives in the closure, so a handler can never name another identity
 
 ## Seam: build or borrow
 
-Pass a `seamConfig` and the plugin **builds and owns** the seam — closing it on the
-Fastify `onClose` hook. Pass a prebuilt `seam` instead and the plugin **borrows**
-it: the app owns its lifecycle and the plugin never closes it.
+Pass `seam` a config fragment and the plugin **builds and owns** the seam — closing
+it on the Fastify `onClose` hook. Pass `seam` a prebuilt seam instead and the plugin
+**borrows** it: the app owns its lifecycle and the plugin never closes it. The one
+field carries both; the plugin tells them apart at runtime with `isSeam()`.
 
 ```ts twoslash
 import { stitchPlugin } from '@stitchapi/fastify';
@@ -122,7 +123,7 @@ import Fastify from 'fastify';
 const app = Fastify();
 
 app.register(stitchPlugin, {
-    seamConfig: { baseUrl: 'https://api.example.com' },
+    seam: { baseUrl: 'https://api.example.com' },
     errorHandler: { status: (e) => e.status ?? 502 },
 });
 ```

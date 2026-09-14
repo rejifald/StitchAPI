@@ -13,7 +13,7 @@
 import { assertStreamingPolyfills } from './polyfills';
 
 import { xhrAdapter } from 'stitchapi';
-import type { Adapter, AdapterRequest, AdapterResponse } from 'stitchapi';
+import type { Adapter, AdapterRequest, AdapterResult } from 'stitchapi';
 
 /**
  * The minimal structural surface of `XMLHttpRequest` the streaming branch needs —
@@ -73,7 +73,7 @@ export function rnStreamAdapter(opts: RnStreamAdapterOptions = {}): Adapter {
     const unary = opts.unary ?? xhrAdapter();
     return function rnStreamAdapterRequest(
         req: AdapterRequest,
-    ): Promise<AdapterResponse> {
+    ): Promise<AdapterResult> {
         if (!req.stream) return unary(req);
         return streamViaXhr(req, opts.XHR);
     };
@@ -82,7 +82,7 @@ export function rnStreamAdapter(opts: RnStreamAdapterOptions = {}): Adapter {
 function streamViaXhr(
     req: AdapterRequest,
     XHR?: RnStreamingXhrCtor,
-): Promise<AdapterResponse> {
+): Promise<AdapterResult> {
     assertStreamingPolyfills();
     const Ctor =
         XHR ?? (globalThis.XMLHttpRequest as RnStreamingXhrCtor | undefined);
@@ -100,7 +100,7 @@ function streamViaXhr(
         headers['content-type'] = contentType;
     }
 
-    return new Promise<AdapterResponse>((resolve, reject) => {
+    return new Promise<AdapterResult>((resolve, reject) => {
         const xhr = new Ctor();
         xhr.open(req.method.toUpperCase(), req.url, true);
         // 'text' keeps `responseText` incrementally readable as bytes arrive; an
@@ -111,7 +111,7 @@ function streamViaXhr(
         let controller: ReadableStreamDefaultController<Uint8Array> | null =
             null;
         let emitted = 0; // chars of responseText already enqueued
-        let settled = false; // AdapterResponse resolved (headers seen)?
+        let settled = false; // AdapterResult resolved (headers seen)?
         let closed = false; // stream closed or errored?
         let pendingError: unknown = null;
         let pendingClose = false;

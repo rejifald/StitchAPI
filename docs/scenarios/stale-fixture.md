@@ -101,7 +101,7 @@ sighting.
    wall-clock? A feature that ignores the clock makes a test that _passes without asserting
    anything_ — measure that explicitly.
 3. **C3** — what does `mockAdapter` actually check? Does it validate that the fixture is a
-   well-formed `AdapterResponse`, or will it happily serve a shape the real adapter never
+   well-formed `AdapterResult`, or will it happily serve a shape the real adapter never
    produces?
 4. **C4** — can resilience be tested **without** a vendor? Assert attempt counts, backoff
    delays, circuit transitions, throttle spacing — using `collectStitchEvents`.

@@ -14,7 +14,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     Clock,
 } from '../../../../packages/core/src/types';
 
@@ -121,7 +121,7 @@ export class FakeDynamo extends CountingProvider {
     }
 
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const items =
                 (req.body as { RequestItems?: BatchItem[] } | undefined)
                     ?.RequestItems ?? [];
@@ -182,7 +182,7 @@ export class FakeElastic extends CountingProvider {
     }
 
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const docs =
                 (req.body as { operations?: BatchItem[] } | undefined)
                     ?.operations ?? [];

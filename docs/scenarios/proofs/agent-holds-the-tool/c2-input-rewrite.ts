@@ -59,7 +59,7 @@ function variants(wire: Wire): StitchRegistry {
                 login,
                 cookie: 'SESSION',
                 tenancy: 'app',
-                loginInput: () => ({
+                credentialsOf: () => ({
                     body: { user: 'svc', password: env(ENV.loginPassword)() },
                 }),
             }),

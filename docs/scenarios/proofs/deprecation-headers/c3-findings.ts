@@ -4,7 +4,7 @@
 // The answer is YES, through one narrow door, and the door costs something. A surface can fold the
 // notice into the value; an `output` contract that does not declare it then reports it as an
 // `undeclared` soft-drift finding, on the ordinary drift channel, non-fatal, at `info` — and
-// `severity: { undeclared: 'warn' }` re-levels it. So it reports where everything else reports.
+// `level: { undeclared: 'warn' }` re-levels it. So it reports where everything else reports.
 //
 // Three things it is NOT:
 //   • the finding does not carry the header VALUE — `detail` is `undeclared field (object)`, so it
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
             adapter: serving(USERS),
             kind: deprecationSurface({ fold: true }),
             output: drift(declaresUsersOnly, {
-                severity: { undeclared: 'warn' },
+                level: { undeclared: 'warn' },
             }),
             trace: sink,
         }).safe();
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
             'warn|undeclared|_deprecation|undeclared field (object)',
         ]);
         note(
-            '(c) → `severity: { undeclared: "warn" }` works. It is a map of CHANGE KIND to level (types.ts:112-115), so there is no way to raise this one path without raising every undeclared field the vendor ever adds',
+            '(c) → `level: { undeclared: "warn" }` works. It is a map of CHANGE KIND to level (types.ts:112-115), so there is no way to raise this one path without raising every undeclared field the vendor ever adds',
         );
     }
     {
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
             }),
             kind: deprecationSurface({ fold: true }),
             output: drift(declaresUsersOnly, {
-                severity: { undeclared: 'warn' },
+                level: { undeclared: 'warn' },
             }),
             trace: sink,
         }).safe();
@@ -326,7 +326,7 @@ async function main(): Promise<void> {
 
     finish(
         'C3',
-        'YES, THROUGH ONE NARROW DOOR, AND IT COSTS SOMETHING. A surface folds the notice into the value and an `output` contract that does not declare it reports `info|undeclared|_deprecation|undeclared field (object)` — a genuine drift finding on the ordinary channel, non-fatal (`ok: true`, `error: null`, value delivered), visible on `.stream()`, `.inspect().findings`, `.report().findings` and a `TraceSink`, invisible on `.safe()`. `severity: { undeclared: "warn" }` re-levels it. Three limits, all measured: the finding does NOT carry the header value (`detail` is `undeclared field (object)`, so it says a notice exists and never says the sunset is 1 Jan) — unless you smuggle the date into the PATH, which works (`_sunset_2026-01-01`) and makes every date its own finding path; the finding does NOT name the endpoint (`DriftFinding` is `{ level, path, change, detail }`; only `ctx.name` at a sink knows); and re-levelling is per-KIND, so raising the notice to `warn` also raised an unrelated new vendor field to `warn` in the same run. There is no API for minting a finding: a `Validator` returns a value or ISSUES, and an issue is an `error|invalid` that FAILS the call with `contract violation (drift)`',
+        'YES, THROUGH ONE NARROW DOOR, AND IT COSTS SOMETHING. A surface folds the notice into the value and an `output` contract that does not declare it reports `info|undeclared|_deprecation|undeclared field (object)` — a genuine drift finding on the ordinary channel, non-fatal (`ok: true`, `error: null`, value delivered), visible on `.stream()`, `.inspect().findings`, `.report().findings` and a `TraceSink`, invisible on `.safe()`. `level: { undeclared: "warn" }` re-levels it. Three limits, all measured: the finding does NOT carry the header value (`detail` is `undeclared field (object)`, so it says a notice exists and never says the sunset is 1 Jan) — unless you smuggle the date into the PATH, which works (`_sunset_2026-01-01`) and makes every date its own finding path; the finding does NOT name the endpoint (`DriftFinding` is `{ level, path, change, detail }`; only `ctx.name` at a sink knows); and re-levelling is per-KIND, so raising the notice to `warn` also raised an unrelated new vendor field to `warn` in the same run. There is no API for minting a finding: a `Validator` returns a value or ISSUES, and an issue is an `error|invalid` that FAILS the call with `contract violation (drift)`',
     );
 }
 

@@ -28,7 +28,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 /** One row in the collection. `created_at` is the sort field; `id` is the unique tiebreak. */
@@ -224,7 +224,7 @@ export class LiveCollection {
 
     /** The transport every claim plugs into `stitch({ adapter })`. */
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> =>
+        return async (req: AdapterRequest): Promise<AdapterResult> =>
             this.serve(req);
     }
 
@@ -261,7 +261,7 @@ export class LiveCollection {
         return out;
     }
 
-    private serve(req: AdapterRequest): AdapterResponse {
+    private serve(req: AdapterRequest): AdapterResult {
         const url = new URL(req.url);
         const q = url.searchParams;
         const limit = Number(q.get('limit') ?? 10);

@@ -339,7 +339,7 @@ test('serveStdio speaks newline-delimited JSON-RPC (tools/list)', async () => {
             (res.result as ToolListResult).tools.map((t) => t.name),
         ).toContain('run_stitch');
     } finally {
-        close();
+        await close();
     }
 });
 
@@ -364,6 +364,6 @@ test('a run_stitch call over stdio returns the result', async () => {
         const result = res.result as ToolCallResult;
         expect(JSON.parse(result.content[0]!.text)).toEqual({ ok: true });
     } finally {
-        close();
+        await close();
     }
 });

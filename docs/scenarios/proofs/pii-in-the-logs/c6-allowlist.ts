@@ -282,7 +282,7 @@ async function main(): Promise<void> {
 
     heading('C6 (e) — the allowlist under `drift()`: filtering AND a signal');
     {
-        const spec = drift(SAFE, { severity: 'info' });
+        const spec = drift(SAFE, { level: 'info' });
         const sink = collectingSink();
         const t = tempFileSink();
         const call = stitch({
@@ -358,7 +358,7 @@ async function main(): Promise<void> {
             baseUrl: BASE,
             path: '/v1/customers/1',
             cache: { ttl: '60s' },
-            output: drift(SAFE, { severity: 'info' }),
+            output: drift(SAFE, { level: 'info' }),
         } as StitchConfig;
         const a = stitch({
             ...cfg,

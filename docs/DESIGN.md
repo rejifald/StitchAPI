@@ -227,11 +227,11 @@ Validation is **not** binary pass/fail, and it needs **no snapshot**. The declar
 ```ts
 output: drift(Torrent, {
   ignore: ['meta', '_debug'],      // acknowledged, unconsumed fields — never reported
-  severity: { coerced: 'info' },   // re-level a kind; or pass a level / list to filter
+  level: { coerced: 'info' },      // re-level a kind; or pass a level / list to filter
 }),
 ```
 
-Severity lives in the **schema**, not a parallel `critical`/`watch` system: make a field required and its loss throws (`invalid`); make it `.optional()`/`.nullable()` and that variance validates clean and is never drift. Soft drift is always non-fatal; `severity` (a level, list, or per-kind map) filters or re-levels it, and `ignore` silences known-but-unconsumed paths. All drift becomes events on the stream → console/JSONL/OTLP. (Author-contract drift in fields you don't declare needs a published spec or observation, deliberately out of scope — see ADR 0015.)
+Severity lives in the **schema**, not a parallel `critical`/`watch` system: make a field required and its loss throws (`invalid`); make it `.optional()`/`.nullable()` and that variance validates clean and is never drift. Soft drift is always non-fatal; `level` (a level, list, or per-kind map) filters or re-levels it, and `ignore` silences known-but-unconsumed paths. All drift becomes events on the stream → console/JSONL/OTLP. (Author-contract drift in fields you don't declare needs a published spec or observation, deliberately out of scope — see ADR 0015.)
 
 This directly answers the "I care about some fields, not others, but still want to know" need — and turns a silent HTML-scrape breakage into a loud, leveled signal.
 
@@ -416,7 +416,7 @@ const listings = stitch({
     // `id` required in the schema → its loss throws; soft drift is leveled here
     output: drift(Listing.array(), {
         ignore: ['[].meta'], // acknowledged, unconsumed
-        severity: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
+        level: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
     }),
 });
 ```

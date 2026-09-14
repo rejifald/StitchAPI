@@ -11,7 +11,7 @@ import type {
 } from '../../../../packages/core/src/surface';
 import { manualClock } from '../../../../packages/core/src/testing';
 import type {
-    AdapterResponse,
+    AdapterResult,
     StitchEvent,
 } from '../../../../packages/core/src/types';
 import {
@@ -28,7 +28,7 @@ const SIX = ['a', 'b', 'c', 'd', 'e', 'f'];
 /** A surface that reads the residue off the 200 body and asks for another attempt. */
 const retryingSurface = (afterMs: number): Surface => ({
     id: 'dynamo-batch',
-    interpret: (res: AdapterResponse): SurfaceOutcome => {
+    interpret: (res: AdapterResult): SurfaceOutcome => {
         const residue = unprocessedOf(res.body);
         return residue.length > 0
             ? {
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
             id: 'x',
             // @ts-expect-error — `interpret` takes (res, cfg); there is no attempt argument.
             interpret: (
-                res: AdapterResponse,
+                res: AdapterResult,
                 _cfg: unknown,
                 _attempt: number,
             ) => ({

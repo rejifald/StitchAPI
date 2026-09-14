@@ -41,7 +41,7 @@ beforeEach(() => {
     process.env['CSH_PASS'] = 'p';
 });
 
-const loginInput = () => ({
+const credentialsOf = () => ({
     body: { u: env('CSH_USER')(), p: env('CSH_PASS')() },
 });
 
@@ -75,7 +75,7 @@ test('a cookie-session login really posts urlencoded, not JSON', async () => {
         auth: cookieSession({
             login: loginStitch(server.url),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             key: 'csh-contenttype',
             tenancy: 'app', // standalone shared session; no principal to bind here
         }),
@@ -107,7 +107,7 @@ test('onRefresh fires with { ok: true, status: 200 } after a successful cold log
         auth: cookieSession({
             login: loginStitch(server.url),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
             onRefresh: (r) => {
                 refreshes.push(r);
@@ -151,7 +151,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
         auth: cookieSession({
             login: loginStitch(server.url),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
             onRefresh: () => {
                 refreshCount++;
@@ -188,7 +188,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
         auth: cookieSession({
             login: loginStitch(server.url),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
@@ -229,7 +229,7 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
         auth: cookieSession({
             login: loginStitch(server.url),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
@@ -268,7 +268,7 @@ test("onAuthFailure fires category 'network' + error when the login stitch throw
         auth: cookieSession({
             login: loginStitch(deadUrl),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
@@ -307,7 +307,7 @@ test('a throwing hook does not crash the stitch call', async () => {
         auth: cookieSession({
             login: loginStitch(server.url),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
             onRefresh: () => {
                 throw new Error('host bookkeeping blew up');
@@ -337,7 +337,7 @@ test('hooks are absent → cookieSession behaves exactly as before (additive, no
         auth: cookieSession({
             login: loginStitch(server.url),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
         }),
     });

@@ -15,7 +15,7 @@
 //                  folds the safe-integer cap into `.int()`, so the capture's own spelling now
 //                  rejects the corrupted id. Measured in (a).
 //   REFUTED (ii) — the Adapter is NOT the only seam that can see raw text. `wire: { response:
-//                  'text' }` is a published config option that makes `AdapterResponse.body` the
+//                  'text' }` is a published config option that makes `AdapterResult.body` the
 //                  UNPARSED STRING, on the stock `fetchAdapter`. `transform` then runs on text.
 //
 // Everything else the capture predicted is confirmed, and confirmed by measurement rather than by
@@ -27,7 +27,7 @@ import { drift, stitch } from '../../../../packages/core/src/index';
 import { httpSurface } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/surface';
 import type {
-    AdapterResponse,
+    AdapterResult,
     HookContext,
     StitchEvent,
     TraceSink,
@@ -312,7 +312,7 @@ async function main(): Promise<void> {
             hooks: {
                 onResponse: (ctx: HookContext) => {
                     ctxKeys = Object.keys(ctx).sort();
-                    const res = (ctx as { res: AdapterResponse }).res;
+                    const res = (ctx as { res: AdapterResult }).res;
                     resKeys = Object.keys(res).sort();
                     bodyType = typeof res.body;
                     idDigits = digits((res.body as { id: unknown }).id);
@@ -342,21 +342,21 @@ async function main(): Promise<void> {
             'ctx.res = {body,headers,status,url}; body.id = 1234567890123456768',
         );
         note(
-            'four keys. The `AdapterResponse` the hook receives is the SAME object `fetchAdapter` returned, and `fetchAdapter` discarded `text` at line 135',
+            'four keys. The `AdapterResult` the hook receives is the SAME object `fetchAdapter` returned, and `fetchAdapter` discarded `text` at line 135',
             '',
         );
     }
 
     heading('C2 (g) — `Surface.interpret`');
     {
-        // The surface hook runs on the AdapterResponse directly — the earliest engine-level seam
+        // The surface hook runs on the AdapterResult directly — the earliest engine-level seam
         // there is. It is still after the adapter.
         let seenType = '';
         let seenId = '';
         const spySurface: Surface = {
             ...httpSurface,
             id: 'http',
-            interpret: (res: AdapterResponse) => {
+            interpret: (res: AdapterResult) => {
                 seenType = typeof res.body;
                 seenId = digits((res.body as { id: unknown }).id);
                 return { ok: true, data: res.body };
@@ -419,7 +419,7 @@ async function main(): Promise<void> {
             wire: { response: 'text' },
             hooks: {
                 onResponse: (ctx: HookContext) => {
-                    const res = (ctx as { res: AdapterResponse }).res;
+                    const res = (ctx as { res: AdapterResult }).res;
                     hookBodyType = typeof res.body;
                     hookBody = String(res.body);
                 },

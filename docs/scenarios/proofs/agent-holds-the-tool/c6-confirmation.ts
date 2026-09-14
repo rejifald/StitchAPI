@@ -23,7 +23,7 @@ import { bearer, env } from '../../../../packages/core/src/auth';
 import { seam } from '../../../../packages/core/src/index';
 import type {
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import { inProcess, loadMcp } from './client';
 import { check, checkSeq, finish, heading, note } from './harness';
@@ -185,7 +185,7 @@ async function main(): Promise<void> {
     const approvals: string[] = [];
     const gated =
         (allow: (req: AdapterRequest) => boolean) =>
-        async (req: AdapterRequest): Promise<AdapterResponse> => {
+        async (req: AdapterRequest): Promise<AdapterResult> => {
             approvals.push(`${req.method} ${new URL(req.url).pathname}`);
             if (!allow(req))
                 throw new Error(

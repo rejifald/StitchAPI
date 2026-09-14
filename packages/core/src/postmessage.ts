@@ -33,7 +33,7 @@ import { makeStitch } from './stitch';
 import type { Surface } from './surface';
 import type {
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     NoUnknownKeys,
     NoUnknownNestedKeys,
     Stitch,
@@ -139,13 +139,34 @@ function freshId(): string {
 // per-method options
 // ---------------------------------------------------------------------------
 // The message `type` is POSITIONAL on every verb (CONTRACT.md P15 — the one required address goes
-// first, like `stitch(url)`); each verb's options extend the shared StitchConfig keys MINUS `kind`
-// (the surface owns it) and `url` (synthesised as a `postmessage:<type>` pseudo-endpoint), plus the
-// verb's own fields. The resilience chain (`retry`/`throttle`/`timeout`/`circuit`/`trace`/`signal`)
-// all apply via the engine, exactly as for every other surface.
+// first, like `stitch(url)`); each verb's options extend the shared `PostMessageVerbConfig` keys
+// (see its doc for the three StitchConfig slots this surface withholds), plus the verb's own
+// fields. The resilience chain (`retry`/`throttle`/`timeout`/`circuit`/`trace`/`signal`) all
+// applies via the engine, exactly as for every other surface.
+
+/**
+ * The {@link StitchConfig} keys every postMessage verb inherits — the ONE declaration the three
+ * verb option types share, so they cannot drift apart:
+ *
+ * - `kind` is omitted because the surface owns it (`postmessage` / `postmessage-event`).
+ * - `url` is omitted because it is synthesised as a `postmessage:<type>` pseudo-endpoint.
+ * - `adapter` is omitted because every postMessage surface carries an `execute` hook, and the
+ *   engine reads `cfg.kind.execute ?? rt.adapter` — so a caller's adapter is NEVER called here.
+ *   Inheriting it let `channel.request(type, { adapter: myTransport })` typecheck while the
+ *   transport sat inert: CONTRACT.md P24 carve-out (b)'s closing clause — a flat shape is never a
+ *   licence to let inert config typecheck — which is the same defect #795 removed from
+ *   {@link portChannel}'s `allowedOrigins` in this file. Reach a different transport by building
+ *   the channel over a different {@link MessageTransport}, which is the real seam (P21).
+ *
+ * Everything else stays: the resilience chain (`retry`/`throttle`/`timeout`/`circuit`/`trace`/
+ * `signal`) all applies via the engine, exactly as for every other surface.
+ */
+type PostMessageVerbConfig = Partial<
+    Omit<StitchConfig, 'kind' | 'url' | 'adapter'>
+>;
 
 /** Options for {@link PostMessageChannel.request}. */
-export type RequestOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
+export type RequestOptions = PostMessageVerbConfig & {
     /** The `type` the correlated reply must carry. Default `` `${type}-result` ``. */
     reply?: string;
     /** Schema validating the outbound `body` payload (the call argument). */
@@ -155,13 +176,13 @@ export type RequestOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
 };
 
 /** Options for {@link PostMessageChannel.emit}. */
-export type EmitOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
+export type EmitOptions = PostMessageVerbConfig & {
     /** Schema validating the outbound `body` payload (the call argument). */
     input?: StitchConfig['input'];
 };
 
 /** Options for {@link PostMessageChannel.events}. */
-export type EventsOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
+export type EventsOptions = PostMessageVerbConfig & {
     /** Schema validating each inbound event payload (the collected/streamed value). */
     output?: StitchConfig['output'];
 };
@@ -525,8 +546,8 @@ function makeChannel(
                 ...base,
                 body: callInput.body,
             }),
-            execute: (req: AdapterRequest): Promise<AdapterResponse> =>
-                new Promise<AdapterResponse>((resolve, reject) => {
+            execute: (req: AdapterRequest): Promise<AdapterResult> =>
+                new Promise<AdapterResult>((resolve, reject) => {
                     if (closed) {
                         reject(new Error('postmessage: channel is closed'));
                         return;
@@ -608,7 +629,7 @@ function makeChannel(
                 body: callInput.body,
             }),
             // Fire-and-forget: post `{ type, payload }` (no id) and resolve immediately with no body.
-            execute: (req: AdapterRequest): Promise<AdapterResponse> => {
+            execute: (req: AdapterRequest): Promise<AdapterResult> => {
                 if (closed)
                     return Promise.reject(
                         new Error('postmessage: channel is closed'),
@@ -649,7 +670,7 @@ function makeChannel(
         // `signal`, a stream `cancel()`, and the channel's `close()` all end the stream + unsubscribe.
         const surface: Surface = {
             id: 'postmessage-event',
-            execute: (req: AdapterRequest): Promise<AdapterResponse> => {
+            execute: (req: AdapterRequest): Promise<AdapterResult> => {
                 if (closed)
                     return Promise.reject(
                         new Error('postmessage: channel is closed'),
@@ -704,7 +725,7 @@ function makeChannel(
                     url,
                 });
             },
-            async *stream(res: AdapterResponse) {
+            async *stream(res: AdapterResult) {
                 const stream = res.body;
                 if (!(stream instanceof ReadableStream)) return;
                 const reader = (stream as ReadableStream<unknown>).getReader();

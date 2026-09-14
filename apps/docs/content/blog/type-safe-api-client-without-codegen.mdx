@@ -110,7 +110,7 @@ const listOrders = stitch({
     path: '/orders',
     output: drift(OrdersSchema, {
         ignore: ['[].meta'], // acknowledged, unconsumed — don't report it
-        severity: { coerced: 'info' }, // re-level a kind without failing the call
+        level: { coerced: 'info' }, // re-level a kind without failing the call
     }),
 });
 ```

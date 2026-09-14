@@ -31,12 +31,16 @@ const batch = downloadAll(
 
 const results = await batch; // never throws — settles per item, in enqueue order
 for (const r of results) {
-    if (r.status === 'fulfilled') save(r.value.blob, r.value.filename);
+    if (r.status === 'fulfilled') save(r.data.blob, r.data.filename);
     else if (r.status === 'rejected')
         console.warn(r.id, r.code, r.retryable ? '(retryable)' : '(terminal)');
     // r.status === 'cancelled' → skipped
 }
 ```
+
+`Promise.allSettled`'s three-arm shape (plus a `cancelled` arm of ours), but with StitchAPI's house
+words for the payloads: the success arm carries **`data`** and the failure arm carries **`error`**,
+as every other StitchAPI runtime envelope does.
 
 Each item is either a URL string or a partial `download()` config (`{ id?, baseUrl, path, retry, … }`).
 Shared config goes in `defaults`; per-item fields win:
@@ -100,11 +104,30 @@ transport error per item (via a `hooks.onError` seam, which also catches a throw
 classifies the rejection:
 
 ```ts
-{ id, status: 'rejected', reason /* StitchError */, retryable: true, code: 'UND_ERR_SOCKET' }
+{ id, status: 'rejected', error /* StitchError */, retryable: true, code: 'UND_ERR_SOCKET' }
 ```
 
 `retryable` is `true` for transport faults, `5xx`, `429`, `408`, and idle-timeouts; `false` for
 terminal `4xx`. `code` is a best-effort machine code (`UND_ERR_SOCKET`, `HTTP_404`, `IDLE_TIMEOUT`, …).
+
+### Error classes
+
+`DownloadCancelledError` and `DownloadIdleTimeoutError` are both exported, and both **subclass
+`StitchError`** — so they carry its whole field set (`status`, `attempts`, `body`, `url`) and keep
+their own `name` as the discriminator. Branch on the subclass first; a leading `instanceof
+StitchError` arm swallows them.
+
+A stalled item settles with the `DownloadIdleTimeoutError` **itself**, so the window that elapsed is
+readable on the error you are handed rather than hidden one level down on `.cause`:
+
+```ts
+if (r.status === 'rejected' && r.error instanceof DownloadIdleTimeoutError)
+    console.warn(r.id, `stalled for ${r.error.idle}ms`);
+```
+
+Cancelling is not a failure, so the `cancelled` arm carries no `error`. `DownloadCancelledError` is
+the **abort reason** instead: a `hooks.onError` you supply (per item or under `defaults`) receives
+that instance, which is how a deliberate cancel is told apart from a transport fault.
 
 ## Same-URL dedupe
 

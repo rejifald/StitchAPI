@@ -42,7 +42,7 @@ async function main(): Promise<void> {
             false,
         );
         note('(a) what the caller got', JSON.stringify(r.data));
-        // The HOOK, however, sees the WHOLE body — `onResponse` is handed the live AdapterResponse
+        // The HOOK, however, sees the WHOLE body — `onResponse` is handed the live AdapterResult
         // (types.ts:1282, engine.ts:705), before `pick` runs (engine.ts:968).
         const hookCost = costOfBody(hookBody);
         check(

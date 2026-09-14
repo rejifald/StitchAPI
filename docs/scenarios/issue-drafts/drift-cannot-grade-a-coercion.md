@@ -65,9 +65,9 @@ exactly this row** — it levels a null `warn` and passes the value through.
 **Ask:** a `nullable` change kind (or a `DriftOptions` mode) that reports a newly-null field at
 `warn` while passing the value through unchanged.
 
-## 3. `severity` is keyed by mechanism, not by change class
+## 3. `level` is keyed by mechanism, not by change class
 
-`DriftSeverity` takes `undeclared` / `coerced` / `defaulted` (`types.ts:71-74`). Of the four
+`DriftOptions.level` takes `undeclared` / `coerced` / `defaulted` (`types.ts:71-74`). Of the four
 industry change classes, only **addition** maps 1:1 (`undeclared`). Removal, type change and
 nullability each land on a kind decided by _your schema_, so their loudness is a schema decision
 rather than a severity one — which makes "removal is fatal" something you have to have already
@@ -79,7 +79,8 @@ Two smaller limits alongside it, both measured:
   (`drift.ts:90-101` never sees the path). "Coercion on `transaction_id` pages, coercion on
   `description` doesn't" has no spelling.
 - **A soft finding can't be promoted to fatal through the type** — `error` isn't in
-  `DriftSeverity` (machine-checked with `@ts-expect-error`), though a cast past it does fail the
+  `Exclude<DriftLevel, 'error'>` (machine-checked with `@ts-expect-error`), though a cast past it
+  does fail the
   call at runtime, which is an odd pairing.
 
 ## 4. Soft findings are invisible on the awaited path
@@ -115,7 +116,7 @@ which is a plausible way to use it, and there is no signal that the feature is i
   [`clock-and-diagnostic-side-effects`](clock-and-diagnostic-side-effects.md)). Here `.report()`
   called immediately after a drifting call reported **zero** findings, because the probe hit a
   clean response — _and_ it added a request and a tick to the rate's denominator.
-- **`severity` filtering deletes the data from the sink too** — it is an emission-time allowlist
+- **`level` filtering deletes the data from the sink too** — it is an emission-time allowlist
   (`drift.ts:147`), not a display filter, so a filtered finding never reaches a sink that might
   have counted it.
 - **A schema strips what it doesn't declare.** The engine serves the _validated_ value

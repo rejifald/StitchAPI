@@ -113,7 +113,7 @@ the request-scoped `seam.as(principal)` handle and the request-scoped stitches f
                 },
             },
             stitches: [GetUser],
-            principal: (req) => req.user?.tenantId ?? 'anonymous',
+            principal: (req) => req.user?.tenantId,
         }),
     ],
 })
@@ -122,6 +122,12 @@ export class UsersModule {}
 
 Each request resolves `GetUser` from `seam.as(tenantId)`. Note a request-scoped provider
 makes its consumers request-scoped too (a per-request instantiation cost).
+
+`principal` may return `undefined` — an anonymous request then falls back to the
+**unbound** base seam (the feature seam, or the root seam when no `seam.config` is given)
+rather than being bound to a made-up id like `'anonymous'`. That is the same fallback
+`@stitchapi/express`'s `stitch()` middleware and `@stitchapi/fastify`'s plugin take, so
+the anonymous path reads identically on every host.
 
 Outside HTTP (BullMQ, `@Cron`, microservices) there is no `REQUEST`: inject the singleton
 seam and bind explicitly — `seam.as(job.data.tenantId)`.

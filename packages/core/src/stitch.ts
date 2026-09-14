@@ -81,10 +81,27 @@ import {
 } from './util';
 import { type Validator, toValidator } from './validator';
 
-export type Fragment = Partial<StitchConfig> | Stitch | string;
+/**
+ * One AUTHORED layer of a composition — mirrors {@link StitchConfig.extends} exactly, so the
+ * spelling a consumer writes and the spelling this module names cannot drift. A partial layer must
+ * declare at least one slot: `{}` merges nothing, so it is rejected at the type level
+ * (CONTRACT.md P20 — `AtLeastOne`).
+ */
+export type Fragment = AtLeastOne<StitchConfig> | Stitch | string;
+
+/**
+ * What the COMPOSER accepts, which is deliberately wider than {@link Fragment}. P20's `{}` ban is a
+ * rule about what a human may write down — an authored empty envelope says nothing. The layers
+ * reaching `compose`/`makeStitch` from inside core are not written down: a seam's shared fragment
+ * (and `seam({})` is legal), and the configs `llm`/`postmessage` assemble field by field, are
+ * `Partial<StitchConfig>` by construction, so an internally empty one is a legitimate no-op layer
+ * rather than a consumer's mistake. Narrowing this to `Fragment` would push a widening cast onto
+ * every one of those call sites, which is how a type gate gets laundered instead of enforced.
+ */
+type ComposeInput = Partial<StitchConfig> | Stitch | string;
 
 // ---- composition ----------------------------------------------------------
-function asConfig(f: Fragment): Partial<StitchConfig> {
+function asConfig(f: ComposeInput): Partial<StitchConfig> {
     if (typeof f === 'string') return { path: f };
     // Compose from the FULL config (`__rawConfig`), not the redacted public `__config`, so a
     // stitch used as a fragment still carries its store/auth/adapter into the merge.
@@ -106,7 +123,7 @@ function fragmentList(ext: StitchConfig['extends']): Fragment[] {
     return Array.isArray(ext) ? ext : [ext];
 }
 
-function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
+function flatten(layers: ComposeInput[]): Partial<StitchConfig>[] {
     const out: Partial<StitchConfig>[] = [];
     for (const layer of layers) {
         const cfg = asConfig(layer);
@@ -294,8 +311,9 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
     if (cfg.sse === true) cfg.sse = { reconnect: true };
     else if (cfg.sse === false) delete cfg.sse;
-    // P15: the positional circuit names both required fields — `[5, '30s']` ≡
-    // `{ failures: 5, cooldown: '30s' }`.
+    // P15: the positional circuit names both knobs at once — `[5, '30s']` ≡
+    // `{ failures: 5, cooldown: '30s' }`. Either may be omitted in the object form; `createCircuit`
+    // resolves the house defaults (5 / 30s), so nothing is filled in here.
     if (Array.isArray(cfg.circuit)) {
         const [failures, cooldown] = cfg.circuit;
         cfg.circuit = { failures, cooldown };
@@ -308,7 +326,7 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     else if (cfg.idempotency === false) delete cfg.idempotency;
 }
 
-export function compose(config: Fragment): ResolvedStitchConfig {
+export function compose(config: ComposeInput): ResolvedStitchConfig {
     const layers = flatten([config]);
     let merged: Partial<StitchConfig> = {};
     const hookLayers: Hooks[] = [];
@@ -1040,7 +1058,7 @@ function attachCacheSurface(
 }
 
 export function makeStitch<T = unknown>(
-    config: Fragment,
+    config: ComposeInput,
     shared?: SharedRuntime,
 ): Stitch<T> {
     const cfg = compose(config);

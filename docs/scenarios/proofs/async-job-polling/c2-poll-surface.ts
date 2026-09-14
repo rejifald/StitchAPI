@@ -12,7 +12,7 @@ import type { Surface } from '../../../../packages/core/src/surface';
 import { verdictOf } from '../../../../packages/core/src/surface';
 import { manualClock } from '../../../../packages/core/src/testing';
 import type {
-    AdapterResponse,
+    AdapterResult,
     Clock,
     ResolvedStitchConfig,
     StitchEvent,
@@ -194,7 +194,7 @@ async function main(): Promise<void> {
             id: 'x',
             // @ts-expect-error — `interpret` takes (res, cfg); there is no attempt argument.
             interpret: (
-                res: AdapterResponse,
+                res: AdapterResult,
                 _cfg: ResolvedStitchConfig,
                 _attempt: number,
             ) => ({ ok: true as const, data: res.body }),

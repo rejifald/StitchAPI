@@ -38,7 +38,7 @@ const getUser = stitch({
 
 ## Options
 
-An adapter is `(req: AdapterRequest) => Promise<AdapterResponse>` — a plain
+An adapter is `(req: AdapterRequest) => Promise<AdapterResult>` — a plain
 function, so nothing needs to be registered or subclassed. Four rules make it a
 transport the engine can drive:
 

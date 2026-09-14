@@ -308,13 +308,32 @@ export interface StdioOptions {
     server?: string | AtLeastOne<McpServerOptions>;
 }
 
+/**
+ * What {@link serveStdio} returns. Exported — and a named interface rather than the anonymous
+ * shape it used to be — for the same reason `ServeHandle` (`stitchapi/serve`) is: a host that
+ * stores the handle on a field, or passes it on, needs to be able to name its type.
+ */
+export interface StdioHandle {
+    /** The MCP server driving the transport — handy for dispatching a message directly in tests. */
+    server: McpServer;
+    /**
+     * Detach the stdin listener. `() => Promise<void>`, like every other `close()` on the surface
+     * (`ServeHandle.close`, `StitchStore.close`, `Seam.close`, `PostMessageChannel.close`) —
+     * CONTRACT.md P11: one verb, one sync/async shape everywhere. This was the lone sync `close`
+     * on the published API, so a host writing `await handle.close()` over a set of handles hit one
+     * that was not a promise. Detaching is itself synchronous, so the returned promise is already
+     * settled: awaiting it is the uniform spelling, never a wait.
+     */
+    close: () => Promise<void>;
+}
+
 // Wire an McpServer to the stdio transport: read newline-delimited JSON-RPC from
 // `stdin`, write newline-delimited responses to `stdout`. Messages are processed in
 // order. Returns a handle that detaches the listener.
 export function serveStdio(
     registry: StitchRegistry,
     opts: StdioOptions = {},
-): { server: McpServer; close: () => void } {
+): StdioHandle {
     const server = createMcpServer(registry, opts.server);
     const stdin = opts.stdin ?? process.stdin;
     const stdout = opts.stdout ?? process.stdout;
@@ -348,5 +367,11 @@ export function serveStdio(
     };
 
     stdin.on('data', onData);
-    return { server, close: () => stdin.off('data', onData) };
+    return {
+        server,
+        close: () => {
+            stdin.off('data', onData);
+            return Promise.resolve();
+        },
+    };
 }

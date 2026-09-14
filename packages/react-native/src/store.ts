@@ -9,7 +9,8 @@
 //
 // Compliance with the store contract is proven against `conformance.store` from
 // `stitchapi/testing` (see test/store.spec.ts).
-import type { StitchStore } from 'stitchapi';
+import { systemClock } from 'stitchapi';
+import type { Clock, StitchStore } from 'stitchapi';
 
 /**
  * The minimal AsyncStorage surface {@link asyncStorageStore} uses. The default
@@ -35,8 +36,18 @@ export interface AsyncStorageStoreOptions {
      * A Redis deployment typically dedicates a database/namespace instead.
      */
     keyPrefix?: string;
-    /** Injectable clock (ms epoch) for deterministic TTL tests. Default `Date.now`. */
-    now?: () => number;
+    /**
+     * Time seam (ADR 0010) for TTL expiry. Defaults to `systemClock`; tests pass a
+     * `manualClock()` from `stitchapi/testing` and drive expiry with `advance(ms)` —
+     * the same object, spelled the same way, that already drives a stitch's retry
+     * backoff and `@stitchapi/download`'s idle timer.
+     *
+     * Spelled `clock` and typed {@link Clock}, never a bare `now: () => number`
+     * (CONTRACT.md P1): `now` is already an epoch-ms NUMBER on this contract — it is
+     * what the envelope's expiry is compared against — so one token would carry two
+     * value-spaces, a number here and a function there.
+     */
+    clock?: Clock;
 }
 
 // AsyncStorage holds opaque strings with NO native expiry, so each value rides in a
@@ -69,7 +80,7 @@ export function asyncStorageStore(
     opts: AsyncStorageStoreOptions = {},
 ): StitchStore {
     const prefix = opts.keyPrefix ?? 'stitch:';
-    const now = opts.now ?? Date.now;
+    const clock = opts.clock ?? systemClock;
     const k = (key: string): string => prefix + key;
 
     const readEnvelope = async (key: string): Promise<Envelope | undefined> => {
@@ -81,7 +92,7 @@ export function asyncStorageStore(
         } catch {
             return undefined; // not written by us — treat as absent
         }
-        if (env.e !== undefined && env.e <= now()) {
+        if (env.e !== undefined && env.e <= clock.now()) {
             await storage.removeItem(k(key));
             return undefined;
         }
@@ -116,7 +127,9 @@ export function asyncStorageStore(
             }
             await write(
                 key,
-                ttl === undefined ? { v: value } : { v: value, e: now() + ttl },
+                ttl === undefined
+                    ? { v: value }
+                    : { v: value, e: clock.now() + ttl },
             );
         },
         increment(key, ttl) {
@@ -131,7 +144,7 @@ export function asyncStorageStore(
                     env === undefined
                         ? ttl === undefined
                             ? undefined
-                            : now() + ttl
+                            : clock.now() + ttl
                         : env.e;
                 await write(
                     key,

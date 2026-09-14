@@ -14,7 +14,7 @@ import { sse } from '../../../../packages/core/src/sse';
 import { manualClock } from '../../../../packages/core/src/testing';
 import type {
     Adapter,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import { FakeStreamProvider } from './fake-llm-stream';
 import { check, checkSeq, finish, heading, note } from './harness';
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
                         status: 503,
                         headers: {},
                         body: { error: 'overloaded' },
-                    } satisfies AdapterResponse);
+                    } satisfies AdapterResult);
                 },
             };
         };

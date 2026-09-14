@@ -14,7 +14,7 @@ import { fetchAdapter } from './http-adapter';
 import { acceptsStatus, parseRetryAfter } from './resilience';
 import type {
     Adapter,
-    AdapterResponse,
+    AdapterResult,
     AtLeastOne,
     AuthContext,
     AuthStrategy,
@@ -203,11 +203,13 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
  * overload that renamed `SchemaFingerprint.value` to `token`); OpenAPI's scheme carries no
  * credential material, so there is no upstream spelling to mirror for it.
  *
- * Local (non-exported) — like {@link OAuth2Options}/{@link CookieSessionOptions}, the builder's
- * param type is not part of the package's public export surface (P16: none of the auth option
- * types are). It is inlined into `apiKey`'s emitted `.d.ts`.
+ * Exported, like every sibling auth builder's option type ({@link BasicOptions},
+ * {@link OAuth2Options}, {@link CookieSessionOptions}) — CONTRACT.md P14/P16: a multi-field
+ * envelope is a named, exported interface, and the parity argument runs that way, not the other.
+ * Left un-exported it inlined into `apiKey`'s emitted `.d.ts` as an anonymous shape, so a consumer
+ * could neither import nor extend it while its three siblings imported fine.
  */
-interface ApiKeyOptions {
+export interface ApiKeyOptions {
     /** Where the key is sent. Default `'header'`. */
     in?: 'header' | 'query' | 'cookie';
     /**
@@ -660,7 +662,7 @@ export interface CookieSessionRefreshOptions {
      */
     on?: StatusMatch;
     /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
-    when?: (res: AdapterResponse) => boolean;
+    when?: (res: AdapterResult) => boolean;
 }
 
 export interface CookieSessionOptions {
@@ -674,11 +676,18 @@ export interface CookieSessionOptions {
     /** Capture/replay the full Set-Cookie set — equivalent to `cookie: '*'` (in jar mode `cookie` only seeds the store key). */
     jar?: boolean;
     /**
-     * Inputs (credentials) for the login call, resolved at call time. Receives the bound
+     * Derives the credentials for the login call, resolved at call time. Receives the bound
      * `principal` (from `seam.as(id)`, `undefined` when none) so trusted code can map the
      * identity to that user's credentials — credentials still never originate from the caller.
+     * The returned {@link StitchInput} is what the `login` stitch is called with.
+     *
+     * Named `credentialsOf`, not `loginInput`, on CONTRACT.md P6's derivation-function convention
+     * (`key` is a value, `keyOf` is a function that produces one): the `Of` suffix says this is a
+     * function and the stem says what it returns. It also dissolves the `login`-prefix P24 group —
+     * `login` (the required Stitch) and `loginInput` (a callback) shared a leading word while
+     * being different value-kinds, which needed a lint carve-out to stay flat.
      */
-    loginInput?: (principal?: string) => StitchInput;
+    credentialsOf?: (principal?: string) => StitchInput;
     /**
      * When to trigger a re-login (CONTRACT.md P24 envelope). A bare function is the P12
      * dominant-field shorthand for `{ on: <fn> }` — a {@link StatusMatch} predicate over the
@@ -828,31 +837,31 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         step: 'apply' | 'refresh',
     ) => {
         ctx.emit('auth', 'login');
-        // `__raw` runs the login once and returns its raw AdapterResponse (headers and all);
+        // `__raw` runs the login once and returns its raw AdapterResult (headers and all);
         // `__rawTraced` does the same but TEES the login's events as a CHILD run (ADR 0007) of the
         // call that triggered it. Neither is on the public Stitch type, so reach them through a cast.
         const login = opts.login as unknown as {
-            __raw: (input?: StitchInput) => Promise<AdapterResponse>;
+            __raw: (input?: StitchInput) => Promise<AdapterResult>;
             __rawTraced?: (
                 input: StitchInput | undefined,
                 parent: RunContext,
-            ) => Promise<AdapterResponse>;
+            ) => Promise<AdapterResult>;
         };
-        const loginInput = opts.loginInput?.(principal);
-        let res: AdapterResponse;
+        const credentials = opts.credentialsOf?.(principal);
+        let res: AdapterResult;
         try {
             // Trace the login as a child of the caller's run when one is bound and the login
             // supports it; otherwise the original silent raw call (back-compat / standalone).
             res =
                 ctx.run && login.__rawTraced
-                    ? await login.__rawTraced(loginInput, ctx.run)
-                    : await login.__raw(loginInput);
+                    ? await login.__rawTraced(credentials, ctx.run)
+                    : await login.__raw(credentials);
         } catch (error) {
             // A failed login: an HTTP error carries a numeric `status` (+ the `response` for its
             // headers); a transport error carries neither → `network`.
             const e = error as {
                 status?: number;
-                response?: AdapterResponse;
+                response?: AdapterResult;
             };
             const status = typeof e.status === 'number' ? e.status : undefined;
             const failure: AuthFailureResult =

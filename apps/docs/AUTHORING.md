@@ -113,7 +113,7 @@ const listUsers = stitch({
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token',
-        loginInput: () => ({
+        credentialsOf: () => ({
             body: { email: env('APP_USER')(), password: env('APP_PASS')() },
         }),
         refresh: 401,

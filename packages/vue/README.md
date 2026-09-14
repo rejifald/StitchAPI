@@ -88,6 +88,21 @@ interface VueUseStitchResult<T> {
 }
 ```
 
+## Options
+
+The third argument is a `VueUseStitchOptions<T>` — `@stitchapi/query-core`'s create-options minus `streaming`, since the composable you call decides that:
+
+```ts
+interface VueUseStitchOptions<T> {
+    mode?: 'append' | 'replace'; // streaming only
+    enabled?: boolean;
+    onSuccess?: (data: T) => void;
+    onError?: (error: unknown) => void;
+}
+```
+
+Like the return shape, the name is framework-qualified: `@stitchapi/react` (and the `@stitchapi/react-native` / `@stitchapi/expo` packages that re-export it) owns the bare `UseStitchOptions`, which additionally accepts a react-only `deps` array. Vue has no `deps` — the composables re-create the query handle by watching `input` and `options`, so a `ref` or getter is the way to re-trigger a call.
+
 ## Optional: TanStack Query
 
 `stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/vue-query` required, so it works even if you never install it.

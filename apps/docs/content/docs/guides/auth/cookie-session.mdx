@@ -29,7 +29,7 @@ const me = stitch({
     auth: cookieSession({
         login,
         cookie: '*',
-        loginInput: () => ({
+        credentialsOf: () => ({
             body: { user: env('USER')(), pass: env('PASS')() },
         }),
         refresh: [401],
@@ -43,7 +43,7 @@ capability boundary.
 
 ## Options
 
-Point `login` at the stitch that authenticates, and pass `loginInput` to supply
+Point `login` at the stitch that authenticates, and pass `credentialsOf` to supply
 its credentials, resolved at call time with [`env()`](/docs/guides/auth/secret-resolvers).
 
 `cookie` selects what to keep: a single cookie name, or `'*'` (equivalently
@@ -103,7 +103,7 @@ const me = stitch({
     auth: cookieSession({
         login,
         cookie: '*',
-        loginInput: () => ({
+        credentialsOf: () => ({
             body: { user: env('USER')(), pass: env('PASS')() },
         }),
         // Persist the outcome of every attempt.

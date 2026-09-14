@@ -4,6 +4,8 @@
 - **Date:** 2026-08-03
 - **Tags:** engine, surfaces, resilience, api-surface, P0, P7, P14, P21, P24, breaking, P19-pre-GA
 
+> **Amendment — the adapter's produced shape is `AdapterResult`.** This ADR was written when the normalized value an `Adapter` returns was spelled `AdapterResponse`; it is a house-coined produced shape rather than a mirror of the platform `Response`, so the pre-stable sweep renamed it to the `*Result` suffix [CONTRACT.md P3](../CONTRACT.md#p3--one-suffix-system) reserves for produced shapes, with no alias ([P19](../CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)). Read `AdapterResponse` as **`AdapterResult`** throughout the text below — the shape, its fields and the decision itself are unchanged. See [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep) and [`packages/core/src/types.ts`](../../packages/core/src/types.ts).
+
 > [!NOTE]
 >
 > Two changes, one thesis. **Internally:** `interpret` moves inside the attempt

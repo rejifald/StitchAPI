@@ -5,7 +5,7 @@
 //   - a stripped key → 'undeclared' (info); a coercion → 'coerced' (warn); a default → 'defaulted'
 //     (verbose); each is non-fatal and the call resolves with the validated value;
 //   - declared variance (optional absent, nullable null) validates clean and drifts nothing;
-//   - `ignore` suppresses a path; `severity` re-levels (map) or filters (single/list).
+//   - `ignore` suppresses a path; `level` re-levels (map) or filters (single/list).
 import { drift, stitch } from '../src';
 import type { DriftFinding, StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
@@ -185,26 +185,27 @@ test('ignore: an acknowledged undeclared path is suppressed', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9. `severity` as a filter (single/list) and as a re-leveling map.
+// 9. `level` as a filter (single/list) and as a re-leveling map. One word on both sides
+//    (CONTRACT.md P1): `DriftOptions.level` authors what `DriftFinding.level` reports.
 // ---------------------------------------------------------------------------
-test('severity filter: a bare level surfaces only that tier', async () => {
+test('level filter: a bare level surfaces only that tier', async () => {
     // undeclared defaults to info; asking for only 'warn' drops it.
     server.route('GET', '/s', { body: { a: 1, b: 2 } });
     const s = stitch({
         baseUrl: server.url,
         path: '/s',
-        output: drift(z.object({ a: z.number() }), { severity: 'warn' }),
+        output: drift(z.object({ a: z.number() }), { level: 'warn' }),
     });
     expect(driftFindings(await collect(s.stream()))).toHaveLength(0);
 });
 
-test('severity map: re-levels a kind', async () => {
+test('level map: re-levels a kind', async () => {
     server.route('GET', '/sm', { body: { a: 1, b: 2 } });
     const s = stitch({
         baseUrl: server.url,
         path: '/sm',
         output: drift(z.object({ a: z.number() }), {
-            severity: { undeclared: 'warn' },
+            level: { undeclared: 'warn' },
         }),
     });
     const f = driftFindings(await collect(s.stream())).find(

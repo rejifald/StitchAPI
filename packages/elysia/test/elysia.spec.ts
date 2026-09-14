@@ -1,6 +1,6 @@
 // @stitchapi/elysia integration tests. Elysia is Bun-first, so we drive it RUNTIME-AGNOSTICALLY via
 // `app.handle(new Request(...))` (Web-standard, works under Node — no Bun needed) and a FAKE adapter
-// (no socket): a stitch's `adapter` is just `(req) => Promise<AdapterResponse>`, so we inject canned
+// (no socket): a stitch's `adapter` is just `(req) => Promise<AdapterResult>`, so we inject canned
 // responses — buffered JSON for the plugin/error paths, a live `ReadableStream` for the SSE path
 // (mirroring core's test/support/streams.ts, inlined here to avoid a cross-package import). Asserts
 // the three public surfaces: seam-on-context (+ principal binding), the SSE bridge, and the

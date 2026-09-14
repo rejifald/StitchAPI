@@ -93,7 +93,7 @@ against a documented echo contract served at `baseUrl`:
 - Request delivery: method, headers, and the JSON-encoded body reach the
   server intact.
 - Response headers are readable using **lowercased** names (the
-  `AdapterResponse` case convention).
+  `AdapterResult` case convention).
 - A `text/plain` body round-trips as a string; an `application/json` body
   round-trips as parsed data.
 - A pre-aborted `AbortSignal` rejects, and an in-flight abort rejects

@@ -17,7 +17,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import { signPayload } from './stripe-sig';
 
@@ -102,7 +102,7 @@ export class FakeBilling {
     }
 
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const path = new URL(req.url).pathname;
             this.requests.push(path);
             this.onRequest?.(path);

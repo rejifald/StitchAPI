@@ -115,7 +115,7 @@ const caps = fetchAdapter().capabilities;
 ```
 
 Declaring capabilities is **opt-in**: a custom adapter is still just
-`(req) => Promise<AdapterResponse>`, and one that declares nothing is treated as
+`(req) => Promise<AdapterResult>`, and one that declares nothing is treated as
 unknown — no checks run against it.
 
 The engine checks `supports` for `'uploadProgress'` to turn a silent footgun into a

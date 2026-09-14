@@ -90,10 +90,12 @@ redisStore(fromIoredis(client), { keyPrefix: 'myapp:' });
 
 With a shared store the rate limiter is **even-spaced across the fleet**: grants
 land one `window / limit` apart, the same cadence the in-process limiter uses — no
-fixed-window boundary bursts. **Concurrency limits stay in-process** (a shared
-store distributes the rate budget, not the concurrency semaphore). Under
-_sustained_ overload (offered load above the limit for longer than one window),
-distributed pacing is approximate at window edges; see the
+fixed-window boundary bursts. **`concurrency` is fleet-wide too**: all three
+bundled adapters implement the driver's `lease` / `release` pair (a Lua-scripted
+sorted-set semaphore, ADR 0025), so `concurrency: 10` means ten calls in flight
+across the whole fleet rather than ten per worker. Under _sustained_ overload
+(offered load above the limit for longer than one window), distributed pacing is
+approximate at window edges; see the
 [pluggable-store guide](https://stitchapi.dev/docs/guides/state/pluggable-store)
 for the exact semantics.
 

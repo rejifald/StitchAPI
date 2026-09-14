@@ -15,7 +15,7 @@ import * as authApi from '../src/auth';
 import * as fingerprintApi from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
 import * as testingApi from '../src/testing';
-import type { AdapterResponse, StitchEvent } from '../src/types';
+import type { AdapterResult, StitchEvent } from '../src/types';
 
 // Every documented function/guard export (systemClock is an object; the error classes are below).
 const FUNCTIONS = [
@@ -345,7 +345,7 @@ describe('public API surface (src/index.ts)', () => {
     });
 
     test('exports the error classes (RateLimitError extends StitchError extends Error)', () => {
-        const response: AdapterResponse = {
+        const response: AdapterResult = {
             status: 429,
             headers: {},
             body: {},

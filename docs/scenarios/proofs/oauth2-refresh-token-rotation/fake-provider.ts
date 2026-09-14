@@ -8,7 +8,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 const sleep = (ms: number): Promise<void> =>
@@ -80,7 +80,7 @@ export class FakeRotatingProvider {
      * `refresh_token` (single-use + rotating, with replay detection).
      */
     tokenAdapter(opts: { delayMs?: number } = {}): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const body = (req.body ?? {}) as TokenRequest;
             this.tokenRequests.push({ ...body });
             if (opts.delayMs) await sleep(opts.delayMs);
@@ -153,7 +153,7 @@ export class FakeRotatingProvider {
      * expired/rejected — the wall that makes N concurrent callers all decide to refresh at once.
      */
     resourceAdapter(opts: { delayMs?: number } = {}): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const auth = req.headers['authorization'];
             this.resourceRequests.push(auth);
             // The delay is what makes N calls genuinely OVERLAP: every caller is dispatched and

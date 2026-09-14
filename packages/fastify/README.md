@@ -15,7 +15,7 @@ import Fastify from 'fastify';
 const app = Fastify({ logger: true });
 
 await app.register(stitchPlugin, {
-    seamConfig: { baseUrl: 'https://api.example.com' },
+    seam: { baseUrl: 'https://api.example.com' },
     principal: (req) => req.headers['x-tenant'] as string | undefined,
 });
 
@@ -48,7 +48,9 @@ encapsulation and are visible app-wide.
 
 ## Seam: build or borrow
 
-Pass a **prebuilt** seam the app owns…
+**One option carries the seam.** `seam` takes either a prebuilt `Seam` or the
+`SeamConfig` to build one from — the plugin tells them apart with core's
+`isSeam()`. Pass a **prebuilt** seam the app owns…
 
 ```ts
 import { seam } from 'stitchapi';
@@ -59,14 +61,19 @@ await app.register(stitchPlugin, { seam: api });
 // borrowed — the plugin never closes it; the app owns its lifecycle.
 ```
 
-…or let the plugin **build and own** one from a `SeamConfig`:
+…or hand the same option a config and let the plugin **build and own** one:
 
 ```ts
 await app.register(stitchPlugin, {
-    seamConfig: { baseUrl: 'https://api.example.com', retry: { attempts: 3 } },
+    seam: { baseUrl: 'https://api.example.com', retry: { attempts: 3 } },
 });
 // built — the plugin closes it on `app.close()`.
 ```
+
+The config form needs **at least one** field: `seam: {}` is a compile error, not
+a silent "build one with every default" (CONTRACT.md P20). For an all-defaults
+seam, build it yourself and pass it prebuilt (`seam: seam()`), adding
+`closeSeam: true` if you still want the plugin to close it.
 
 The ownership rule mirrors `@stitchapi/nest`: a seam the plugin **built** is
 closed on the Fastify `onClose` hook; a **borrowed** seam is never closed by the
@@ -99,9 +106,10 @@ app.get('/chat', (req, reply) =>
 );
 ```
 
-Each `delta` chunk becomes one SSE frame; an `error` event ends the stream as a
-named `error` frame; stream end closes the response; and a client disconnect
-aborts the upstream stitch generator rather than leaving it running.
+Each `delta` chunk becomes one SSE frame; an `error` event — or a throw
+mid-stream — ends the stream as a named `error` frame; stream end closes the
+response; and a client disconnect aborts the upstream stitch generator rather
+than leaving it running.
 
 By default the `error` frame carries a generic `data: error` token, **not** the raw
 error message — echoing it can disclose internal network topology (a transport
@@ -131,7 +139,7 @@ client:
 
 ```ts
 await app.register(stitchPlugin, {
-    seamConfig: { baseUrl: '…' },
+    seam: { baseUrl: '…' },
     // propagate the upstream status instead of the safe 502 default:
     errorHandler: { status: (e) => e.status ?? 502 },
     // opt in to the raw message (only when upstream messages are safe to expose):
@@ -151,10 +159,27 @@ mapped value to hand back. The plugin **option** keeps Fastify's own word
 
 ## Logger
 
-By default `fastify.log` is bridged as the seam's trace sink. Disable it
-(`logger: false`) or tune it (`logger: { lifecycle: false }` to drop happy-path
-events and log only retries, drift, and errors). A seam built with its own
-`trace` keeps it; a borrowed seam keeps whatever sink it was created with.
+When the plugin **builds** the seam, `fastify.log` is bridged as its trace sink
+by default. Disable it (`logger: false`) or tune it (`logger: { lifecycle: false }`
+to drop happy-path events and log only retries, drift, and errors). A config that
+sets its own `trace` keeps it — the bridge is only injected when `trace` is unset.
+
+`logger` is **only available on the build arm**. The bridge is injected as the
+seam's `trace` at build time, so on a **borrowed** seam there is nothing to switch
+on: it keeps whatever sink it was created with. `logger` is therefore a compile
+error next to a prebuilt `seam`, rather than the silent no-op it used to be. To
+trace a seam you build yourself, wire the sink directly:
+
+```ts
+import { fastifyLoggerSink } from '@stitchapi/fastify';
+import { seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    trace: fastifyLoggerSink(app.log),
+});
+await app.register(stitchPlugin, { seam: api });
+```
 
 ## API
 

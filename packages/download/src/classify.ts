@@ -23,7 +23,17 @@ export interface Classification {
     code?: string;
 }
 
-/** Coerce any thrown value into a {@link StitchError} (the reason shape callers can rely on). */
+/**
+ * Coerce any thrown value into a {@link StitchError} — the `ItemResult.error` shape callers rely on.
+ *
+ * A value that ALREADY is one passes through **unchanged**, class identity intact. That arm is the
+ * load-bearing one now that this package's own `DownloadCancelledError`/`DownloadIdleTimeoutError`
+ * subclass `StitchError` (CONTRACT.md P10): wrapping one would downgrade it to the base and bury the
+ * real instance on `.cause`, which is precisely what P10's "no field is reachable only through
+ * `.cause`" forbids — `DownloadIdleTimeoutError.idle` has to be readable on the value the consumer
+ * receives. Only a foreign throw is wrapped, and it keeps its `cause` so the transport code stays
+ * walkable (see {@link classifyFailure}).
+ */
 export function toStitchError(e: unknown): StitchError {
     if (e instanceof StitchError) return e;
     const message = e instanceof Error ? e.message : String(e);
@@ -52,27 +62,27 @@ function statusFromMessage(msg: string | undefined): number | undefined {
  * Classify a failed download as retryable-vs-terminal with a best-effort machine `code`.
  *
  * Two sources, deliberately, and the order matters. `raw` is the UNTOUCHED transport error captured
- * via `download()`'s `hooks.onError`; `reason` is the flattened {@link StitchError}, which carries the
+ * via `download()`'s `hooks.onError`; `error` is the flattened {@link StitchError}, which carries the
  * HTTP `status` when the failure came from a response.
  *
  * `raw` is read FIRST because it is the error itself rather than a rebuild of it. The fallback to
- * `causeCode(reason)` is no longer the dead branch it was when this was written: core's cause-carry
+ * `causeCode(error)` is no longer the dead branch it was when this was written: core's cause-carry
  * (#450, shipped alongside this package) pins the transport error on the error event's non-enumerable
- * channel, so `reason.cause` now reaches an awaited / `.safe()` caller with its `.code` intact. The
+ * channel, so `error.cause` now reaches an awaited / `.safe()` caller with its `.code` intact. The
  * hook seam is kept because it is strictly wider — it also catches a thrown non-`Error`, which has no
  * `cause` chain to walk.
  */
 export function classifyFailure(
-    reason: StitchError,
+    error: StitchError,
     raw: unknown,
 ): Classification {
-    const code = causeCode(raw) ?? causeCode(reason);
+    const code = causeCode(raw) ?? causeCode(error);
     if (code !== undefined && RETRYABLE_CODES.has(code))
         return { retryable: true, code };
 
     const status =
-        reason.status ??
-        statusFromMessage(reason.message) ??
+        error.status ??
+        statusFromMessage(error.message) ??
         statusFromMessage(raw instanceof Error ? raw.message : undefined);
     if (status !== undefined) {
         // 5xx and the two "try again" 4xx (429 rate-limit, 408 request-timeout) are retryable; every
@@ -83,7 +93,7 @@ export function classifyFailure(
 
     // No status and no known transport code: fall back to the message. A bare `fetch failed` / socket
     // / network error is a transport fault → retryable; anything else, assume terminal.
-    const msg = raw instanceof Error ? raw.message : reason.message;
+    const msg = raw instanceof Error ? raw.message : error.message;
     const transportish =
         /fetch failed|socket|network|terminated|econn|dns|timeout|timed out|aborted/i.test(
             msg,

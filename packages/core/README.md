@@ -353,13 +353,13 @@ const listOrders = stitch({
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
             ignore: ['[].meta'], // acknowledged, unconsumed fields — don't report them
-            severity: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
+            level: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
         },
     ),
 });
 ```
 
-Drift is **schema-anchored** — no snapshot to manage. Severity lives in the schema: a required field that goes missing or turns incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift you read off the event stream. So natural variance is never a false alarm — an optional field absent, a `string | null` that's null, an empty or heterogeneous array all validate clean and report nothing. `ignore` silences fields you know about without bloating the schema; `severity` filters (a level / list) or re-levels (a map) the soft signals. Drift watches the surface you declared; what the provider changes in fields you don't model is, by definition, change you don't consume.
+Drift is **schema-anchored** — no snapshot to manage. Severity lives in the schema: a required field that goes missing or turns incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift you read off the event stream. So natural variance is never a false alarm — an optional field absent, a `string | null` that's null, an empty or heterogeneous array all validate clean and report nothing. `ignore` silences fields you know about without bloating the schema; `level` filters (a level / list) or re-levels (a map) the soft signals. Drift watches the surface you declared; what the provider changes in fields you don't model is, by definition, change you don't consume.
 
 The request side validates too. `input` takes a schema per part, and a mismatch fails fast with a `ValidationError` before any request is sent:
 
@@ -405,10 +405,11 @@ Throttle waits and retries emit `throttled` / `retry` events on the stream, so t
 
 Three more knobs round out the resilience set:
 
-- **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
+- **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open). Both knobs default (`failures` 5, `cooldown` `'30s'`), so declaring `circuit` at all is the only decision you have to make:
 
     ```ts
     circuit: { failures: 5, cooldown: '30s' } // or the positional [5, '30s']
+    circuit: { cooldown: '1m' } // set one, take the default for the other
     ```
 
 - **`idempotency`** injects a stable `Idempotency-Key` header on writes, so a safe retry can't duplicate a side effect:
@@ -520,7 +521,7 @@ const listUsers = stitch({
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token', // captured from Set-Cookie, replayed each call
-        loginInput: () => ({
+        credentialsOf: () => ({
             body: {
                 email: env('APP_USER')(),
                 password: secretsFile('APP_PASS')(),

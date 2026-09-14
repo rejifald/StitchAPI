@@ -108,7 +108,15 @@ export class DownloadManager {
     /** Dedupe key → the group sharing one in-flight fetch. Only ever populated when `dedupe` is on. */
     readonly #shared = new Map<string, Shared>();
     readonly #cancelled = new Set<DownloadId>();
-    readonly #stalled = new Set<DownloadId>();
+    /**
+     * Items the forward-progress watchdog cut, keyed to the {@link DownloadIdleTimeoutError} it
+     * RAISED — not just a bit saying that it did. The instance is kept because the engine does not
+     * hand it back: an abort reason reaches the rejection flattened into a base `StitchError`, which
+     * would leave `idle` reachable only through `.cause` (or not at all). Settling with the instance
+     * this map holds is what makes `ItemResult.error` an `instanceof DownloadIdleTimeoutError` with
+     * its window intact (CONTRACT.md P10).
+     */
+    readonly #stalled = new Map<DownloadId, DownloadIdleTimeoutError>();
     #drainWaiters: (() => void)[] = [];
     #signalAborted = false;
 
@@ -440,11 +448,11 @@ export class DownloadManager {
         }
 
         void result.then(
-            (value) => {
+            (data) => {
                 this.#settle(item.id, {
                     id: item.id,
                     status: 'fulfilled',
-                    value,
+                    data,
                 });
             },
             (err: unknown) => {
@@ -511,8 +519,13 @@ export class DownloadManager {
     #onIdle(id: DownloadId): void {
         const active = this.#active.get(id);
         if (active === undefined) return;
-        this.#stalled.add(id);
-        active.ctrl.abort(new DownloadIdleTimeoutError(this.#idle ?? 0));
+        // Raise it ONCE and keep the instance: it is both the abort reason (so a caller's own
+        // `hooks.onError` sees it) and the error the item settles with. Re-deriving a second one at
+        // settle time would be a copy, and P10's "same instance, no field only via `.cause`" is about
+        // the one the caller receives.
+        const stall = new DownloadIdleTimeoutError(this.#idle ?? 0);
+        this.#stalled.set(id, stall);
+        active.ctrl.abort(stall);
     }
 
     #onReject(id: DownloadId, err: unknown, active: Active): void {
@@ -520,23 +533,28 @@ export class DownloadManager {
             this.#settle(id, { id, status: 'cancelled' });
             return;
         }
-        const reason = toStitchError(err);
-        if (this.#stalled.has(id)) {
+        // A stall settles with the DownloadIdleTimeoutError this batch raised, in person. The
+        // rejection `err` is the engine's flattening of that abort — a base StitchError that has
+        // already lost the class (and, with it, `idle`) — so reading the instance back off #stalled
+        // is what keeps `ItemResult.error` branchable by `instanceof` (P10).
+        const stall = this.#stalled.get(id);
+        if (stall !== undefined) {
             this.#settle(id, {
                 id,
                 status: 'rejected',
-                reason,
+                error: stall,
                 retryable: true,
                 code: 'IDLE_TIMEOUT',
             });
             return;
         }
-        const { retryable, code } = classifyFailure(reason, active.raw);
+        const error = toStitchError(err);
+        const { retryable, code } = classifyFailure(error, active.raw);
         this.#settle(
             id,
             code !== undefined
-                ? { id, status: 'rejected', reason, retryable, code }
-                : { id, status: 'rejected', reason, retryable },
+                ? { id, status: 'rejected', error, retryable, code }
+                : { id, status: 'rejected', error, retryable },
         );
     }
 
@@ -556,7 +574,7 @@ export class DownloadManager {
         if (result.status === 'fulfilled')
             this.#progress.fulfilled(
                 id,
-                result.value.blob.size,
+                result.data.blob.size,
                 this.#lastTotal.get(id),
             );
         else this.#progress.dropped(id);

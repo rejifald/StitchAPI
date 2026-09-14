@@ -223,15 +223,55 @@ describe('records written before the `tripped` flag existed', () => {
     });
 });
 
-test('throws when neither failures nor cooldown is set (required-by-design, P15)', async () => {
-    const call = stitch({
-        baseUrl: server.url,
-        path: '/svc',
-        circuit: { key: 'orphan-breaker' },
+// P15, as the maintainer resolved it for 1.0: both knobs DEFAULT rather than throw. `circuit`
+// itself is opt-in, so the declaration is the decision a reviewer sees; the threshold is a tuning
+// knob with a house value, exactly like `retry.backoff.base`.
+//
+// These three tests pin the defaults as BEHAVIOUR, not as a constant: each would fail against the
+// old code (which threw on the missing field) and against a wrong default (a 4th/6th failure
+// opening the breaker, or a cooldown that is not 30s).
+describe('`failures` and `cooldown` default rather than throw (P15)', () => {
+    test('a circuit with neither knob set still calls, and does not throw at construction', async () => {
+        server.route('GET', '/svc', { statuses: [200], body: { ok: true } });
+        const call = stitch({
+            baseUrl: server.url,
+            path: '/svc',
+            circuit: { key: 'defaulted-breaker' },
+        });
+        await expect(call()).resolves.toEqual({ ok: true });
+        expect(server.callCount('/svc')).toBe(1);
     });
-    await expect(call()).rejects.toThrow(
-        /circuit requires `failures` and `cooldown`/,
-    );
+
+    test('`failures` defaults to 5 — the 5th consecutive failure opens the breaker, not the 4th', async () => {
+        const clock = manualClock();
+        const c = createCircuit(
+            { key: 'k' },
+            memoryStore(),
+            'default-failures',
+            clock,
+        );
+        // Four failures bank without opening: a default of 4 (or less) would open early here.
+        for (let i = 0; i < 4; i++) expect(await c.onFailure()).toBe(false);
+        expect(await c.phase()).toBe('closed');
+        // The fifth is the one that opens it.
+        expect(await c.onFailure()).toBe(true);
+        expect(await c.phase()).toBe('open');
+    });
+
+    test('`cooldown` defaults to 30s — open at 29_999ms, half-open at 30_000ms', async () => {
+        const clock = manualClock();
+        const c = createCircuit(
+            { failures: 1 },
+            memoryStore(),
+            'default-cooldown',
+            clock,
+        );
+        expect(await c.onFailure()).toBe(true);
+        await clock.advance(29_999);
+        expect(await c.phase()).toBe('open');
+        await clock.advance(1);
+        expect(await c.phase()).toBe('half-open');
+    });
 });
 
 // The open → half-open boundary, pinned to the millisecond on an injected clock (ADR 0010).
