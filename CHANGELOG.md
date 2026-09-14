@@ -270,10 +270,12 @@ npm release are grouped under the in-development version that introduced them.
     reads a property of that name off our object and renaming it adds **no** translation: there was
     no identity mapping to preserve. `XhrLike.responseType` is exempt because it is literally
     `xhr.responseType = …` on a foreign object; an IDL _parameter_ name is documentation, not a
-    seam. Third instance of this reversal, after `AdapterRequest.responseType` and
-    `OAuth2Options.client`. The entry also grouped by the shared **prefix**, which is what the lint
-    mechanically detects, where P24 treats a shared prefix as a _signal_ of an envelope rather than
-    its boundary — so `target`, the transport handle, stays flat beside `origins`.
+    seam. Fifth instance of this reversal, after `AdapterRequest.responseType` and
+    `AdapterRequest.arrayFormat` (both 2026-09-04), `DocSearchHit` (2026-09-09) and
+    `OAuth2Options.client` (2026-09-14). The entry also grouped by the shared **prefix**, which is
+    what the lint mechanically detects, where P24 treats a shared prefix as a _signal_ of an
+    envelope rather than its boundary — so `target`, the transport handle, stays flat beside
+    `origins`.
 
     **Both halves narrow from `string` to `Origin`,** which closes a live trap:
     `allowedOrigins: '*'` type-checked and then silently dropped **every** inbound message, because

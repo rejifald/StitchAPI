@@ -626,8 +626,9 @@ const PREFIX_GROUP_ALLOW = new Map([
     //  P24 carve-out (a)'s binding clause settles the rest — the exemption binds the layer that
     //  meets the standard, not every layer above it; an authoring surface MAY fold provided the
     //  engine converts before the value reaches the boundary, which is exactly what windowChannel
-    //  does. Third instance of this reversal, after AdapterRequest.responseType (2026-09-04) and
-    //  OAuth2Options.client above.
+    //  does. Fifth instance of this reversal, after AdapterRequest.responseType and
+    //  AdapterRequest.arrayFormat (both 2026-09-04), DocSearchHit (2026-09-09) and
+    //  OAuth2Options.client above (2026-09-14).
     //  The entry also mis-drew the boundary it was defending. It grouped by the shared PREFIX —
     //  which is what R8 mechanically detects — where P24 treats a shared prefix as a SIGNAL of an
     //  envelope, not as the envelope's edge. The real dimension was the channel's ORIGIN POLICY:

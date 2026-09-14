@@ -831,7 +831,8 @@ _Carve-outs:_
     [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults)
     reading `CacheOptions.ttl` gets.
 
-    _Reversed (2026-09-14), the third instance — an IDL **parameter** name is not a wire contract:_
+    _Reversed (2026-09-14), the fifth instance of the same error — an IDL **parameter** name
+    is not a wire contract:_
     `WindowChannelOptions.target`/`targetOrigin` was exempted on the grounds that `targetOrigin` is
     `window.postMessage()`'s own parameter name. It is — and that is not what this carve-out
     protects. The value is passed **positionally**:
@@ -2038,7 +2039,10 @@ published surface at all), and the three P24 carve-outs this release dissolved a
 compliant authored duration the closed list had simply never heard of, which is not the same
 thing as passing.
 
-Three entries were **kept but rewritten**, because a wrong reason is worse than no reason:
+Three entries were **kept but rewritten**, because a wrong reason is worse than no reason —
+**two of them still stand.** The third did not survive its own correction: the honest
+rationale is what exposed the error it still carried, and `WindowChannelOptions.target` was
+**deleted** on 2026-09-14 rather than rewritten twice. Its bullet stays below for the record:
 
 - `StreamStitchSseOptions`'s de-listing said six packages where there were five, counted five
   `extends` and one alias where the source had one `extends` and four aliases, and called the
