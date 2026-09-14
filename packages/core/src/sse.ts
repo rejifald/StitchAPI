@@ -16,7 +16,8 @@ import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
 import type { Surface } from './surface';
 import {
-    type AdapterResponse,
+    type AdapterResult,
+    type AtLeastOne,
     type NoUnknownConfigKeys,
     type NoUnknownNestedKeys,
     type ResolvedStitchConfig,
@@ -163,7 +164,7 @@ async function* parseEventStream(
  */
 export const sseSurface: Surface<StitchInput, SseEvent[]> = {
     id: 'sse',
-    async *stream(res: AdapterResponse, cfg: ResolvedStitchConfig) {
+    async *stream(res: AdapterResult, cfg: ResolvedStitchConfig) {
         const body = res.body;
         if (body instanceof ReadableStream)
             yield* parseEventStream(
@@ -233,12 +234,23 @@ function bindSeam(s: Seam): SseSeamApi {
  * The sse surface's authoring helper — callable for the terse form (`sse(config)`) plus:
  * - `sse.stitch(config)` — a standalone sse stitch (alias of the callable).
  * - `sse.bind(existingSeam)` — bind sse members to an existing seam.
- * - `sse.bind(options)` — a new seam whose members default to sse.
+ * - `sse.bind(options)` — a new seam, configured by `options`, whose members default to sse.
+ * - `sse.bind(seam())` — the all-defaults new seam (the opaque `bind({})` is a compile error, P20).
  * - `sse.surface` — the sse {@link Surface} identity.
  */
 export const sse = Object.assign(sseStitch, {
     surface: sseSurface,
     stitch: sseStitch,
-    bind: (arg: Seam | SeamConfig): SseSeamApi =>
+    /**
+     * Bind sse members to a seam: an existing {@link Seam} is used as-is, anything else is a
+     * {@link SeamConfig} this builds a NEW seam from.
+     *
+     * The config arm is `AtLeastOne<SeamConfig>`, so the opaque `bind({})` is a compile error
+     * (CONTRACT.md P20). `{}` failed `isSeam`, fell through to `seam({})`, and silently built a
+     * whole second runtime — its own store, vault, trace sink and lifecycle — behind the most
+     * opaque spelling available. The all-defaults case has an unambiguous spelling that says what
+     * it does: `sse.bind(seam())`.
+     */
+    bind: (arg: Seam | AtLeastOne<SeamConfig>): SseSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

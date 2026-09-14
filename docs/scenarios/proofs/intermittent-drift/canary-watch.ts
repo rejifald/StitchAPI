@@ -1,7 +1,7 @@
 // The assembled answer, in its own file so C8 can count it without counting the counter.
 //
 // Everything the scenario asks for that IS declarative lives between the markers below: a strict
-// schema, one `severity` override that demotes additions, and the `drift()` wrapper that turns the
+// schema, one `level` override that demotes additions, and the `drift()` wrapper that turns the
 // strictness into per-class levels instead of a blanket rejection. The aggregation half is the
 // `DriftRate` sink, which is user code and is counted separately.
 //
@@ -23,6 +23,6 @@ export const StrictCharge = z.object({
 
 /** Additions demoted below the default `info` — a vendor release should not page anyone. */
 export const chargeOutput = drift(StrictCharge, {
-    severity: { undeclared: 'verbose' },
+    level: { undeclared: 'verbose' },
 });
 /* <count:end> */

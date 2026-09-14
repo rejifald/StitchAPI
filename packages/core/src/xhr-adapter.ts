@@ -13,7 +13,7 @@
 // origin from JS. (JS also can't read Location or intercept the hop here, so there's nothing to
 // strip.) Same protection fetchAdapter reconstructs by hand on Node, where the platform doesn't.
 import { decodeResponseBody, encodeRequestBody } from './http-adapter';
-import type { Adapter, AdapterRequest, AdapterResponse } from './types';
+import type { Adapter, AdapterRequest, AdapterResult } from './types';
 
 /** The byte-progress shape XHR emits (a structural subset of the DOM `ProgressEvent`). */
 export interface XhrProgress {
@@ -49,7 +49,7 @@ export type XhrLikeCtor = new () => XhrLike;
 export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
     const xhrAdapterRequest: Adapter = function xhrAdapterRequest(
         req: AdapterRequest,
-    ): Promise<AdapterResponse> {
+    ): Promise<AdapterResult> {
         if (req.stream) {
             return Promise.reject(
                 new Error(
@@ -67,7 +67,7 @@ export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
             );
         }
 
-        return new Promise<AdapterResponse>((resolve, reject) => {
+        return new Promise<AdapterResult>((resolve, reject) => {
             const xhr = new Ctor();
             xhr.open(req.method.toUpperCase(), req.url, true);
             xhr.responseType = 'arraybuffer';

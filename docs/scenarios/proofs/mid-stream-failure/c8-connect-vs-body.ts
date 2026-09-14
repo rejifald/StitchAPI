@@ -22,7 +22,7 @@ import { manualClock } from '../../../../packages/core/src/testing';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import { FakeStreamProvider } from './fake-llm-stream';
 import { check, checkSeq, finish, heading, note } from './harness';
@@ -40,13 +40,13 @@ function sseRetryingConnect(inner: Adapter, attempts = 4): Surface {
     return {
         ...sseSurface,
         id: 'sse-connect-retry',
-        execute: async (req: AdapterRequest): Promise<AdapterResponse> => {
-            let last: AdapterResponse | undefined;
+        execute: async (req: AdapterRequest): Promise<AdapterResult> => {
+            let last: AdapterResult | undefined;
             for (let i = 0; i < attempts; i++) {
                 last = await inner(req);
                 if (![429, 502, 503, 504].includes(last.status)) return last;
             }
-            return last as AdapterResponse;
+            return last as AdapterResult;
         },
     };
 }

@@ -19,7 +19,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     Clock,
 } from '../../../../packages/core/src/types';
 
@@ -145,7 +145,7 @@ export class FakeJobApi {
     }
 
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const path = new URL(req.url).pathname;
             const method = req.method.toUpperCase();
             const res = this.route(method, path);
@@ -159,7 +159,7 @@ export class FakeJobApi {
         };
     }
 
-    private route(method: string, path: string): AdapterResponse {
+    private route(method: string, path: string): AdapterResult {
         if (method === 'POST' && path === '/jobs') return this.submit();
         if (method === 'GET' && path.startsWith('/jobs/'))
             return this.status(path.slice('/jobs/'.length));
@@ -174,7 +174,7 @@ export class FakeJobApi {
 
     // Step 1 — 202 Accepted. The body deliberately carries NOTHING useful: the only place the job
     // id appears is the `Location` HEADER, which is what makes this scenario's first hop hard.
-    private submit(): AdapterResponse {
+    private submit(): AdapterResult {
         const id = `job-${this.nextId++}`;
         this.jobs.set(id, { id, pollsSeen: 0, resultFetches: 0 });
         return {
@@ -190,7 +190,7 @@ export class FakeJobApi {
     }
 
     // Step 2 — always HTTP 200. `InProgress` for the first N polls, then the terminal state.
-    private status(id: string): AdapterResponse {
+    private status(id: string): AdapterResult {
         const job = this.jobs.get(id);
         if (!job)
             return {
@@ -232,7 +232,7 @@ export class FakeJobApi {
 
     // Step 3 — SINGLE-USE. The pre-signed link expires on first successful fetch; every later
     // fetch is a permanent 404 that a naive `retry` will happily attempt three times.
-    private result(id: string): AdapterResponse {
+    private result(id: string): AdapterResult {
         const job = this.jobs.get(id);
         if (!job)
             return {

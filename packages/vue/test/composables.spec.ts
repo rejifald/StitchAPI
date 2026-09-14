@@ -3,7 +3,12 @@
 // and the core publishes synchronously on each transition, so a `flush()` (one
 // awaited microtask) is enough to settle the fake stitch's resolved promises.
 // Driven by FAKE stitches — no engine, no network.
-import { stitchQueryOptions, useStitch, useStitchStream } from '../src';
+import {
+    type VueUseStitchOptions,
+    stitchQueryOptions,
+    useStitch,
+    useStitchStream,
+} from '../src';
 
 import type { StitchCallResult, StitchLike } from '@stitchapi/query-core';
 import type { StitchEvent } from 'stitchapi';
@@ -298,9 +303,35 @@ describe('P9 — the result type is framework-qualified', () => {
         // for, so the divergent side is prefixed — as with `SolidStitchStore`/`SvelteStitchStore`.
         // Pinned as a compile error so the bare name cannot quietly return here.
         // @ts-expect-error — vue's is `VueUseStitchResult`; the bare name is react's
-        const _check: import('../src').UseStitchResult<number> | undefined =
-            undefined;
+        const _check: import('../src').UseStitchResult<number> = undefined;
         void _check;
+        expect(true).toBe(true);
+    });
+});
+
+describe('P9 — the options type is framework-qualified', () => {
+    test('the bare `UseStitchOptions` is gone; react owns that name (compile-time)', () => {
+        // `@stitchapi/react` declares a bare `UseStitchOptions<T>` — and
+        // `@stitchapi/react-native` / `@stitchapi/expo` republish that declaration verbatim
+        // via `export *` — so the bare name denotes react's contract on three published
+        // packages. Vue's differs (below), so it takes the framework prefix, exactly as the
+        // result type did. Pinned as a compile error so the bare name cannot quietly return.
+        // @ts-expect-error — vue's is `VueUseStitchOptions`; the bare name is react's
+        const _check: import('../src').UseStitchOptions<number> = undefined;
+        void _check;
+        expect(true).toBe(true);
+    });
+
+    test('vue rejects react-only `deps` — the divergence the prefix records', () => {
+        // This is WHY the name is qualified rather than shared: react's options admit a
+        // `deps` array (its explicit re-create trigger). Vue re-creates the handle by
+        // watching `input`/`options`, so `deps` is not part of this contract and must not
+        // compile — otherwise it would be accepted and silently ignored.
+        const _opts: VueUseStitchOptions<number> = {
+            // @ts-expect-error — `deps` is react's; vue re-triggers via a ref or getter
+            deps: [1],
+        };
+        void _opts;
         expect(true).toBe(true);
     });
 });

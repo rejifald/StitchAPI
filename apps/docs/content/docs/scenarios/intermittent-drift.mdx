@@ -53,7 +53,7 @@ honestly:
 ```ts
 const charges = stitch({
     url: 'https://api.vendor.com/charges/{id}',
-    output: drift(StrictCharge, { severity: { undeclared: 'verbose' } }),
+    output: drift(StrictCharge, { level: { undeclared: 'verbose' } }),
     trace: new DriftRate({ window: '15m' }),
 });
 ```
@@ -74,14 +74,15 @@ teams write for availability kept 100% of calls and produced **ten** $0 charges.
    industry class — has no spelling. `.nullable()` produces **nothing at all**, so the 5%
    rollout is invisible; the strict schema turns it into a 5% error rate that also discards the
    four fields that were fine. A hand-rolled classifier beats `DriftOptions` on exactly this row.
-3. **`severity` is keyed by mechanism, not by change class.** It takes
+3. **`level` is keyed by mechanism, not by change class.** It takes
    `undeclared`/`coerced`/`defaulted` — of which only _addition_ maps 1:1 to an industry class.
    Removal, type change and nullability each land on a kind decided by **your schema**, so their
    loudness is a schema decision rather than a severity one.
 4. **No per-path severity.** `ignore` is the only path-aware lever and it is on/off. "Coercion on
    `transaction_id` pages, coercion on `description` doesn't" has no spelling.
 5. **A soft finding cannot be promoted to fatal through the type.** `error` isn't in
-   `DriftSeverity` (a cast past it does work at runtime).
+   the soft half of `DriftLevel` — `Exclude<DriftLevel, 'error'>` (a cast past it does work at
+   runtime).
 6. **Soft findings are invisible on the awaited path.** `await` and `.safe()` carry nothing —
    `StitchError` has no `findings`, and a hard failure gives only a generic `contract violation
 (drift)`. The trace sink for the _same_ run named the field and both types. `drift()` with

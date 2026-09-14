@@ -23,7 +23,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     Clock,
 } from '../../../../packages/core/src/types';
 
@@ -204,7 +204,7 @@ export class FakeEtagApi {
 
     /** A StitchAPI {@link Adapter} bound to this server. */
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const { status, etag, body } = this.handle(
                 req.method,
                 req.url,

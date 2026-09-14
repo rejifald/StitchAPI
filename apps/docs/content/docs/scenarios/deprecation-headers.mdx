@@ -28,7 +28,7 @@ This is the table worth keeping. Measured across every accessor on a **successfu
 |                                                         | carries response headers                                                              |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `adapter`                                               | **yes** — it built the response, but knows no stitch name and can't change the result |
-| `hooks.onResponse`                                      | **yes** — the whole `AdapterResponse`, plus `ctx.name`                                |
+| `hooks.onResponse`                                      | **yes** — the whole `AdapterResult`, plus `ctx.name`                                  |
 | **`Surface.interpret(res, cfg)`**                       | **yes** — and it returns the value the call resolves to                               |
 | `await` / `.unwrap()` / `.safe()`                       | no                                                                                    |
 | `.inspect()` (5 keys) / `.report()` (9 keys)            | no — `status`, but no headers                                                         |

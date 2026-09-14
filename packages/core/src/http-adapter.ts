@@ -3,7 +3,7 @@ import type {
     Adapter,
     AdapterProgress,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     MultipartNesting,
     ResponseType,
 } from './types';
@@ -35,7 +35,7 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
     const fetchImpl = opts?.fetch ?? fetch;
     const fetchAdapterRequest: Adapter = async function fetchAdapterRequest(
         req: AdapterRequest,
-    ): Promise<AdapterResponse> {
+    ): Promise<AdapterResult> {
         const method = req.method.toUpperCase();
         const headers: Record<string, string> = { ...req.headers };
 
@@ -209,7 +209,7 @@ const MAX_REDIRECTS = 20;
 // detect that (no `location`) and return it as-is — the browser is already following the redirect
 // under CORS, which itself prevents the cross-origin custom-header leak (preflight). So:
 // manual-follow where the 3xx is readable (Node/undici), platform-safe otherwise. Returns the
-// final response and the URL it came from (for AdapterResponse.url).
+// final response and the URL it came from (for AdapterResult.url).
 async function followRedirects(
     fetchImpl: typeof fetch,
     startUrl: string,

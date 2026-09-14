@@ -2,8 +2,8 @@ export {
     stitchPlugin,
     currentStitch,
     type FastifyStitchPluginOptions,
-    type FastifyStitchPluginSeamOptions,
-    type FastifyStitchPluginConfigOptions,
+    type FastifyStitchPluginBorrowOptions,
+    type FastifyStitchPluginBuildOptions,
     type FastifyRequestSeam,
 } from './plugin';
 export { streamStitchSse, type StreamStitchSseOptions } from './sse';

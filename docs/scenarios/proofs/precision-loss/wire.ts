@@ -17,7 +17,7 @@ import { fetchAdapter } from '../../../../packages/core/src/http-adapter';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 export const BASE = 'https://api.snowflake.test';
@@ -99,7 +99,7 @@ export interface WireOpts {
  * back a real `Response` carrying `text` verbatim. Everything `fetchAdapter` does to a body — the
  * content-type sniff, the `response` switch, the `JSON.parse` on line 135 — runs for real.
  *
- * `text` is the wire. Nothing between this string and `AdapterResponse.body` is this file's code.
+ * `text` is the wire. Nothing between this string and `AdapterResult.body` is this file's code.
  */
 export function wireAdapter(
     text: string,
@@ -116,7 +116,7 @@ export function wireAdapter(
                 },
             })) as unknown as typeof fetch,
     });
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         seen.push(req);
         return inner(req);
     }) as RecordingAdapter;
@@ -136,7 +136,7 @@ export function bodyAdapter(
     opts: WireOpts = {},
 ): RecordingAdapter {
     const seen: AdapterRequest[] = [];
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         seen.push(req);
         return {
             status: opts.status ?? 200,
@@ -268,7 +268,7 @@ export function parseWithBigInt(text: string): unknown {
  * `JSON.parse` with big integers preserved as STRINGS — the other half of C3's fork.
  *
  * Takes `unknown`, not `string`, and that is not laziness. `StitchConfig.transform` is typed
- * `(body: unknown) => unknown` — it has to be, since it sits downstream of an `AdapterResponse.body`
+ * `(body: unknown) => unknown` — it has to be, since it sits downstream of an `AdapterResult.body`
  * that is `unknown` — so a parser written as `(text: string)` does NOT typecheck in a `transform`
  * slot even when `wire.response: 'text'` guarantees a string at runtime. The narrowing has to happen
  * inside the function. C8(c) reports this as one of the costs; it is measured here in the signature.
@@ -290,7 +290,7 @@ export function bigintAdapter(
     opts: WireOpts = {},
 ): RecordingAdapter {
     const seen: AdapterRequest[] = [];
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         seen.push(req);
         return {
             status: opts.status ?? 200,

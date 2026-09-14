@@ -117,3 +117,56 @@ describe('manualClock: sleep', () => {
         expect(c.pending()).toBe(0);
     });
 });
+
+// P17: `advance` is a consumer-authored duration on the published `stitchapi/testing` surface, so
+// it takes `number | string`. The parse has to land BEFORE the arithmetic — `current + '10s'`
+// string-concatenates into `'010s'` rather than throwing, which is P17's silent-collapse failure
+// (the clock would then report a string and every later comparison would be garbage).
+describe('manualClock: advance takes a duration token (P17)', () => {
+    test("advance('1s') moves the clock exactly 1000ms", async () => {
+        const c = manualClock();
+        await c.advance('1s');
+        expect(c.now()).toBe(1000);
+        expect(typeof c.now()).toBe('number'); // not the concatenated '01s'
+    });
+
+    test('a token fires the timers a raw-ms advance of the same length would', async () => {
+        const c = manualClock();
+        const order: string[] = [];
+        c.setTimer(() => order.push('t500ms'), 500);
+        c.setTimer(() => order.push('t30s'), 30_000);
+        c.setTimer(() => order.push('t2m'), 120_000);
+        await c.advance('1m');
+        expect(order).toEqual(['t500ms', 't30s']); // the 2m timer is not due
+        expect(c.now()).toBe(60_000);
+        expect(c.pending()).toBe(1);
+    });
+
+    test('tokens accumulate as numbers across successive advances', async () => {
+        const c = manualClock(1000);
+        await c.advance('1.5s');
+        await c.advance(500);
+        await c.advance('2m');
+        expect(c.now()).toBe(1000 + 1500 + 500 + 120_000);
+    });
+
+    test('a numeric string and a fractional token both read as ms', async () => {
+        const c = manualClock();
+        await c.advance('250'); // bare numeric string → raw ms
+        expect(c.now()).toBe(250);
+        await c.advance('0.5s');
+        expect(c.now()).toBe(750);
+    });
+
+    test('an unreadable token lands on its default and advances nothing', async () => {
+        const c = manualClock();
+        let fired = false;
+        c.setTimer(() => {
+            fired = true;
+        }, 10);
+        await c.advance('soon');
+        expect(c.now()).toBe(0); // never NaN, never a string
+        expect(fired).toBe(false);
+        expect(c.pending()).toBe(1);
+    });
+});

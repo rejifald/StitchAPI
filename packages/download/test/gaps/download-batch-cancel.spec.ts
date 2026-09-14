@@ -28,10 +28,10 @@ beforeEach(() => {
 const blobText = async (b: Blob): Promise<string> =>
     new TextDecoder().decode(await b.arrayBuffer());
 
-const okValue = (r: ItemResult): DownloadResult => {
+const okData = (r: ItemResult): DownloadResult => {
     if (r.status !== 'fulfilled')
         throw new Error(`expected fulfilled but got ${r.status}`);
-    return r.value;
+    return r.data;
 };
 const byId = (results: ItemResult[]): Map<ItemResult['id'], ItemResult> =>
     new Map(results.map((r) => [r.id, r]));
@@ -71,7 +71,7 @@ test('cancel ONE in-flight item — only it aborts; its slot returns to the queu
     expect(map.get('c')!.status).toBe('fulfilled');
     // B & C could only START once A's slot freed (concurrency 1) → proof the slot returned to the queue.
     expect(started).toEqual(['a', 'b', 'c']);
-    expect(await blobText(okValue(map.get('b')!).blob)).toBe('b-body');
+    expect(await blobText(okData(map.get('b')!).blob)).toBe('b-body');
 });
 
 test('cancel a QUEUED item — frees no slot, never hits the wire, does not skip the next (P11)', async () => {

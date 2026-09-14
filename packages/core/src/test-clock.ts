@@ -1,18 +1,20 @@
 // A manual {@link Clock} for tests: virtual time you advance by hand. Inject it as `clock` on a
 // stitch/seam and retry backoff, throttle pacing, the per-attempt timeout, and circuit cooldown all
-// resolve with zero real waiting — drive them with `advance(ms)`. (Per ADR 0010, `timeout.total`
+// resolve with zero real waiting — drive them with `advance('10s')`. (Per ADR 0010, `timeout.total`
 // and event `at`/`ms` timestamps stay on wall-clock.) Browser-safe: no `node:*`.
 import type { Clock, TimerHandle } from './types';
-import { abortReason } from './util';
+import { abortReason, parseDuration } from './util';
 
 /** A {@link Clock} whose time only moves when you call {@link ManualClock.advance}. */
 export interface ManualClock extends Clock {
     /**
-     * Move virtual time forward by `ms`, firing every timer / `sleep` due at or before the new time
-     * in due order — including ones scheduled by a callback fired during this advance (so a retry's
-     * next backoff is armed before the next `advance`). Resolves once woken continuations settle.
+     * Move virtual time forward by `ms` — raw milliseconds or a P17 duration token (`'30s'`,
+     * `'1.5m'`) — firing every timer / `sleep` due at or before the new time in due order,
+     * including ones scheduled by a callback fired during this advance (so a retry's next backoff
+     * is armed before the next `advance`). Resolves once woken continuations settle. A value the
+     * duration grammar cannot read lands on its default and advances nothing.
      */
-    advance(ms: number): Promise<void>;
+    advance(ms: number | string): Promise<void>;
     /** Count of still-pending timers/sleeps — assert `0` to prove nothing leaked. */
     pending(): number;
 }
@@ -39,7 +41,7 @@ const drainMicrotasks = (): Promise<void> =>
  * const call = stitch({ url, adapter, retry: { attempts: 3, backoff: { base: 10_000 }}, clock });
  * const p = call.safe();
  * await clock.advance(0); // run the first attempt
- * await clock.advance(10_000); // fire the backoff → next attempt
+ * await clock.advance('10s'); // fire the backoff → next attempt (10_000 works too)
  * ```
  */
 export function manualClock(start = 0): ManualClock {
@@ -84,8 +86,11 @@ export function manualClock(start = 0): ManualClock {
                 }, ms);
                 signal.addEventListener('abort', onAbort, { once: true });
             }),
-        async advance(ms: number): Promise<void> {
-            const target = current + Math.max(0, ms);
+        async advance(ms: number | string): Promise<void> {
+            // P17: parse BEFORE the arithmetic. `current + '10s'` would string-concatenate into
+            // `'010s'` rather than throw — the silent collapse the rule's parse clause exists to
+            // stop — and an unreadable token lands on its default (0) instead of `NaN`.
+            const target = current + Math.max(0, parseDuration(ms) ?? 0);
             for (;;) {
                 // Let woken continuations run (and arm their next timer) before scanning.
                 await drainMicrotasks();

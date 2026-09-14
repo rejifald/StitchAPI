@@ -25,7 +25,7 @@ import { stream } from '../../../../packages/core/src/stream';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import {
     check,
@@ -43,7 +43,7 @@ function streamingAdapter(
     text: string,
     contentType = 'application/json',
 ): Adapter {
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         const bytes = new TextEncoder().encode(text);
         if (req.stream) {
             return {

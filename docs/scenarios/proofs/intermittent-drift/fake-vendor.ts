@@ -20,7 +20,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 /** The payment body a caller has been consuming since the integration was written. */
@@ -121,7 +121,7 @@ export class FakeVendor {
     }
 
     adapter(): Adapter {
-        return async (_req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (_req: AdapterRequest): Promise<AdapterResult> => {
             this.n += 1;
             const n = this.n;
             const mutated = n % this.period === 0;
@@ -140,7 +140,7 @@ export class FakeVendor {
  */
 export const serving =
     (body: unknown): Adapter =>
-    async (_req: AdapterRequest): Promise<AdapterResponse> => ({
+    async (_req: AdapterRequest): Promise<AdapterResult> => ({
         status: 200,
         headers: {},
         body,

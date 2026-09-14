@@ -12,7 +12,7 @@ import { acceptsStatus } from './resilience';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     DriftFinding,
     ResolvedStitchConfig,
     StitchInput,
@@ -74,7 +74,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * "200-with-`errors` is an error". Omitted = the engine default (the body is the value).
      */
     readonly interpret?: (
-        res: AdapterResponse,
+        res: AdapterResult,
         cfg: ResolvedStitchConfig,
     ) => SurfaceOutcome<TResult>;
     /**
@@ -82,7 +82,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * **streaming** (ADR 0005 Decision 12). Omitted = a buffered surface. (Wired in Stage 5.)
      */
     readonly stream?: (
-        res: AdapterResponse,
+        res: AdapterResult,
         cfg: ResolvedStitchConfig,
     ) => AsyncIterable<unknown>;
     /**
@@ -126,7 +126,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * per-attempt `timeout` + `signal` / `trace` / `auth` / `hooks` all wrap it unchanged. A
      * non-HTTP surface (`shell`, a custom transport) shapes its request in {@link Surface.buildRequest}
      * (e.g. packing argv into `req.body`, the `graphql` precedent), runs it here, and returns an
-     * {@link AdapterResponse} that {@link Surface.interpret} maps to a value. It is the surface's own
+     * {@link AdapterResult} that {@link Surface.interpret} maps to a value. It is the surface's own
      * transport, bound to its identity — distinct from `StitchConfig.adapter` (the user's BYO HTTP
      * client); a surface with `execute` ignores `adapter`. Omitted = an ordinary HTTP surface.
      */
@@ -187,7 +187,7 @@ export const classifyStatus = (
  * the `??` at the call site is doing real work, and the type makes a misread a compile error.
  */
 export const verdictOf = (
-    res: AdapterResponse,
+    res: AdapterResult,
     cfg: ResolvedStitchConfig,
 ): Extract<SurfaceOutcome, { ok: false }> | undefined => {
     const byStatus = classifyStatus(res.status, cfg);
@@ -220,11 +220,11 @@ const isFalsy = (value: unknown): boolean => !value;
  * never control flow (ADR 0015/0016), which is exactly the property being relied on here.
  *
  * It reuses the `undeclared` change kind rather than minting one: the condition IS "the response did
- * not declare this path", and a new kind would widen `SoftDriftChange`, the per-kind severity map
+ * not declare this path", and a new kind would widen `SoftDriftChange`, the per-kind level map
  * and its documented defaults for a diagnostic that reads the same either way.
  */
 export const flagFinding = (
-    res: AdapterResponse,
+    res: AdapterResult,
     cfg: ResolvedStitchConfig,
 ): DriftFinding | undefined => {
     const path = cfg.verdict?.flag;
@@ -247,7 +247,7 @@ export const flagFinding = (
  * a surface that means something else composes {@link verdictOf} instead of this.
  */
 export const httpInterpret = (
-    res: AdapterResponse,
+    res: AdapterResult,
     cfg: ResolvedStitchConfig,
 ): SurfaceOutcome => verdictOf(res, cfg) ?? { ok: true, data: res.body };
 

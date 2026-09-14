@@ -15,12 +15,12 @@ import type { LlmProvider } from '../src/llm';
 import { graphqlSurface, httpSurface, interpretOf } from '../src/surface';
 import type { Surface } from '../src/surface';
 import type {
-    AdapterResponse,
+    AdapterResult,
     ResolvedStitchConfig,
     StatusMatch,
 } from '../src/types';
 
-const resOf = (status: number, body: unknown): AdapterResponse => ({
+const resOf = (status: number, body: unknown): AdapterResult => ({
     status,
     headers: {},
     body,

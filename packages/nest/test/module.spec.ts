@@ -280,6 +280,55 @@ describe('StitchModule.forFeatureScoped', () => {
         // no base feature-seam provider; the principal handle derives from STITCH_SEAM
         expect(principalProv.inject).toEqual([STITCH_SEAM, REQUEST]);
     });
+
+    // P16: `principal` returns `string | undefined` on every host, so nest can express the
+    // anonymous-request seam the others document — an `undefined` id falls back to the UNBOUND
+    // base seam rather than being bound to an invented id. Identity (`toBe`) is the assertion
+    // that pins it: `base.as(anything)` returns a fresh PrincipalSeam, so both the old
+    // `base.as(principal(req))` and a `principal(req) ?? 'anonymous'` patch fail here.
+    it('falls back to the unbound base seam when principal returns undefined', async () => {
+        const calls: string[] = [];
+        const TENANT = Symbol('tenant');
+        const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
+        const providers = StitchModule.forFeatureScoped({
+            seam: {
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
+                token: TENANT,
+            },
+            stitches: [GetThing],
+            // the shape every other host's resolver has: no tenant claim → undefined
+            principal: (req: { tenantId?: string }) => req.tenantId,
+        }).providers as FProv[];
+
+        const principalProv = providers.find((p) => p.provide === TENANT)!;
+        const stitchProv = providers.find((p) => p.provide === GetThing.token)!;
+        const baseProv = providers.find(
+            (p) => p.provide !== TENANT && p.provide !== GetThing.token,
+        )!;
+        const baseSeam = baseProv.useFactory!(
+            memoryStore(),
+            false,
+            new SeamRegistry(),
+        ) as Seam;
+
+        // anonymous request → the base seam itself, unbound
+        const anonymous = principalProv.useFactory!(baseSeam, {});
+        expect(anonymous).toBe(baseSeam);
+
+        // a bound request still gets its own principal handle off the same base
+        const bound = principalProv.useFactory!(baseSeam, { tenantId: 't1' });
+        expect(bound).not.toBe(baseSeam);
+
+        // and the anonymous handle is a working host: stitches still build and call
+        const stitch = stitchProv.useFactory!(anonymous) as ReturnType<
+            typeof GetThing.build
+        >;
+        await stitch();
+        expect(calls).toEqual(['GET https://feat.test/thing']);
+    });
 });
 
 describe('defineStitch token', () => {

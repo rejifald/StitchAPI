@@ -262,13 +262,13 @@ const listOrders = stitch({
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
             ignore: ['[].meta'], // acknowledged, unconsumed — don't report it
-            severity: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
+            level: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
         },
     ),
 });
 ```
 
-Drift is schema-anchored — no snapshot to manage. Severity lives in the schema: a required field missing/incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift on the event stream. Declared variance (an optional field, a nullable, an empty array) validates clean, so it's never a false alarm; `ignore` silences known-but-unconsumed fields and `severity` filters or re-levels the soft signals. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift?utm_source=github).
+Drift is schema-anchored — no snapshot to manage. Severity lives in the schema: a required field missing/incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift on the event stream. Declared variance (an optional field, a nullable, an empty array) validates clean, so it's never a false alarm; `ignore` silences known-but-unconsumed fields and `level` filters or re-levels the soft signals. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift?utm_source=github).
 
 ## Resilience: retry, throttle, timeout
 

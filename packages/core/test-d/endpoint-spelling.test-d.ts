@@ -18,7 +18,7 @@
 // composed layers here — the way the `graphql`/`multipart` guards do — would reject that, so the
 // divergence from the sibling guards is deliberate and pinned here.
 import { graphql, seam, stitch } from '../src';
-import type { Stitch, StitchConfig } from '../src';
+import type { AtLeastOne, Stitch, StitchConfig } from '../src';
 import { download } from '../src/download';
 import type { DownloadResult } from '../src/download';
 
@@ -107,16 +107,27 @@ expectType<Stitch<unknown>>(
 );
 
 // ── Residual limit, pinned rather than fixed ────────────────────────────────
-// A fragment typed as `Partial<StitchConfig>` rather than inferred from its literal has OPTIONAL
+// A fragment whose type is annotated rather than inferred from its literal has OPTIONAL
 // properties, which satisfy no probe, so it reads as supplying nothing and the pairing inside it is
 // not reported. This is the same fail-open the sibling guards document as their first residual
 // limit; the literal-level case, which is the one people write, errors precisely (above).
-const widened: Partial<StitchConfig> = {
+//
+// `AtLeastOne<StitchConfig>`, not `Partial<StitchConfig>`: P20 narrowed the `extends` slot, so the
+// all-optional spelling no longer reaches this guard at all (pinned just below). Every sibling of
+// the required key is still optional here, which is what keeps the fail-open alive.
+const widened: AtLeastOne<StitchConfig> = {
     url: `${BASE}/users`,
     baseUrl: BASE,
 };
 expectAssignable<Partial<StitchConfig>>(widened);
 expectType<Stitch<unknown>>(stitch({ extends: [widened] }));
+
+// And the narrowing itself: a fragment typed `Partial<StitchConfig>` declares no slot as far as the
+// type is concerned, so it is rejected at `extends` before any endpoint probe runs (CONTRACT.md
+// P20). Both spellings — the list and the P7 single-fragment shorthand — reject it.
+declare const allOptional: Partial<StitchConfig>;
+expectError(stitch({ extends: [allOptional] }));
+expectError(stitch({ extends: allOptional }));
 
 // The same fail-open reached a second way, and worth naming because it looks like it should work:
 // supplying an EXPLICIT result generic (`stitch<T>({ … })`) fills `TExplicit` only, so the second

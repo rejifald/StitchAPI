@@ -25,7 +25,7 @@ for f in docs/scenarios/proofs/deprecation-headers/c[0-9]*.ts; do pnpm exec tsx 
 **Severity: medium-high — the guide states the opposite.**
 
 The hooks guide says hooks _"never change what a stitch returns"_. Measured, that is true of the
-hook's **return value** and not of `ctx.res`, which is the engine's live `AdapterResponse`
+hook's **return value** and not of `ctx.res`, which is the engine's live `AdapterResult`
 (handed over at `engine.ts:705`, read again by `interpret` at `:775`):
 
 | mutation in `onResponse` | measured effect                                                            |
@@ -91,7 +91,7 @@ scenarios in this pass each rediscovered one row of it:
 |                                              | carries response headers                             |
 | -------------------------------------------- | ---------------------------------------------------- |
 | `adapter`                                    | yes — knows no stitch name, cannot change the result |
-| `hooks.onResponse`                           | yes — full `AdapterResponse` + `ctx.name`            |
+| `hooks.onResponse`                           | yes — full `AdapterResult` + `ctx.name`              |
 | **`Surface.interpret(res, cfg)`**            | **yes — and it returns the resolved value**          |
 | `await` / `.unwrap()` / `.safe()`            | no                                                   |
 | `.inspect()` (5 keys) / `.report()` (9 keys) | no                                                   |

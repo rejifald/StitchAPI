@@ -19,7 +19,7 @@ import { execFile } from 'node:child_process';
 import { compact, size, stitch } from 'stitchapi';
 import type {
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     AtLeastOne,
     Stitch,
     StitchConfig,
@@ -60,7 +60,7 @@ function resolveMaxBuffer(buffer: ShellOptions['buffer']): number {
 function runCommand(
     d: ShellDefaults,
     req: AdapterRequest,
-): Promise<AdapterResponse> {
+): Promise<AdapterResult> {
     const argv = req.body;
     if (!Array.isArray(argv) || !argv.every((a) => typeof a === 'string')) {
         const e = new Error(
@@ -70,7 +70,7 @@ function runCommand(
         return Promise.reject(e);
     }
     const url = `shell:${d.command}`;
-    return new Promise<AdapterResponse>((resolve, reject) => {
+    return new Promise<AdapterResult>((resolve, reject) => {
         execFile(
             d.command,
             argv,
@@ -160,9 +160,18 @@ export interface ShellBufferOptions {
  * The envelope is dropped whole rather than by its `response` field: once the four flat slots
  * folded into one word (CONTRACT.md P24), filtering a single field inside it would leave the other
  * three inherited — type-checking and doing nothing, which is the exact hole this closes.
+ *
+ * `adapter` is omitted on the same ground, one layer down. This surface carries `execute`, and the
+ * engine runs `cfg.kind.execute ?? adapter` — so a transport handed to a shell is not merely
+ * redundant, it is never consulted, not even as a fallback when the command fails to spawn.
+ * `shell({ command, adapter: fetchAdapter() })` used to type-check while the caller's transport sat
+ * silently unused, which reads as "this stitch goes over my adapter" and is false. `portChannel`
+ * dropped `allowedOrigins` for exactly this reason in #795: a flat shape is never a licence to let
+ * inert config type-check (CONTRACT.md P24 carve-out (b)). The other resilience keys stay — `retry`
+ * / `throttle` / `circuit` / `timeout` / `trace` all wrap `execute` and genuinely apply.
  */
 export interface ShellOptions extends Partial<
-    Omit<StitchConfig, 'kind' | 'wire'>
+    Omit<StitchConfig, 'kind' | 'wire' | 'adapter'>
 > {
     /** The executable — STATIC, bound at construction, NEVER from call input. An absolute path
      *  needs no `PATH`; a bare name (`'git'`) needs `env: { PATH: process.env.PATH }`. */

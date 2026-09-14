@@ -26,10 +26,10 @@ beforeEach(() => {
 const blobText = async (b: Blob): Promise<string> =>
     new TextDecoder().decode(await b.arrayBuffer());
 
-const okValue = (r: ItemResult): DownloadResult => {
+const okData = (r: ItemResult): DownloadResult => {
     if (r.status !== 'fulfilled')
         throw new Error(`expected fulfilled but got ${r.status}`);
-    return r.value;
+    return r.data;
 };
 const asRejected = (
     r: ItemResult,
@@ -91,9 +91,9 @@ test('a dead stall trips the idle timeout and is cut ALONE — siblings finish w
     expect(stall.retryable).toBe(true);
 
     // Siblings' bytes are COMPLETE and uncorrupted — the stall did not distort their result.
-    expect(await blobText(okValue(results[0]!).blob)).toBe('well-0-body');
-    expect(await blobText(okValue(results[2]!).blob)).toBe('well-1-body');
-    expect(await blobText(okValue(results[3]!).blob)).toBe('well-2-body');
+    expect(await blobText(okData(results[0]!).blob)).toBe('well-0-body');
+    expect(await blobText(okData(results[2]!).blob)).toBe('well-1-body');
+    expect(await blobText(okData(results[3]!).blob)).toBe('well-2-body');
 });
 
 test('a slow-but-alive stream SURVIVES an idle timeout that a dead stall trips', async () => {
@@ -121,7 +121,7 @@ test('a slow-but-alive stream SURVIVES an idle timeout that a dead stall trips',
 
     // slow-but-alive survived (bytes kept arriving); the dead stall tripped the same idle window.
     expect(results[0]!.status).toBe('fulfilled');
-    expect(await blobText(okValue(results[0]!).blob)).toBe('x'.repeat(60));
+    expect(await blobText(okData(results[0]!).blob)).toBe('x'.repeat(60));
     const stall = asRejected(results[1]!);
     expect(stall.code).toBe('IDLE_TIMEOUT');
 });

@@ -21,7 +21,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 export const HOST = 'https://api.vendor.test';
@@ -202,7 +202,7 @@ export function fakeVendor(opts: VendorOptions = {}): FakeVendor {
                 status,
                 headers: { 'content-type': 'application/json' },
                 body: { error: `vendor ${version} says ${status}` },
-            } satisfies AdapterResponse;
+            } satisfies AdapterResult;
 
         const id = String(
             u.searchParams.get('customer_id') ??
@@ -223,7 +223,7 @@ export function fakeVendor(opts: VendorOptions = {}): FakeVendor {
             status: 200,
             headers: { 'content-type': 'application/json' },
             body,
-        } satisfies AdapterResponse;
+        } satisfies AdapterResult;
     };
 
     return {

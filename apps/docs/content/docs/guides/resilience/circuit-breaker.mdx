@@ -36,9 +36,12 @@ failure re-**opens** it for a fresh cooldown. The breaker emits `progress`
 events with phase `circuit`. The positional form names both knobs at once:
 `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.
 
-`failures` and `cooldown` are both required — `failures` is
-the count of consecutive failures that trips the breaker open, and `cooldown`
-is the fast-fail window after opening, before a half-open trial is allowed.
+`failures` is the count of consecutive failures that trips the breaker open
+(default `5`), and `cooldown` is the fast-fail window after opening, before a
+half-open trial is allowed (default `'30s'`). Both are optional, so
+`circuit: { key: 'orders' }` builds a working breaker on the house defaults —
+declaring `circuit` at all is the decision a reviewer needs to see; the
+thresholds are tuning.
 
 `cooldown` is the **only** knob on that boundary: the instant the fast-fail
 window ends is the instant the trial is admitted. There is no separate probe

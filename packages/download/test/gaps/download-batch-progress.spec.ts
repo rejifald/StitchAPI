@@ -22,10 +22,10 @@ beforeEach(() => {
     server.reset();
 });
 
-const okValue = (r: ItemResult): DownloadResult => {
+const okData = (r: ItemResult): DownloadResult => {
     if (r.status !== 'fulfilled')
         throw new Error(`expected fulfilled but got ${r.status}`);
-    return r.value;
+    return r.data;
 };
 
 test('aggregate loaded/total/rate/ETA are EXACT under a known byte schedule (manualClock)', async () => {
@@ -115,8 +115,8 @@ test('downloadAll rolls per-item progress into a correct aggregate across concur
     expect(last!.count).toBe(3);
     expect(last!.loaded).toBe(300 + 500 + 700);
     // Sanity: the fulfilled blobs are the exact sizes we streamed.
-    expect(okValue(results[0]!).blob.size).toBe(300);
-    expect(okValue(results[2]!).blob.size).toBe(700);
+    expect(okData(results[0]!).blob.size).toBe(300);
+    expect(okData(results[2]!).blob.size).toBe(700);
 });
 
 // ---- #456: the rate/ETA track RECENT throughput, not the since-first-byte average ----------

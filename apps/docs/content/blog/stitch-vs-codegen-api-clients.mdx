@@ -53,7 +53,7 @@ const listOrders = stitch({
     // the schema is the contract; required fields throw, soft drift is leveled
     output: drift(OrdersSchema, {
         ignore: ['[].meta'], // acknowledged, unconsumed — don't report it
-        severity: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
+        level: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
     }),
 });
 ```

@@ -21,7 +21,7 @@
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c8-assembled.ts
 import { drift, stitch } from '../../../../packages/core/src/index';
 import type {
-    AdapterResponse,
+    AdapterResult,
     DriftFinding,
     StitchConfig,
 } from '../../../../packages/core/src/types';
@@ -63,7 +63,7 @@ const SAFE = z.object({
 });
 
 const variantA = {
-    output: drift(SAFE, { severity: ['info', 'warn'] }),
+    output: drift(SAFE, { level: ['info', 'warn'] }),
 } satisfies Partial<StitchConfig>;
 // ===========================================================================
 // <<< END USER CODE — variant A
@@ -74,7 +74,7 @@ const variantA = {
 // ===========================================================================
 const variantB = {
     hooks: {
-        onResponse: ({ res }: { res?: AdapterResponse }) => {
+        onResponse: ({ res }: { res?: AdapterResult }) => {
             if (res) res.body = SAFE.safeParse(res.body).data ?? null;
         },
     },
@@ -122,9 +122,9 @@ const SHAPE = {
 const seen = new Set<string>();
 
 const variantC = {
-    output: drift(SAFE, { severity: ['info', 'warn'] }),
+    output: drift(SAFE, { level: ['info', 'warn'] }),
     hooks: {
-        onResponse: ({ res }: { res?: AdapterResponse }) => {
+        onResponse: ({ res }: { res?: AdapterResult }) => {
             if (!res) return;
             for (const p of undeclared(res.body, SHAPE)) seen.add(p);
             res.body = SAFE.safeParse(res.body).data ?? null;

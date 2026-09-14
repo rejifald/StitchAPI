@@ -87,9 +87,15 @@ isolate committed first — so there is nothing to match against.
 
 `backoff` is **off by default**: the loop re-reads immediately, which is the tightest
 path to a win when contention is brief. Set a curve (`'expo'`, `'expo-jitter'`,
-`'fixed'`, or the envelope `{ curve, base, max }` with `base` 5ms and `max` 250ms) when many isolates hammer one
-key and the hot spin costs more KV reads than it saves — `'expo-jitter'` is the one to
-reach for there, since full jitter stops a thundering herd re-colliding in lockstep.
+`'fixed'`, or the envelope `{ curve, base, max }`) when many isolates hammer one key and
+the hot spin costs more KV reads than it saves — `'expo-jitter'` is the one to reach for
+there, since full jitter stops a thundering herd re-colliding in lockstep.
+
+It is core's `backoff` envelope, but its **bounds are deno-kv's own**: `base` defaults to
+5ms and `max` to 250ms, where core's `retry.backoff` defaults them to 100ms and 10s. A
+lost compare-and-set is not a failure waiting on a remote to recover — the winning
+commit has already landed, so the delay only has to de-phase the racers, and it is
+measured in KV round trips rather than recovery windows.
 
 The store owns no connection: `store.close()` delegates to the handle, so you
 decide when KV shuts down.

@@ -12,7 +12,7 @@ import type {
     Adapter,
     AdapterCapabilities,
     AdapterProgress,
-    AdapterResponse,
+    AdapterResult,
     AxiosLike,
     AxiosLikeConfig,
     StitchEvent,
@@ -44,7 +44,7 @@ function recorder() {
 // same helper makes a "declares it can't" transport, a "declares it can" one, and an unknown one.
 const stubAdapter = (capabilities?: AdapterCapabilities): Adapter =>
     Object.assign(
-        async (): Promise<AdapterResponse> => ({
+        async (): Promise<AdapterResult> => ({
             status: 200,
             headers: {},
             body: { ok: true },

@@ -19,7 +19,7 @@ import type {
     Adapter,
     AdapterProgress,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from './types';
 
 /** The byte-progress event axios passes to `onUploadProgress`/`onDownloadProgress` — the subset the
@@ -50,7 +50,7 @@ export interface AxiosLikeResponse {
     headers: Record<string, string | string[] | undefined>;
     data: unknown;
     // The config axios actually dispatched, echoed back on the response — read for its `url` so
-    // `AdapterResponse.url` is populated on this transport too (#708 §2). Declared as a minimal
+    // `AdapterResult.url` is populated on this transport too (#708 §2). Declared as a minimal
     // OPTIONAL bag rather than reusing `AxiosLikeConfig`, on purpose: real axios types this as
     // `InternalAxiosRequestConfig`, whose `url`/`method` are optional, so requiring `AxiosLikeConfig`
     // here would make `AxiosResponse` unassignable to `AxiosLikeResponse` and break
@@ -72,7 +72,7 @@ export function axiosAdapter(
 ): Adapter {
     const axiosAdapterRequest: Adapter = async function axiosAdapterRequest(
         req: AdapterRequest,
-    ): Promise<AdapterResponse> {
+    ): Promise<AdapterResult> {
         // Buffered-only transport (ADR 0005 Decision 9): a streaming surface must use
         // fetchAdapter. Fail loudly rather than silently buffering a stream.
         if (req.stream) {
@@ -152,7 +152,7 @@ export function axiosAdapter(
     return axiosAdapterRequest;
 }
 
-// The URL to report as `AdapterResponse.url`. `fetchAdapter` sets that field from the response
+// The URL to report as `AdapterResult.url`. `fetchAdapter` sets that field from the response
 // it actually got back, so it is the FINAL url after redirects; axios exposes no such thing — its
 // response carries only the config it dispatched. So this is the REQUEST url, and a followed 3xx
 // makes the two differ: what is reported is where the request was aimed, not necessarily where it

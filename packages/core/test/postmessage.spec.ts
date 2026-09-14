@@ -12,6 +12,7 @@ import {
     postMessageSurface,
     windowChannel,
 } from '../src/postmessage';
+import type { Adapter } from '../src/types';
 import { toValidator } from '../src/validator';
 import { asValidator } from './support/schema';
 import { collectEvents } from './support/streams';
@@ -555,6 +556,46 @@ describe('portChannel (origin gating bypassed for ports)', () => {
         await expect(dbl({ body: { x: 21 } })).resolves.toEqual({ y: 42 });
         await parent.close();
         await worker.close();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// no inert `adapter` on the verb options (P24)
+// ---------------------------------------------------------------------------
+// Every postMessage surface carries an `execute` hook, and the engine reads
+// `cfg.kind.execute ?? rt.adapter` — so an adapter handed to a verb can NEVER be called. The three
+// verb option types therefore Omit `adapter` (behind one shared `PostMessageVerbConfig` alias, so
+// they cannot drift apart), making `request(type, { adapter })` a COMPILE error instead of config
+// that typechecks and sits dead. Same defect, same fix as #795's `portChannel({ allowedOrigins })`
+// above: CONTRACT.md P24 carve-out (b) — a flat shape is never a licence to let inert config
+// typecheck. The `@ts-expect-error` directives are enforced by `check:types`; the closure is never
+// invoked, and the runtime test beside them proves the transport really is the channel's, not the
+// config's.
+
+describe('the verb options carry no inert `adapter` (P24)', () => {
+    test('`adapter` is rejected on request / emit / events', () => {
+        const rejected = () => {
+            const { parent } = channelPair();
+            const adapter: Adapter = () =>
+                Promise.resolve({ status: 200, headers: {}, body: {} });
+            return [
+                // @ts-expect-error — `adapter` is not a RequestOptions slot: `execute` replaces it.
+                parent.request('x', { adapter }),
+                // @ts-expect-error — `adapter` is not an EmitOptions slot: `execute` replaces it.
+                parent.emit('x', { adapter }),
+                // @ts-expect-error — `adapter` is not an EventsOptions slot: `execute` replaces it.
+                parent.events('x', { adapter }),
+            ];
+        };
+        expect(typeof rejected).toBe('function');
+    });
+
+    test('the channel transport answers, and nothing else can be substituted for it', async () => {
+        const { parent, iframe, closeBoth } = channelPair();
+        iframe.respond('ping', () => 'from-the-channel');
+        const ping = parent.request('ping');
+        await expect(ping({ body: {} })).resolves.toBe('from-the-channel');
+        await closeBoth();
     });
 });
 

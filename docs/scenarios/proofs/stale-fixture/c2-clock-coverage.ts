@@ -28,7 +28,7 @@ import { manualClock } from '../../../../packages/core/src/test-clock';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     Clock,
     StitchEvent,
     TraceSink,
@@ -64,7 +64,7 @@ function slowAdapter(
     steps: readonly (readonly [number, unknown])[],
 ): Adapter & { count(): number } {
     let n = 0;
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         const i = n++;
         await clock.sleep(latencyMs, req.signal);
         const step = steps[Math.min(i, steps.length - 1)] as readonly [
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
             let n = 0;
             const fn = (async (
                 _req: AdapterRequest,
-            ): Promise<AdapterResponse> => {
+            ): Promise<AdapterResult> => {
                 const i = n++;
                 await new Promise<void>((r) => {
                     setTimeout(r, 90);
@@ -452,7 +452,7 @@ async function main(): Promise<void> {
             let apiCalls = 0;
             const transport = (async (
                 req: AdapterRequest,
-            ): Promise<AdapterResponse> => {
+            ): Promise<AdapterResult> => {
                 if (req.url.includes('/oauth/token')) {
                     tokenCalls++;
                     return {

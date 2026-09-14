@@ -15,7 +15,7 @@
 import { stitch, verdictOf } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/surface';
 import type {
-    AdapterResponse,
+    AdapterResult,
     ResolvedStitchConfig,
     StitchConfig,
 } from '../../../../packages/core/src/types';
@@ -48,7 +48,7 @@ function safeShape(body: unknown): unknown {
 /** A surface whose `interpret` returns the stripped body as the value. */
 const strippingSurface: Surface = {
     id: 'stripping',
-    interpret: (res: AdapterResponse, cfg: ResolvedStitchConfig) =>
+    interpret: (res: AdapterResult, cfg: ResolvedStitchConfig) =>
         verdictOf(res, cfg) ?? { ok: true, data: safeShape(res.body) },
 };
 
@@ -199,7 +199,7 @@ async function main(): Promise<void> {
         check('.inspect().raw: clean', withHook.get('.inspect().raw'), 0);
         check('.inspect().data: clean', withHook.get('.inspect().data'), 0);
         note(
-            'the hook is typed `(ctx) => void | Promise<void>`, so this works by MUTATING `ctx.res.body` in place — the engine passes the live `AdapterResponse` and keeps using it. There is no return-a-new-body form',
+            'the hook is typed `(ctx) => void | Promise<void>`, so this works by MUTATING `ctx.res.body` in place — the engine passes the live `AdapterResult` and keeps using it. There is no return-a-new-body form',
         );
     }
 
@@ -287,7 +287,7 @@ async function main(): Promise<void> {
             path: '/v1/customers/1',
             cache: { ttl: '60s' },
             hooks: {
-                onResponse: ({ res }: { res?: AdapterResponse }) => {
+                onResponse: ({ res }: { res?: AdapterResult }) => {
                     if (res) res.body = safeShape(res.body);
                 },
             },

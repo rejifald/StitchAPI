@@ -50,6 +50,11 @@ keys (`retry`, `throttle`, `timeout`, `circuit`, `trace`, …) — all applied b
 subprocess. The positional options bag must set at least one field — all-defaults is spelled by
 omitting it, never `{}`.
 
+Two `StitchConfig` keys are **not** inherited, because neither could do anything here: `wire` (the
+HTTP wire format — a subprocess has none; stdout is read via `decode`) and `adapter` (this surface
+runs the command _instead of_ a transport, so an adapter passed here would never be called). Both
+are compile-time errors rather than silently ignored config.
+
 `buffer` caps the buffered `stdout`/`stderr` (default 10 MiB; exceeding it fails the call). It is a
 `ShellBufferOptions` envelope whose dominant field takes a byte count or a size token, and it
 collapses to that scalar:

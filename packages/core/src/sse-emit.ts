@@ -101,9 +101,11 @@ export interface ErrorFrameOptions {
 }
 
 /**
- * The framework-agnostic SSE emit options every adapter shares. Each adapter's public options
- * type (`StreamStitchSseOptions`, `SendStitchSseOptions`, `SseResponseOptions`) extends this,
- * adding only its own framework-specific fields (e.g. Express's `req`, Next's `signal`).
+ * The framework-agnostic SSE emit options every adapter shares. Every host adapter publishes the
+ * same name for it — `StreamStitchSseOptions` — derived from this: elysia, express, fastify, hono
+ * and nest alias it bare, and next `extends` it to add its own `signal`/`headers`. A field only one
+ * framework can offer does NOT go on the shared name: Express's request-socket `req` lives on the
+ * framework-qualified `ExpressStreamStitchSseOptions` beside it (P9 / ADR 0012 rule 6).
  */
 export interface SseEmitOptions {
     /**

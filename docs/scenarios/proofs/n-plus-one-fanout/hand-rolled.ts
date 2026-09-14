@@ -9,7 +9,7 @@
 // (an `npm i p-limit` is not zero lines, it is a dependency).
 import type {
     Adapter,
-    AdapterResponse,
+    AdapterResult,
     Clock,
 } from '../../../../packages/core/src/types';
 import type { Customer, Order, OrderWithCustomer } from './fake-vendor';
@@ -50,7 +50,7 @@ async function request(
     clock: Clock,
     url: string,
     attempts: number,
-): Promise<AdapterResponse> {
+): Promise<AdapterResult> {
     for (let attempt = 1; ; attempt += 1) {
         const res = await adapter({ method: 'GET', url, headers: {} });
         if (!RETRYABLE.has(res.status) || attempt >= attempts) return res;

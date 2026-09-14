@@ -16,6 +16,7 @@ import {
     type PrincipalSeam,
     type Seam,
     type SeamConfig,
+    isSeam,
     seam,
 } from 'stitchapi';
 
@@ -23,7 +24,7 @@ import {
 // when a `principal` resolver is set, else the root seam (both create member stitches).
 export type FastifyRequestSeam = Seam | PrincipalSeam;
 
-/** Common options shared by both `FastifyStitchPluginOptions` variants. */
+/** Options shared by both arms of {@link FastifyStitchPluginOptions}. */
 interface FastifyStitchPluginCommon {
     /**
      * Derive the request's principal id (e.g. a tenant or user id) from the incoming request.
@@ -33,18 +34,10 @@ interface FastifyStitchPluginCommon {
      */
     principal?: (req: FastifyRequest) => string | undefined;
     /**
-     * Bridge `fastify.log` (Fastify's built-in Pino logger) into the seam as its `TraceSink`,
-     * so stitch events flow through Fastify's logger. Default `true` (the bridge is on) — the
-     * cross-host canonical default. Ignored when a prebuilt `seam` is passed *and* it already
-     * has its own `trace` — a borrowed seam keeps its sink. Set `false` to leave tracing as
-     * the seam configured it (off by default in core).
-     */
-    logger?: boolean | AtLeastOne<FastifyLoggerSinkOptions>;
-    /**
      * Options for the error handler the plugin registers (see `stitchError.handler`).
      * `false` registers **no** error handler (you wire your own); `true` (the default) registers
      * the `502`-by-default mapping. The object form must set at least one field — enable-with-
-     * defaults is spelled `true`, never `{}` (CONTRACT.md P13/P20), matching `logger` above.
+     * defaults is spelled `true`, never `{}` (CONTRACT.md P13/P20).
      *
      * Named for **Fastify's own hook**, per CONTRACT.md P18: a host adapter's slot for a framework
      * hook takes that framework's word for it. Fastify registers via `setErrorHandler`, so the
@@ -54,27 +47,63 @@ interface FastifyStitchPluginCommon {
     errorHandler?: boolean | AtLeastOne<StitchErrorOptions>;
     /**
      * Close the seam on `onClose`. Defaults to `true` **only when the plugin built the seam**
-     * (from `seamConfig`); a borrowed seam (passed via `seam`) is never closed by the plugin —
-     * the app owns its lifecycle. Set `true` to force-close a borrowed seam, or `false` to keep
-     * a built one alive past the Fastify instance (rare).
+     * (i.e. `seam` was given a {@link SeamConfig}); a seam borrowed via `seam: <prebuilt>` is
+     * never closed by the plugin — the app owns its lifecycle. Set `true` to force-close a
+     * borrowed seam, or `false` to keep a built one alive past the Fastify instance (rare).
      */
     closeSeam?: boolean;
 }
 
-/** Pass a prebuilt seam the app owns — the plugin borrows it and never closes it by default. */
-export interface FastifyStitchPluginSeamOptions extends FastifyStitchPluginCommon {
+/**
+ * The **borrow** arm: `seam` is a prebuilt {@link Seam} the app owns. The plugin uses it as-is
+ * and never closes it by default.
+ */
+export interface FastifyStitchPluginBorrowOptions extends FastifyStitchPluginCommon {
+    /** A seam the app built and owns. Its runtime (store, vault, trace sink) is used verbatim. */
     seam: Seam;
-    seamConfig?: never;
+    /**
+     * **Not available on a borrowed seam.** The Pino bridge is injected as the seam's `trace` at
+     * BUILD time, and a prebuilt seam's runtime is already fixed — so there is nothing here to
+     * switch on. `logger: true` would be a silent no-op, so it is a compile error instead
+     * (CONTRACT.md P13: a toggle must actually enable something). To trace a seam you build
+     * yourself, pass `trace: fastifyLoggerSink(app.log)` to `seam()`.
+     */
+    logger?: never;
 }
 
-/** Let the plugin build (and, by default, own + close) the seam from a {@link SeamConfig}. */
-export interface FastifyStitchPluginConfigOptions extends FastifyStitchPluginCommon {
-    seamConfig: SeamConfig;
-    seam?: never;
+/**
+ * The **build** arm: `seam` is a {@link SeamConfig}, so the plugin builds the seam and — by
+ * default — owns and closes it.
+ */
+export interface FastifyStitchPluginBuildOptions extends FastifyStitchPluginCommon {
+    /**
+     * The shared config fragment to build the seam from. At least one field is required: the
+     * opaque `{}` is a compile error (CONTRACT.md P20), because it is indistinguishable from
+     * "I forgot to configure this". For an all-defaults seam, build it yourself
+     * (`seam: seam()`, plus `closeSeam: true` to keep the plugin owning its teardown).
+     */
+    seam: AtLeastOne<SeamConfig>;
+    /**
+     * Bridge `fastify.log` (Fastify's built-in Pino logger) into the seam as its `TraceSink`,
+     * so stitch events flow through Fastify's logger. Default `true` (the bridge is on) — the
+     * cross-host canonical default. An explicit `seam.trace` wins: the bridge is only injected
+     * when the config leaves `trace` unset. Set `false` to leave tracing as the config asked for
+     * (off by default in core).
+     *
+     * Honoured **only here**, on the build arm — see
+     * {@link FastifyStitchPluginBorrowOptions.logger}.
+     */
+    logger?: boolean | AtLeastOne<FastifyLoggerSinkOptions>;
 }
 
+/**
+ * The plugin's options. One field carries the seam — `seam` takes either a prebuilt {@link Seam}
+ * (borrowed) or a {@link SeamConfig} to build one from; `isSeam()` tells the two apart at
+ * runtime. The two arms exist only so `logger`, which is honoured only when the plugin builds
+ * the seam, is unrepresentable when it borrows one.
+ */
 export type FastifyStitchPluginOptions =
-    FastifyStitchPluginSeamOptions | FastifyStitchPluginConfigOptions;
+    FastifyStitchPluginBorrowOptions | FastifyStitchPluginBuildOptions;
 
 // The ambient request-scoped host. `currentStitch()` reads it; the `onRequest` hook runs each
 // request inside `als.run(host, …)` so the value is the per-request principal handle.
@@ -104,13 +133,17 @@ const pluginImpl: FastifyPluginAsync<FastifyStitchPluginOptions> = async (
     fastify,
     options,
 ) => {
-    const built = options.seamConfig !== undefined;
-
-    // Build-or-borrow the seam. When we build it, default the Pino logger bridge ON (unless
-    // `logger: false`) by injecting a `fastifyLoggerSink(fastify.log)` as the seam's TraceSink.
+    // Build-or-borrow the seam, discriminated at RUNTIME by `isSeam` — the one `seam` field
+    // carries either a prebuilt seam or the config to build one from. When we build it, default
+    // the Pino logger bridge ON (unless `logger: false`) by injecting a
+    // `fastifyLoggerSink(fastify.log)` as the seam's TraceSink.
+    const source = options.seam;
+    const built = !isSeam(source);
     let instance: Seam;
-    if (built) {
-        const cfg = options.seamConfig;
+    if (isSeam(source)) {
+        instance = source;
+    } else {
+        const cfg: SeamConfig = source;
         const wantLogger = options.logger !== false;
         const loggerOpts: FastifyLoggerSinkOptions =
             typeof options.logger === 'object' ? options.logger : {};
@@ -121,8 +154,6 @@ const pluginImpl: FastifyPluginAsync<FastifyStitchPluginOptions> = async (
                 ? { trace: fastifyLoggerSink(fastify.log, loggerOpts) }
                 : {}),
         });
-    } else {
-        instance = options.seam;
     }
 
     // Ownership (mirrors the Nest `borrowStore` rule): close only a seam we built, unless the
@@ -179,7 +210,7 @@ const pluginImpl: FastifyPluginAsync<FastifyStitchPluginOptions> = async (
  *
  * const app = Fastify({ logger: true });
  * await app.register(stitchPlugin, {
- *   seamConfig: { baseUrl: 'https://api.example.com' },
+ *   seam: { baseUrl: 'https://api.example.com' },
  *   principal: (req) => req.headers['x-tenant'] as string | undefined,
  * });
  * ```

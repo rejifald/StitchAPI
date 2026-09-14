@@ -9,7 +9,7 @@ import type { DownloadResult } from '../src/download';
 import type {
     Adapter,
     AdapterProgress,
-    AdapterResponse,
+    AdapterResult,
     StitchConfig,
 } from '../src/types';
 import { startMockServer } from './support/mock-server';
@@ -32,7 +32,7 @@ function blobAdapter(
 ): Adapter & { last?: Parameters<Adapter>[0] } {
     const fn = ((req) => {
         fn.last = req;
-        const res: AdapterResponse = {
+        const res: AdapterResult = {
             status: init.status ?? 200,
             headers: init.headers ?? {},
             body: new Blob([bytes]),

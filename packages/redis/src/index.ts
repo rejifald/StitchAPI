@@ -69,24 +69,30 @@ export interface RedisDriver {
         ttl?: number,
     ): Promise<number>;
     /**
-     * Atomically take or renew one slot of a `limit`-slot counting semaphore, expiring `ttl` ms
-     * from `now` — the fleet-wide half of `throttle.concurrency` ({@link StitchStore.lease},
-     * ADR 0025). Resolves `true` when the caller holds a slot. Paired with
-     * {@link RedisDriver.releaseLease}: implement both or neither.
+     * Atomically take or renew one slot of a `concurrency`-slot counting semaphore, expiring
+     * `ttl` ms from `now` — the fleet-wide half of `throttle.concurrency`
+     * ({@link StitchStore.lease}, ADR 0025). Resolves `true` when the caller holds a slot.
+     * Paired with {@link RedisDriver.release}: implement both or neither.
      */
     lease?(
         key: string,
         token: string,
-        limit: number,
+        concurrency: number,
         ttl: number,
         now: number,
     ): Promise<boolean>;
     /**
-     * Give back the slot {@link RedisDriver.lease} took for `token`; idempotent. Named for the
-     * lease rather than bare `release`, because this interface's `close` already owns the
-     * connection-lifecycle meaning of that word.
+     * Give back the slot {@link RedisDriver.lease} took for `token`; idempotent — releasing a
+     * token that is not held (already lapsed, already released) is a no-op, never an error.
+     *
+     * Spelled `release`, the same word {@link StitchStore.release} uses for the same operation
+     * (P18: a house contract speaks house vocabulary). It was `releaseLease`, on the argument
+     * that `close` already owned the connection-lifecycle sense of "release" — but the store
+     * contract this driver backs carries `release` and `close` side by side without anyone
+     * confusing them, so the qualifier bought nothing and cost the driver seam its parity with
+     * the interface it exists to implement.
      */
-    releaseLease?(key: string, token: string): Promise<void>;
+    release?(key: string, token: string): Promise<void>;
     /** Release the connection (optional — `redisStore().close()` delegates here). */
     close?(): Promise<void>;
 }
@@ -253,7 +259,7 @@ export function fromIoredis(client: IoredisLike): RedisDriver {
                 ),
             );
         },
-        async lease(key, token, limit, ttl, at) {
+        async lease(key, token, concurrency, ttl, at) {
             return (
                 Number(
                     await client.eval(
@@ -261,14 +267,14 @@ export function fromIoredis(client: IoredisLike): RedisDriver {
                         1,
                         key,
                         token,
-                        limit,
+                        concurrency,
                         ttl,
                         at,
                     ),
                 ) === 1
             );
         },
-        async releaseLease(key, token) {
+        async release(key, token) {
             await client.eval(RELEASE_SCRIPT, 1, key, token);
         },
         async close() {
@@ -318,14 +324,14 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
                 }),
             );
         },
-        async lease(key, token, limit, ttl, at) {
+        async lease(key, token, concurrency, ttl, at) {
             return (
                 Number(
                     await client.eval(LEASE_SCRIPT, {
                         keys: [key],
                         arguments: [
                             token,
-                            String(limit),
+                            String(concurrency),
                             String(ttl),
                             String(at),
                         ],
@@ -333,7 +339,7 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
                 ) === 1
             );
         },
-        async releaseLease(key, token) {
+        async release(key, token) {
             await client.eval(RELEASE_SCRIPT, {
                 keys: [key],
                 arguments: [token],
@@ -398,18 +404,18 @@ export function fromUpstash(client: UpstashLike): RedisDriver {
                 ),
             );
         },
-        async lease(key, token, limit, ttl, at) {
+        async lease(key, token, concurrency, ttl, at) {
             return (
                 Number(
                     await client.eval(
                         LEASE_SCRIPT,
                         [key],
-                        [token, String(limit), String(ttl), String(at)],
+                        [token, String(concurrency), String(ttl), String(at)],
                     ),
                 ) === 1
             );
         },
-        async releaseLease(key, token) {
+        async release(key, token) {
             await client.eval(RELEASE_SCRIPT, [key], [token]);
         },
     };
@@ -486,11 +492,11 @@ export function redisStore(
     // The semaphore pair, forwarded only when the driver has BOTH — half a lease API would let a
     // slot be taken and never given back.
     const lease = driver.lease?.bind(driver);
-    const releaseLease = driver.releaseLease?.bind(driver);
-    if (lease && releaseLease) {
-        store.lease = (key, token, limit, ttl, at) =>
-            lease(k(key), token, limit, ttl, at);
-        store.release = (key, token) => releaseLease(k(key), token);
+    const release = driver.release?.bind(driver);
+    if (lease && release) {
+        store.lease = (key, token, concurrency, ttl, at) =>
+            lease(k(key), token, concurrency, ttl, at);
+        store.release = (key, token) => release(k(key), token);
     }
     if (driver.close) {
         const close = driver.close.bind(driver);

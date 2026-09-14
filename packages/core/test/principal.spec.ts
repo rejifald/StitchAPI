@@ -98,7 +98,7 @@ describe('seam.as(principal) — the trusted principal boundary', () => {
             auth: cookieSession({
                 login: loginStitch(),
                 cookie: 'sid',
-                loginInput: (principal) => ({ body: { u: principal } }),
+                credentialsOf: (principal) => ({ body: { u: principal } }),
             }),
         });
 
@@ -126,7 +126,7 @@ describe('seam.as(principal) — the trusted principal boundary', () => {
             auth: cookieSession({
                 login: loginStitch(),
                 cookie: 'sid',
-                loginInput: (principal) => ({ body: { u: principal } }),
+                credentialsOf: (principal) => ({ body: { u: principal } }),
             }),
         });
 

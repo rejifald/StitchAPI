@@ -94,7 +94,7 @@ test('seam.as(principal) gives each principal its OWN session — no cross-princ
             login: loginStitch(),
             cookie: 'sid',
             // trusted code maps the principal → that user's login credentials
-            loginInput: (principal) => ({ body: { u: principal } }),
+            credentialsOf: (principal) => ({ body: { u: principal } }),
         }),
     });
 
@@ -106,7 +106,7 @@ test('seam.as(principal) gives each principal its OWN session — no cross-princ
 
     expect(server.callCount('/login')).toBe(2); // one per principal, not one shared session
     const logins = server.calls('/login');
-    expect((logins[0]!.body as { u: string }).u).toBe('A'); // loginInput got the principal
+    expect((logins[0]!.body as { u: string }).u).toBe('A'); // credentialsOf got the principal
     expect((logins[1]!.body as { u: string }).u).toBe('B');
 });
 
@@ -146,7 +146,7 @@ test("tenancy: 'app' is the explicit opt-in to ONE session shared across all cal
             login: loginStitch(),
             cookie: 'sid',
             tenancy: 'app',
-            loginInput: (principal) => ({ body: { u: principal ?? 'app' } }),
+            credentialsOf: (principal) => ({ body: { u: principal ?? 'app' } }),
         }),
     });
 

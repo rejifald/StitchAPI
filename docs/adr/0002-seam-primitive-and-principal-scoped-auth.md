@@ -4,6 +4,8 @@
 - **Date:** 2026-06-13
 - **Tags:** authoring-surface, auth, security, multi-tenant, runtime, agents
 
+> **Amendment — `cookieSession`'s credential callback is `credentialsOf`, and fastify has one `seam` slot.** Two spellings quoted below were renamed in the pre-GA hard-break sweep, with no aliases (P19). `CookieSessionOptions.loginInput` is now **`credentialsOf`** ([CONTRACT.md P6](../CONTRACT.md#p6--key-is-a-string-keyof-is-a-function)'s derivation-function convention: the `Of` suffix says it is a function and the stem says what it returns; `loginInput` named the consumer, and its `login` prefix put it in a P24 group with the required `login` stitch). Read `loginInput` as `credentialsOf` throughout — including `loginInput?: (principal?) => StitchInput` in Decision 3 and §"the supported multi-tenant pattern"; when and how the callback runs is unchanged (resolved at call time, receives the bound `principal`, credentials never originate from the caller). Separately, fastify's `seamConfig` — cited below (in the 2026-09-03 vault amendment) as one of the three slots that type their config as `SeamConfig` — is **gone**: `seam` is the single field, taking either a prebuilt `Seam` or `AtLeastOne<SeamConfig>`. See [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep) (P6/P24, P20+P13) and [`packages/core/src/auth.ts`](../../packages/core/src/auth.ts).
+
 ## Context
 
 Composing a stitch from shared defaults today means threading a fragment (baseUrl,

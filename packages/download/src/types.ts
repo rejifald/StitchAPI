@@ -61,15 +61,27 @@ export type ItemPhase = 'queued' | 'active' | 'settled';
 export type ItemStatus = 'fulfilled' | 'rejected' | 'cancelled';
 
 /**
- * A settled item. Shaped like `Promise.allSettled`, plus a `cancelled` arm, and — on a rejection —
- * a classification (`retryable` + a best-effort machine `code`) recovered from the transport error.
+ * A settled item. `Promise.allSettled`'s three-arm SHAPE — a `status` discriminator, plus a
+ * `cancelled` arm of our own — but this package's own house words for the payloads: the success
+ * payload is `data` and the failure payload is `error` (CONTRACT.md P5), as on every other StitchAPI
+ * runtime envelope. P5 carves out exactly one exception, the Standard-Schema `ValidationResult`; the
+ * `allSettled` spelling (`value`/`reason`) is not on that list, so a caller never has to remember
+ * which envelope this one is.
+ *
+ * A rejection also carries a classification — `retryable` plus a best-effort machine `code` —
+ * recovered from the transport error.
  */
 export type ItemResult<T = DownloadResult> =
-    | { id: DownloadId; status: 'fulfilled'; value: T }
+    | { id: DownloadId; status: 'fulfilled'; data: T }
     | {
           id: DownloadId;
           status: 'rejected';
-          reason: StitchError;
+          /**
+           * Why it failed. A {@link StitchError} — and, for a forward-progress stall, the
+           * `DownloadIdleTimeoutError` instance ITSELF (a `StitchError` subclass, P10), so
+           * `instanceof` and its `idle` window survive to here rather than hiding on `.cause`.
+           */
+          error: StitchError;
           /** Whether a retry might plausibly succeed: transport faults, 5xx/429/408, idle-timeout — vs terminal 4xx. */
           retryable: boolean;
           /** Best-effort code: an undici transport code (`UND_ERR_SOCKET`…), `HTTP_<status>`, `IDLE_TIMEOUT`, or `TIMEOUT`. */

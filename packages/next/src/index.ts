@@ -40,7 +40,7 @@ import {
 // `stitchapi/sse-emit`; this file keeps only Next's Web-standard `Response` driver.
 export type { StitchEventSource };
 
-export interface SseResponseOptions extends SseEmitOptions {
+export interface StreamStitchSseOptions extends SseEmitOptions {
     /** Extra response headers (merged over the SSE defaults). */
     headers?: Record<string, string>;
     /** Abort the upstream iterator when this fires — pass the route handler's
@@ -69,7 +69,7 @@ export interface SseResponseOptions extends SseEmitOptions {
  */
 export function streamStitchSse<T>(
     source: StitchEventSource<T>,
-    options: SseResponseOptions = {},
+    options: StreamStitchSseOptions = {},
 ): Response {
     const delta = resolveDelta(options.delta);
     const error = resolveError(options.error);

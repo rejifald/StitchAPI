@@ -5,6 +5,7 @@
 // a caller can never name another principal (the principal is never in `StitchInput`). Auth is
 // principal-scoped (separate sessions, no bleed); throttle stays shared (one bucket).
 import {
+    type Fragment,
     type SharedRuntime,
     compose,
     makeStitch,
@@ -112,7 +113,12 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
                   : [own.extends];
         const cfg: Partial<StitchConfig> = {
             ...own,
-            extends: [shared.fragment, ...ownExtends],
+            // `extends` is `AtLeastOne<StitchConfig>`-based because P20 bans an empty object in a
+            // slot a CONSUMER writes down. `shared.fragment` is not written down by anyone: it is
+            // the layer this seam assembled from its own `SeamConfig`, and `seam()` with no options
+            // legitimately assembles an empty one. The cast asserts that provenance — it is the one
+            // site that puts an internally built partial into the authored-layer slot.
+            extends: [shared.fragment as Fragment, ...ownExtends],
         };
         if (isGql) {
             cfg.kind = graphqlSurface;

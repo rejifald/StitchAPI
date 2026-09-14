@@ -31,7 +31,7 @@ beforeEach(() => {
     server.reset();
 });
 
-const loginInput = () => ({
+const credentialsOf = () => ({
     body: { u: env('ST_USER')(), p: env('ST_PASS')() },
 });
 
@@ -80,7 +80,7 @@ describe('Pluggable store — sessions', () => {
                 login,
                 cookie: 'SID',
                 key: 'svc',
-                loginInput,
+                credentialsOf,
                 tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
@@ -92,7 +92,7 @@ describe('Pluggable store — sessions', () => {
                 login,
                 cookie: 'SID',
                 key: 'svc',
-                loginInput,
+                credentialsOf,
                 tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
@@ -136,7 +136,7 @@ describe('Pluggable store — sessions', () => {
                 login,
                 cookie: 'SID',
                 key: 'svc',
-                loginInput,
+                credentialsOf,
                 tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
@@ -147,7 +147,7 @@ describe('Pluggable store — sessions', () => {
                 login,
                 cookie: 'SID',
                 key: 'svc',
-                loginInput,
+                credentialsOf,
                 tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
@@ -206,7 +206,7 @@ describe('Pluggable store — the vault split', () => {
                 login,
                 cookie: 'SID',
                 key: 'svc',
-                loginInput,
+                credentialsOf,
                 tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
@@ -252,7 +252,7 @@ describe('Pluggable store — the vault split', () => {
                     login,
                     cookie: 'SID',
                     key: 'svc',
-                    loginInput,
+                    credentialsOf,
                     tenancy: 'app',
                 }),
             });

@@ -82,6 +82,19 @@
 // (#564 item 2: widen the filter and take the noise, or rename the type). The same blind spot
 // puts `SurfaceOutcome.after`, a union member, out of R9's reach.
 // Under-flagging is deliberate: a ratchet that guesses is a ratchet nobody trusts.
+//
+// RECONCILED 2026-09 (the pre-stable audit; the full record is CONTRACT.md §7, "The 2026-09
+// gate reconciliation"). Four mechanical defects were fixed here, each of which had been
+// letting allow-list rationales rot unseen: R5 read one file per package where core publishes
+// SEVENTEEN entry points (the root barrel plus sixteen subpaths); R5 did not expand
+// `export *`, so `StitchStore` and `StitchError`
+// never entered the uniqueness map at all and two of its three active watch entries were
+// structurally inert; the `@deprecated` SKIP consulted by nine rules matched the word anywhere
+// in a JSDoc while R7 — the rule that reports it — required the tag position, so a prose
+// mention disabled nine rules with no compensating finding; and tsFiles() carried a
+// `.generated.` exemption that matched nothing and could only ever blind the gate. Every
+// allow-list entry below has been re-derived against the tree, and entries that could no
+// longer fire were deleted rather than left standing as decoration.
 import {
     existsSync,
     readFileSync,
@@ -124,11 +137,17 @@ function tsFiles(root) {
             const p = join(d, e);
             const s = statSync(p);
             if (s.isDirectory()) walk(p);
+            // `.d.ts` is excluded because an ambient module shim is not this package's own
+            // surface: packages/{react-native,expo}/src/native-modules.d.ts both `declare module
+            // 'react-native'` for the peer they build against. (Those two are NOT what the R1
+            // note below is about — see there.) No `.generated.` clause: there is no generated
+            // source under any packages/*/src today, so it exempted nothing, and the only effect
+            // it could ever have is to blind the gate to a generated published surface — which is
+            // exactly a surface a human never reviews by hand.
             else if (
                 /\.tsx?$/.test(e) &&
                 !/\.d\.ts$/.test(e) &&
-                !/\.(spec|test)\.tsx?$/.test(e) &&
-                !/\.generated\./.test(e)
+                !/\.(spec|test)\.tsx?$/.test(e)
             )
                 out.push(p);
         }
@@ -221,32 +240,42 @@ function typeAliases(src) {
     return out;
 }
 
-// True when the declaration at `idx` is immediately preceded by a JSDoc block carrying
-// `@deprecated`. Post-GA, a @deprecated marker is itself a violation (R7, amended P19) —
+// What counts as a `@deprecated` marker, for EVERY rule: the word at TAG POSITION — line start,
+// after a block comment's optional leading `*`. Prose that merely NAMES the marker is not one:
+// a `//` line comment explaining that a deprecated alias exists (core's `stripFns` note on
+// `key`/`keyOf`), or a mid-sentence mention inside a JSDoc, is documentation ABOUT the surface,
+// not a shim ON it.
+//
+// ONE definition, because the two predicates below used to disagree, and the disagreement ran
+// the dangerous way round. `deprecatedTagIndex()` (R7, the rule whose whole job is to REPORT a
+// marker) required the tag position; `deprecatedBefore()` (the SKIP consulted by R1, R2, R3, R4,
+// R6, R8, R9, R10 and R11) tested `/@deprecated/` anywhere in the preceding block. So a JSDoc
+// that only mentioned the word in prose — "unlike the @deprecated `key`, this one …" — switched
+// nine rules off over that declaration while R7 stayed silent, and the exemption came with no
+// compensating finding anywhere. A skip that is wider than the rule it defers to is not a
+// carve-out, it is a hole. Both now ask this one question.
+const DEPRECATED_TAG = /^[ \t]*\*?[ \t]*@deprecated\b/m;
+
+// True when the declaration at `idx` is immediately preceded by a block comment carrying a
+// `@deprecated` TAG. Post-GA, a @deprecated marker is itself a violation (R7, amended P19) —
 // R1–R4/R6 still skip deprecated declarations only so a hypothetical alias is reported
-// ONCE (as R7's shim finding), not double-counted under the naming rules too.
+// ONCE (as R7's shim finding), not double-counted under the naming rules too. That accounting
+// only balances while this predicate and R7's agree, which is why they share DEPRECATED_TAG.
 function deprecatedBefore(src, idx) {
     let j = idx;
     while (j > 0 && /[\s{;,(]/.test(src[j - 1])) j--; // skip whitespace + the field anchor
     if (src.slice(j - 2, j) !== '*/') return false; // must sit right after a comment
     const open = src.lastIndexOf('/*', j - 2);
-    return open !== -1 && /@deprecated/.test(src.slice(open, j));
+    return open !== -1 && DEPRECATED_TAG.test(src.slice(open + 2, j - 2));
 }
 
-// Index of the first `@deprecated` JSDoc TAG, or -1. A tag is the word at TAG POSITION — line
-// start, after the block comment's optional leading `*` — inside a `/* … */` block. Prose that
-// merely NAMES the marker is not one: a `//` line comment explaining that a deprecated alias
-// exists (core's `stripFns` note on `key`/`keyOf`), or a mid-sentence mention inside a JSDoc,
-// is documentation about the surface, not a shim on it. A raw `indexOf('@deprecated')` cannot
-// tell those apart and flagged the explanatory comment as a violation.
+// Index of the first `@deprecated` JSDoc TAG in a file, or -1 — R7's finding.
 function deprecatedTagIndex(src) {
     let open = src.indexOf('/*');
     while (open !== -1) {
         const close = src.indexOf('*/', open + 2);
         if (close === -1) return -1; // unterminated block: nothing further is a comment
-        const m = /^[ \t]*\*?[ \t]*@deprecated\b/m.exec(
-            src.slice(open + 2, close),
-        );
+        const m = DEPRECATED_TAG.exec(src.slice(open + 2, close));
         if (m) return open + 2 + m.index;
         open = src.indexOf('/*', close + 2);
     }
@@ -284,24 +313,122 @@ function exportedDeclNames(src) {
     return names;
 }
 
-// Identifiers a package's index.ts puts on its PUBLIC surface (direct decls + `export {…}`
-// blocks, taking the post-`as` alias). `export * from` is not expanded — a known gap noted
-// in CONTRACT.md §7; the watch-list (R5) is curated so this gap doesn't hide a real clash.
-function indexExports(indexPath) {
-    if (!existsSync(indexPath)) return new Set();
-    const src = readFileSync(indexPath, 'utf8');
-    const names = new Set(exportedDeclNames(src).map((d) => d.name));
-    const block = /\bexport\s+(?:type\s+)?\{([^}]*)\}/g;
-    let m;
-    while ((m = block.exec(src))) {
-        for (let part of m[1].split(',')) {
-            part = part.trim().replace(/^type\s+/, '');
-            if (!part) continue;
-            const as = part.split(/\s+as\s+/);
-            const id = (as[1] ?? as[0]).trim();
-            if (/^[A-Za-z_]\w*$/.test(id)) names.add(id);
-        }
+// Resolve a RELATIVE module specifier against the importing file, TS-style. Returns the
+// source path, or null when nothing matches (a `.json`/asset import, or a stale path).
+function resolveRelative(spec, fromFile) {
+    const base = join(dirname(fromFile), spec);
+    for (const cand of [
+        `${base}.ts`,
+        `${base}.tsx`,
+        join(base, 'index.ts'),
+        join(base, 'index.tsx'),
+    ])
+        if (existsSync(cand)) return cand;
+    return null;
+}
+
+// Every SOURCE file a package publishes as an entry point, read off its `exports` map and
+// mapped back through `lib/<name>.…` to `src/<name>.ts`.
+//
+// R5 used to read exactly ONE file per package, `src/index.ts`. That is the whole published
+// surface for 33 of the 34 published packages — and a fraction of core's, which publishes
+// SEVENTEEN entry points: the root barrel plus sixteen subpaths (`stitchapi/serve`,
+// `/mcp`, `/registry`, `/testing`, `/fingerprint`,
+// `/cache`, `/auth`, `/graphql`, `/sse`, `/sse-emit`, `/stream`, `/download`, `/postmessage`,
+// `/llm`, `/pipe`, `/xhr`). Every identifier reachable only through a subpath — the whole
+// serve/mcp/auth/llm/pipe vocabulary — was therefore absent from the uniqueness map, so a
+// peer package could ship a clashing name against any of them and R5 would see one side only.
+function entryPoints(dir) {
+    const manifest = join(PKGS, dir, 'package.json');
+    let pkg;
+    try {
+        pkg = JSON.parse(readFileSync(manifest, 'utf8'));
+    } catch {
+        pkg = {};
     }
+    const bases = new Set();
+    const walk = (node) => {
+        if (typeof node === 'string') {
+            const m = /^\.\/lib\/(.+?)\.(?:d\.)?[cm]?[jt]s$/.exec(node);
+            if (m) bases.add(m[1]);
+        } else if (node && typeof node === 'object')
+            for (const v of Object.values(node)) walk(v);
+    };
+    for (const [sub, node] of Object.entries(pkg.exports ?? {})) {
+        if (sub === './package.json') continue;
+        walk(node);
+    }
+    const files = [];
+    for (const base of [...bases].sort()) {
+        const p = join(PKGS, dir, 'src', `${base}.ts`);
+        if (existsSync(p)) files.push(p);
+    }
+    // A package with no `exports` map (or one that maps somewhere unresolvable) still has the
+    // conventional barrel — never return nothing and silently drop a package from the map.
+    if (!files.length) {
+        const idx = join(PKGS, dir, 'src', 'index.ts');
+        if (existsSync(idx)) files.push(idx);
+    }
+    return files;
+}
+
+// Identifiers a package puts on its PUBLIC surface, across every entry point: direct
+// declarations, `export {…}` blocks (taking the post-`as` alias), and — new — `export * from`.
+//
+// `export *` used to be skipped, and the comment here claimed the curated watch list covered
+// the gap. It did not, and could not: core declares BOTH `StitchStore` and `StitchError` in
+// `types.ts` and publishes them through `export * from './types'`, so neither name ever
+// entered `exportsByName` and R5's `dirs.size > 1` was unreachable for two of its three active
+// watch entries — the list was guarding names the map could not contain.
+//
+// A relative `export *` is expanded (recursively, `seen`-guarded): it republishes THIS
+// package's own declarations, which is precisely what R5 needs to compare across packages.
+// A BARE specifier — `export * from '@stitchapi/react'` in react-native, and again in expo —
+// is deliberately NOT expanded. A blanket republication of a sibling package cannot introduce
+// a divergent shape (TypeScript would reject a local re-declaration of a name the star already
+// exports), so it carries ONE declaration onto more surfaces and answers R5's question — "do
+// two packages DECLARE this name differently?" — with "no" by construction. Expanding it
+// would report react/react-native/expo against `UseStitchResult` and `UseStitchOptions`, the
+// two names this release just qualified, purely for republishing them.
+//
+// The asymmetry with a NAMED cross-package re-export (`export { type StitchEventSource } from
+// 'stitchapi'`), which has always counted, is left alone on purpose: the de-listed names below
+// are written against that behaviour, and each one records the verbatim-re-export reasoning by
+// hand. Collapsing the two is a change to R5's meaning, not a bug fix.
+function surfaceExports(dir) {
+    const names = new Set();
+    const seen = new Set();
+    const visit = (file) => {
+        if (!file || seen.has(file) || !existsSync(file)) return;
+        seen.add(file);
+        const src = readFileSync(file, 'utf8');
+        for (const d of exportedDeclNames(src)) names.add(d.name);
+        const block = /\bexport\s+(?:type\s+)?\{([^}]*)\}/g;
+        let m;
+        while ((m = block.exec(src))) {
+            for (let part of m[1].split(',')) {
+                part = part.trim().replace(/^type\s+/, '');
+                if (!part) continue;
+                const as = part.split(/\s+as\s+/);
+                const id = (as[1] ?? as[0]).trim();
+                if (/^[A-Za-z_]\w*$/.test(id)) names.add(id);
+            }
+        }
+        // `export * from './x'` / `export type * from './x'` — recurse into the module.
+        // `export * as ns from './x'` exports ONE name, the namespace object, not its members.
+        const star =
+            /\bexport\s+(?:type\s+)?\*\s*(?:as\s+([A-Za-z_]\w*)\s+)?from\s*['"]([^'"]+)['"]/g;
+        let st;
+        while ((st = star.exec(src))) {
+            if (st[1]) {
+                names.add(st[1]);
+                continue;
+            }
+            if (!st[2].startsWith('.')) continue; // a sibling PACKAGE — see above
+            visit(resolveRelative(st[2], file));
+        }
+    };
+    for (const entry of entryPoints(dir)) visit(entry);
     return names;
 }
 
@@ -312,11 +439,23 @@ function indexExports(indexPath) {
 // also banned by P3 but *Response is left to the type-aware phase — too many legitimate
 // mirrors of the platform `Response` family for a source-text check). Carve-outs: the
 // well-known StitchConfig authoring family, and any *Like* duck-type (P18: an adapter
-// mirror keeps its upstream spelling). Verified before adding Return/State: no exported
-// declaration in packages/*/src carries either suffix post-sweep (the only `AppState` is
-// a react-native ambient .d.ts mirror, which tsFiles() already excludes).
+// mirror keeps its upstream spelling). Verified before adding Return/State, and re-verified
+// 2026-09: no exported TYPE declaration in packages/*/src carries either suffix. `AppState`
+// does appear — TWICE, in two byte-identical ambient shims, packages/react-native/src/
+// native-modules.d.ts AND packages/expo/src/native-modules.d.ts, each `declare module
+// 'react-native'` for the peer it builds against. What keeps them out of R1 is NOT the `.d.ts`
+// exclusion in tsFiles(): it is the DECLARATION-KIND filter below — `AppState` is an
+// `export const`, and R1 scans `interface`/`type`/`class` only. Their sibling types would
+// survive the kind filter and are simply not violations (`AppStateStatus`, `AppStateStatic`).
+// The distinction matters: if the shims ever moved into a scanned file, R1 would still be
+// correct, and a reader who believed the .d.ts line would expect otherwise.
 const BANNED_SUFFIX = /(Opts|Info|Params|Config|Return|State)$/;
 const SUFFIX_CARVEOUT = new Set([
+    // The three views of the one well-known authoring type, named as a family by P3's
+    // carve-out paragraph: the authored config, the resolved view the engine hands a seam,
+    // and the redacted view a trace sink sees. `ResolvedStitchConfig` was absent from that
+    // paragraph while its twin `RedactedStitchConfig` was named — the doc was the wrong side
+    // of the mismatch and now lists all three (docs/CONTRACT.md P3).
     'StitchConfig',
     'ResolvedStitchConfig',
     'RedactedStitchConfig',
@@ -338,34 +477,60 @@ const isConsumerEnvelope = (name) =>
 // full shape-diff is the deferred type-aware phase). Flagged when ≥2 packages export one.
 const UNIQUE_WATCH = new Set([
     'StitchStore',
-    // Declared (not re-exported) by BOTH react and vue from their sole public entry, with
-    // mutually unassignable shapes: react's `extends StitchQueryResult<T>` carries raw
-    // values, vue's wraps every state field in `ComputedRef<…>`. That is the exact case
-    // `SolidStitchStore`/`SvelteStitchStore` were framework-qualified to fix (ADR 0012
-    // rule 6), so the divergent side qualifies too → `VueUseStitchResult`.
-    'UseStitchResult',
     'StitchError',
+    // RESOLVED, kept as the regression guard (2026-09 pre-release audit). react and vue each
+    // DECLARED a bare `UseStitchResult<T>` from their sole public entry, with mutually
+    // unassignable shapes: react's `extends StitchQueryResult<T>` carries raw values, vue's
+    // wrapped every state field in `ComputedRef<…>`. vue's is now `VueUseStitchResult`
+    // (packages/vue/src/index.ts) — the framework-qualified spelling of ADR 0012 rule 6, the
+    // `SolidStitchStore`/`SvelteStitchStore` precedent — so the bare name denotes react's
+    // contract alone (packages/react/src/index.ts) and this entry reports nothing today. It
+    // stays listed because nothing but the rename holds the two apart.
+    'UseStitchResult',
+    // The options half of the same pair, resolved the same way in the same release: react
+    // declares the bare `UseStitchOptions<T>` (the reference declaration — it carries the
+    // react-only `deps`), vue declares `VueUseStitchOptions<T>`. Watched for the same reason
+    // as its result twin, which was watched while its own rename was the only thing holding.
+    'UseStitchOptions',
     // De-listed names (post-sweep surface — each verified against the real ≥2-package
-    // export map, one line of rationale each):
+    // export map, one line of rationale each; never a blanket family skip):
     //  - StitchLike + QueryOutput + QueryInput: blessed two-tier duck-types (P9) —
     //    query-core's RICH canonical (awaitable + streamable), re-exported by the
     //    TanStack-family bindings, plus a deliberate MINIMAL await-only redeclaration in
     //    the stream-less adapters (swr/rtk-query/vercel-ai), which never call `.stream()`.
     //  - StreamableStitchLike: rtk-query's streaming tier of the same blessed family.
-    //  - StreamStitchSseOptions + StitchErrorOptions: intentionally IDENTICAL option
-    //    envelopes per host adapter (elysia/hono/express/fastify/nest/next) — one
-    //    structural contract, same-name-same-shape by design (P9). StreamStitchSseOptions
-    //    is identical BY CONSTRUCTION: every host derives it from core's single
-    //    `SseEmitOptions` (five `extends`, nest aliases), so the de-listing rests on a
-    //    shared declaration rather than on six shapes that happen to agree today.
+    //  - StitchErrorOptions: an intentionally IDENTICAL option envelope per host adapter
+    //    (elysia/express/fastify/hono/nest/next) — one structural contract, same-name-
+    //    same-shape by design (P9).
+    //  - StreamStitchSseOptions: SIX packages export it as of this release — elysia,
+    //    express, fastify, hono, nest and next — the last of those only since this
+    //    release renamed next's `SseResponseOptions` to the spelling the other five
+    //    already shipped (P16: one capability, one name). FIVE of the six are the bare alias
+    //    `export type StreamStitchSseOptions = SseEmitOptions` — not five `extends`, and
+    //    not "nest aliases"; an alias is literally core's one declaration, so those five
+    //    cannot diverge. next is the one `extends`, adding two OPTIONAL members that only a
+    //    Web-standard `Response` driver has anywhere to put (`headers`, `signal`); it is a
+    //    strict superset, so anything authored against the shared shape type-checks at
+    //    next's slot unchanged. The set is therefore NOT "identical by construction" — the
+    //    claim express falsified when it carried a `req` member, and express is no longer
+    //    the counter-example either: that member was framework-qualified onto
+    //    `ExpressStreamStitchSseOptions` this release, leaving express on the bare alias.
     //  - StitchEventSource: core-owned; host adapters re-export core's type verbatim.
-    //  - StitchQueryOptions / stitchQueryOptions / deriveQueryKey / nameOf / keyInputFor
-    //    (and the rest of the query family): query-core-owned canonicals re-exported
-    //    verbatim by the framework bindings — one declaration site, many surfaces.
+    //  - CreateStitchQueryOptions / QueryInput / QueryOutput / StitchLike / StitchQuery /
+    //    StitchQueryOptions / StitchQueryResult / StitchQueryStatus / stitchKey /
+    //    stitchQueryOptions: query-core-owned canonicals re-exported verbatim by the
+    //    framework bindings — one declaration site, many surfaces. Named exhaustively: the
+    //    phrase this replaces ("and the rest of the query family") de-listed an unbounded,
+    //    unnamed set, which is the blanket skip the sibling list below bans and is
+    //    incompatible with the one-line-of-rationale-each standard stated above. A new
+    //    query-family name is now a deliberate addition here, not something already covered.
     //  - StitchErrorLike: the hosts' uniform error duck-type (`Error & { status? }`) —
     //    one structural contract across all six adapters (P9).
     // Stale watch entries removed: bare `RequestSeam`, `StitchHost`, and `queryOptions`
-    // were deleted from the surface entirely by the hard-break sweep — nothing left to watch.
+    // were deleted from the surface entirely by the hard-break sweep — nothing left to
+    // watch. `deriveQueryKey` / `nameOf` / `keyInputFor` were de-listed names that no
+    // longer exist either: all three were folded into query-core's `stitchKey` namespace,
+    // and `nameOf` survives only as a core-internal local in engine.ts.
 ]);
 
 // P24 — a shared leading-word prefix across ≥2 flat members of one exported interface is an
@@ -375,7 +540,17 @@ const UNIQUE_WATCH = new Set([
 // entry is a verified non-match (a foreign-SDK/standard mirror, a discriminated-union pair, a
 // derived/internal read-view, or a plugin-extension-hook bag), one rationale per entry, exactly
 // like the R5 UNIQUE_WATCH de-listed names above.
-const CONVENTIONAL_MEMBER = /^(?:on|is)[A-Z]|^[Pp]\d+$/;
+// The percentile half is FIXED, not dropped, because the comment above states the policy and
+// the regex simply failed to implement it. `^[Pp]\d+$` matched a BARE `p50`/`p95`/`p99` and
+// nothing else — and a bare percentile can never be in a group, because splitCamel() makes each
+// one its own leading word (`p50` ≠ `p95` ≠ `p99`), so that half was unreachable by
+// construction. The spelling that CAN group is the compound one the comment names and the regex
+// could not match: `latencyP50`/`latencyP95` share the leading word `latency`. `[a-z0-9]P\d+$`
+// requires the `P` to START a camel word, so `http2` (a `p` welded mid-word) is not a
+// percentile. No member on today's surface matches either form — core's `StitchStats` carries
+// the bare `p50`/`p95`/`p99`, which group with nothing — so this is a forward guard, which is
+// exactly what a STRUCTURAL carve-out is for.
+const CONVENTIONAL_MEMBER = /^(?:on|is)[A-Z]|^[Pp]\d+$|[a-z0-9]P\d+$/;
 
 // Split on camelCase word boundaries; the group key is the lowercased leading word.
 const splitCamel = (name) =>
@@ -395,10 +570,6 @@ const PREFIX_GROUP_ALLOW = new Map([
         'StitchQueryOptions.query',
         "queryKey/queryFn mirror TanStack's own queryOptions() vocabulary (P3/P18/P22) — this rule's own motivating example is itself exempt",
     ],
-    [
-        'DocSearchHit.page',
-        'pageUrl/pageTitle mirror the persisted Orama index document schema (P18)',
-    ],
     ['XhrLike.response', 'responseType/response mirror the XHR API (P18)'],
     [
         'RnStreamingXhr.response',
@@ -407,16 +578,6 @@ const PREFIX_GROUP_ALLOW = new Map([
     [
         'CacheLifecycleApi.cache',
         'cacheDataLoaded/cacheEntryRemoved mirror RTK Query lifecycle names (P18)',
-    ],
-    // Discriminated-union pairs — mutually exclusive by `X?: never` on the sibling variant, so
-    // the two never co-exist and there is no envelope to nest:
-    [
-        'FastifyStitchPluginSeamOptions.seam',
-        'seam/seamConfig are an XOR pair (seamConfig?: never) — the prebuilt-seam variant, not two co-options',
-    ],
-    [
-        'FastifyStitchPluginConfigOptions.seam',
-        'seamConfig/seam are the same XOR pair from the build-a-seam variant (seam?: never)',
     ],
     // Off the published surface, or a derived/internal read-view rather than an authored config:
     [
@@ -445,15 +606,11 @@ const PREFIX_GROUP_ALLOW = new Map([
         'AdapterRequest.body',
         'bodyType is a discriminator tag for the dominant body payload, not a second option — carve-out (b), the canonical case',
     ],
-    // Coincidental prefix collision — a house field plus an unrelated field that happens to
-    // mirror a foreign standard's naming:
+    // A REAL group that P22 pins flat — the standard owns the spelling, so folding it would
+    // break the mirror the other half of the rule requires:
     [
         'WindowChannelOptions.target',
-        "targetOrigin mirrors window.postMessage()'s own parameter name (P22); target (the destination handle) is unrelated — coincidental collision, not a group",
-    ],
-    [
-        'CookieSessionOptions.login',
-        'login (the required, dominant login Stitch) and loginInput (an unrelated input-resolver callback) are different value-kinds, not two knobs of one capability',
+        "a real group, not a collision: target (the receiving Window, or a thunk for one) and targetOrigin are the receiver and the address of ONE call — `resolveTarget().postMessage(msg, opts.targetOrigin, …)` in windowChannel() — and targetOrigin is also the default for allowedOrigins. It stays FLAT on P22: `targetOrigin` is window.postMessage()'s own parameter name for exactly this value, and folding it to `target: { window, origin }` would rename the half whose spelling the DOM owns",
     ],
 ]);
 
@@ -540,20 +697,33 @@ const UNIT_SUFFIX_ALLOW = new Map([
 // envelope names — and both dimensions take the same widening, so the rule never has to tell them
 // apart. Adding a name here is a contract decision; adding a regex would be a guess.
 const WIDENED_MEMBER = new Set([
-    'after', // SurfaceOutcome's body-aware retry wait (ADR 0022 D5)
+    // FORWARD GUARD, live but unreachable today, and recorded as such rather than left to
+    // read as coverage: `after` is declared on `SurfaceOutcome` (surface.ts), which is a
+    // `type X = … | …` UNION — no member rule walks a type literal (the same limit R8/R10
+    // carry) — and even as an interface it would fail isAuthoringSurface(), being neither
+    // `*Options` nor an AUTHORED_SEAM name. It is already correctly `number | string`, so
+    // there is nothing to report; the entry earns its place only if the shape is ever moved
+    // onto an authoring surface, or the type-aware phase lands (ADR 0022 D5).
+    'after',
     'base', // BackoffOptions — first-step delay
     'cooldown', // CircuitOptions — fast-fail window
     'delay', // ReconnectOptions / MockResponse
-    'interval', // any polling cadence
+    'each', // TimeoutOptions — the per-attempt deadline (renamed from `perAttempt` in #627)
+    // BatchOptions (@stitchapi/download) — the forward-progress window. Compliant today
+    // (`number | string`), and previously unguarded: a CLOSED list only covers what it names,
+    // so an authored duration the list has never heard of is not "passing", it is unwatched.
+    'idle',
     'lease', // ThrottleOptions — how long a fleet-wide concurrency slot is held
     'max', // BackoffOptions (delay ceiling) | ServeBodyOptions/ShellBufferOptions (byte cap)
-    'perAttempt', // TimeoutOptions
     'resumeRetry', // Surface — the server-suggested reconnect backoff (returned by the seam)
-    'since', // CLI/query time window
     'skew', // OAuth2RefreshOptions — refresh lead time
     'timeout',
     'total', // TimeoutOptions — whole-call deadline
     'ttl', // CacheOptions / CookieSessionOptions / verifyStoreContract's knob
+    // Removed 2026-09: `interval` and `since` named no member of any published surface —
+    // not on an `*Options`, not on an AUTHORED_SEAM, not anywhere under packages/*/src. A
+    // closed list that carries names for shapes that do not exist reads as coverage it does
+    // not have, which is the defect this list is supposed to prevent.
 ]);
 
 // The counterpoint (P25): a CODE-UNIT cap is not a size in P25's sense, so it must NOT grow a
@@ -569,6 +739,14 @@ const COUNT_MEMBER = new Set(['chars']);
 // that is the position the 2026-07 sweep missed, since its checklist was end-user config.
 const AUTHORED_SEAM = new Set([
     'Surface',
+    // INERT — kept for the record, not for coverage. `Adapter` is declared
+    // `export type Adapter = ((req: AdapterRequest) => Promise<AdapterResult>) & { … }`
+    // (types.ts), an intersection with a type LITERAL, and R9 walks `export interface`
+    // blocks only — so this name can never be matched, whatever it grows. Marking it inert
+    // was chosen over making it scannable: teaching the member rules to walk type literals
+    // is the `MockRoute` blind spot the header already defers to the type-aware phase, and
+    // widening it here for one seam would change R8/R9/R10's precision story wholesale. If
+    // `Adapter` ever gains an authored duration, it has to become an interface first.
     'Adapter',
     'TraceSink',
     'AuthStrategy',
@@ -1085,7 +1263,7 @@ function collect() {
             }
         }
 
-        for (const id of indexExports(join(srcRoot, 'index.ts'))) {
+        for (const id of surfaceExports(dir)) {
             if (!exportsByName.has(id)) exportsByName.set(id, new Set());
             exportsByName.get(id).add(dir);
         }

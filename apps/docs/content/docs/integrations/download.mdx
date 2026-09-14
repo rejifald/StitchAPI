@@ -57,18 +57,18 @@ Results come back in **enqueue order**, shaped like `Promise.allSettled` plus a
 
 ```ts
 for (const r of results) {
-    if (r.status === 'fulfilled') save(r.value.blob, r.value.filename);
+    if (r.status === 'fulfilled') save(r.data.blob, r.data.filename);
     else if (r.status === 'rejected')
         console.warn(r.id, r.code, r.retryable ? '(retryable)' : '(terminal)');
     // r.status === 'cancelled' → the item never finished; nothing to save
 }
 ```
 
-| `status`      | Also carries                                                                            |
-| ------------- | --------------------------------------------------------------------------------------- |
-| `'fulfilled'` | `value` — the `download()` result: a `blob`, and a `filename` when the server named one |
-| `'rejected'`  | `reason` (a `StitchError`), plus a `retryable` verdict and a best-effort machine `code` |
-| `'cancelled'` | nothing more — cancelling isn't a failure, so it carries no classification              |
+| `status`      | Also carries                                                                           |
+| ------------- | -------------------------------------------------------------------------------------- |
+| `'fulfilled'` | `data` — the `download()` result: a `blob`, and a `filename` when the server named one |
+| `'rejected'`  | `error` (a `StitchError`), plus a `retryable` verdict and a best-effort machine `code` |
+| `'cancelled'` | nothing more — cancelling isn't a failure, so it carries no classification             |
 
 Every arm carries the item's `id`, which is how progress, cancellation, and
 results correlate. An id defaults to the item's URL and falls back to its enqueue
@@ -181,7 +181,7 @@ A bare `fetch failed` says nothing about whether retrying is worth it. Each
 rejection is classified, so the caller can act on it without parsing a message:
 
 ```ts
-// { id, status: 'rejected', reason, retryable: true, code: 'UND_ERR_SOCKET' }
+// { id, status: 'rejected', error, retryable: true, code: 'UND_ERR_SOCKET' }
 ```
 
 `retryable` is `true` for transport faults (`UND_ERR_SOCKET`, `ECONNRESET`,

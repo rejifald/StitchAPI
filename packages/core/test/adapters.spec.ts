@@ -138,7 +138,7 @@ describe('axiosAdapter', () => {
     });
 
     // #708 §2: this transport used to return only { status, headers, body } while fetchAdapter
-    // returned four keys, so `AdapterResponse.url` — and everything downstream of it, StitchError.url
+    // returned four keys, so `AdapterResult.url` — and everything downstream of it, StitchError.url
     // and the `download` filename fallback — was ALWAYS undefined on axios, silently.
     describe('response url', () => {
         test('reports the request url', async () => {

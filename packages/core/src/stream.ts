@@ -19,7 +19,8 @@ import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
 import type { Surface } from './surface';
 import {
-    type AdapterResponse,
+    type AdapterResult,
+    type AtLeastOne,
     type NoUnknownConfigKeys,
     type NoUnknownNestedKeys,
     type ResolvedStitchConfig,
@@ -63,7 +64,7 @@ type StreamElement<C> =
 
 // Decode the live body into `delta` items per `cfg.stream.decode` (default `'bytes'`).
 async function* decodeStream(
-    res: AdapterResponse,
+    res: AdapterResult,
     cfg: ResolvedStitchConfig,
 ): AsyncGenerator<unknown, void> {
     const body = res.body;
@@ -169,12 +170,23 @@ function bindSeam(s: Seam): StreamSeamApi {
  * The stream surface's authoring helper — callable for the terse form (`stream(config)`) plus:
  * - `stream.stitch(config)` — a standalone stream stitch (alias of the callable).
  * - `stream.bind(existingSeam)` — bind stream members to an existing seam.
- * - `stream.bind(options)` — a new seam whose members default to stream.
+ * - `stream.bind(options)` — a new seam, configured by `options`, whose members default to stream.
+ * - `stream.bind(seam())` — the all-defaults new seam (the opaque `bind({})` is a compile error, P20).
  * - `stream.surface` — the stream {@link Surface} identity.
  */
 export const stream = Object.assign(streamStitch, {
     surface: streamSurface,
     stitch: streamStitch,
-    bind: (arg: Seam | SeamConfig): StreamSeamApi =>
+    /**
+     * Bind stream members to a seam: an existing {@link Seam} is used as-is, anything else is a
+     * {@link SeamConfig} this builds a NEW seam from.
+     *
+     * The config arm is `AtLeastOne<SeamConfig>`, so the opaque `bind({})` is a compile error
+     * (CONTRACT.md P20). `{}` failed `isSeam`, fell through to `seam({})`, and silently built a
+     * whole second runtime — its own store, vault, trace sink and lifecycle — behind the most
+     * opaque spelling available. The all-defaults case has an unambiguous spelling that says what
+     * it does: `stream.bind(seam())`.
+     */
+    bind: (arg: Seam | AtLeastOne<SeamConfig>): StreamSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

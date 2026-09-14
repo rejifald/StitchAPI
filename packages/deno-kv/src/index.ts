@@ -168,7 +168,20 @@ export interface DenoKvRetryOptions {
      * bare curve is the shorthand for `{ curve }`. Omitted (the default) means **no
      * delay**: the loop re-reads immediately, which is the tightest path to a win when
      * contention is brief. Set a curve when many isolates hammer one key and the hot spin
-     * costs more KV reads than it saves. `base` defaults to 5ms, `max` to 250ms.
+     * costs more KV reads than it saves.
+     *
+     * DELIBERATE DIVERGENCE (contract P8): the envelope IS core's {@link BackoffOptions},
+     * but its two bounds resolve differently here — **`base` 5ms, `max` 250ms**, against
+     * core's 100ms and 10s (whose field JSDoc carries the other half of this cross-link).
+     * Core's numbers pace the retry of a failed NETWORK call, where the remote is the thing
+     * that needs time to recover and the waiting is the point. A lost compare-and-set is the
+     * opposite situation: nothing failed and nothing needs to recover — another isolate
+     * simply committed first, so the value this loop must re-read is already in place. The
+     * delay exists only to de-phase racers so they stop colliding on the same tick, which
+     * makes its natural unit one KV round trip rather than one recovery window. Core's
+     * `base` would idle a caller far longer than the read it is waiting to redo, and core's
+     * `max` would park one for longer than the whole {@link DenoKvRetryOptions.attempts}
+     * budget is meant to span.
      */
     backoff?: BackoffCurve | AtLeastOne<BackoffOptions>;
 }
@@ -357,7 +370,7 @@ export function denoKvStore(
                 `@stitchapi/deno-kv: reserve(${key}) lost ${attempts} compare-and-set races`,
             );
         },
-        async lease(key, token, limit, ttl, at) {
+        async lease(key, token, concurrency, ttl, at) {
             // The counting semaphore (ADR 0025), on the same compare-and-set loop as the two verbs
             // above. Held as a token→expiry record — Redis reaches for a sorted set here, and both
             // satisfy the contract, which specifies behaviour rather than storage.
@@ -369,7 +382,8 @@ export function denoKvStore(
                 // attempt never leaves lapsed holders for the next caller to re-walk.
                 for (const [t, expiresAt] of Object.entries(held))
                     if (expiresAt <= at) delete held[t];
-                const got = token in held || Object.keys(held).length < limit;
+                const got =
+                    token in held || Object.keys(held).length < concurrency;
                 if (got) held[token] = at + ttl; // already there ⇒ a renewal, not a second slot
                 const res = await kv
                     .atomic()

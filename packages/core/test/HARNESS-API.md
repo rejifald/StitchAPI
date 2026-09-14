@@ -63,12 +63,12 @@ Merge: scalars replace, objects deep-merge, `hooks` CHAIN (onRequest base→chil
 
 ## drift(schema, opts)
 
-`opts = { ignore?: string[], severity?: DriftSeverity | DriftSeverity[] | Partial<Record<'undeclared'|'coerced'|'defaulted', DriftSeverity>> }` where `DriftSeverity = 'warn'|'info'|'verbose'`.
-Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unwrapped value against `schema`: a missing-required / incompatible value throws (`change:'invalid'`, **error**), and the call returns the VALIDATED value (coerced/defaulted/stripped). Then it diffs raw-vs-validated for soft drift: a stripped key → `undeclared` (**info**), a coercion → `coerced` (**warn**), a default fired → `defaulted` (**verbose**). Paths look like `data[].headline` (array indices render as `[]`, deduped). `ignore` silences paths; `severity` filters (a level/list) or re-levels (a map). Declared variance (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields no findings.
+`opts = { ignore?: string[], level?: L | L[] | Partial<Record<'undeclared'|'coerced'|'defaulted', L>> }` where `L = Exclude<DriftLevel, 'error'>` = `'warn'|'info'|'verbose'` — the option and the finding share the one word `level` (CONTRACT.md P1), and the narrow set is derived from `DriftLevel` rather than re-listed as a separate `DriftSeverity` type.
+Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unwrapped value against `schema`: a missing-required / incompatible value throws (`change:'invalid'`, **error**), and the call returns the VALIDATED value (coerced/defaulted/stripped). Then it diffs raw-vs-validated for soft drift: a stripped key → `undeclared` (**info**), a coercion → `coerced` (**warn**), a default fired → `defaulted` (**verbose**). Paths look like `data[].headline` (array indices render as `[]`, deduped). `ignore` silences paths; `level` filters (a level/list) or re-levels (a map). Declared variance (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields no findings.
 
 ## Auth
 
-`bearer(secret)`, `apiKey({ name?, in?, secret })` (`in: 'header' | 'query' | 'cookie'`, default `header`), `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refresh?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is matched by `refresh`.
+`bearer(secret)`, `apiKey({ name?, in?, secret })` (`in: 'header' | 'query' | 'cookie'`, default `header`), `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', credentialsOf?: () => StitchInput, refresh?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is matched by `refresh`.
 
 ## Mock server
 

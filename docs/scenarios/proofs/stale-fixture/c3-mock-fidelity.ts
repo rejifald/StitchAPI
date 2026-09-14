@@ -22,16 +22,16 @@ import { conformance } from '../../../../packages/core/src/testing';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import { check, checkSeq, finish, heading, note } from './harness';
 import { BASE } from './vendor';
 
-/** Call a mock adapter directly and report the raw `AdapterResponse` it produced. */
+/** Call a mock adapter directly and report the raw `AdapterResult` it produced. */
 async function raw(
     adapter: Adapter,
     req: Partial<AdapterRequest> = {},
-): Promise<AdapterResponse> {
+): Promise<AdapterResult> {
     return adapter({
         url: `${BASE}/x`,
         method: 'GET',

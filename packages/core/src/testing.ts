@@ -139,7 +139,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-// Accept the documented AdapterResponse body contract ("parsed JSON when
+// Accept the documented AdapterResult body contract ("parsed JSON when
 // possible, else text"): an already-parsed object, or raw JSON text.
 function asJsonObject(body: unknown, label: string): Record<string, unknown> {
     let value = body;
@@ -449,7 +449,7 @@ async function verifyStoreContract(
         const free = store.release.bind(store);
         rules.push(
             [
-                'lease: fills to the limit, then refuses',
+                'lease: fills to the concurrency cap, then refuses',
                 async () => {
                     const key = k('sem');
                     const got = [];
@@ -576,8 +576,10 @@ export interface FixtureRequest {
     body?: string;
 }
 
-/** The response shape {@link conformance.fixture} produces. */
-export interface FixtureResponse {
+/** The result {@link conformance.fixture} produces — the response the host is to send. Named
+ *  `*Result` per P3: a house-coined PRODUCED shape (it carries the house-only `delay`), so the
+ *  `*Response` suffix is not available to it. */
+export interface FixtureResult {
     status: number;
     /** Response headers (lowercased names). */
     headers: Record<string, string>;
@@ -611,7 +613,7 @@ export interface FixtureResponse {
  * Host duties: lowercase request header names, hand over the raw request body
  * text, and honor `delay` (the in-flight abort rule depends on it).
  */
-function adapterContractFixture(req: FixtureRequest): FixtureResponse {
+function adapterContractFixture(req: FixtureRequest): FixtureResult {
     const path = req.path.split('?', 1)[0] ?? req.path;
     const method = req.method.toUpperCase();
 
@@ -619,7 +621,7 @@ function adapterContractFixture(req: FixtureRequest): FixtureResponse {
         status: number,
         value: unknown,
         headers: Record<string, string> = {},
-    ): FixtureResponse => ({
+    ): FixtureResult => ({
         status,
         headers: { 'content-type': 'application/json', ...headers },
         body: JSON.stringify(value),
@@ -678,7 +680,7 @@ function adapterContractFixture(req: FixtureRequest): FixtureResponse {
  * - Request delivery: method, headers, and the JSON-encoded body reach the
  *   server intact.
  * - Response headers are readable using LOWERCASED names (the documented
- *   {@link AdapterResponse} case convention).
+ *   {@link AdapterResult} case convention).
  * - Body decoding: a `text/plain` body round-trips as a string; an
  *   `application/json` body round-trips as parsed data.
  * - Abort: a pre-aborted `AbortSignal` rejects, and an in-flight abort
@@ -756,7 +758,7 @@ async function verifyAdapterContract(
                     throw new Error(
                         `expected headers['x-stitch-echo'] === 'json', got ${show(
                             res.headers['x-stitch-echo'],
-                        )} — AdapterResponse headers must use lowercased names`,
+                        )} — AdapterResult headers must use lowercased names`,
                     );
                 }
             },
@@ -1288,5 +1290,5 @@ export {
     type StubStitchOptions,
 } from './test-stub';
 // A manual Clock (ADR 0010): inject it as `clock` to drive retry/throttle/timeout/circuit timing by
-// hand — `advance(ms)` instead of real waiting. The system clock is `systemClock` (main entry).
+// hand — `advance('30s')` instead of real waiting. The system clock is `systemClock` (main entry).
 export { manualClock, type ManualClock } from './test-clock';

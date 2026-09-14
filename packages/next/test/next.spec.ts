@@ -336,3 +336,30 @@ describe('public surface: the stitchError namespace', () => {
         expect(name in (api as Record<string, unknown>)).toBe(false);
     });
 });
+
+// --- public-surface pin: the SSE envelope is spelled StreamStitchSseOptions ----
+//
+// P16 (one capability, one name). Every SSE-capable host adapter — express, fastify, hono,
+// elysia, nest and this one — spells the shared SSE envelope `StreamStitchSseOptions`. This
+// package used to spell it `SseResponseOptions`, which put a second published name on one
+// capability; the rename closes that.
+//
+// The pin is type-level because the name is: types erase, so `vitest run` cannot see it and
+// `pnpm --filter @stitchapi/next check:types` is what enforces this block (tsconfig `include`
+// covers `test/**`). Rename the interface back — or drop `headers` / `signal` / the shared
+// `SseEmitOptions` members off it — and the annotation below stops compiling.
+describe('public surface: StreamStitchSseOptions', () => {
+    test('is the canonical envelope name and the parameter streamStitchSse takes', async () => {
+        const options: api.StreamStitchSseOptions = {
+            // inherited from the shared `SseEmitOptions` in `stitchapi/sse-emit`
+            delta: (c) => String(c),
+            error: (e) => e.message,
+            // next's own members
+            headers: { 'x-trace': 'abc' },
+            signal: new AbortController().signal,
+        };
+        const res = streamStitchSse(events(delta('a'), done), options);
+        expect(res.headers.get('x-trace')).toBe('abc');
+        expect(await res.text()).toBe('data: a\n\n');
+    });
+});

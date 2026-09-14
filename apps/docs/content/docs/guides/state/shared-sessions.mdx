@@ -35,7 +35,7 @@ const me = stitch({
         login,
         cookie: '*',
         key: 'acme-session', // same key + same store = one shared session
-        loginInput: () => ({
+        credentialsOf: () => ({
             body: { user: env('USER')(), pass: env('PASS')() },
         }),
     }),

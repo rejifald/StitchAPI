@@ -8,7 +8,7 @@ import { seam as makeSeam } from './seam';
 import { graphql as graphqlStitch } from './stitch';
 import { graphqlSurface } from './surface';
 import { isSeam } from './types';
-import type { Seam, SeamConfig } from './types';
+import type { AtLeastOne, Seam, SeamConfig } from './types';
 
 /** graphql members bound to a seam. `stitch(config)` creates a graphql member of `seam`; `seam`
  *  is the underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
@@ -26,12 +26,23 @@ const bindSeam = (s: Seam): GraphqlSeamApi => ({
  * The graphql surface's authoring helper — callable for the terse form (`graphql(config)`) plus:
  * - `graphql.stitch(config)` — a standalone graphql stitch (alias of the callable).
  * - `graphql.bind(existingSeam)` — bind graphql members to an existing seam.
- * - `graphql.bind(options)` — a new seam whose members default to graphql.
+ * - `graphql.bind(options)` — a new seam, configured by `options`, whose members default to graphql.
+ * - `graphql.bind(seam())` — the all-defaults new seam (the opaque `bind({})` is a compile error, P20).
  * - `graphql.surface` — the graphql {@link Surface} identity.
  */
 export const graphql = Object.assign(graphqlStitch, {
     surface: graphqlSurface,
     stitch: graphqlStitch,
-    bind: (arg: Seam | SeamConfig): GraphqlSeamApi =>
+    /**
+     * Bind graphql members to a seam: an existing {@link Seam} is used as-is, anything else is a
+     * {@link SeamConfig} this builds a NEW seam from.
+     *
+     * The config arm is `AtLeastOne<SeamConfig>`, so the opaque `bind({})` is a compile error
+     * (CONTRACT.md P20). `{}` failed `isSeam`, fell through to `seam({})`, and silently built a
+     * whole second runtime — its own store, vault, trace sink and lifecycle — behind the most
+     * opaque spelling available. The all-defaults case has an unambiguous spelling that says what
+     * it does: `graphql.bind(seam())`.
+     */
+    bind: (arg: Seam | AtLeastOne<SeamConfig>): GraphqlSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

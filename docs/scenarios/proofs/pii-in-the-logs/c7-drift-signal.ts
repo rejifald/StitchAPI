@@ -326,12 +326,13 @@ async function main(): Promise<void> {
 
     heading('C7 (f) — the limit: `undeclared` cannot be made fatal');
     {
-        // `DriftSeverity` is 'warn' | 'info' | 'verbose' — 'error' is deliberately not in it, and
+        // `DriftOptions.level` is 'warn' | 'info' | 'verbose' — 'error' is deliberately not in it,
+        // and
         // the JSDoc says so: "Soft drift is always non-fatal; to fail on a change, make the field
         // required/strict in the schema". Measured through a cast, so the runtime behaviour is on
         // the record rather than inferred from the type.
         const findings = await findingsFor(afterTheRelease(), {
-            severity: { undeclared: 'error' },
+            level: { undeclared: 'error' },
         } as unknown as DriftOptions);
         check(
             'a re-level to `error` IS honoured at runtime …',
@@ -345,7 +346,7 @@ async function main(): Promise<void> {
             path: '/v1/customers/1',
             adapter: fakeVendor({ body: afterTheRelease() }),
             output: drift(SAFE, {
-                severity: { undeclared: 'error' },
+                level: { undeclared: 'error' },
             } as unknown as DriftOptions),
         });
         const out = await call.safe();
@@ -356,7 +357,7 @@ async function main(): Promise<void> {
             'contract violation (drift)',
         );
         note(
-            '→ NOT IN THE CLAIMS, and it cuts against the documentation. `DriftSeverity` excludes `error` and the JSDoc states "soft drift is always non-fatal", but the runtime path (`resolveSeverity` → `levelOf` → `if (finding.level === \'error\') fatal = true`) has no guard: a severity map that names `error` is a TYPE error and a working kill-switch. Either the type should admit it as a documented "fail on any new field" hatch, or the runtime should reject it — right now it is a fail-closed behaviour reachable only by a cast',
+            '→ NOT IN THE CLAIMS, and it cuts against the documentation. `Exclude<DriftLevel, \'error\'>` excludes `error` and the JSDoc states "soft drift is always non-fatal", but the runtime path (`resolveLevel` → `levelOf` → `if (finding.level === \'error\') fatal = true`) has no guard: a `level` map that names `error` is a TYPE error and a working kill-switch. Either the type should admit it as a documented "fail on any new field" hatch, or the runtime should reject it — right now it is a fail-closed behaviour reachable only by a cast',
         );
     }
 
@@ -629,7 +630,7 @@ async function main(): Promise<void> {
 
     finish(
         'C7',
-        "CONFIRMED for the soft signal, with two qualifications and one CONDITIONAL leak on the hard path. The signal works and is precise: when the vendor adds `taxId` at the top level, one level down, and inside every array element, `drift()` emits exactly three NEW `undeclared` findings — `taxId`, `profile.taxId`, `contacts[].taxId` — at level `info`, and the finding contains NO value (0 of 1 new-field sentinel and 0 of 7 PII sentinels across the findings array, the raw drift events, the JSONL, stderr, the logger and OTLP). Qualification one: the signal is noisy at rest — the same schema produces 7 `undeclared` findings on the UNCHANGED response, so \"a new field appeared\" is a diff against a baseline, not an alert. Qualification two: it is schema-anchored, so with no `output` (or with `output` but no `drift()` wrapper) the same changed response yields 0 findings — C7 is a property of C6, not an independent safety net. A limit worth recording: `severity: { undeclared: 'error' }` is a TYPE error (`DriftSeverity` excludes `error`, and the JSDoc says soft drift is always non-fatal) but a WORKING kill-switch at runtime — through a cast it re-levels the finding and fails the call. And the hard path: ADR 0018 §4 claims `findings` never leak a secret because `detailFor` emits kinds only. That holds for the three soft kinds; for hard validation the truth is CONDITIONAL, because `validationErrors` (drift.ts:50) copies the validator's own message into `detail` verbatim and the wording decides. With stock Zod 4 (the workspace's validator since #589) nothing escapes — the enum message ('Invalid option: expected one of \"enterprise\"|\"free\"') names only the expected options, and all four sinks measure 0 of 7. With a validator whose message echoes the input — a custom refine/check message here, Zod 3's enum wording historically — the received value reaches the JSONL file, `consoleSink` and `loggerSink` — the two sinks C1 measured at 0 of 7 — while OTLP alone stays clean because it exports level/path/change and drops `detail`. The Zod-enum repro died with #589; the verbatim-copy mechanism did not",
+        "CONFIRMED for the soft signal, with two qualifications and one CONDITIONAL leak on the hard path. The signal works and is precise: when the vendor adds `taxId` at the top level, one level down, and inside every array element, `drift()` emits exactly three NEW `undeclared` findings — `taxId`, `profile.taxId`, `contacts[].taxId` — at level `info`, and the finding contains NO value (0 of 1 new-field sentinel and 0 of 7 PII sentinels across the findings array, the raw drift events, the JSONL, stderr, the logger and OTLP). Qualification one: the signal is noisy at rest — the same schema produces 7 `undeclared` findings on the UNCHANGED response, so \"a new field appeared\" is a diff against a baseline, not an alert. Qualification two: it is schema-anchored, so with no `output` (or with `output` but no `drift()` wrapper) the same changed response yields 0 findings — C7 is a property of C6, not an independent safety net. A limit worth recording: `level: { undeclared: 'error' }` is a TYPE error (`Exclude<DriftLevel, 'error'>` excludes `error`, and the JSDoc says soft drift is always non-fatal) but a WORKING kill-switch at runtime — through a cast it re-levels the finding and fails the call. And the hard path: ADR 0018 §4 claims `findings` never leak a secret because `detailFor` emits kinds only. That holds for the three soft kinds; for hard validation the truth is CONDITIONAL, because `validationErrors` (drift.ts:50) copies the validator's own message into `detail` verbatim and the wording decides. With stock Zod 4 (the workspace's validator since #589) nothing escapes — the enum message ('Invalid option: expected one of \"enterprise\"|\"free\"') names only the expected options, and all four sinks measure 0 of 7. With a validator whose message echoes the input — a custom refine/check message here, Zod 3's enum wording historically — the received value reaches the JSONL file, `consoleSink` and `loggerSink` — the two sinks C1 measured at 0 of 7 — while OTLP alone stays clean because it exports level/path/change and drops `detail`. The Zod-enum repro died with #589; the verbatim-copy mechanism did not",
     );
 }
 

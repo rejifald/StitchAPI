@@ -21,7 +21,7 @@ import type { Surface } from '../../../../packages/core/src/surface';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 /** What is stored per key: the two halves that must never be separated. */
@@ -103,7 +103,7 @@ export function revalidating(
     };
 
     /** Record what a fresh 200 taught us — or forget the key when it taught us nothing. */
-    const learn = (key: string, res: AdapterResponse): void => {
+    const learn = (key: string, res: AdapterResult): void => {
         if (res.status !== 200) return;
         const etag = res.headers['etag'];
         if (etag === undefined) {

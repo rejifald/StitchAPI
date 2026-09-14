@@ -22,9 +22,14 @@ export {
     type ExpressStitchMiddlewareOptions,
 } from './middleware';
 
+// `StreamStitchSseOptions` is the host-parity option shape (core's `SseEmitOptions`, identical on
+// elysia/fastify/hono/nest); `ExpressStreamStitchSseOptions` is the framework-qualified superset
+// `streamStitchSse` accepts here — it adds Express's `req` disconnect fallback (P9/ADR 0012 rule 6:
+// the divergent shape takes the qualified name, not the shared one).
 export {
     streamStitchSse,
     type StitchEventSource,
+    type ExpressStreamStitchSseOptions,
     type StreamStitchSseOptions,
 } from './sse';
 

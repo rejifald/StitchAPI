@@ -8,7 +8,7 @@
 //     absent or unparseable), for any method;
 //   - /text, /json, /slow, and an unknown path each return their documented response.
 import { conformance } from '../src/testing';
-import type { FixtureRequest } from '../src/testing';
+import type { FixtureRequest, FixtureResult } from '../src/testing';
 
 const reqOf = (over: Partial<FixtureRequest> = {}): FixtureRequest => ({
     method: 'GET',
@@ -18,6 +18,12 @@ const reqOf = (over: Partial<FixtureRequest> = {}): FixtureRequest => ({
 });
 
 const bodyJson = (body: string): unknown => JSON.parse(body);
+
+// P3: the fixture's PRODUCED shape is house-coined (it carries the house-only `delay`), so its
+// suffix is `*Result`, never `*Response`. Naming the type here pins the spelling at compile time —
+// a rename back to `FixtureResponse` fails `check:types`, which no runtime assertion would catch.
+const runFixture = (over: Partial<FixtureRequest> = {}): FixtureResult =>
+    conformance.fixture(reqOf(over));
 
 describe('conformance.fixture', () => {
     test('GET /status/{code} returns that status with a JSON body', () => {
@@ -96,8 +102,11 @@ describe('conformance.fixture', () => {
         });
     });
 
+    // Typed through `runFixture`, so the P3 `*Result` spelling of the produced shape is pinned by
+    // the type checker here too. `delay` stays a raw-ms `number`: core PRODUCES it and the host
+    // honors it, which is P17's complement, not its widening clause.
     test('GET /slow carries delay', () => {
-        const res = conformance.fixture(reqOf({ path: '/slow' }));
+        const res: FixtureResult = runFixture({ path: '/slow' });
         expect(res.status).toBe(200);
         expect(res.delay).toBe(300);
         expect(bodyJson(res.body)).toEqual({ slow: true });
