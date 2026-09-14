@@ -1,9 +1,9 @@
-// Pins issue #146: cookieSession host-owned lifecycle hooks (onRefresh / onAuthFailure).
+// Pins issue #146: cookieSession host-owned lifecycle hooks (onRefresh / onFailure).
 //
 // A host that owns durable, CATEGORISED auth state (active / backoff / failed / unauthenticated)
 // can't drive its state machine off StitchAPI's per-call single-flight refresh — the stitch owns
 // recovery and never tells the host *why* a login failed. These hooks close that gap: `onRefresh`
-// fires after every (re)login attempt with its outcome; `onAuthFailure` fires when no cookie was
+// fires after every (re)login attempt with its outcome; `onFailure` fires when no cookie was
 // captured, with a category (unauthenticated / rate-limited / network / unknown) the host maps to
 // its own status. The hooks fire ONCE per actual login attempt (inside the single-flight-guarded
 // `doRefresh`), never per coalesced waiter, and a throwing hook never crashes the call.
@@ -112,7 +112,7 @@ test('onRefresh fires with { ok: true, status: 200 } after a successful cold log
             onRefresh: (r) => {
                 refreshes.push(r);
             },
-            onAuthFailure: (f) => {
+            onFailure: (f) => {
                 failures.push(f);
             },
         }),
@@ -167,7 +167,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
     expect(refreshCount).toBe(1); // ...so the hook fires once, not per waiter
 }, 10000);
 
-test("onAuthFailure fires category 'unauthenticated' when the login returns 401 and sets no cookie", async () => {
+test("onFailure fires category 'unauthenticated' when the login returns 401 and sets no cookie", async () => {
     // No setCookie + a 401 status: the login responded but captured nothing, and 401 is a
     // `refresh` (`refresh.on`) status → the host hears "the creds were rejected".
     server.route('POST', '/login', {
@@ -190,7 +190,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
             cookie: 'sid',
             credentialsOf,
             tenancy: 'app',
-            onAuthFailure: (f) => {
+            onFailure: (f) => {
                 failures.push(f);
             },
             onRefresh: (r) => {
@@ -210,7 +210,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
     expect(refreshes).toEqual([{ ok: false, status: 401 }]);
 });
 
-test("onAuthFailure fires category 'rate-limited' + retryAfter when the login returns 429 with Retry-After", async () => {
+test("onFailure fires category 'rate-limited' + retryAfter when the login returns 429 with Retry-After", async () => {
     server.route('POST', '/login', {
         statuses: [429],
         retryAfterSeconds: 7, // seconds → 7000ms
@@ -231,7 +231,7 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
             cookie: 'sid',
             credentialsOf,
             tenancy: 'app',
-            onAuthFailure: (f) => {
+            onFailure: (f) => {
                 failures.push(f);
             },
         }),
@@ -249,7 +249,7 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
     ]);
 });
 
-test("onAuthFailure fires category 'network' + error when the login stitch throws", async () => {
+test("onFailure fires category 'network' + error when the login stitch throws", async () => {
     // Point the login at a dead address (a port that refuses connections) so `__raw` throws before
     // any response — the transport-failure path, distinct from an HTTP error status.
     const deadUrl = 'http://127.0.0.1:1'; // port 1 is not listening
@@ -270,7 +270,7 @@ test("onAuthFailure fires category 'network' + error when the login stitch throw
             cookie: 'sid',
             credentialsOf,
             tenancy: 'app',
-            onAuthFailure: (f) => {
+            onFailure: (f) => {
                 failures.push(f);
             },
             onRefresh: (r) => {

@@ -662,7 +662,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
  * Why an `apply`/`refresh` login attempt failed, categorised so the HOST can drive its OWN
  * durable state machine (wrong-creds vs rate-limited vs network) — StitchAPI keeps doing the
  * mechanical cookie capture/replay, but it can't model a host's external recovery loop, so it
- * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOptions.onAuthFailure}.
+ * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOptions.onFailure}.
  */
 export interface AuthFailureResult {
     /** Which half of the auth attempt failed: `'apply'` = cold session had no stored cookie;
@@ -764,11 +764,11 @@ export interface CookieSessionOptions {
      * and owns the external recovery loop that StitchAPI's per-call single-flight can't model. A
      * throwing hook never crashes the call (it is caught and announced on the `auth` trace topic).
      */
-    onAuthFailure?: (info: AuthFailureResult) => void | Promise<void>;
+    onFailure?: (info: AuthFailureResult) => void | Promise<void>;
     /**
      * Host-owned hook fired once after EVERY (re)login attempt — success or failure — with its
      * {@link RefreshResult}, so the host can persist durable session state and clear/extend its
-     * cooldown. Like {@link onAuthFailure}, it runs once per actual attempt (inside the
+     * cooldown. Like {@link onFailure}, it runs once per actual attempt (inside the
      * single-flight-guarded `doRefresh`), and a throw is caught so it can't crash the call.
      */
     onRefresh?: (result: RefreshResult) => void | Promise<void>;
@@ -812,7 +812,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     // slow async hook still completes before the login attempt is considered done.
     const runHook = async (
         ctx: AuthContext,
-        name: 'onAuthFailure' | 'onRefresh',
+        name: 'onFailure' | 'onRefresh',
         invoke: () => void | Promise<void>,
     ): Promise<void> => {
         try {
@@ -849,7 +849,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     };
 
     // Announce one login attempt's outcome to the host. `onRefresh` fires for EVERY attempt; on a
-    // failure (no cookie captured) `onAuthFailure` fires too with the categorised `info`.
+    // failure (no cookie captured) `onFailure` fires too with the categorised `info`.
     const report = async (
         ctx: AuthContext,
         ok: boolean,
@@ -863,16 +863,16 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
                 // `status` only appears on the result object when the login actually responded.
                 onRefresh(status === undefined ? { ok } : { ok, status }),
             );
-        const onAuthFailure = opts.onAuthFailure;
-        if (!ok && failure && onAuthFailure)
-            await runHook(ctx, 'onAuthFailure', () => onAuthFailure(failure));
+        const onFailure = opts.onFailure;
+        if (!ok && failure && onFailure)
+            await runHook(ctx, 'onFailure', () => onFailure(failure));
     };
 
     // ONE actual login attempt (single-flight-guarded by the callers below, so the hooks fire once
     // per real attempt, never per coalesced waiter). `__raw` RESOLVES only for a 2xx login and
     // THROWS otherwise — an error with a numeric `status` (+ a `response` for its headers) is a
     // response-derived failure (401/429/…); an error without a `status` is a transport failure. Each
-    // path fires `onRefresh` always and `onAuthFailure` on failure, then re-throws so callers see the
+    // path fires `onRefresh` always and `onFailure` on failure, then re-throws so callers see the
     // original error exactly as before these hooks existed.
     const doRefresh = async (
         ctx: AuthContext,
