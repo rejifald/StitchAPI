@@ -39,13 +39,13 @@
         "@vitest/eslint-plugin": "^1.6.27",
         "eslint": "^10.10.0",
         "eslint-config-prettier": "^10.1.8",
-        "fallow": "^3.22.0",
+        "fallow": "^3.25.0",
         "lefthook": "^2.1.12",
         "prettier": "3.9.6",
         "semver": "^7.8.5",
         "tsx": "^4.23.13",
         "typescript": "^6.0.3",
-        "typescript-eslint": "^8.68.0"
+        "typescript-eslint": "^8.70.0"
     },
     "pnpm": {
         "overrides": {
