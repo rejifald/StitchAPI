@@ -316,7 +316,7 @@ Caching is sound by construction: a stitch with an `output` schema caches only w
 
 ## Auth as a boundary
 
-Auth is a field on the stitch — never global. Secrets resolve **at call time** (`env()`, `secretsFile()`), the declaration is committable, and the caller gets data without ever seeing the credential:
+Auth is a field on the stitch — never global. Secrets resolve **at call time** (`env()`, `credential.file()`), the declaration is committable, and the caller gets data without ever seeing the credential:
 
 ```ts
 import { stitch } from 'stitchapi';

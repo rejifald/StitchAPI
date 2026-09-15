@@ -40,7 +40,7 @@ export type { AuthContext, AuthStrategy, SecurityScheme } from './types';
 
 /**
  * A credential: a literal string, or a getter resolved at CALL time (what {@link env},
- * {@link secretsFile} and {@link secretFrom} return) so the declaration carries a capability
+ * `credential.file` and `credential.from` return) so the declaration carries a capability
  * rather than a value. Public so a peer package that accepts a consumer-authored credential —
  * `@stitchapi/aws-sigv4`'s `accessKeyId`, say — names core's type instead of mirroring it.
  */
@@ -50,7 +50,7 @@ const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
 /**
  * A resolver that may yield no value: `bearer` attaches the header only when it resolves to a
  * value, and otherwise skips it (announcing the miss) instead of failing. Produced by
- * {@link optionalEnv}, and branded so `bearer` can tell it apart from a required {@link Secret} —
+ * `env.optional`, and branded so `bearer` can tell it apart from a required {@link Secret} —
  * which also keeps it, at the type level, out of the strategies that demand a credential
  * (`apiKey`, `basic`, `oauth2`).
  */
@@ -77,57 +77,44 @@ function base64(s: string): string {
 }
 
 /**
- * Resolve a REQUIRED secret from an environment variable at call time. An exported-but-empty var
- * (`MY_TOKEN=`) counts as missing and throws — mirroring {@link optionalEnv}, which treats `''` as
- * absent — so a blank credential can never silently ride along. For the may-or-may-not-be-set case,
- * use {@link optionalEnv}.
+ * The shape of {@link env} — callable for the required case, with `optional` hanging off it.
+ * Declared explicitly rather than left to `Object.assign` inference so BOTH halves keep their own
+ * documentation in the emitted `.d.ts`: an inferred intersection types the call correctly but
+ * drops the prose, and the caveats below are the whole reason these two are one name.
  */
-export function env(name: string): () => string {
+export interface EnvResolver {
+    /**
+     * Resolve a REQUIRED secret from an environment variable at call time. An exported-but-empty
+     * var (`MY_TOKEN=`) counts as missing and throws — mirroring `env.optional`, which treats `''`
+     * as absent — so a blank credential can never silently ride along. For the
+     * may-or-may-not-be-set case, use `env.optional`.
+     */
+    (name: string): () => string;
+    /**
+     * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when
+     * it is unset or empty — it never throws. An exported-but-empty var (`MY_TOKEN=`) counts as
+     * absent, so `bearer` never sends `Bearer ` with no token. Pass it to {@link bearer} to attach
+     * the credential only when present, otherwise send the request unauthenticated (announced in
+     * the trace): `bearer(env.optional('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent
+     * loops where a token may or may not be exported; when the call must be authenticated, use the
+     * throwing `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it
+     * resolves absent, so `bearer` simply attaches nothing.
+     */
+    optional(name: string): OptionalSecret;
+}
+
+function envRequired(name: string): () => string {
     return () => {
         const v = readEnv(name);
         if (v == null || v === '')
             throw new Error(
-                `missing env var ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
+                `missing env var ${name}. Fix: set it in the environment, use env.optional() if it's optional, or credential.from() to read it from injected config.`,
             );
         return v;
     };
 }
 
-/** A source `secretFrom` pulls a named value from: an object with a `get(name)` method
- *  (e.g. a NestJS ConfigService or a secrets-manager client) or a plain `(name) => value` fn. */
-export type SecretSource =
-    | { get(name: string): string | undefined }
-    | ((name: string) => string | undefined);
-
-/**
- * Resolve a REQUIRED secret from an arbitrary injected `source` at call time — for DI'd apps that
- * supply config WITHOUT touching `process.env` (a ConfigService, a secrets-manager client, a
- * validated config object). Throws if the source yields no value (unset or empty), mirroring
- * {@link env}. Compose with `bearer`/`apiKey`/`basic`/`oauth2` exactly like `env()`:
- * `bearer(secretFrom(configService, 'GITHUB_TOKEN'))`.
- */
-export function secretFrom(source: SecretSource, name: string): () => string {
-    return () => {
-        const v =
-            typeof source === 'function' ? source(name) : source.get(name);
-        if (v == null || v === '')
-            throw new Error(
-                `missing secret ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
-            );
-        return v;
-    };
-}
-
-/**
- * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when it
- * is unset or empty — it never throws. Pass it to {@link bearer} to attach the credential only when
- * present, otherwise send the request unauthenticated (announced in the trace):
- * `bearer(optionalEnv('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent loops where a
- * token may or may not be exported; when the call must be authenticated, use the throwing
- * `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it resolves absent,
- * so `bearer` simply attaches nothing.
- */
-export function optionalEnv(name: string): OptionalSecret {
+function envOptional(name: string): OptionalSecret {
     // An exported-but-empty var (`MY_TOKEN=`) counts as absent — never send `Bearer ` with no token.
     const read = (): string | undefined => {
         const v = readEnv(name);
@@ -140,14 +127,58 @@ export function optionalEnv(name: string): OptionalSecret {
 }
 
 /**
- * Read a named secret from `~/.stitch/secrets.json` (plaintext JSON — keep
- * the file private); falls back to the env var of the same name if the file
- * is absent or does not contain the key; throws if neither is available.
+ * The environment-variable secret resolver. One SOURCE, so one name — and because requiredness is
+ * a modifier on that source rather than a second source, `env` is itself the required resolver and
+ * `optional` hangs off it: `env('NAME')` throws when the variable is unset, `env.optional('NAME')`
+ * resolves to *absent* instead. The same shape as the token grammars and `secrets` (one name per
+ * dimension, the distinction named at the call site) applied to a dimension that happens to have a
+ * dominant case, which is why this one stays callable instead of growing an `env.required`.
  *
- * WARNING: the secrets file is unencrypted plaintext JSON. Restrict its
- * permissions (`chmod 600 ~/.stitch/secrets.json`) and never commit it.
+ * Both halves treat an exported-but-empty var (`MY_TOKEN=`) as ABSENT, so a blank credential can
+ * never silently ride along — `env` throws on it, `env.optional` reports it missing and `bearer`
+ * sends the request unauthenticated.
+ *
+ * **Only the process environment.** For a secret that comes from anywhere else — the on-disk
+ * secrets file, or a config object a DI container injected — see {@link credential}.
  */
-export function secretsFile(name: string): () => string {
+// A NOTE ON COST, since the house rule is that a facade must not weld anything onto a consumer's
+// path. `credential` below honours that literally: it is a bare object literal, so a bundler drops
+// it whole and a `bearer`-only import pulls neither resolver. `env` CANNOT: making one name both
+// callable and property-bearing requires mutating a function at module scope, and no bundler will
+// elide that — `Object.assign` is an opaque call, and a plain `env.optional = …` assignment is a
+// side effect neither esbuild nor rollup will prove away. A `/* @__PURE__ */` annotation does not
+// rescue it either: tsup minifies this module on the way to `lib/`, and the annotation is stripped
+// from the published artifact, so it would be decoration that reads as a guarantee.
+//
+// Measured: an import of `bearer` ALONE grows 434 -> 871 B raw, 267 -> 472 B gzip (+205 B), and
+// because the call is top-level that ~205 B is paid by EVERY importer of this module, not just one
+// that touches `env`. That is the price of `env` staying callable — the dominant case by far —
+// instead of becoming an `env.required`/`env.optional` pair, and it is paid only on the
+// `stitchapi/auth` subpath, which a consumer has already opted into by importing a strategy. The
+// three budgeted scenarios do not move. Revisit if `bearer`-only imports turn out to dominate.
+export const env: EnvResolver = Object.assign(envRequired, {
+    optional: envOptional,
+});
+
+/** A source `credential.from` pulls a named value from: an object with a `get(name)` method
+ *  (e.g. a NestJS ConfigService or a secrets-manager client) or a plain `(name) => value` fn. */
+export type SecretSource =
+    | { get(name: string): string | undefined }
+    | ((name: string) => string | undefined);
+
+function credentialFrom(source: SecretSource, name: string): () => string {
+    return () => {
+        const v =
+            typeof source === 'function' ? source(name) : source.get(name);
+        if (v == null || v === '')
+            throw new Error(
+                `missing secret ${name}. Fix: make the source yield a non-empty value, or use env.optional() if it's optional.`,
+            );
+        return v;
+    };
+}
+
+function credentialFile(name: string): () => string {
     return () => {
         try {
             // No node:fs (browser): skip the file, fall through to the env var.
@@ -169,12 +200,44 @@ export function secretsFile(name: string): () => string {
     };
 }
 
+/**
+ * Secret resolvers for credentials that do NOT come from the process environment — one name per
+ * SOURCE, with the source named at the call site rather than prefixed onto two barrel exports.
+ * Both members are REQUIRED resolvers: they throw rather than yield a blank credential, mirroring
+ * {@link env}, and both return the same `() => string` thunk every strategy accepts, so they
+ * compose with `bearer`/`apiKey`/`basic`/`oauth2` exactly like `env()` does.
+ *
+ * - `credential.file(name)` reads the named key from `~/.stitch/secrets.json`, falling back to the
+ *   env var of the same name when the file is absent or lacks the key, and throwing when neither
+ *   is available. **WARNING: that file is unencrypted plaintext JSON.** Restrict its permissions
+ *   (`chmod 600 ~/.stitch/secrets.json`) and never commit it. In a browser bundle there is no
+ *   `node:fs`, so it skips the file and resolves from the environment alone.
+ * - `credential.from(source, name)` resolves from an arbitrary injected `source` — for DI'd apps
+ *   that supply config WITHOUT touching `process.env` (a ConfigService, a secrets-manager client,
+ *   a validated config object). The source is an object with `get(name)` or a `(name) => value`
+ *   function; it throws if the source yields no value (unset or empty), mirroring `env()`.
+ *   `bearer(credential.from(configService, 'GITHUB_TOKEN'))`.
+ *
+ * **The environment variable case is not here.** It is the dominant source and has its own
+ * callable namespace, {@link env}; `credential.file` falls back to an env var, but reading one
+ * directly is `env(name)`.
+ *
+ * The noun is the one {@link Secret} already describes. It is deliberately NOT `secrets` — that
+ * word is the ROOT barrel's trace-redaction namespace (`secrets.register`/`has`/`redact`), and two
+ * different objects behind one name on two entry points is the P1 "one word, one concept"
+ * violation that no amount of subpath separation makes readable.
+ */
+export const credential = {
+    file: credentialFile,
+    from: credentialFrom,
+} as const;
+
 export function bearer(token: Secret | OptionalSecret): AuthStrategy {
     return {
         name: 'bearer',
         scheme: { type: 'http', scheme: 'bearer' },
         apply(req, ctx) {
-            // An optional secret (e.g. optionalEnv): attach the header only when it resolves to a
+            // An optional secret (e.g. env.optional): attach the header only when it resolves to a
             // value; otherwise skip it and announce the miss — never a silent no-op. A required
             // Secret keeps the original behavior exactly (resolve, attach; env() throws if unset).
             if (isOptional(token)) {
@@ -387,7 +450,7 @@ export interface OAuth2RefreshOptions {
  */
 export interface OAuth2ClientOptions {
     /**
-     * OAuth2 client id (`client_id` on the wire); resolved at call time (env/secretsFile), never
+     * OAuth2 client id (`client_id` on the wire); resolved at call time (env/credential.file), never
      * committed.
      */
     id: Secret;
