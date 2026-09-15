@@ -330,9 +330,13 @@ npm release are grouped under the in-development version that introduced them.
     claimed. And `OAuth2Options` is not a mirror in the sense this repo uses: its sibling
     `OAuth2ClientCredentialsFlow` states the test in its own JSDoc — spelled "exactly as the spec
     spells it … so `stitch export --openapi` emits it as an identity mapping" — while
-    `OAuth2Options` translates every member into a `snake_case` wire key where the token-request
-    form body is built. A contract that already re-cases the RFC's own names is the translated
-    house contract of P18's second half. The allow-list entry is **deleted**, not reworded; R8 now
+    `OAuth2Options` translates the very members it exempted: `clientId`/`clientSecret` are
+    re-cased to `client_id`/`client_secret` where the token-request form body is built, and under
+    `client.via: 'basic'` they leave the body altogether for an `Authorization` header. (`scope`
+    and `audience` do reach the body under their own names, but they were never part of the
+    exempted group, and most of the interface never becomes a body key at all.) A contract that
+    already re-cases the RFC's own names is the translated house contract of P18's second half.
+    The allow-list entry is **deleted**, not reworded; R8 now
     passes because the group is gone.
 
     **The envelope is `OAuth2ClientOptions`, exported** (P14), and the slot is a plain required

@@ -19,6 +19,7 @@ export interface TokenRequest {
     grant_type?: string;
     refresh_token?: string;
     client_id?: string;
+    client_secret?: string;
     scope?: string;
     [k: string]: string | undefined;
 }
@@ -84,6 +85,24 @@ export class FakeRotatingProvider {
             const body = (req.body ?? {}) as TokenRequest;
             this.tokenRequests.push({ ...body });
             if (opts.delayMs) await sleep(opts.delayMs);
+
+            // The client MUST authenticate (RFC 6749 §2.3.1): either `client_secret_post`
+            // (credentials in the form body) or `client_secret_basic` (an HTTP Basic header).
+            // A real provider answers an unauthenticated grant with 401 `invalid_client`, and so
+            // does this one — otherwise a proof whose strategy silently stopped sending
+            // credentials (e.g. reading an options field that no longer exists) still passes.
+            const basic = /^Basic /i.test(req.headers['authorization'] ?? '');
+            const posted = !!body.client_id && !!body.client_secret;
+            if (!basic && !posted)
+                return {
+                    status: 401,
+                    headers: {},
+                    body: {
+                        error: 'invalid_client',
+                        error_description:
+                            'no client authentication — expected client_id/client_secret in the body or an HTTP Basic Authorization header',
+                    },
+                };
 
             // A revoked family is permanently dead — exactly what makes this failure expensive.
             if (this.familyRevoked)

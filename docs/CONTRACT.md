@@ -822,8 +822,14 @@ _Carve-outs:_
     So the rationale covered two of the three members it claimed. More decisively, `OAuth2Options`
     is not a mirror in this document's sense: its sibling `OAuth2ClientCredentialsFlow` states the
     test in its own JSDoc — spelled "exactly as the spec spells it … so `stitch export --openapi`
-    emits it as an identity mapping" — and `OAuth2Options` has none, because `auth.ts` translates
-    every member into a `snake_case` wire key where it builds the token-request form body. A
+    emits it as an identity mapping" — and `OAuth2Options` has none **for the members this
+    carve-out covered**: `auth.ts` re-cases `clientId`/`clientSecret` into
+    `client_id`/`client_secret` where it builds the token-request form body, and under
+    `client.via: 'basic'` lifts them out of the body into an `Authorization` header entirely. The
+    claim to check is about the **exempted group**, not the whole interface — `scope` and
+    `audience` do reach the body under their own names, and
+    `tokenUrl`/`headers`/`refresh`/`key`/`tenancy`/`adapter`/`params` never become body keys at
+    all, but neither set was ever in front of this exemption. A
     contract that already re-cases the standard's own names is the translated house contract of
     [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary)'s
     second half, so the group was real. Folded to **`client: OAuth2ClientOptions`**

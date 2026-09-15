@@ -569,10 +569,13 @@ const PREFIX_GROUP_ALLOW = new Map([
     //  And more decisively, OAuth2Options is not a MIRROR in the sense this list means: its
     //  sibling OAuth2ClientCredentialsFlow states the real test in its own JSDoc — spelled
     //  "exactly as the spec spells it … so `stitch export --openapi` emits it as an identity
-    //  mapping" — and OAuth2Options has no identity mapping, because auth.ts TRANSLATES every
-    //  member into a snake_case wire key when it builds the token-request form body. A contract
-    //  that already re-cases the RFC's own names is governed by P18's second half: house
-    //  contracts use house vocabulary. So the group was real, and it folded into the exported
+    //  mapping" — and OAuth2Options has no identity mapping for the three members THIS entry
+    //  covered: auth.ts re-cases clientId/clientSecret into client_id/client_secret when it
+    //  builds the token-request form body, and under client.via: 'basic' keeps them out of that
+    //  body altogether. (scope/audience do reach the body under their own names, but they were
+    //  never in this group, and most of OAuth2Options never becomes a body key at all.)
+    //  A contract that already re-cases the RFC's own names is governed by P18's second half:
+    //  house contracts use house vocabulary. So the group was real, and it folded into the exported
     //  OAuth2ClientOptions envelope — `client: { id, secret, via }` — which dissolves the
     //  prefix rather than exempting it.)
     [

@@ -2,9 +2,11 @@
 // exported `OAuth2ClientOptions` envelope (`{ id, secret, via }`). The three used to sit flat and
 // were exempted from lint R8 as "an RFC 6749 mirror". They were not one: RFC 6749 §2.3.1 names the
 // client authentication METHODS and defines no `clientAuth` parameter at all, and `OAuth2Options`
-// has no identity mapping to protect either — every member is TRANSLATED into a snake_case wire
-// key where the token-request body is built, which is the translated house contract of P18's
-// second half, not a mirror.
+// has no identity mapping to protect for the three that were exempted — the client credentials are
+// TRANSLATED, re-cased into `client_id`/`client_secret` where the token-request body is built, and
+// under `via: 'basic'` kept out of that body entirely. (`scope`/`audience` do travel under their
+// own names; they were never part of the exempted group.) That is the translated house contract of
+// P18's second half, not a mirror.
 //
 // Both directions are pinned here: the new spelling works on the wire in both client-auth modes,
 // and the old flat spellings are COMPILE errors. The type-level assertions are enforced by

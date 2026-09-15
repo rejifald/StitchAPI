@@ -482,10 +482,14 @@ export interface OAuth2ClientOptions {
 }
 
 /**
- * Options for {@link oauth2}. House vocabulary, NOT an RFC 6749 mirror: every member is
- * translated into its `snake_case` wire key where the token-request form body is built, so there
- * is no identity mapping to protect. `OAuth2ClientCredentialsFlow` states the test the contracts
- * that ARE mirrors have to meet — "spelled exactly as the spec spells it … so
+ * Options for {@link oauth2}. House vocabulary, NOT an RFC 6749 mirror: the client credentials
+ * are translated, not exported — re-cased into `client_id`/`client_secret` where the token-request
+ * form body is built, and moved out of that body into a Basic `Authorization` header under
+ * `client.via: 'basic'` — so there is no identity mapping to protect where RFC 6749's names were
+ * being claimed. (`scope`/`audience` do go out under their own names, and most of this interface
+ * never reaches the body at all; neither was ever the field group under discussion.)
+ * `OAuth2ClientCredentialsFlow` states the test the contracts that ARE mirrors have to meet —
+ * "spelled exactly as the spec spells it … so
  * `stitch export --openapi` emits it as an identity mapping" — and this one does not meet it, so
  * CONTRACT.md P18's second half governs: a house contract uses house vocabulary. That is why the
  * client credentials fold into {@link OAuth2ClientOptions} (P24) instead of staying flat.
