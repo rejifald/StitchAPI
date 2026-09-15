@@ -119,5 +119,47 @@ expectAssignable<ChannelOptions>({ from: ['https://a.test'] });
 expectType<typeof channel.over>(channel.over);
 expectType<typeof channel.window>(channel.window);
 expectType<typeof channel.port>(channel.port);
+expectType<typeof channel.private>(channel.private);
 // @ts-expect-error — `channel` is a namespace object, not a function: there is no bare call.
 channel(transport, { from: ['https://x.test'] });
+
+// 13) the ORIGIN-LESS builders take NO origin policy — the structural absence that discharges
+//     CONTRACT.md P24 carve-out (b). An allow-list on a transport with no origin dimension could
+//     never change one decision, and an inert option shaped like a security control is worse than
+//     an asymmetry. `channel.over` is the GATED seam and keeps `from`; `channel.private` is the
+//     ungated one and has no second parameter to get wrong.
+expectError(channel.private(transport, { from: ['https://x.test'] }));
+expectError(channel.over(transport));
+
+// 14) the transport seam's `origin` is `string | null` — `null` is the OUT-OF-BAND claim "this
+//     transport does not attribute origins", which only code can make. The non-breaking half of
+//     that widening, pinned rather than asserted in a PR body: an implementor written against the
+//     old `(data, origin: string) => void` handler still satisfies `MessageTransport`, because
+//     `subscribe` is declared in method position (bivariant parameters) and the inner handler is
+//     checked contravariantly.
+expectAssignable<MessageTransport>({
+    post: () => undefined,
+    subscribe: (handler: (data: unknown, origin: string) => void) => {
+        handler({}, 'https://x.test');
+        return () => undefined;
+    },
+});
+// The idiom that actually broke at runtime rather than at the type level: a transport that hands
+// the demux `''` to mean "no origin dimension" — what the OLD JSDoc taught — still COMPILES. It
+// now fails closed on a gated channel instead of being waved through, which is the migration
+// hazard the CHANGELOG calls out.
+expectAssignable<MessageTransport>({
+    post: () => undefined,
+    subscribe: (handler) => {
+        handler({}, '');
+        return () => undefined;
+    },
+});
+// And the honest spelling type-checks too.
+expectAssignable<MessageTransport>({
+    post: () => undefined,
+    subscribe: (handler) => {
+        handler({}, null);
+        return () => undefined;
+    },
+});

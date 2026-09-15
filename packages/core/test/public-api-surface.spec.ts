@@ -111,7 +111,12 @@ const REMOVED_OTLP_FUNCTIONS = [
 // namespace that kept `window` and lost `over` would still cover every documented example while
 // removing the only seam a host has for a primitive core does not ship — and `over` is the member
 // with no doc example to notice it missing.
-const CHANNEL_NAMESPACE_MEMBERS = ['over', 'window', 'port'] as const;
+const CHANNEL_NAMESPACE_MEMBERS = [
+    'over',
+    'window',
+    'port',
+    'private',
+] as const;
 
 // The three names `channel` REPLACED, pinned absent for the same reason as the parsers, the secret
 // functions and the OTLP names above: they repeated the subject noun and varied only the role word
@@ -689,10 +694,12 @@ describe('public API surface (src/postmessage.ts → stitchapi/postmessage)', ()
         expect(typeof postmessageApi.channel).toBe('object');
     });
 
-    // Behavioural, not just structural: all three must build a REAL channel over their own
-    // transport kind. A namespace assembled from three lookalikes passes the typeof checks and
+    // Behavioural, not just structural: all four must build a REAL channel over their own
+    // transport kind. A namespace assembled from four lookalikes passes the typeof checks and
     // fails here. `over` gets the in-memory fake the surface's own specs use; `port` gets a real
-    // MessageChannel end; `window` gets a minimal postMessage-bearing stub.
+    // MessageChannel end; `window` gets a minimal postMessage-bearing stub; `private` gets the
+    // same fake as `over` but with NO origin policy — the structural absence that makes it the
+    // documented home for an origin-less custom transport (an IPC/worker bridge).
     test('the exported members build channels over their own transport kinds', async () => {
         const over = postmessageApi.channel.over(
             { post: () => undefined, subscribe: () => () => undefined },
@@ -711,6 +718,13 @@ describe('public API surface (src/postmessage.ts → stitchapi/postmessage)', ()
         });
         expect(typeof win.events).toBe('function');
         await win.close();
+
+        const priv = postmessageApi.channel.private({
+            post: () => undefined,
+            subscribe: () => () => undefined,
+        });
+        expect(typeof priv.request).toBe('function');
+        await priv.close();
     });
 
     // The origin policy is still STRUCTURAL through the namespace — the fold moved the name, not
