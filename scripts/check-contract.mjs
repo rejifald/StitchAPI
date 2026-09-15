@@ -573,7 +573,7 @@ const PREFIX_GROUP_ALLOW = new Map([
     //  member into a snake_case wire key when it builds the token-request form body. A contract
     //  that already re-cases the RFC's own names is governed by P18's second half: house
     //  contracts use house vocabulary. So the group was real, and it folded into the exported
-    //  OAuth2ClientOptions envelope — `client: { id, secret, auth }` — which dissolves the
+    //  OAuth2ClientOptions envelope — `client: { id, secret, via }` — which dissolves the
     //  prefix rather than exempting it.)
     [
         'StitchQueryOptions.query',

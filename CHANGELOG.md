@@ -311,7 +311,7 @@ npm release are grouped under the in-development version that introduced them.
     +   client: {
     +       id: env('CLIENT_ID'),
     +       secret: env('CLIENT_SECRET'),
-    +       auth: 'basic',
+    +       via: 'basic',
     +   },
         scope: 'orders.read',
     }),
@@ -321,7 +321,7 @@ npm release are grouped under the in-development version that introduced them.
     | ------------------------------- | --------------- |
     | `clientId: Secret`              | `client.id`     |
     | `clientSecret: Secret`          | `client.secret` |
-    | `clientAuth: 'post' \| 'basic'` | `client.auth`   |
+    | `clientAuth: 'post' \| 'basic'` | `client.via`    |
 
     **The carve-out was wrong twice over.** `clientAuth` is not an RFC 6749 parameter at all —
     §2.3.1 describes the client authentication _methods_ (`client_secret_post` /
@@ -344,13 +344,24 @@ npm release are grouped under the in-development version that introduced them.
     `secret` are co-equal, so no field dominates (P12/P14). `tokenUrl` **stays flat** — the
     endpoint is a different subject from the identity calling it.
 
+    **The third member is `via`, not `auth`.**
+    ([P2](docs/CONTRACT.md#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one))
+    The obvious short spelling inside the envelope would have collided with `StitchConfig.auth`,
+    which holds an `AuthStrategy` — a behaviour object with a required `apply` closure — against a
+    closed `'post' | 'basic'` string union here. One token, two concepts, two value-spaces, and the
+    two nest inside a single call expression: `auth: oauth2({ client: { auth: 'basic' } })`. P2
+    forbids that even when each side is individually defensible, and locality is not a defence —
+    it is the argument P2 exists to foreclose. `via` reads at the call site ("the client
+    authenticates _via_ basic"), collides with nothing, and leaves the `'post' | 'basic'`
+    vocabulary and the RFC mapping untouched.
+
     Nothing about the wire changes: `client_id`/`client_secret` still go in the form body under
-    the default `client.auth: 'post'` and into the Basic header under `'basic'`, still applied
+    the default `client.via: 'post'` and into the Basic header under `'basic'`, still applied
     last so `params` can never shadow them. Redaction is unaffected — `secret` is matched as a
     stem. Hard break, no alias
     ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel);
-    type-level tests pin all three old spellings, `client: {}`, and each half-filled `client`, as
-    compile errors.
+    type-level tests pin all three old spellings, `client: {}`, each half-filled `client`, and
+    `client.auth`, as compile errors.
 
 - **BREAKING CHANGE: `AdapterResponse` is now `AdapterResult`, repo-wide.**
   ([CONTRACT.md P3](docs/CONTRACT.md#p3--one-suffix-system)) The suffix system reserves `*Response`

@@ -463,13 +463,22 @@ export interface OAuth2ClientOptions {
      * `grant_type` (plus `scope`/`audience`/`params`) in the body — what providers like Kyivstar
      * SMS require. The header is Base64 of `id:secret`, encoded browser-safe (no `Buffer`).
      *
-     * Spelled `auth` rather than RFC 7591's `tokenEndpointAuthMethod`: this envelope is house
-     * vocabulary, not a mirror (see {@link OAuth2Options}), and inside `client` the one-word token
-     * is unambiguous. RFC 6749 §2.3.1 names the METHODS, not a request parameter, so there is no
-     * wire spelling to keep faith with here either — the two values are the house short forms of
-     * `client_secret_post` / `client_secret_basic`.
+     * Spelled `via` — "the client authenticates VIA basic" — and NOT `auth`, because that token is
+     * already spent: `StitchConfig.auth` holds an {@link AuthStrategy}, a behaviour object with a
+     * required `apply` closure. One token would then denote two concepts over two value-spaces (an
+     * object vs a closed string union), which CONTRACT.md P2 forbids outright — two fields that
+     * legitimately mean different things MUST NOT share a name even if each is individually
+     * defensible; rename one. Locality is not a defence: P2 is what forecloses it, and here the two
+     * would nest visibly inside ONE call expression —
+     * `auth: oauth2({ client: { auth: 'basic' } })`.
+     *
+     * Not RFC 7591's `tokenEndpointAuthMethod` either: this envelope is house vocabulary, not a
+     * mirror (see {@link OAuth2Options}). RFC 6749 §2.3.1 names the METHODS, not a request
+     * parameter, so there is no wire spelling to keep faith with here — the two VALUES are the
+     * house short forms of `client_secret_post` / `client_secret_basic`, and they are unchanged by
+     * this spelling.
      */
-    auth?: 'post' | 'basic';
+    via?: 'post' | 'basic';
 }
 
 /**
@@ -485,7 +494,7 @@ export interface OAuth2Options {
     /** The `client_credentials` token endpoint (POST, form-encoded). */
     tokenUrl: string;
     /**
-     * The client's identity at that endpoint — `{ id, secret }`, plus `auth` to pick
+     * The client's identity at that endpoint — `{ id, secret }`, plus `via` to pick
      * `client_secret_post` (default) or `client_secret_basic` (CONTRACT.md P24 envelope).
      */
     client: OAuth2ClientOptions;
@@ -502,7 +511,7 @@ export interface OAuth2Options {
     params?: Record<string, string>;
     /**
      * Extra headers on the token request (e.g. a provider-required header). Keys are lower-cased;
-     * cannot override the `Authorization` header that `client.auth: 'basic'` sets.
+     * cannot override the `Authorization` header that `client.via: 'basic'` sets.
      */
     headers?: Record<string, string>;
     /**
@@ -591,7 +600,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
-    const authMethod = opts.client.auth ?? 'post';
+    const authMethod = opts.client.via ?? 'post';
     const flight = singleFlight<string>();
 
     // The vault key for THIS call. Default 'app' shares one token across all callers (correct for

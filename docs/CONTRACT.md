@@ -824,12 +824,18 @@ _Carve-outs:_
     contract that already re-cases the standard's own names is the translated house contract of
     [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary)'s
     second half, so the group was real. Folded to **`client: OAuth2ClientOptions`**
-    (`{ id, secret, auth }`); `tokenUrl` stays flat beside it — the endpoint is a different
+    (`{ id, secret, via }`); `tokenUrl` stays flat beside it — the endpoint is a different
     subject from the identity calling it (P1). No shorthand: `id` and `secret` are co-equal, so
     no field dominates (P12/P14), and the envelope is plain-required rather than `AtLeastOne<…>`
     because two required members already make `client: {}` a compile error — the
     [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults)
-    reading `CacheOptions.ttl` gets.
+    reading `CacheOptions.ttl` gets. The third member landed as **`via`**, not `auth`: inside the
+    envelope the obvious short spelling would have collided with `StitchConfig.auth`, which holds
+    an `AuthStrategy` object — one token, two concepts, two value-spaces, and the two visibly
+    nested in one call expression (`auth: oauth2({ client: { auth: 'basic' } })`).
+    [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one) forbids that
+    regardless of how defensible each side is on its own, so the fold and the rename
+    ship together rather than one repairing the other later.
 
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an

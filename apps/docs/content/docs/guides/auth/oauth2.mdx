@@ -64,7 +64,7 @@ builds the strategy that holds.
 By default the client authenticates with `client_secret_post`: `client_id` and
 `client_secret` ride in the form body. Some providers require
 `client_secret_basic` instead — the credentials as an HTTP Basic header, with
-only `grant_type` in the body. Set `client.auth: 'basic'` for those:
+only `grant_type` in the body. Set `client.via: 'basic'` for those:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -78,7 +78,7 @@ const messages = stitch({
         client: {
             id: env('CLIENT_ID'),
             secret: env('CLIENT_SECRET'),
-            auth: 'basic',
+            via: 'basic',
         },
     }),
 });
