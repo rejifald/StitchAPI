@@ -4,7 +4,12 @@
 // and on the call-ARGUMENT via `CallArg` (the `Stitch<…>`-bound / `expectType<Stitch<…>>` recursive-
 // `with` quirk, same as the core inference tests in input-inference.test-d.ts).
 import { channel } from '../src/postmessage';
-import type { MessageTransport } from '../src/postmessage';
+import type {
+    ChannelOptions,
+    MessageTransport,
+    OriginOptions,
+    WindowChannelOptions,
+} from '../src/postmessage';
 import { type CallArg, output } from './_util';
 
 import { expectAssignable, expectError, expectType } from 'tsd';
@@ -20,7 +25,7 @@ type Result<S extends (...args: never[]) => { then: unknown }> = Awaited<
 
 // A throwaway transport just to mint a channel for the type assertions (never executed).
 const transport = null as unknown as MessageTransport;
-const ch = channel(transport, { allowedOrigins: ['https://x.test'] });
+const ch = channel.over(transport, { from: ['https://x.test'] });
 
 // 1) request: result inferred from `opts.output`, call argument from `opts.input`.
 const sum = ch.request('sum', {
@@ -59,3 +64,60 @@ expectType<unknown[]>(output(loose));
 // 6) a no-input request keeps a fully-OPTIONAL call argument (backward-compatible with StitchInput).
 const noInput = ch.request('noop');
 expectAssignable<CallArg<typeof noInput>>(undefined);
+
+// 7) the origin policy is ONE envelope with a P12 scalar shorthand, and the shorthand is the
+//    ordinary case — `origins: X` ≡ `origins: { to: X, from: [X] }`.
+expectAssignable<WindowChannelOptions['origins']>('https://app.example.com');
+expectAssignable<WindowChannelOptions['origins']>({
+    to: 'https://app.example.com',
+});
+expectAssignable<WindowChannelOptions['origins']>({
+    to: 'https://app.example.com',
+    from: ['https://app.example.com', 'https://widget.example.com'],
+});
+
+// 8) `'*'` is unspellable on EITHER half — the trap `allowedOrigins: string | string[]` used to
+//    let through, where the gate's literal `includes` silently dropped every inbound message.
+expectError<WindowChannelOptions['origins']>('*');
+expectError<WindowChannelOptions['origins']>({ to: '*' });
+expectError<WindowChannelOptions['origins']>({
+    to: 'https://app.example.com',
+    from: '*',
+});
+expectError<ChannelOptions['from']>('*');
+expectError<ChannelOptions['from']>(['https://a.test', '*']);
+
+// 9) the envelope is not `{}`-constructible (P20/P15): `to` has no correct default.
+expectError<WindowChannelOptions['origins']>({});
+expectError<WindowChannelOptions['origins']>({ from: 'https://a.test' });
+
+// 10) a dynamic origin must assert itself at the boundary — `location.origin` is `string`, and
+//     that is the point: an unvalidated string is exactly what used to typecheck.
+expectError<ChannelOptions['from']>(null as unknown as string);
+expectAssignable<ChannelOptions['from']>(
+    null as unknown as `https://${string}`,
+);
+
+// 11) `from` means ONE thing across the surface: `ChannelOptions.from` and the envelope's inbound
+//     half are the same type, so a value authored for one builder is authored for the other. This
+//     is what `origins` on both could not give — the two unions were INCOMPARABLE (an array is
+//     legal on `channel.over`, a compile error on `channel.window`), so one token named two
+//     value-spaces.
+type ChannelFrom = ChannelOptions['from'];
+type EnvelopeFrom = NonNullable<OriginOptions['from']>;
+expectType<EnvelopeFrom>(null as unknown as ChannelFrom);
+expectType<ChannelFrom>(null as unknown as EnvelopeFrom);
+
+// …and `origins` is simply absent from `ChannelOptions`: the token appears only on the builder
+// where a second dimension (`to`) exists, so there is no cross-surface spelling to get wrong.
+expectError<ChannelOptions>({ origins: ['https://a.test'] });
+expectAssignable<ChannelOptions>({ from: ['https://a.test'] });
+
+// 12) the namespace is three PEERS and is NOT itself callable. P12 reserves a bare call for the
+//     DOMINANT case, and the generic transport builder is the rare one (the README and every doc
+//     reach for `channel.window`), so making it bare would invert the hierarchy.
+expectType<typeof channel.over>(channel.over);
+expectType<typeof channel.window>(channel.window);
+expectType<typeof channel.port>(channel.port);
+// @ts-expect-error — `channel` is a namespace object, not a function: there is no bare call.
+channel(transport, { from: ['https://x.test'] });

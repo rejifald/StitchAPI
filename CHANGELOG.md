@@ -225,6 +225,152 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: the `postMessage` builders are one `channel` namespace, and a channel's
+  origin policy is one `origins` envelope.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+  / [P12](docs/CONTRACT.md#p12--envelope--scalar-shorthand)
+  / [P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity))
+  `windowChannel`'s `targetOrigin` and `allowedOrigins` were one dimension — the channel's origin
+  policy — spelled as two fields, and the proof was in their own docs: one was documented as the
+  other's default. They fold into `origins`, with the bare origin as the P12 shorthand.
+  `channel()`'s `allowedOrigins` becomes `from` — the inbound half's own name, byte-identical to
+  `OriginOptions.from` (P1/P16).
+
+    ```ts
+    -import { windowChannel } from 'stitchapi/postmessage';
+    +import { channel } from 'stitchapi/postmessage';
+
+    -const ch = windowChannel({
+    +const ch = channel.window({
+        target: iframe.contentWindow!,
+    -   targetOrigin: 'https://app.example.com',
+    +   origins: 'https://app.example.com', // ≡ { to: X, from: [X] }
+    });
+
+    // asymmetric: post to one frame, accept from several
+    -const wide = windowChannel({
+    +const wide = channel.window({
+        target: iframe.contentWindow!,
+    -   targetOrigin: 'https://app.example.com',
+    -   allowedOrigins: ['https://app.example.com', 'https://widget.example.com'],
+    +   origins: {
+    +       to: 'https://app.example.com',
+    +       from: ['https://app.example.com', 'https://widget.example.com'],
+    +   },
+    });
+
+    -channel(transport, { allowedOrigins: ['https://app.example.com'] });
+    +channel.over(transport, { from: ['https://app.example.com'] });
+
+    -portChannel(port);
+    +channel.port(port);
+    ```
+
+    | Was                                                        | Now                                         |
+    | ---------------------------------------------------------- | ------------------------------------------- |
+    | `windowChannel(opts)`                                      | `channel.window(opts)`                      |
+    | `portChannel(port)`                                        | `channel.port(port)`                        |
+    | `channel(transport, opts)`                                 | `channel.over(transport, opts)`             |
+    | `WindowChannelOptions.targetOrigin: Origin`                | `origins.to` (or the bare `origins: X`)     |
+    | `WindowChannelOptions.allowedOrigins?: string \| string[]` | `origins.from?: Origin \| Origin[]`         |
+    | `ChannelOptions.allowedOrigins: string \| string[]`        | `ChannelOptions.from: Origin \| Origin[]`   |
+    | —                                                          | `OriginOptions` (`{ to, from? }`), exported |
+
+    **One namespace, three peers.** `channel`/`windowChannel`/`portChannel` repeated the subject
+    noun and varied only the role word — the cluster shape `otlp.sink`/`exporter`/`json` replaced
+    (`otlpSink`/`otlpHttpExporter`/`toOtlpJson`), and `secrets.register`/`has`/`redact` before it.
+    The barrel states the rule above its token grammars: one name per dimension, the role named at
+    the call site, rather than a barrel of verb-prefixed functions. `over` is this surface's own
+    word — ADR 0009 already said "over any `MessageTransport`".
+
+    **Not callable.** `channel(...)` is a compile error, deliberately. [P12](docs/CONTRACT.md#p12--envelope--scalar-shorthand)
+    reserves a bare call for the DOMINANT case, and here the generic builder is the RARE one — its
+    only in-repo callers are tests, while the README and every doc reach for the window builder.
+    Making the rare member bare and the common one a property would invert that hierarchy, so all
+    three are peers on a plain object, the shape `otlp` and `secrets` already have.
+
+    **Bundle cost, stated rather than glossed.** A namespace pins all three members for anyone who
+    uses any one of them: esbuild will not split an object literal to drop a dead half, the same
+    effect `packages/core/scripts/bundle-size.mjs` already records for the `duration` facade.
+    Measured on this branch (esbuild bundle+minify, gzip), old surface → new:
+
+    | consumer uses      |     was |     now |  delta |
+    | ------------------ | ------: | ------: | -----: |
+    | the port builder   | 23518 B | 24253 B | +735 B |
+    | the transport one  | 23909 B | 24253 B | +344 B |
+    | the window builder | 24094 B | 24253 B | +159 B |
+    | all three          | 24226 B | 24253 B |  +27 B |
+
+    The "now" column is one number three times, which IS the finding: the namespace has a flat
+    floor, so what a consumer pays no longer depends on which builder it reached for.
+
+    The port-only consumer pays most, and the specific consequence is worth naming: it now carries
+    the origin-validation apparatus (`assertOrigin`, `new URL()`, the global `'message'` listener)
+    that `portChannel` deliberately has none of, per the #795 change recorded below. The
+    `postmessage` subpath is **not** budgeted by `bundle-size.mjs` (its three scenarios are the
+    whole root entry, `import { stitch }`, and `stitchapi/auth`), so no gate moves — verified, not
+    assumed. The trade was made knowingly: NAMES freeze at the stable tag, BYTES stay recoverable
+    afterwards — split the subpath, or add a `stitchapi/postmessage/port` entry — so the reversible
+    cost is the one to pay.
+
+    **`channel()` takes `from`, not `origins`** — the one place this entry's own cross-surface-parity
+    argument cuts against the envelope. `origins` on both builders would be a single token over two
+    **incomparable** value-spaces: neither union is a superset of the other, so
+    `origins: ['https://a', 'https://b']` is valid on `channel` and a compile error on
+    `channel.window`, and the scalar shorthand `origins: X` would mean `{ to: X, from: [X] }` on one
+    surface and `[X]` on the other. That is the P1/P16 collision an envelope exists to avoid, not to
+    create, and P24 carve-out (b)'s **endpoint-slot** record is the governing precedent: it declined
+    a dominant-field shorthand for `url` precisely because that "would mean two different things on
+    the two surfaces". Under `from` the inbound half has ONE meaning and ONE value-space across the
+    whole surface (`ChannelOptions.from` and `OriginOptions.from` are identical in name and type),
+    and `origins` appears only where a second dimension actually exists. The differing **nesting
+    level** is fine and carries the same precedent — that slot's members "do not share a level"
+    either, with `baseUrl` as seam vocabulary beside per-endpoint `url`/`path`.
+
+    Honest about severity: unlike the endpoint slot, this collision has **no silent failure mode**.
+    Every divergence between the two builders is a compile error, so nothing was ever mis-gated by
+    it. It is taken as surface hygiene because the API freezes at the stable tag, not because it
+    was a defect.
+
+    **The lint allow-list entry is deleted, not reworded.** It defended the flat pair on P22:
+    `targetOrigin` is `window.postMessage()`'s own parameter name. It is — and that is not what the
+    mirror carve-out protects. The value is passed **positionally**
+    (`resolveTarget().postMessage(message, opts.targetOrigin, transfer ?? [])`), so no DOM code ever
+    reads a property of that name off our object and renaming it adds **no** translation: there was
+    no identity mapping to preserve. `XhrLike.responseType` is exempt because it is literally
+    `xhr.responseType = …` on a foreign object; an IDL _parameter_ name is documentation, not a
+    seam. Fifth instance of this reversal, after `AdapterRequest.responseType` and
+    `AdapterRequest.arrayFormat` (both 2026-09-04), `DocSearchHit` (2026-09-09) and
+    `OAuth2Options.client` (2026-09-14). The entry also grouped by the shared **prefix**, which is
+    what the lint mechanically detects, where P24 treats a shared prefix as a _signal_ of an
+    envelope rather than its boundary — so `target`, the transport handle, stays flat beside
+    `origins`.
+
+    **Both halves narrow from `string` to `Origin`,** which closes a live trap:
+    `allowedOrigins: '*'` type-checked and then silently dropped **every** inbound message, because
+    the gate is a literal `includes`, not a wildcard match — a channel that looked configured and
+    received nothing. The `Origin` template literal cannot express the rest of that trap, so the
+    construction-time guard that threw on `targetOrigin === '*'` now runs over **both** halves and
+    rejects any authored origin that is not `new URL(x).origin`: `'https://*.example.com'`,
+    `'https://app.example.com/'`, `'https://App.Example.com'` and `'https://app.example.com:443'`
+    all satisfied the type and all matched nothing. The error names the corrected spelling, echoes
+    the value the caller actually wrote, and names the slot they actually wrote it in — the P12
+    shorthand reports `origins`, not the `origins.to` it normalises to internally, and `channel()`
+    reports `from`, the only origin key that exists on `ChannelOptions`. A **missing** policy — the
+    shape a stale `targetOrigin` / `allowedOrigins` call site produces once this alias-free break
+    lands, reachable from JS, an `as any`, a stale `.d.ts`, or options parsed from JSON — is its own
+    directed error naming the rename on each builder, rather than an undefined dereference two lines
+    later. Failing loud at construction is only worth anything if the noise says what to fix.
+
+    Narrowing to `Origin` also means a **dynamic** origin — `location.origin`, a value read from
+    config, a plain `const ALLOWED = ['https://a', 'https://b']` that widens to `string[]` — must
+    assert itself (`const ALLOWED: Origin[] = [...]`, or a `satisfies`) at the boundary. That is
+    the intended cost, not a free win. It also rejects `'null'`, the origin a **sandboxed** iframe
+    posts with: deliberate, since every sandboxed frame everywhere shares it — hand such a frame a
+    `MessagePort` and use `channel.port`, which is gated by who you hand the port to. Hard break, no
+    alias ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc`
+    channel).
+
 - **BREAKING CHANGE: the four secret resolvers are now two namespaces — `optionalEnv`,
   `secretsFile` and `secretFrom` are replaced by `env.optional`, `credential.file` and
   `credential.from`.**

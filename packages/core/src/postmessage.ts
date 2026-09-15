@@ -4,7 +4,10 @@
 // CORE subpath (not a peer package), reached only through `cfg.kind`, never the root entry.
 //
 // A `PostMessageChannel` binds the raw transport + the security policy (allowed origins) ONCE at
-// construction. Its four verbs each ride an existing surface hook (ADR 0005/0008):
+// construction. It is built through ONE namespace — `channel.window(opts)` for a Window/iframe,
+// `channel.port(port)` for a MessagePort, `channel.over(transport, opts)` for any transport — the
+// `otlp`/`secrets` shape: one name per dimension, the role named at the call site. Its four verbs
+// each ride an existing surface hook (ADR 0005/0008):
 //   • `request` — correlated request→response: a buffered `execute` surface (id `'postmessage'`)
 //     that posts `{ type, id, payload }` and resolves when the matching `{ type: reply, id }` lands.
 //   • `emit` — fire-and-forget: the same buffered surface, but `execute` posts `{ type, payload }`
@@ -17,16 +20,23 @@
 //
 // SECURITY — origin is FIRST-CLASS and STRUCTURAL, not advisory (the "structural, not advisory" bar
 // the shell surface and the rejected `inferBearer` set):
+//   • a WINDOW channel's origin policy is ONE envelope — `origins: { to, from? }`, where `from`
+//     defaults to `[to]` — because the two halves are one decision, not two neighbouring fields.
+//     A raw-transport channel has no outbound half to name (the transport already knows where its
+//     `post` goes), so it takes the inbound half alone, under that half's own name: `from`.
 //   • {@link Origin} structurally forbids `'*'` (a template-literal type) — you cannot type a
-//     wildcard targetOrigin; `windowChannel` also RUNTIME-throws on `'*'` (defense in depth).
+//     wildcard origin; `assertOrigin` also RUNTIME-rejects `'*'`, every `*` pattern the template
+//     literal still admits (`https://*.example.com`), and anything that is not the browser's own
+//     normalised origin (a trailing slash, a default port, an upper-cased host) — all of which the
+//     gate's literal `includes` would otherwise turn into "allow nothing", silently.
 //   • the demux gates EVERY inbound message on its `origin` BEFORE any dispatch or validation:
-//     an origin not in `allowedOrigins` is dropped, never correlated/validated/delivered.
+//     an origin not in the `from` list is dropped, never correlated/validated/delivered.
 //   • `MessagePort` messages carry no origin (a port is already a private channel), so the gate is
 //     bypassed for ports — documented, not silent.
 //
 // Browser-first + bundle-frugal + zero-dep: only `postMessage`/`MessageEvent`/`MessagePort`/
-// `ReadableStream`/`globalThis.crypto` — no `node:*`, no `Buffer`. Reached only through this subpath;
-// `import { stitch }` pulls in none of it.
+// `ReadableStream`/`URL`/`globalThis.crypto` — no `node:*`, no `Buffer`. Reached only through
+// this subpath; `import { stitch }` pulls in none of it.
 import { compact } from './compact';
 import type { InputOf, OutputOf, SchemaLike } from './infer';
 import { makeStitch } from './stitch';
@@ -155,8 +165,9 @@ function freshId(): string {
  *   Inheriting it let `channel.request(type, { adapter: myTransport })` typecheck while the
  *   transport sat inert: CONTRACT.md P24 carve-out (b)'s closing clause — a flat shape is never a
  *   licence to let inert config typecheck — which is the same defect #795 removed from
- *   {@link portChannel}'s `allowedOrigins` in this file. Reach a different transport by building
- *   the channel over a different {@link MessageTransport}, which is the real seam (P21).
+ *   `channel.port` in this file (the origin list it took "for symmetry"). Reach a
+ *   different transport by building the channel over a different {@link MessageTransport},
+ *   which is the real seam (P21).
  *
  * Everything else stays: the resilience chain (`retry`/`throttle`/`timeout`/`circuit`/`trace`/
  * `signal`) all applies via the engine, exactly as for every other surface.
@@ -201,7 +212,7 @@ export interface RespondOptions {
 
 /**
  * The typed, validated, observable channel — the entry point this surface exposes. Built by
- * {@link channel} / {@link windowChannel} / {@link portChannel}; binds the transport + the allowed
+ * `channel.over` / `channel.window` / `channel.port`; binds the transport + the allowed
  * origins ONCE, then mints stitches (`request`/`emit`/`events`) and responders (`respond`) that all
  * share its single demux listener and per-channel registry. `close()` tears the whole thing down.
  */
@@ -300,67 +311,191 @@ export const postMessageEventSurface: Surface = {
 // the channel builder
 // ---------------------------------------------------------------------------
 
-// The shared `T | T[]` list normalisation (CONTRACT.md P7): one origin reads as itself.
-const originList = (v: string | string[] | undefined): string[] =>
-    v === undefined ? [] : Array.isArray(v) ? v : [v];
+/**
+ * The channel's origin policy: the one origin outbound messages are addressed **to**, and the
+ * origins inbound messages may come **from**. One dimension, one envelope (CONTRACT.md P24) — and
+ * `from` DEFAULTS to `[to]`, which is what makes the two halves facets of a single decision rather
+ * than neighbours that happen to share a word.
+ *
+ * P12 scalar shorthand: `origins: X` is exactly `origins: { to: X, from: [X] }` — the parent↔iframe
+ * case, where the frame you post to is the only frame you accept from.
+ */
+export interface OriginOptions {
+    /** The concrete (non-wildcard) origin outbound messages are addressed to. */
+    to: Origin;
+    /**
+     * Origin(s) inbound messages may come from. Default `[to]`. Same name, same value-space as
+     * {@link ChannelOptions.from} — the inbound half reads identically on both builders (P1/P16).
+     */
+    from?: Origin | Origin[];
+}
 
-/** Options for {@link channel}. */
+// Reject anything that is not EXACTLY the string a browser puts on `MessageEvent.origin` — scheme
+// + host + non-default port, nothing more. The {@link Origin} type forbids the bare `'*'` and
+// nothing else: `'https://*.example.com'` (the CORS/CSP habit), `'https://app.example.com/'`,
+// `'https://App.Example.com'` and `'https://app.example.com:443'` all satisfy the template literal,
+// and every one of them fails the gate's literal `includes` — dropping EVERY inbound message, with
+// no warning, while reading exactly like a working allow-list. So the type is the first line and
+// this is the second, the same defense-in-depth the wildcard target has always had, extended to the
+// half where the trap is actually reachable. `new URL(x).origin` is the browser's own normaliser:
+// if the round-trip is not the identity, the authored string is not an origin.
+function assertOrigin(value: unknown, slot: string): void {
+    // Taken as `unknown`, not `Origin`: every caller below is typed, but the whole point of this
+    // second line of defense is the call sites the TYPE never saw (an `as any`, a JS caller, a
+    // stale `.d.ts`, options parsed from JSON). A non-string here — most often a `to` the caller
+    // simply did not write — must name its slot, not die on `.includes` of undefined.
+    if (typeof value !== 'string')
+        throw new Error(
+            `postmessage: \`${slot}\` must be a bare origin string (scheme://host[:port]), got ${value === undefined ? 'undefined' : JSON.stringify(value)}.`,
+        );
+    if (value.includes('*'))
+        throw new Error(
+            `postmessage: a wildcard origin is forbidden in \`${slot}\`, got '${value}' — name each exact origin (e.g. 'https://app.example.com'). Outbound a wildcard posts to whatever document occupies the frame; inbound the gate is a literal match, so a pattern matches nothing and silently drops everything.`,
+        );
+    let normalized: string | undefined;
+    try {
+        normalized = new URL(value).origin;
+    } catch {
+        normalized = undefined;
+    }
+    if (normalized === value) return;
+    const hint =
+        normalized !== undefined && normalized !== 'null'
+            ? ` — did you mean '${normalized}'?`
+            : '';
+    throw new Error(
+        `postmessage: \`${slot}\` must be a bare origin (scheme://host[:port]), got '${value}'${hint}`,
+    );
+}
+
+// The shared `T | T[]` list normalisation (CONTRACT.md P7): one origin reads as itself. Validation
+// rides the SAME helper rather than a second pass, so there is exactly one place an authored origin
+// is turned into a gate entry, and exactly one place it is checked.
+const originList = (v: Origin | Origin[], slot: string): string[] => {
+    const list = Array.isArray(v) ? v : [v];
+    for (const origin of list) assertOrigin(origin, slot);
+    return list;
+};
+
+// The origin policy is REQUIRED in the type, so no TypeScript call site can omit it — but a JS
+// caller, an `as any`, a stale `.d.ts`, or channel options round-tripped through JSON can, and a
+// call site still spelling the pre-envelope `targetOrigin` / `allowedOrigins` produces exactly that
+// shape. Without this the missing value reaches `assertOrigin` as `undefined` and the caller gets
+// `TypeError: Cannot read properties of undefined` — the one construction-time failure in a file
+// whose thesis is that failing LOUD at construction replaces failing silent at the first message.
+// Read through `unknown` so the guard survives the type that forbids the case it exists for.
+// The SLOT is a parameter because the two builders name the policy differently: `channel.window`
+// takes the two-dimensional `origins` envelope, `channel` takes the inbound half as `from`. An
+// error naming a key that is absent from the caller's own source is worse than no error at all.
+function requireOrigins(value: unknown, slot: string, hint: string): void {
+    if (value === undefined || value === null)
+        throw new Error(`postmessage: \`${slot}\` is required — ${hint}`);
+}
+
+/** Options for `channel.over`. */
 export interface ChannelOptions {
     /**
-     * Origin(s) inbound messages may come from. An origin-bearing transport (a Window) drops
-     * anything else BEFORE dispatch/validation; a `MessagePort` (origin `''`) skips the gate (a
-     * port is already private).
+     * Origin(s) inbound messages may come from — the SAME name and the SAME value-space as
+     * {@link OriginOptions.from}, the inbound half of {@link WindowChannelOptions}' envelope
+     * (CONTRACT.md P1/P16). A raw {@link MessageTransport} already knows where its `post` goes, so
+     * there is no outbound `to` half to name here and the inbound list IS the whole policy.
+     *
+     * It is spelled `from` rather than `origins` because `origins` on the two builders would be one
+     * token over two INCOMPARABLE value-spaces: neither union is a superset of the other, so
+     * `['https://a.test', 'https://b.test']` is valid here and a compile error on `channel.window`,
+     * and the scalar shorthand would mean `{ to: X, from: [X] }` on one surface and `[X]` on the
+     * other — the P1/P16 collision an envelope exists to avoid, not to create. P24 carve-out (b)'s
+     * endpoint-slot record declined a `url` shorthand for exactly this reason. The differing
+     * NESTING LEVEL is fine and has the same precedent: that slot's members "do not share a level"
+     * either, with `baseUrl` as seam vocabulary beside per-endpoint `url`/`path`.
+     *
+     * An origin-bearing transport (a Window) drops anything else BEFORE dispatch/validation; a
+     * `MessagePort` (origin `''`) skips the gate (a port is already private). `[]` allows nothing
+     * — the correct fail-closed reading of a misconfigured channel.
      */
-    allowedOrigins: string | string[];
+    from: Origin | Origin[];
 }
 
 /**
+ * Transport half of {@link channel}; the namespace carries the contract. Internal — this module
+ * is the published entry, so only the namespace is exported.
+ *
  * Build a {@link PostMessageChannel} over ANY {@link MessageTransport} — the core builder the other
  * two delegate to (and what the tests drive with a fake transport). Attaches the single demux
- * listener at construction; binds `allowedOrigins` as the security policy.
+ * listener at construction; binds `from` as the security policy.
+ *
+ * A raw transport carries no outbound address for us to name, so this builder takes the INBOUND
+ * half alone, under the same name {@link OriginOptions} gives it. `origins` is reserved for
+ * `channel.window`, where a second dimension (`to`) actually exists.
  *
  * @param transport The raw channel (a Window / port / a fake pair in tests).
  */
-export function channel(
+function channelOver(
     transport: MessageTransport,
     opts: ChannelOptions,
 ): PostMessageChannel {
-    return makeChannel(transport, originList(opts.allowedOrigins));
+    requireOrigins(
+        opts.from,
+        'from',
+        "name the origin(s) inbound messages may come from (e.g. from: 'https://app.example.com'), or `[]` to allow none. It is the former `allowedOrigins`, renamed.",
+    );
+    return makeChannel(transport, originList(opts.from, 'from'));
 }
 
 /**
+ * Window half of {@link channel}; the namespace carries the contract. Internal — this module is
+ * the published entry, so only the namespace is exported.
+ *
  * Build a {@link PostMessageChannel} over a `Window` (or an iframe's `contentWindow`, or a thunk
  * resolving one lazily — the natural shape when the frame mounts after the channel). `post` calls
- * `target.postMessage(msg, targetOrigin, transfer)`; `subscribe` adds a `'message'` listener on the
- * current global. `allowedOrigins` defaults to `[targetOrigin]`.
+ * `target.postMessage(msg, origins.to, transfer)`; `subscribe` adds a `'message'` listener on the
+ * current global. `origins.from` defaults to `[origins.to]`, and the scalar shorthand
+ * `origins: 'https://app.example.com'` names both halves at once.
  *
- * RUNTIME-throws if `targetOrigin === '*'` (defense in depth beyond the {@link Origin} type): a
- * wildcard target posts the message to whatever document currently occupies the frame — a classic
- * postMessage data leak. The type forbids it; this catches a `as any` cast too.
+ * RUNTIME-throws on a wildcard or non-bare origin in either half (defense in depth beyond the
+ * {@link Origin} type): a wildcard target posts the message to whatever document currently occupies
+ * the frame — a classic postMessage data leak — and a wildcard on the inbound half matches nothing,
+ * which fails silent instead of loud. The type forbids `'*'`; this catches an `as any` cast, and
+ * the patterns the type cannot express.
  */
 export interface WindowChannelOptions {
     /** The window to post to — or a thunk resolving it lazily (a frame that mounts late). */
     target: Window | (() => Window);
-    /** The concrete (non-wildcard) origin outbound messages are addressed to. */
-    targetOrigin: Origin;
-    /** Origin(s) inbound messages may come from. Default `[targetOrigin]`. */
-    allowedOrigins?: string | string[];
+    /**
+     * The channel's origin policy — where messages go and whom they may come from. A bare
+     * {@link Origin} is the P12 shorthand for `{ to: X, from: [X] }`; the {@link OriginOptions}
+     * form is for the asymmetric case (posting to one frame while accepting from several).
+     *
+     * An inbound origin outside `from` is dropped BEFORE dispatch or validation. A sandboxed frame
+     * posts with the literal origin `'null'`, which is not an {@link Origin} and cannot be
+     * allow-listed here — deliberately, since EVERY sandboxed frame from anywhere shares it. Hand
+     * such a frame a `MessagePort` and use `channel.port` instead: a port is gated by who you
+     * hand it to, which is the only gate that means anything when the origin is not unique.
+     */
+    origins: Origin | OriginOptions;
 }
 
-export function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
-    if ((opts.targetOrigin as string) === '*')
-        throw new Error(
-            "postmessage: targetOrigin '*' is forbidden — name the exact origin (e.g. 'https://app.example.com'). A wildcard posts to whatever document occupies the frame.",
-        );
+function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
+    requireOrigins(
+        opts.origins,
+        'origins',
+        "name the origin you post to (e.g. origins: 'https://app.example.com'), or the `{ to, from }` envelope when inbound is wider than outbound. It is the former `targetOrigin` / `allowedOrigins`, now one envelope.",
+    );
+    // The P12 shorthand normalises through the ONE envelope — `origins: X` IS `{ to: X, from: [X] }`
+    // — so the wildcard/bare-origin guard below sees the same shape either way. The SLOT it reports
+    // does not follow the normalisation, though: a shorthand caller wrote `origins`, never
+    // `origins.to`, and an error naming a property path that is absent from their source sends them
+    // looking for a key they would have to add to fix a value they already have.
+    const shorthand = typeof opts.origins === 'string';
+    const policy: OriginOptions = shorthand
+        ? { to: opts.origins as Origin }
+        : (opts.origins as OriginOptions);
+    assertOrigin(policy.to, shorthand ? 'origins' : 'origins.to');
     const resolveTarget = (): Window =>
         typeof opts.target === 'function' ? opts.target() : opts.target;
     const transport: MessageTransport = {
         post: (message, transfer) => {
-            resolveTarget().postMessage(
-                message,
-                opts.targetOrigin,
-                transfer ?? [],
-            );
+            resolveTarget().postMessage(message, policy.to, transfer ?? []);
         },
         subscribe: (handler) => {
             // Inbound messages arrive on the GLOBAL `'message'` event (the `window` that receives
@@ -390,26 +525,31 @@ export function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
     };
     return makeChannel(
         transport,
-        opts.allowedOrigins !== undefined
-            ? originList(opts.allowedOrigins)
-            : [opts.targetOrigin],
+        policy.from !== undefined
+            ? originList(policy.from, 'origins.from')
+            : [policy.to],
     );
 }
 
 /**
+ * Port half of {@link channel}; the namespace carries the contract. Internal — this module is the
+ * published entry, so only the namespace is exported.
+ *
  * Build a {@link PostMessageChannel} over a `MessagePort` (a `MessageChannel` end, or a port handed
  * across a `postMessage`). `post` is `port.postMessage`; `subscribe` adds a `'message'` listener and
  * `port.start()`s delivery. A port carries NO origin — it is already a private, capability-style
  * channel — so origin gating is BYPASSED (every message has origin `''`, which the gate skips).
  *
- * It therefore takes NO `allowedOrigins`, where {@link channel} and {@link windowChannel} both do.
+ * It therefore takes NO origin policy at all, where `channel.window` takes an `origins`
+ * envelope and `channel.over` takes the inbound `from` half.
  * It used to accept one "for symmetry" and thread it through, which was worse than asymmetry: the
  * gate short-circuits on `origin === ''` before consulting the list, so the option could never
  * change a single decision, while reading exactly like the security control it was not
  * (CONTRACT.md P24 carve-out (b) — a flat shape is never a licence to let inert config typecheck).
- * A port is gated by who you hand it to, not by an origin list.
+ * A port is gated by who you hand it to, not by an origin list — which also makes this the right
+ * builder for a SANDBOXED frame, whose origin is the unallow-listable literal `'null'`.
  */
-export function portChannel(port: MessagePort): PostMessageChannel {
+function portChannel(port: MessagePort): PostMessageChannel {
     const transport: MessageTransport = {
         post: (message, transfer) => {
             port.postMessage(message, transfer ?? []);
@@ -429,6 +569,52 @@ export function portChannel(port: MessagePort): PostMessageChannel {
     // through by construction. An empty list is the honest argument, not a discarded one.
     return makeChannel(transport, []);
 }
+
+/**
+ * The three ways to build a {@link PostMessageChannel} — one namespace over one subject. The shape
+ * is `otlp`'s and `secrets`': one name per dimension, the ROLE named at the call site, rather than
+ * three names on the barrel repeating the subject noun and varying only the role word. That is
+ * exactly what `channel`/`windowChannel`/`portChannel` were, the same cluster
+ * `otlpSink`/`otlpHttpExporter`/`toOtlpJson` replaced.
+ *
+ * Pick by what you are handed — the transport IS the choice, and the three are mutually exclusive
+ * peers rather than layers:
+ *
+ * - `channel.window(opts)` is the ordinary parent↔iframe case: a `Window`, an iframe's
+ *   `contentWindow`, or a thunk resolving one lazily, plus the `origins` policy envelope.
+ * - `channel.port(port)` is the `MessagePort` case — a private, capability-style channel, gated by
+ *   who you hand the port to rather than by an origin list, and the right builder for a SANDBOXED
+ *   frame whose origin is the unallow-listable literal `'null'`.
+ * - `channel.over(transport, opts)` is the generic seam the other two delegate to: any
+ *   {@link MessageTransport}, which is how the tests drive the whole surface over an in-memory
+ *   fake pair with no DOM, and how a host wraps a primitive core does not ship.
+ *
+ * NOT itself callable, deliberately. CONTRACT.md P12 reserves a bare call for the DOMINANT case,
+ * and here the generic builder is the RARE one — its only in-repo callers are tests, while the
+ * README and every doc reach for the window builder. Making the rare member bare and the common
+ * one a property would invert that hierarchy, so all three are peers on a plain object, the shape
+ * `otlp` and `secrets` already have.
+ *
+ * BUNDLE COST, stated rather than glossed: a namespace pins all three members for anyone who uses
+ * any one of them, because esbuild will not split an object literal to drop a dead half — the same
+ * effect `scripts/bundle-size.mjs` already records for the `duration` facade. Measured against the
+ * three separate exports this replaces (esbuild bundle+minify, gzip): port-only 23518 → 24253 B
+ * (+735), transport-only 23909 → 24253 (+344), window-only 24094 → 24253 (+159), all three
+ * 24226 → 24253 (+27). The "after" column is ONE number, which is the shape of the trade: a flat
+ * floor, no longer varying by which builder you reached for. The port-only consumer pays most and
+ * pays it for something it cannot use — it now carries the origin-validation apparatus
+ * (`assertOrigin`, `new URL()`, the global `'message'` listener) this builder deliberately has
+ * none of, per #795. The `postmessage` subpath is not budgeted by `scripts/bundle-size.mjs` (its
+ * scenarios are the root entry, `import { stitch }`, and `stitchapi/auth`), so no gate moves. The
+ * trade was made knowingly: NAMES freeze at the stable tag, BYTES stay recoverable afterwards —
+ * split the subpath, or add a `stitchapi/postmessage/port` entry — so the reversible cost is the
+ * one to pay.
+ */
+export const channel = {
+    over: channelOver,
+    window: windowChannel,
+    port: portChannel,
+} as const;
 
 // The single implementation behind all three builders. Holds the per-channel registry (pending
 // requests, responders, event subs), attaches the one demux listener, and wires the four verbs.
@@ -453,8 +639,13 @@ function makeChannel(
 
     // Whether this transport carries origins at all. A Window delivers a real `origin`; a port
     // delivers `''`. We gate ONLY origin-bearing messages — a port message (origin `''`) is always
-    // allowed (it is already a private channel). An empty `allowedOrigins` over a Window therefore
-    // drops everything, which is the correct fail-closed default for a misconfigured channel.
+    // allowed (it is already a private channel). An empty allow-list over a Window therefore drops
+    // everything, which is the correct fail-closed default for a misconfigured channel.
+    //
+    // Note what this short-circuit is NOT: it is not a reason the list's element type can be
+    // narrowed. `''` never needs to be a member because it never reaches the `includes`, but the
+    // list itself is still `string[]` at runtime — {@link Origin} is an authoring-side constraint
+    // that makes a dynamic origin (`location.origin`, a config read) assert itself at the boundary.
     const originAllowed = (origin: string): boolean =>
         origin === '' || allowedOrigins.includes(origin);
 

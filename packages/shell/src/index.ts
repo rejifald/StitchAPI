@@ -165,8 +165,8 @@ export interface ShellBufferOptions {
  * engine runs `cfg.kind.execute ?? adapter` — so a transport handed to a shell is not merely
  * redundant, it is never consulted, not even as a fallback when the command fails to spawn.
  * `shell({ command, adapter: fetchAdapter() })` used to type-check while the caller's transport sat
- * silently unused, which reads as "this stitch goes over my adapter" and is false. `portChannel`
- * dropped `allowedOrigins` for exactly this reason in #795: a flat shape is never a licence to let
+ * silently unused, which reads as "this stitch goes over my adapter" and is false. `channel.port`
+ * (then `portChannel`) dropped `allowedOrigins` for exactly this reason in #795: a flat shape is never a licence to let
  * inert config type-check (CONTRACT.md P24 carve-out (b)). The other resilience keys stay — `retry`
  * / `throttle` / `circuit` / `timeout` / `trace` all wrap `execute` and genuinely apply.
  */

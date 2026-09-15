@@ -751,19 +751,25 @@ const status = await git({ body: ['status', '--porcelain'] }); // stdout string
 
 ### postMessage
 
-`postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `allowedOrigins` is the security gate, and a wildcard `targetOrigin` is forbidden — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
+`postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `origins` is the security gate, and a wildcard is forbidden by the type _and_ at construction — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
 
 ```ts
-import { windowChannel } from 'stitchapi/postmessage';
+import { channel } from 'stitchapi/postmessage';
 
-const channel = windowChannel({
+const frame = channel.window({
     target: iframe.contentWindow!,
-    targetOrigin: 'https://app.example.com',
+    // where messages go, and whom they may come from — one policy.
+    // The bare origin is shorthand for `{ to: X, from: [X] }`.
+    origins: 'https://app.example.com',
 });
 
-const getUser = channel.request({ type: 'getUser' });
+const getUser = frame.request('getUser');
 const user = await getUser({ body: { id: 7 } });
 ```
+
+One namespace, three ways to build: `channel.window(opts)` for a `Window` or iframe, `channel.port(port)` for a `MessagePort` (no origin gate — a port is gated by who you hand it to, and it is the right answer for a sandboxed frame), and `channel.over(transport, { from })` for any `MessageTransport` you supply. The namespace is not itself callable: the role belongs at the call site.
+
+Post to one frame while accepting from several with the envelope form: `origins: { to: 'https://app.example.com', from: ['https://app.example.com', 'https://widget.example.com'] }`.
 
 Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, and `output` / `drift` compose with all of them.
 

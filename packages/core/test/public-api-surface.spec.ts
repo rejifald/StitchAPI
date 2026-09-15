@@ -4,17 +4,19 @@
 // value exports are present and of the expected kind.
 //
 // Scope is the root barrel (src/index.ts) plus the subpaths whose surface is a DECISION rather
-// than an implementation detail — `stitchapi/auth`, split off deliberately (ADR 0021), and
-// `stitchapi/fingerprint`, whose registry folded into one namespace. Both directions of each fold
-// live here on purpose: the members that must be present, and the spellings they replaced pinned
-// ABSENT beside `REMOVED_PARSERS` and `REMOVED_SECRET_FUNCTIONS`, so "did an old name drift back
-// as an alias?" is one file to read rather than three.
+// than an implementation detail — `stitchapi/auth`, split off deliberately (ADR 0021),
+// `stitchapi/fingerprint`, whose registry folded into one namespace, and `stitchapi/postmessage`,
+// whose three builders did (ADR 0009). Both directions of each fold live here on purpose: the
+// members that must be present, and the spellings they replaced pinned ABSENT beside
+// `REMOVED_PARSERS` and `REMOVED_SECRET_FUNCTIONS`, so "did an old name drift back as an alias?"
+// is one file to read rather than three.
 import * as api from '../src';
 import { memoryStore } from '../src';
 import * as authApi from '../src/auth';
 import { credential, env } from '../src/auth';
 import * as fingerprintApi from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
+import * as postmessageApi from '../src/postmessage';
 import * as testingApi from '../src/testing';
 import type { AdapterResult, StitchEvent } from '../src/types';
 
@@ -101,6 +103,22 @@ const REMOVED_OTLP_FUNCTIONS = [
     'otlpHttpExporter',
     'toOtlpJson',
 ] as const;
+
+// The postmessage builders (ADR 0009), one namespace over one subject — `stitchapi/postmessage`.
+//
+// Pinned as a WHOLE, like `secrets` and `otlp` above, but for the opposite reason: these are not
+// layers of one pipeline, they are mutually exclusive PEERS chosen by the transport you hold. A
+// namespace that kept `window` and lost `over` would still cover every documented example while
+// removing the only seam a host has for a primitive core does not ship — and `over` is the member
+// with no doc example to notice it missing.
+const CHANNEL_NAMESPACE_MEMBERS = ['over', 'window', 'port'] as const;
+
+// The three names `channel` REPLACED, pinned absent for the same reason as the parsers, the secret
+// functions and the OTLP names above: they repeated the subject noun and varied only the role word
+// (`channel`/`windowChannel`/`portChannel`), which is the shape the surface moved away from. Note
+// `channel` itself is NOT here — the token survives as the namespace, with the role at the call
+// site.
+const REMOVED_CHANNEL_FUNCTIONS = ['windowChannel', 'portChannel'] as const;
 
 // The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the
 // status alone) answers the engine's transport-health question and has no surface-author use;
@@ -646,6 +664,79 @@ describe('public API surface (src/testing.ts → stitchapi/testing)', () => {
         'does NOT export %s — the namespace replaced it',
         (name) => {
             expect(name in (testingApi as Record<string, unknown>)).toBe(false);
+        },
+    );
+});
+
+describe('public API surface (src/postmessage.ts → stitchapi/postmessage)', () => {
+    test.each(CHANNEL_NAMESPACE_MEMBERS)(
+        'exports channel.%s as a function',
+        (member) => {
+            expect(
+                typeof (postmessageApi.channel as Record<string, unknown>)[
+                    member
+                ],
+            ).toBe('function');
+        },
+    );
+
+    // Structural, and the point of the fold: `channel` is a NAMESPACE, not a callable with
+    // properties hung off it. CONTRACT.md P12 reserves a bare call for the dominant case, and the
+    // generic transport builder is the rare one (every doc example reaches for `channel.window`),
+    // so an `Object.assign` that made `channel(...)` work would invert that hierarchy — and would
+    // pass the typeof checks above.
+    test('the namespace is not itself callable — no bare call for the rare builder', () => {
+        expect(typeof postmessageApi.channel).toBe('object');
+    });
+
+    // Behavioural, not just structural: all three must build a REAL channel over their own
+    // transport kind. A namespace assembled from three lookalikes passes the typeof checks and
+    // fails here. `over` gets the in-memory fake the surface's own specs use; `port` gets a real
+    // MessageChannel end; `window` gets a minimal postMessage-bearing stub.
+    test('the exported members build channels over their own transport kinds', async () => {
+        const over = postmessageApi.channel.over(
+            { post: () => undefined, subscribe: () => () => undefined },
+            { from: ['https://a.test'] },
+        );
+        expect(typeof over.request).toBe('function');
+        await over.close();
+
+        const port = postmessageApi.channel.port(new MessageChannel().port1);
+        expect(typeof port.respond).toBe('function');
+        await port.close();
+
+        const win = postmessageApi.channel.window({
+            target: { postMessage: () => undefined } as unknown as Window,
+            origins: 'https://app.example.com',
+        });
+        expect(typeof win.events).toBe('function');
+        await win.close();
+    });
+
+    // The origin policy is still STRUCTURAL through the namespace — the fold moved the name, not
+    // the gate. A wildcard is rejected at construction on both builders that take a policy, each
+    // naming the slot the caller actually wrote.
+    test('the origin guards survive the fold, naming each builder’s own slot', () => {
+        expect(() =>
+            postmessageApi.channel.over(
+                { post: () => undefined, subscribe: () => () => undefined },
+                { from: '*' as unknown as `https://${string}` },
+            ),
+        ).toThrow(/forbidden in `from`/);
+        expect(() =>
+            postmessageApi.channel.window({
+                target: { postMessage: () => undefined } as unknown as Window,
+                origins: '*' as unknown as `https://${string}`,
+            }),
+        ).toThrow(/forbidden in `origins`/);
+    });
+
+    test.each(REMOVED_CHANNEL_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (postmessageApi as Record<string, unknown>)).toBe(
+                false,
+            );
         },
     );
 });
