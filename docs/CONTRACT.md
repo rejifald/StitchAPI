@@ -771,8 +771,9 @@ _Carve-outs:_
 - **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
   nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
   pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, the XHR
-  `responseType`/`responseText` pair on `XhrLike` (and its React Native mirror), RTK Query's
-  lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`), and Orama's own index-document schema
+  `response*` pair on each duck-type that meets it (`responseType`/`response` on `XhrLike`,
+  `responseType`/`responseText` on React Native's `RnStreamingXhr`), RTK Query's lifecycle names
+  (`cacheDataLoaded`/`cacheEntryRemoved`), and Orama's own index-document schema
   (`IndexedDoc.pageUrl`/`pageTitle`, plus the `boost` and `properties` keys that address it) —
   all exempt.
 
@@ -795,9 +796,11 @@ _Carve-outs:_
     field was normalized in its values, its member set and its authoring spelling — everything but
     its name. Renamed to **`AdapterRequest.response`**, matching `wire.response` (P1/P16). The
     XHR spelling survives where it belongs: on `XhrLike`/`RnStreamingXhr`, the duck-types that
-    structurally meet XHR, and on `AxiosLikeConfig` for axios. The protected **pair** the carve-out
-    guards is XHR's `responseType`/`responseText`; StitchAPI has no `responseText`, so the fold it
-    exists to prevent (`response: { type, text }`) was never live here either.
+    structurally meet XHR, and on `AxiosLikeConfig` for axios. The protected **pair** is whichever
+    `response*` pair the duck-type actually declares — `responseType`/`response` on `XhrLike`,
+    `responseType`/`responseText` on `RnStreamingXhr`. `AdapterRequest` declared neither sibling,
+    so the fold the carve-out exists to prevent (`response: { type, text }`) was never live here
+    either.
 
     _Corrected the same day — the exemption is per-field, not per-interface:_
     `AdapterRequest.arrayFormat` sat beside `responseType` and was read as sharing its shelter, on

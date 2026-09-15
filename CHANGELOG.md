@@ -2671,6 +2671,26 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Notes
 
+- **CONTRACT.md no longer contradicts itself about `responseText`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
+  Carve-out (a)'s exemption list named the protected pair as "the XHR `responseType`/`responseText`
+  pair on `XhrLike` (and its React Native mirror)", while the migration record 25 lines below it
+  said "StitchAPI has no `responseText`". Both could not be true, and neither was quite right.
+
+    `responseText` belongs to `@stitchapi/react-native`'s `RnStreamingXhr`, which reads it
+    incrementally to stream; core's `XhrLike` declares `responseType`/`response` and reads a buffered
+    `arraybuffer`, exactly as its own JSDoc says. So the exemption list mis-assigned a member to the
+    wrong type, and the negative claim below it was false repo-wide. The lint allow-list had it right
+    all along — it carries `XhrLike.response` ("responseType/response") and `RnStreamingXhr.response`
+    ("responseType/responseText") as two separate entries that merely share a prefix group key, which
+    is precisely the distinction the prose collapsed.
+
+    The list now names the pair each duck-type actually declares, and the migration record's claim
+    is narrowed to the interface that paragraph is about: `AdapterRequest` declared neither sibling,
+    so the fold the carve-out prevents (`response: { type, text }`) was never live there. The
+    argument is preserved in force; only the over-broad supporting claim changed. Prose only — no
+    type, no runtime byte. The gate never parses CONTRACT.md prose, so it could not have caught this.
+
 - **P24 carve-out (b)'s obligation binds the authoring layer, not the transport contract below
   it — recorded, with no guard added to `AdapterRequest`.**
   ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
