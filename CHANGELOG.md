@@ -370,6 +370,7 @@ npm release are grouped under the in-development version that introduced them.
     `MessagePort` and use `channel.port`, which is gated by who you hand the port to. Hard break, no
     alias ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc`
     channel).
+
 - **BREAKING CHANGE: the four secret resolvers are now two namespaces — `optionalEnv`,
   `secretsFile` and `secretFrom` are replaced by `env.optional`, `credential.file` and
   `credential.from`.**
