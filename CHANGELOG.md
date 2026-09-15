@@ -370,6 +370,75 @@ npm release are grouped under the in-development version that introduced them.
     `MessagePort` and use `channel.port`, which is gated by who you hand the port to. Hard break, no
     alias ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc`
     channel).
+- **BREAKING CHANGE: the four secret resolvers are now two namespaces — `optionalEnv`,
+  `secretsFile` and `secretFrom` are replaced by `env.optional`, `credential.file` and
+  `credential.from`.**
+  ([ADR 0021](docs/adr/0021-auth-strategies-move-to-a-subpath.md)
+  / [P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space))
+  Four verb-prefixed names on the `stitchapi/auth` subpath for what is really **two** decisions,
+  which is the shape the token grammars, `secrets` and `otlp` already moved away from. Same
+  reasoning, same fix: one name per dimension, the distinction named at the call site.
+
+    | Was                        | Now                             |
+    | -------------------------- | ------------------------------- |
+    | `env(name)`                | `env(name)` — unchanged         |
+    | `optionalEnv(name)`        | `env.optional(name)`            |
+    | `secretsFile(name)`        | `credential.file(name)`         |
+    | `secretFrom(source, name)` | `credential.from(source, name)` |
+
+    **Two namespaces, not one, because there are two dimensions.** `env` and `optionalEnv` name
+    the SAME source and vary only by **requiredness** — so requiredness becomes a modifier on one
+    callable name, and `env` stays callable (`env('NAME')` throws, `env.optional('NAME')` resolves
+    to absent) rather than growing a redundant `env.required`. `secretsFile` and `secretFrom` vary
+    by **source**, so the source is named at the call site on a namespace grouping the sources that
+    are not the process environment. Folding all four under one name would have put two unrelated
+    distinctions behind one word.
+
+    **The noun is `credential`, and `secrets` was rejected.** `secrets` is already the ROOT
+    barrel's trace-redaction namespace (`secrets.register` / `has` / `redact`, `src/util.ts`).
+    Reusing it on `stitchapi/auth` would put two different objects behind one name on two entry
+    points — a P1 violation that no amount of subpath separation makes readable. `credential` is
+    the noun the existing `Secret` type already describes, and it scans zero collisions repo-wide.
+
+    **Behaviour is byte-for-byte what it was** — same resolution order, same `~/.stitch/secrets.json`
+    → env-var fallback ladder, same empty-value rejection on both required resolvers, same
+    `OptionalSecret` brand and `label`, same announced `info` event from `bearer`. Only the
+    spelling moved, and the `Fix:` hint in the two thrown messages now names the new spellings
+    (`missing env var X` / `missing secret X` are unchanged). `OptionalSecret`, `Secret` and
+    `SecretSource` are unchanged and still exported as types; `EnvResolver` is newly exported as
+    the type of the callable `env`.
+
+    No aliases and no `@deprecated` shims: pre-GA, and keeping the old spellings would leave two
+    ways to write one call on the subpath, which is the thing being removed (a `@deprecated` tag in
+    published src is itself a contract violation — `check:contract` R7). All three removed names
+    are pinned **absent** from `stitchapi/auth` so an alias cannot drift back, and both namespaces
+    are pinned as wholes — `env` as a callable-plus-`optional` pair, `credential` as both members —
+    because in each case the half with no caller inside core is the half that would vanish
+    unnoticed.
+
+    **`@stitchapi/nest` moves with it**: `fromNestConfig` delegates to `credential.from` instead of
+    `secretFrom`. Its own public signature and behaviour are unchanged.
+
+    The implementations stay plain module functions in `auth.ts` and the namespaces are thin
+    facades over them, matching `secrets` and `fingerprinters`. `stitchapi/auth — whole surface`
+    measures 5.21 → 5.28 KB gzip (13.51 → 13.58 minified, +72 B) for the two facade objects;
+    headroom drops 0.14 → 0.07 KB and the budget is **not** raised. `stitchapi — whole entry`
+    (24.60) and `import { stitch }` (21.80) are unchanged to the byte — the auth surface is not on
+    either path (ADR 0021).
+
+    **One tree-shaking cost, stated plainly.** `credential` is a bare object literal, so a bundler
+    drops it whole and an import that does not use it pays nothing. `env` cannot be: making one
+    name both callable and property-bearing requires mutating a function at module scope, and no
+    bundler elides that — `Object.assign` is an opaque call, and a plain `env.optional = …`
+    assignment is a side effect esbuild will not prove away either (measured: 848 B vs 871 B, so
+    the alternative buys 23 B and costs a cast). A `/* @__PURE__ */` annotation does not rescue it
+    because tsup minifies this module on the way to `lib/` and strips the annotation from the
+    published artifact. Because the call is top-level, the cost lands on **every** importer of
+    `stitchapi/auth`, not only one that touches `env`: an import of `bearer` alone grows 434 → 871 B
+    raw, **267 → 472 B gzip (+205 B)**. Under the old four-function surface those two impls tree-shook
+    for free. This is the price of `env` staying callable — the dominant case — rather than becoming
+    an `env.required`/`env.optional` pair, and it is paid only on a subpath a consumer opted into by
+    importing a strategy. None of the three budgeted scenarios move.
 
 - **BREAKING CHANGE: `oauth2`'s `clientId`/`clientSecret`/`clientAuth` fold into one `client`
   envelope.**

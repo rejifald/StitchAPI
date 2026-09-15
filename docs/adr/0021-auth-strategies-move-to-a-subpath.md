@@ -318,3 +318,36 @@ favour of the now-public one.
   surfaces — in which case the answer is a **loader** that reads JSON and calls the
   factories, living on `stitchapi/auth` or `stitchapi/registry` where the factories
   already are, never a resolver on the core path.
+
+## Addendum (2026-09-14) — the four resolvers folded into two namespaces
+
+The export table above records the move as it happened: four secret resolvers
+(`env`, `optionalEnv`, `secretsFile`, `secretFrom`) crossing from the root onto
+`stitchapi/auth`. They have since folded into **two** namespaces on that same
+subpath. The row is left as written — it is the record of what this ADR decided —
+but the current surface is:
+
+| was                        | now                             |
+| -------------------------- | ------------------------------- |
+| `env(name)`                | `env(name)` — unchanged         |
+| `optionalEnv(name)`        | `env.optional(name)`            |
+| `secretsFile(name)`        | `credential.file(name)`         |
+| `secretFrom(source, name)` | `credential.from(source, name)` |
+
+Two namespaces rather than one because the four were never one cluster.
+`env`/`optionalEnv` name the same source and vary by **requiredness**, so
+requiredness is a modifier on a callable `env`; `secretsFile`/`secretFrom` vary by
+**source**, so the source is named at the call site under a noun that groups the
+non-environment sources. The house rule — one name per dimension, the
+verb/direction at the call site — gives two names for two dimensions.
+
+The noun is `credential`, not `secrets`: `secrets` is the ROOT barrel's
+trace-redaction namespace, which the table above deliberately **keeps** on the
+root, so reusing the word here would put two different objects behind one name on
+two entry points (P1).
+
+Nothing in this ADR's reasoning changes. `auth.ts` still has exactly one importer
+in `src/` (`index.ts`, for the comment only), the resolvers still run at call time
+rather than at module scope, and `credential.file` is still the member that reaches
+`node:fs` through `nodeFs()` — the browser-bundle guard in the ADR's §"CJS and
+`browser`" note applies to it under the new spelling.

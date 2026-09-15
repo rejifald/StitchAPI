@@ -1,6 +1,6 @@
 // The three bridges between core primitives and the NestJS world (ADR 0006
 // Decisions 6-8). None of them CHANGES core — they are built ON it: `nestLoggerSink` and
-// `fromNestConfig` DELEGATE to core's `loggerSink` / `secretFrom` (passing Nest-flavored
+// `fromNestConfig` DELEGATE to core's `loggerSink` / `credential.from` (passing Nest-flavored
 // level/format/source adapters), and `nestBorrowStore` wraps a `StitchStore`. A TraceSink,
 // a `Secret` thunk, and a StitchStore are all existing extension points.
 import { Logger } from '@nestjs/common';
@@ -12,7 +12,7 @@ import type {
     StitchStore,
     TraceSink,
 } from 'stitchapi';
-import { secretFrom } from 'stitchapi/auth';
+import { credential } from 'stitchapi/auth';
 
 /**
  * The minimal logger surface this sink calls — declared structurally so Nest's
@@ -162,13 +162,13 @@ export interface NestConfigServiceLike {
 }
 
 /**
- * A `ConfigService`-backed secret resolver — core's `secretFrom(source, name)` bound to a Nest
+ * A `ConfigService`-backed secret resolver — core's `credential.from(source, name)` bound to a Nest
  * `ConfigService`. Returns a synchronous `Secret` thunk (`() => string`) resolved at call time,
  * so the credential never lands on `__config` or in a trace. Pass it to any auth strategy:
  * `bearer(fromNestConfig(config)('API_TOKEN'))`.
  *
  * Resolution delegates to core: a missing key still throws (the `ConfigService.getOrThrow` error
- * propagates), and — like core's `env()` / `secretFrom()` — an empty value is rejected too, so a
+ * propagates), and — like core's `env()` / `credential.from()` — an empty value is rejected too, so a
  * blank credential can never silently ride along.
  *
  * NOTE: `Secret` is synchronous, so this cannot fetch a rotating secret per call — that
@@ -177,10 +177,11 @@ export interface NestConfigServiceLike {
 export function fromNestConfig(
     config: NestConfigServiceLike,
 ): (key: string) => () => string {
-    // `getOrThrow` already throws on a missing key (Nest's own error); core's `secretFrom` adds
-    // the empty-value rejection and the `() => string` thunk shape, matching `env()`/`secretFrom()`.
+    // `getOrThrow` already throws on a missing key (Nest's own error); core's `credential.from`
+    // adds the empty-value rejection and the `() => string` thunk shape, matching
+    // `env()`/`credential.from()`.
     return (key: string) =>
-        secretFrom((name) => String(config.getOrThrow(name)), key);
+        credential.from((name) => String(config.getOrThrow(name)), key);
 }
 
 /**

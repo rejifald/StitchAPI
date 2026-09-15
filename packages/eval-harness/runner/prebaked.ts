@@ -61,16 +61,16 @@ export async function run(fetchImpl: typeof fetch): Promise<User[]> {
 
 const oauth2ClientCredentials = `
 import { stitch, fetchAdapter } from 'stitchapi';
-import { bearer, optionalEnv } from 'stitchapi/auth';
+import { bearer, env } from 'stitchapi/auth';
 
 export async function run(fetchImpl: typeof fetch): Promise<unknown> {
     // The credential is held by the stitch via bearer(); the caller never sees it.
-    // optionalEnv reads OAUTH_TOKEN from the environment and attaches nothing when unset.
+    // env.optional reads OAUTH_TOKEN from the environment and attaches nothing when unset.
     const me = stitch({
         baseUrl: '${SNIPPET_BASE}',
         path: '/auth/me',
         adapter: fetchAdapter({ fetch: fetchImpl }),
-        auth: bearer(optionalEnv('OAUTH_TOKEN')),
+        auth: bearer(env.optional('OAUTH_TOKEN')),
         retry: { attempts: 2, on: [401, 503] },
     });
     return await me();

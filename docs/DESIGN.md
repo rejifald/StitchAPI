@@ -182,7 +182,7 @@ Inference is always overridable. (Progressive disclosure: it usually "just works
 
 **Explicit strategies [proposed]:** `bearer()`, `apiKey()`, `basic()`, `cookieSession()`, `oauth2()` — each a value you can name, share, and `extends`.
 
-**The boundary — the selling point.** The secret resolves at call time from `env()` / `secretsFile()` / a secret manager. The stitch **declaration** is committed; the secret is not. So:
+**The boundary — the selling point.** The secret resolves at call time from `env()` / `credential.file()` / a secret manager. The stitch **declaration** is committed; the secret is not. So:
 
 ```
 Agent today:  GET /api/websites  →  401 (httpOnly cookie wall)  →  dead end.
@@ -379,7 +379,7 @@ const listWebsites = stitch({
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token',
-        secret: secretsFile('app'),
+        secret: credential.file('app'),
         refresh: [401],
     }),
 });

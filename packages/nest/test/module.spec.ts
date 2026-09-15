@@ -618,20 +618,20 @@ describe('bridges', () => {
                 throw new Error(`Configuration key "${key}" does not exist`);
             },
         };
-        // The Nest getOrThrow error still surfaces through the core secretFrom delegation.
+        // The Nest getOrThrow error still surfaces through the core credential.from delegation.
         expect(() => fromNestConfig(config)('API_TOKEN')()).toThrow(
             'Configuration key "API_TOKEN" does not exist',
         );
     });
 
-    it('fromNestConfig rejects an empty value (delegates to core secretFrom)', () => {
+    it('fromNestConfig rejects an empty value (delegates to core credential.from)', () => {
         const config: NestConfigServiceLike = {
             // Present but blank — Nest's getOrThrow does NOT throw on '' (only on undefined).
             getOrThrow<T = string>(_key: string): T {
                 return '' as T;
             },
         };
-        // secretFrom rejects '' like env() does, so a blank credential never rides along.
+        // credential.from rejects '' like env() does, so a blank credential never rides along.
         expect(() => fromNestConfig(config)('API_TOKEN')()).toThrow(
             'missing secret',
         );

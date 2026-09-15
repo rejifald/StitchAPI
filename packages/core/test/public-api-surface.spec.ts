@@ -13,6 +13,7 @@
 import * as api from '../src';
 import { memoryStore } from '../src';
 import * as authApi from '../src/auth';
+import { credential, env } from '../src/auth';
 import * as fingerprintApi from '../src/fingerprint';
 import type { SchemaFingerprinter } from '../src/fingerprint';
 import * as postmessageApi from '../src/postmessage';
@@ -189,6 +190,10 @@ const REMOVED_CONFORMANCE_FUNCTIONS = [
 // The auth surface moved to its own subpath (ADR 0021). Pinned in BOTH directions: present on
 // `stitchapi/auth`, and ABSENT from the root — a re-export there would quietly put oauth2 and
 // cookieSession back on every consumer's `import { stitch }` path, which is the point of the split.
+//
+// `env` is here rather than with the namespaces below because it is still a FUNCTION: the
+// requiredness modifier hangs off the callable (`env.optional`), so `typeof env === 'function'`
+// stays the right check. Its member is pinned separately by ENV_RESOLVER_MEMBERS.
 const AUTH_FUNCTIONS = [
     'bearer',
     'apiKey',
@@ -196,6 +201,34 @@ const AUTH_FUNCTIONS = [
     'cookieSession',
     'oauth2',
     'env',
+] as const;
+
+// The two secret-resolver namespaces on `stitchapi/auth`. These were four verb-prefixed functions
+// until the fold; they are two CLUSTERS, not one, and the split is the point — `env`/`env.optional`
+// vary by REQUIREDNESS (one source, a modifier on it), `credential.file`/`credential.from` vary by
+// SOURCE. One name per dimension, the distinction named at the call site, which is the shape the
+// token grammars, `secrets` and `otlp` already moved to.
+//
+// `env` is pinned as a CALLABLE-PLUS-MEMBER pair, not as two independent things. An `env` that
+// lost `optional` would still pass the `typeof === 'function'` check in AUTH_FUNCTIONS while
+// silently dropping the entire never-throwing path — and that path is the half with no caller
+// inside core to notice it missing, since core only ever emits `env('NAME')` from `from-curl`.
+const ENV_RESOLVER_MEMBERS = ['optional'] as const;
+
+// `credential` is pinned as a WHOLE, like `secrets` and `otlp` on the root. Its two members are
+// inseparable for the same reason: they are the two NON-environment sources, so a namespace that
+// kept `file` and lost `from` would still serve the local-dev path while removing the only reason
+// `from` exists — the DI'd app that supplies config without ever touching `process.env`, which is
+// the member with no caller inside core at all (`@stitchapi/nest`'s `fromNestConfig` is the one
+// real consumer, and nothing in this package would go red if it vanished).
+const CREDENTIAL_NAMESPACE_MEMBERS = ['file', 'from'] as const;
+
+// The four verb-prefixed functions the two namespaces above REPLACED, pinned absent so an alias
+// cannot drift back and leave two spellings of one call on the subpath. `env` itself is the one
+// name that survived the fold unchanged, so only three names are removed here. Same reasoning as
+// REMOVED_PARSERS / REMOVED_SECRET_FUNCTIONS / REMOVED_OTLP_FUNCTIONS above — one dimension, one
+// name, the verb at the call site.
+const REMOVED_SECRET_RESOLVERS = [
     'optionalEnv',
     'secretsFile',
     'secretFrom',
@@ -346,9 +379,12 @@ describe('public API surface (src/index.ts)', () => {
         expect(typeof api.httpSurface.interpret).toBe('function');
     });
 
-    test.each(AUTH_FUNCTIONS)('does NOT re-export %s from the root', (name) => {
-        expect(name in (api as Record<string, unknown>)).toBe(false);
-    });
+    test.each([...AUTH_FUNCTIONS, 'credential'])(
+        'does NOT re-export %s from the root',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
 
     test('exports the built-in surfaces with their stable ids', () => {
         expect(api.httpSurface.id).toBe('http');
@@ -387,10 +423,88 @@ describe('public API surface (src/auth.ts → stitchapi/auth)', () => {
         );
     });
 
+    test.each(ENV_RESOLVER_MEMBERS)(
+        'exports env.%s as a function on the callable resolver',
+        (member) => {
+            expect(
+                typeof (env as unknown as Record<string, unknown>)[member],
+            ).toBe('function');
+        },
+    );
+
+    // The pin is behavioural, not just structural: the two halves must be the same RESOLVER,
+    // reading the same variable and disagreeing only about absence. A pair wired to two unrelated
+    // readers — or an `optional` that throws like the required half — passes the typeof checks
+    // above and fails here. The empty-string case is the one both halves must agree is ABSENT, and
+    // it is the reason a blank credential never silently rides along.
+    test('env and env.optional read the same variable, differing only on absence', () => {
+        const name = 'X_PUBLIC_API_SURFACE_SPEC_TOKEN';
+        const saved = process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'];
+        try {
+            process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'] = 'live-value';
+            expect(env(name)()).toBe('live-value');
+            expect(env.optional(name)()).toBe('live-value');
+
+            process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'] = '';
+            expect(() => env(name)()).toThrow(/missing env var/);
+            expect(env.optional(name)()).toBeUndefined();
+
+            delete process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'];
+            expect(() => env(name)()).toThrow(/missing env var/);
+            expect(env.optional(name)()).toBeUndefined();
+        } finally {
+            if (saved === undefined)
+                delete process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'];
+            else process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'] = saved;
+        }
+    });
+
+    test.each(CREDENTIAL_NAMESPACE_MEMBERS)(
+        'exports credential.%s as a function',
+        (member) => {
+            expect(typeof (credential as Record<string, unknown>)[member]).toBe(
+                'function',
+            );
+        },
+    );
+
+    // Behavioural, like the `secrets` pin on the root: both members must be REQUIRED resolvers
+    // returning the `() => string` thunk every strategy accepts, throwing rather than handing back
+    // a blank credential. `file` falls back to the env var of the same name when there is no
+    // secrets file, which is the branch reachable without touching the disk.
+    test('both credential members are throwing, call-time thunks', () => {
+        const name = 'X_PUBLIC_API_SURFACE_SPEC_CRED';
+        const saved = process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'];
+        try {
+            process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'] = 'from-env';
+            expect(credential.file(name)()).toBe('from-env');
+        } finally {
+            if (saved === undefined)
+                delete process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'];
+            else process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'] = saved;
+        }
+        expect(credential.from(() => 'injected', name)()).toBe('injected');
+        expect(() => credential.from(() => undefined, name)()).toThrow(
+            /missing secret/,
+        );
+        expect(() => credential.from(() => '', name)()).toThrow(
+            /missing secret/,
+        );
+    });
+
+    test.each(REMOVED_SECRET_RESOLVERS)(
+        'does NOT export %s — the two namespaces replaced it',
+        (name) => {
+            expect(name in (authApi as Record<string, unknown>)).toBe(false);
+        },
+    );
+
     // The subpath carries the auth surface and nothing else — no accidental re-export of the
     // engine, which would defeat the split from the other direction.
     test('exports exactly the auth surface, nothing more', () => {
-        expect(Object.keys(authApi).sort()).toEqual([...AUTH_FUNCTIONS].sort());
+        expect(Object.keys(authApi).sort()).toEqual(
+            [...AUTH_FUNCTIONS, 'credential'].sort(),
+        );
     });
 });
 

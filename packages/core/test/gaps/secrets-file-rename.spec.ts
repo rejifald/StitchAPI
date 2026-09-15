@@ -1,7 +1,8 @@
 // Pins docs/GAP-AUDIT.md §1.8: keychain() was a plaintext-JSON spike — renamed to secretsFile()
-// (the deprecated `keychain` alias has since been removed entirely).
+// (the deprecated `keychain` alias has since been removed entirely), and folded into the
+// `credential` namespace as `credential.file()` when the four resolvers became two namespaces.
 import { stitch } from '../../src';
-import { basic, secretsFile } from '../../src/auth';
+import { basic, credential } from '../../src/auth';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 
@@ -52,34 +53,34 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// §1.8-A  secretsFile() is exported
+// §1.8-A  credential.file() is exported
 // ---------------------------------------------------------------------------
 
-test('secretsFile is exported from the package (not undefined)', () => {
-    expect(secretsFile).toBeDefined();
-    expect(typeof secretsFile).toBe('function');
+test('credential.file is exported from the package (not undefined)', () => {
+    expect(credential.file).toBeDefined();
+    expect(typeof credential.file).toBe('function');
 });
 
 // ---------------------------------------------------------------------------
-// §1.8-B  secretsFile() reads ~/.stitch/secrets.json
+// §1.8-B  credential.file() reads ~/.stitch/secrets.json
 // ---------------------------------------------------------------------------
 
-test('secretsFile() reads a value from ~/.stitch/secrets.json via HOME', () => {
+test('credential.file() reads a value from ~/.stitch/secrets.json via HOME', () => {
     const home = makeTempHome({ MY_SECRET: 'from-file' });
     process.env['HOME'] = home;
     Reflect.deleteProperty(process.env, 'MY_SECRET');
 
-    const resolver = secretsFile('MY_SECRET');
+    const resolver = credential.file('MY_SECRET');
     expect(resolver()).toBe('from-file');
 
     rmSync(home, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------
-// §1.8-C  secretsFile() falls back to env when the file is absent
+// §1.8-C  credential.file() falls back to env when the file is absent
 // ---------------------------------------------------------------------------
 
-test('secretsFile() falls back to env var when secrets file is absent', () => {
+test('credential.file() falls back to env var when secrets file is absent', () => {
     // Point HOME somewhere without a .stitch/secrets.json
     const home = join(
         tmpdir(),
@@ -89,7 +90,7 @@ test('secretsFile() falls back to env var when secrets file is absent', () => {
     process.env['HOME'] = home;
     process.env['MY_FALLBACK'] = 'from-env';
 
-    const resolver = secretsFile('MY_FALLBACK');
+    const resolver = credential.file('MY_FALLBACK');
     expect(resolver()).toBe('from-env');
 
     rmSync(home, { recursive: true, force: true });
