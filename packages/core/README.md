@@ -771,7 +771,7 @@ One namespace, four ways to build, and the choice is _does this transport attrib
 
 | builder                             | transport                                                                                            | origin gate                                                                                     |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `channel.window(opts)`              | a `Window` / iframe `contentWindow`                                                                  | gated by `origins`, and events with `isTrusted === false` are dropped                           |
+| `channel.window(opts)`              | a `Window` / iframe `contentWindow`                                                                  | gated by `origins`, plus the two peer checks below                                              |
 | `channel.over(transport, { from })` | any origin-bearing `MessageTransport`                                                                | gated by `from`                                                                                 |
 | `channel.port(port)`                | a `MessagePort`                                                                                      | none — a port is gated by who you hand it to (and it is the right answer for a sandboxed frame) |
 | `channel.private(transport)`        | a `MessageTransport` with no origin dimension — an Electron IPC bridge, a worker bridge, a test fake | none, by construction                                                                           |
@@ -779,6 +779,8 @@ One namespace, four ways to build, and the choice is _does this transport attrib
 The namespace is not itself callable: the role belongs at the call site.
 
 Post to one frame while accepting from several with the envelope form: `origins: { to: 'https://app.example.com', from: ['https://app.example.com', 'https://widget.example.com'] }`.
+
+**A window channel accepts only from its own peer.** The origin gate is not the whole check there. `channel.window` also drops any event the user agent did not deliver (`isTrusted === false` — a script in the page can spell any `origin` it likes on a `new MessageEvent`), and any event whose `source` is not the `target` this channel posts to. The second check is the one that matters for a **same-origin** frame, where a third-party script — analytics, a tag manager, an extension content script — can call the real `window.postMessage` and arrive with an origin that is allow-listed by definition. The consequence is worth knowing: one channel per frame, which is what `target` always meant, and a channel will not receive from other frames that happen to share an allow-listed origin.
 
 **Writing your own transport?** `subscribe(handler)` calls `handler(data, origin)`. Pass the peer's real origin as a string, or **`null`** to mean _this transport has no origin dimension_ — never `''`, which is an ordinary untrusted origin (it is `MessageEvent.origin`'s default, so it can arise by accident and must never be a trust signal). `null` is honoured only by `channel.private` / `channel.port`, which take no origin policy at all; on a channel built with `from`, a `null` origin **fails closed**, so a transport can never quietly widen a gate its caller set.
 

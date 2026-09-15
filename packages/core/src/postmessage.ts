@@ -4,7 +4,9 @@
 // CORE subpath (not a peer package), reached only through `cfg.kind`, never the root entry.
 //
 // A `PostMessageChannel` binds the raw transport + the security policy (allowed origins) ONCE at
-// construction. It is built through ONE namespace — `channel.window(opts)` for a Window/iframe,
+// construction — literally once: the origin list is COPIED there, so mutating the array you passed
+// cannot retarget a live channel's gate (and cannot smuggle in an entry `assertOrigin` never saw).
+// It is built through ONE namespace — `channel.window(opts)` for a Window/iframe,
 // `channel.port(port)` for a MessagePort, `channel.over(transport, opts)` for any ORIGIN-BEARING
 // transport, `channel.private(transport)` for one with no origin dimension (an IPC/worker bridge)
 // — the `otlp`/`secrets` shape: one name per dimension, the role named at the call site. Whether a
@@ -50,7 +52,15 @@
 //     that) — so a third-party analytics/tag-manager script or an extension content script can
 //     spell any allow-listed origin it likes. `isTrusted` is the only discriminator the page
 //     cannot forge: the DOM marks it `[LegacyUnforgeable]` (an own, non-configurable property
-//     that survives prototype patching) and it is `false` on every constructed event.
+//     that survives prototype patching) and it is `false` on every constructed event. That
+//     closes impersonation of a CROSS-ORIGIN peer; a same-realm script cannot make the user
+//     agent stamp a foreign origin on a trusted event.
+//   • …and it requires the event's `source` to BE the channel's target, which is what closes the
+//     SAME-ORIGIN case: the real `window.postMessage(forged, '*')` is delivered genuinely
+//     trusted and stamped with the CALLING document's own origin, so where the peer shares the
+//     page's origin — `origins: location.origin` — both checks above pass. `source` is the one
+//     thing the forger cannot choose, and the channel already knows the window it talks to.
+//     A window channel therefore accepts only from its own peer, in both directions.
 //
 // Browser-first + bundle-frugal + zero-dep: only `postMessage`/`MessageEvent`/`MessagePort`/
 // `ReadableStream`/`URL`/`globalThis.crypto` — no `node:*`, no `Buffer`. Reached only through
@@ -411,7 +421,18 @@ function assertOrigin(value: unknown, slot: string): void {
 const originList = (v: Origin | Origin[], slot: string): string[] => {
     const list = Array.isArray(v) ? v : [v];
     for (const origin of list) assertOrigin(origin, slot);
-    return list;
+    // COPY, never the caller's own array. A channel binds its policy ONCE at construction (this
+    // file's first paragraph says so, and `PostMessageChannel` repeats it), and returning `v`
+    // made that false for the array form: the gate closed over the caller's live array, so a
+    // later `allowed.push('https://evil.example.com')` retargeted a running channel — and did it
+    // past `assertOrigin`, which only ever sees the elements present HERE, so an entry added
+    // afterwards is honoured by the gate even when the same string would have thrown at
+    // construction. `allowed.length = 0` turned a working channel silently fail-closed the same
+    // way. Not wire-reachable — it takes the app mutating its own config array, the realistic
+    // shape being one `origins` array read from config and shared between channels — which is
+    // exactly why it must be the construction that is airtight rather than the caller's
+    // discipline.
+    return [...list];
 };
 
 // The origin policy is REQUIRED in the type, so no TypeScript call site can omit it — but a JS
@@ -451,7 +472,9 @@ export interface ChannelOptions {
      * ("I do not attribute origins"): a per-message claim cannot widen a channel the caller
      * gated, so a careless transport breaks its own channel LOUDLY (nothing is delivered) rather
      * than silently opening it. `[]` allows nothing — the correct fail-closed reading of a
-     * misconfigured channel, and a list that genuinely cannot be overridden from the wire.
+     * misconfigured channel, and a list that genuinely cannot be overridden from the wire. Nor
+     * from your own code after the fact: the array is COPIED at construction, so the channel's
+     * policy is whatever you passed HERE, whatever the array does later.
      *
      * For a transport that legitimately has NO origin dimension — an Electron IPC bridge, a
      * worker bridge, a test fake — reach for {@link channel.private}, which takes no origin
@@ -581,6 +604,51 @@ function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
                 // (CONTRACT.md P21) — the seam that keeps this from being a straitjacket.
                 const { isTrusted } = e as { isTrusted?: boolean };
                 if (isTrusted === false) return;
+                // …and then: the message must come from THIS channel's PEER, not merely from an
+                // allow-listed origin. `isTrusted` closes only the SYNTHESISED-event vector. A
+                // same-realm script can also call the REAL `window.postMessage(forged, '*')`,
+                // which the user agent delivers as a genuinely trusted event stamped with the
+                // CALLING document's own origin. Cross-origin that is harmless — the attacker's
+                // origin is not on the list. But when the peer is SAME-ORIGIN (`origins:
+                // location.origin`, the natural shorthand for a same-origin frame) the forged
+                // origin IS allow-listed, `isTrusted` is really `true`, and both checks above
+                // pass an envelope straight into reply-correlation, the responders and the event
+                // fan-out. The actor this matters most for is the one ADR 0009 names: an
+                // extension content script, which runs in an isolated world — it cannot call the
+                // page's handlers directly — but whose `postMessage` is delivered with the page's
+                // own origin and `isTrusted === true`.
+                //
+                // `source` is the discriminator the page cannot choose: the user agent sets it to
+                // the posting window. The channel already knows the window it talks to, and the
+                // comparison holds in BOTH directions — parent→frame (`iframe.contentWindow`) and
+                // frame→parent (`window.parent`). It also stops cross-talk between two channels
+                // on one page whose peers share an origin.
+                //
+                // THREE states, read the way the origin gate reads its own `null`:
+                //   • ABSENT (`undefined`) — the property does not exist here: a non-DOM global,
+                //     an SSR pass, a hand-rolled polyfill, a harness handing the listener an
+                //     object literal. There is nothing to compare against, and an environment
+                //     that omits it must not be gated out of its own channel — the same reason
+                //     `isTrusted` is compared `=== false` rather than negated.
+                //   • `null` — a REAL event whose source browsing context is gone, or a DOM
+                //     implementation that does not attribute sources at all (jsdom is one; see
+                //     the CHANGELOG migration note). It cannot BE this channel's peer, so it
+                //     FAILS CLOSED.
+                //   • a window — it must be the peer.
+                // The thunk is resolved per inbound message, because the whole point of a thunk is
+                // a frame that mounts late. One that throws (or hands back nothing) has no peer to
+                // match, so the message is dropped — never turned into an exception thrown from a
+                // global listener that sees every message on the page.
+                const { source } = e as { source?: unknown };
+                if (source !== undefined) {
+                    let peer: unknown;
+                    try {
+                        peer = resolveTarget();
+                    } catch {
+                        return;
+                    }
+                    if (source !== peer) return;
+                }
                 handler(e.data, e.origin);
             };
             g.addEventListener('message', listener);
@@ -707,22 +775,33 @@ function privateChannel(transport: MessageTransport): PostMessageChannel {
  *
  * BUNDLE COST, stated rather than glossed: a namespace pins all members for anyone who uses any
  * one of them, because esbuild will not split an object literal to drop a dead half — the same
- * effect `scripts/bundle-size.mjs` already records for the `duration` facade. Measured against the
- * three separate exports the namespace replaced (esbuild bundle+minify, gzip): port-only
- * 23518 → 24253 B (+735), transport-only 23909 → 24253 (+344), window-only 24094 → 24253 (+159),
- * all three 24226 → 24253 (+27). The "after" column is ONE number, which is the shape of the
- * trade: a flat floor, no longer varying by which builder you reached for. The port-only consumer
+ * effect `scripts/bundle-size.mjs` already records for the `duration` facade.
+ *
+ * THE METHOD, so a future author can reproduce rather than trust: each scenario bundles from
+ * `packages/core/src` with the settings `scripts/bundle-size.mjs` uses (esbuild `bundle`, `minify`,
+ * `treeShaking`, `format: 'esm'`, `platform: 'neutral'`), gzip level 9, from an entry importing
+ * exactly what that consumer imports (`export const x = channel.port;` and so on). All figures
+ * below are ONE re-measurement on ONE tree; the earlier prose quoted two different baselines for
+ * the same quantity, and the numbers only mean anything as a chain.
+ *
+ * Measured against the three separate exports the namespace replaced: port-only 23551 → 24281 B
+ * (+730), transport-only 23939 → 24281 (+342), window-only 24122 → 24281 (+159), all three
+ * 24261 → 24286 (+25). The "after" column is ONE number for any single builder, which is the
+ * shape of the trade: a flat floor, no longer varying by which builder you reached for. (The
+ * all-three row reads 24286 rather than 24281 for a reason that is not library cost: its ENTRY
+ * names three symbols instead of one, and the entry is in the bundle too.) The port-only consumer
  * pays most and pays it for something it cannot use — it now carries the origin-validation
  * apparatus (`assertOrigin`, `new URL()`, the global `'message'` listener) that builder
- * deliberately has none of, per #795. Adding `private` moves that flat floor by +16 B gzip
- * (24243 → 24259, same method): it is a two-line delegation to `makeChannel`, so it adds a name
- * and an object property, not machinery. The whole origin-sentinel fix — this member, the
- * `isTrusted` check and the widened gate — is +31 B gzip over the namespace fold
- * (24228 → 24259). The `postmessage` subpath is not budgeted by `scripts/bundle-size.mjs`
- * (its scenarios are the root entry, `import { stitch }`, and `stitchapi/auth`), so no gate moves.
- * The trade was made knowingly: NAMES freeze at the stable tag, BYTES stay recoverable afterwards
- * — split the subpath, or add a `stitchapi/postmessage/port` entry — so the reversible cost is
- * the one to pay.
+ * deliberately has none of, per #795.
+ *
+ * The whole origin-sentinel fix then moves that floor 24281 → 24363 (+82 B gzip): `private` is
+ * +25 of it (a two-line delegation to `makeChannel` — a name and an object property, not
+ * machinery), and the rest is the widened gate plus `channel.window`'s two listener checks
+ * (`isTrusted`, and the `source`-is-the-peer comparison). The `postmessage` subpath is not
+ * budgeted by `scripts/bundle-size.mjs` (its scenarios are the root entry, `import { stitch }`,
+ * and `stitchapi/auth`), so no gate moves. The trade was made knowingly: NAMES freeze at the
+ * stable tag, BYTES stay recoverable afterwards — split the subpath, or add a
+ * `stitchapi/postmessage/port` entry — so the reversible cost is the one to pay.
  */
 export const channel = {
     over: channelOver,
