@@ -771,8 +771,9 @@ _Carve-outs:_
 - **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
   nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
   pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, the XHR
-  `responseType`/`responseText` pair on `XhrLike` (and its React Native mirror), RTK Query's
-  lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`), and Orama's own index-document schema
+  `response*` pair on each duck-type that meets it (`responseType`/`response` on `XhrLike`,
+  `responseType`/`responseText` on React Native's `RnStreamingXhr`), RTK Query's lifecycle names
+  (`cacheDataLoaded`/`cacheEntryRemoved`), and Orama's own index-document schema
   (`IndexedDoc.pageUrl`/`pageTitle`, plus the `boost` and `properties` keys that address it) —
   all exempt.
 
@@ -795,9 +796,11 @@ _Carve-outs:_
     field was normalized in its values, its member set and its authoring spelling — everything but
     its name. Renamed to **`AdapterRequest.response`**, matching `wire.response` (P1/P16). The
     XHR spelling survives where it belongs: on `XhrLike`/`RnStreamingXhr`, the duck-types that
-    structurally meet XHR, and on `AxiosLikeConfig` for axios. The protected **pair** the carve-out
-    guards is XHR's `responseType`/`responseText`; StitchAPI has no `responseText`, so the fold it
-    exists to prevent (`response: { type, text }`) was never live here either.
+    structurally meet XHR, and on `AxiosLikeConfig` for axios. The protected **pair** is whichever
+    `response*` pair the duck-type actually declares — `responseType`/`response` on `XhrLike`,
+    `responseType`/`responseText` on `RnStreamingXhr`. `AdapterRequest` declared neither sibling,
+    so the fold the carve-out exists to prevent (`response: { type, text }`) was never live here
+    either.
 
     _Corrected the same day — the exemption is per-field, not per-interface:_
     `AdapterRequest.arrayFormat` sat beside `responseType` and was read as sharing its shelter, on
@@ -820,17 +823,29 @@ _Carve-outs:_
     So the rationale covered two of the three members it claimed. More decisively, `OAuth2Options`
     is not a mirror in this document's sense: its sibling `OAuth2ClientCredentialsFlow` states the
     test in its own JSDoc — spelled "exactly as the spec spells it … so `stitch export --openapi`
-    emits it as an identity mapping" — and `OAuth2Options` has none, because `auth.ts` translates
-    every member into a `snake_case` wire key where it builds the token-request form body. A
+    emits it as an identity mapping" — and `OAuth2Options` has none **for the members this
+    carve-out covered**: `auth.ts` re-cases `clientId`/`clientSecret` into
+    `client_id`/`client_secret` where it builds the token-request form body, and under
+    `client.via: 'basic'` lifts them out of the body into an `Authorization` header entirely. The
+    claim to check is about the **exempted group**, not the whole interface — `scope` and
+    `audience` do reach the body under their own names, and
+    `tokenUrl`/`headers`/`refresh`/`key`/`tenancy`/`adapter`/`params` never become body keys at
+    all, but neither set was ever in front of this exemption. A
     contract that already re-cases the standard's own names is the translated house contract of
     [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary)'s
     second half, so the group was real. Folded to **`client: OAuth2ClientOptions`**
-    (`{ id, secret, auth }`); `tokenUrl` stays flat beside it — the endpoint is a different
+    (`{ id, secret, via }`); `tokenUrl` stays flat beside it — the endpoint is a different
     subject from the identity calling it (P1). No shorthand: `id` and `secret` are co-equal, so
     no field dominates (P12/P14), and the envelope is plain-required rather than `AtLeastOne<…>`
     because two required members already make `client: {}` a compile error — the
     [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults)
-    reading `CacheOptions.ttl` gets.
+    reading `CacheOptions.ttl` gets. The third member landed as **`via`**, not `auth`: inside the
+    envelope the obvious short spelling would have collided with `StitchConfig.auth`, which holds
+    an `AuthStrategy` object — one token, two concepts, two value-spaces, and the two visibly
+    nested in one call expression (`auth: oauth2({ client: { auth: 'basic' } })`).
+    [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one) forbids that
+    regardless of how defensible each side is on its own, so the fold and the rename
+    ship together rather than one repairing the other later.
 
     _Reversed (2026-09-14), the fifth instance of the same error — an IDL **parameter** name
     is not a wire contract:_
@@ -916,6 +931,36 @@ mean two different things on the two surfaces, a P2 collision. `OneEndpointSpell
 (b) obligation the slot was missing: `baseUrl`/`path` beside a `url` in the SAME literal is a
 compile error, while across `extends` fragments the spellings stay a legal last-writer-wins
 override. See the migration record for the silent case that motivated it.
+
+_Scope of the (b) obligation — it binds the AUTHORING layer, not the transport contract below it
+(2026-09-15):_ `AdapterRequest.body`/`bodyType` keeps being re-raised as an un-discharged (b)
+obligation, because its JSDoc says `multipart` is "only read when `bodyType: 'multipart'`" — prose
+sitting where a guard appears to belong. It is not one, and the rule is worth stating once so the
+question stops re-opening. The obligation is about **authored config**: its stated harm is a
+tag/option pairing that typechecks while the option is inert, and that harm needs a consumer who
+supplied the inert half. On `AdapterRequest` nobody does. The engine DERIVES every member from the
+authored `wire` envelope in `buildRequest`, and the surfaces that shape a request patch the `base`
+the engine handed them (`{ ...base, bodyType: 'json' }`) rather than composing one from scratch —
+so a consumer writing a custom adapter, surface or `AuthStrategy` READS these fields; the one
+genuinely authored position, calling an `Adapter` directly with a literal, supplies a live
+combination, never a dead one. This is the mirror image of the layering carve-out (a) already
+states: there, the exemption binds the layer that meets the foreign standard and not every layer
+above it; here, the obligation binds the layer a consumer authors and not every layer below it.
+`MultipartOnlyOnMultipartBody` and `OneEndpointSpelling` discharge it where it lands — on `wire`
+and on the endpoint slot — which is why nothing is missing underneath them.
+
+Two facts make this a ruling rather than a preference. First, the pairing on `AdapterRequest` is
+**not symmetric**: `array` carries the same "only read when `bodyType: 'form'`" prose but is not
+dead config at all — it is SPENT config. The engine serialises the query string with it before the
+body is built and then forwards it unconditionally, so `{ bodyType: 'json', array: 'repeat' }` is
+the engine's own correct output for any stitch that sets `wire.array` with a JSON body, and the
+authoring layer pins that as legal. A symmetric guard would outlaw the engine's own output.
+Second, a guard here is **not additive**, which both discharged precedents were: the narrowest
+R8-recognised mutual-exclusion shape over `bodyType`/`multipart` breaks `buildRequest` in the
+engine and in two surfaces, because `{ ...base, bodyType: 'json' }` cannot prove `multipart` is
+absent from a spread. It would tax the one consumer-authored position it exists to protect, and
+force every surface author to write `multipart: undefined`. The prose stays; it documents a
+transport READ, which is what it has always been.
 
 Applied on every surface that authors a stitch (`stitch`, `graphql`, `Seam.stitch`,
 `Seam.graphql` — both the inferring and the fallback overload, or a rejected config falls through

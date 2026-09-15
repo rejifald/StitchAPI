@@ -1,4 +1,4 @@
-// oauth2 `client.auth`: how the client authenticates to the token endpoint (RFC 6749 §2.3.1).
+// oauth2 `client.via`: how the client authenticates to the token endpoint (RFC 6749 §2.3.1).
 // Default 'post' (client_secret_post) keeps id/secret in the form body; 'basic'
 // (client_secret_basic) moves them into an HTTP Basic header — what providers like Kyivstar SMS
 // require. Also covers the token-request escape hatches: `audience`, `params`, and `headers`.
@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
-    `stitch-oauth2-clientauth-${process.pid}.jsonl`,
+    `stitch-oauth2-clientvia-${process.pid}.jsonl`,
 );
 
 let server: MockServer;
@@ -34,7 +34,7 @@ beforeEach(() => {
 // is TYPED (it used to be `Record<string, unknown>`): an untyped bag is what let the old flat
 // `clientAuth` spelling keep type-checking here after the P24 fold, so the compiler now pins
 // these call sites to the real surface. `client` merges INTO the default credentials rather than
-// replacing them, so a test that only wants `auth: 'basic'` writes exactly that.
+// replacing them, so a test that only wants `via: 'basic'` writes exactly that.
 const protectedStitch = (
     path: string,
     extra: Partial<Omit<OAuth2Options, 'client'>> & {
@@ -65,14 +65,14 @@ const tokenHeaders = (i = 0): Record<string, string> =>
 
 const okToken = { access_token: 'T1', token_type: 'Bearer', expires_in: 3600 };
 
-test("client.auth: 'basic' sends Basic <base64(id:secret)> and keeps creds out of the body", async () => {
+test("client.via: 'basic' sends Basic <base64(id:secret)> and keeps creds out of the body", async () => {
     server.route('POST', '/token', { body: okToken });
     server.route('GET', '/data', {
         requireHeader: { name: 'authorization', value: 'Bearer T1' },
         body: { ok: true },
     });
 
-    const data = protectedStitch('/data', { client: { auth: 'basic' } });
+    const data = protectedStitch('/data', { client: { via: 'basic' } });
     await expect(data()).resolves.toEqual({ ok: true });
     await expect(data()).resolves.toEqual({ ok: true }); // reuse the cached token
 
@@ -88,14 +88,14 @@ test("client.auth: 'basic' sends Basic <base64(id:secret)> and keeps creds out o
     expect(body.get('client_secret')).toBeNull();
 });
 
-test("default client.auth is 'post': creds in the body, no Authorization header on the token request", async () => {
+test("default client.via is 'post': creds in the body, no Authorization header on the token request", async () => {
     server.route('POST', '/token', { body: okToken });
     server.route('GET', '/data', {
         requireHeader: { name: 'authorization' },
         body: { ok: true },
     });
 
-    const data = protectedStitch('/data'); // no client.auth → 'post'
+    const data = protectedStitch('/data'); // no client.via → 'post'
     await expect(data()).resolves.toEqual({ ok: true });
 
     const body = tokenBody();
@@ -105,7 +105,7 @@ test("default client.auth is 'post': creds in the body, no Authorization header 
     expect(tokenHeaders()['authorization']).toBeUndefined();
 });
 
-test("client.auth: 'basic' refreshes on a 401 like the post flow does", async () => {
+test("client.via: 'basic' refreshes on a 401 like the post flow does", async () => {
     server.route('POST', '/token', {
         body: (i: number) => ({
             access_token: i === 0 ? 'STALE' : 'FRESH',
@@ -116,7 +116,7 @@ test("client.auth: 'basic' refreshes on a 401 like the post flow does", async ()
     // First hit 401s (token rejected); after the forced refresh the retry succeeds.
     server.route('GET', '/data', { statuses: [401, 200], body: { ok: true } });
 
-    const data = protectedStitch('/data', { client: { auth: 'basic' } });
+    const data = protectedStitch('/data', { client: { via: 'basic' } });
     await expect(data()).resolves.toEqual({ ok: true });
 
     expect(server.callCount('/token')).toBe(2); // initial fetch + forced refresh on 401
@@ -172,7 +172,7 @@ test('headers add to the token request but cannot clobber the basic Authorizatio
     server.route('GET', '/data', { body: { ok: true } });
 
     const data = protectedStitch('/data', {
-        client: { auth: 'basic' },
+        client: { via: 'basic' },
         headers: { 'X-Tenant': 'acme', authorization: 'must-not-win' },
     });
     await data();

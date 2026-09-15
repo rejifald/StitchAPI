@@ -1,10 +1,12 @@
 // `OAuth2Options.client` — the P24 fold of `clientId`/`clientSecret`/`clientAuth` into one named,
-// exported `OAuth2ClientOptions` envelope (`{ id, secret, auth }`). The three used to sit flat and
+// exported `OAuth2ClientOptions` envelope (`{ id, secret, via }`). The three used to sit flat and
 // were exempted from lint R8 as "an RFC 6749 mirror". They were not one: RFC 6749 §2.3.1 names the
 // client authentication METHODS and defines no `clientAuth` parameter at all, and `OAuth2Options`
-// has no identity mapping to protect either — every member is TRANSLATED into a snake_case wire
-// key where the token-request body is built, which is the translated house contract of P18's
-// second half, not a mirror.
+// has no identity mapping to protect for the three that were exempted — the client credentials are
+// TRANSLATED, re-cased into `client_id`/`client_secret` where the token-request body is built, and
+// under `via: 'basic'` kept out of that body entirely. (`scope`/`audience` do travel under their
+// own names; they were never part of the exempted group.) That is the translated house contract of
+// P18's second half, not a mirror.
 //
 // Both directions are pinned here: the new spelling works on the wire in both client-auth modes,
 // and the old flat spellings are COMPILE errors. The type-level assertions are enforced by
@@ -55,7 +57,7 @@ test('`client: { id, secret }` reaches the wire as client_id/client_secret', asy
     expect(body.get('client_secret')).toBe('csecret');
 });
 
-test("`client.auth: 'basic'` moves the same pair into the Basic header", async () => {
+test("`client.via: 'basic'` moves the same pair into the Basic header", async () => {
     server.route('POST', '/token', { body: okToken });
     server.route('GET', '/data', { body: { ok: true } });
 
@@ -64,7 +66,7 @@ test("`client.auth: 'basic'` moves the same pair into the Basic header", async (
         path: '/data',
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
-            client: { id: 'cid', secret: 'csecret', auth: 'basic' },
+            client: { id: 'cid', secret: 'csecret', via: 'basic' },
         }),
     });
 
@@ -94,7 +96,7 @@ test('the flat `clientId`/`clientSecret`/`clientAuth` spellings are gone (alias-
         oauth2({
             tokenUrl: 'https://auth.example.com/token',
             client: { id: 'cid', secret: 'csecret' },
-            // @ts-expect-error — folded into `client.auth` (P24); no alias was kept (P19).
+            // @ts-expect-error — folded into `client.via` (P24); no alias was kept (P19).
             clientAuth: 'basic',
         }),
     ];
@@ -125,10 +127,28 @@ test('`client` is required and `client: {}` is a compile error (P20 without `AtL
         }),
         oauth2({
             tokenUrl: 'https://auth.example.com/token',
-            // @ts-expect-error — `auth` alone is not a client; it tunes one.
-            client: { auth: 'basic' },
+            // @ts-expect-error — `via` alone is not a client; it tunes one.
+            client: { via: 'basic' },
         }),
     ];
+    expect(typeof rejected).toBe('function');
+});
+
+test('`client.auth` is rejected — the P2 collision with `StitchConfig.auth` (no alias)', () => {
+    // `auth` is already spent on `StitchConfig.auth`, which holds an `AuthStrategy` OBJECT. One
+    // token for two concepts over two value-spaces is what P2 forbids, so the client-authentication
+    // member is `via`. This pins the rename the only way that survives a refactor: `auth` must be
+    // an EXCESS property here, not a quietly-accepted second spelling (P19 — no alias, `rc`).
+    const rejected = () =>
+        oauth2({
+            tokenUrl: 'https://auth.example.com/token',
+            client: {
+                id: 'cid',
+                secret: 'csecret',
+                // @ts-expect-error — renamed to `client.via` (P2); no alias was kept (P19).
+                auth: 'basic',
+            },
+        });
     expect(typeof rejected).toBe('function');
 });
 
@@ -138,7 +158,7 @@ test('`OAuth2ClientOptions` is exported and authorable on its own (P14)', () => 
     const client: OAuth2ClientOptions = {
         id: () => 'cid',
         secret: () => 'csecret',
-        auth: 'post',
+        via: 'post',
     };
     const strategy = oauth2({
         tokenUrl: 'https://auth.example.com/token',

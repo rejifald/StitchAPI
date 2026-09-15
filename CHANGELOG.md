@@ -457,7 +457,7 @@ npm release are grouped under the in-development version that introduced them.
     +   client: {
     +       id: env('CLIENT_ID'),
     +       secret: env('CLIENT_SECRET'),
-    +       auth: 'basic',
+    +       via: 'basic',
     +   },
         scope: 'orders.read',
     }),
@@ -467,7 +467,7 @@ npm release are grouped under the in-development version that introduced them.
     | ------------------------------- | --------------- |
     | `clientId: Secret`              | `client.id`     |
     | `clientSecret: Secret`          | `client.secret` |
-    | `clientAuth: 'post' \| 'basic'` | `client.auth`   |
+    | `clientAuth: 'post' \| 'basic'` | `client.via`    |
 
     **The carve-out was wrong twice over.** `clientAuth` is not an RFC 6749 parameter at all —
     §2.3.1 describes the client authentication _methods_ (`client_secret_post` /
@@ -476,9 +476,13 @@ npm release are grouped under the in-development version that introduced them.
     claimed. And `OAuth2Options` is not a mirror in the sense this repo uses: its sibling
     `OAuth2ClientCredentialsFlow` states the test in its own JSDoc — spelled "exactly as the spec
     spells it … so `stitch export --openapi` emits it as an identity mapping" — while
-    `OAuth2Options` translates every member into a `snake_case` wire key where the token-request
-    form body is built. A contract that already re-cases the RFC's own names is the translated
-    house contract of P18's second half. The allow-list entry is **deleted**, not reworded; R8 now
+    `OAuth2Options` translates the very members it exempted: `clientId`/`clientSecret` are
+    re-cased to `client_id`/`client_secret` where the token-request form body is built, and under
+    `client.via: 'basic'` they leave the body altogether for an `Authorization` header. (`scope`
+    and `audience` do reach the body under their own names, but they were never part of the
+    exempted group, and most of the interface never becomes a body key at all.) A contract that
+    already re-cases the RFC's own names is the translated house contract of P18's second half.
+    The allow-list entry is **deleted**, not reworded; R8 now
     passes because the group is gone.
 
     **The envelope is `OAuth2ClientOptions`, exported** (P14), and the slot is a plain required
@@ -490,13 +494,24 @@ npm release are grouped under the in-development version that introduced them.
     `secret` are co-equal, so no field dominates (P12/P14). `tokenUrl` **stays flat** — the
     endpoint is a different subject from the identity calling it.
 
+    **The third member is `via`, not `auth`.**
+    ([P2](docs/CONTRACT.md#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one))
+    The obvious short spelling inside the envelope would have collided with `StitchConfig.auth`,
+    which holds an `AuthStrategy` — a behaviour object with a required `apply` closure — against a
+    closed `'post' | 'basic'` string union here. One token, two concepts, two value-spaces, and the
+    two nest inside a single call expression: `auth: oauth2({ client: { auth: 'basic' } })`. P2
+    forbids that even when each side is individually defensible, and locality is not a defence —
+    it is the argument P2 exists to foreclose. `via` reads at the call site ("the client
+    authenticates _via_ basic"), collides with nothing, and leaves the `'post' | 'basic'`
+    vocabulary and the RFC mapping untouched.
+
     Nothing about the wire changes: `client_id`/`client_secret` still go in the form body under
-    the default `client.auth: 'post'` and into the Basic header under `'basic'`, still applied
+    the default `client.via: 'post'` and into the Basic header under `'basic'`, still applied
     last so `params` can never shadow them. Redaction is unaffected — `secret` is matched as a
     stem. Hard break, no alias
     ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel);
-    type-level tests pin all three old spellings, `client: {}`, and each half-filled `client`, as
-    compile errors.
+    type-level tests pin all three old spellings, `client: {}`, each half-filled `client`, and
+    `client.auth`, as compile errors.
 
 - **BREAKING CHANGE: `AdapterResponse` is now `AdapterResult`, repo-wide.**
   ([CONTRACT.md P3](docs/CONTRACT.md#p3--one-suffix-system)) The suffix system reserves `*Response`
@@ -2805,6 +2820,58 @@ npm release are grouped under the in-development version that introduced them.
     `pnpm audit` reports no known vulnerabilities after the bump.
 
 ### Notes
+
+- **CONTRACT.md no longer contradicts itself about `responseText`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
+  Carve-out (a)'s exemption list named the protected pair as "the XHR `responseType`/`responseText`
+  pair on `XhrLike` (and its React Native mirror)", while the migration record 25 lines below it
+  said "StitchAPI has no `responseText`". Both could not be true, and neither was quite right.
+
+    `responseText` belongs to `@stitchapi/react-native`'s `RnStreamingXhr`, which reads it
+    incrementally to stream; core's `XhrLike` declares `responseType`/`response` and reads a buffered
+    `arraybuffer`, exactly as its own JSDoc says. So the exemption list mis-assigned a member to the
+    wrong type, and the negative claim below it was false repo-wide. The lint allow-list had it right
+    all along — it carries `XhrLike.response` ("responseType/response") and `RnStreamingXhr.response`
+    ("responseType/responseText") as two separate entries that merely share a prefix group key, which
+    is precisely the distinction the prose collapsed.
+
+    The list now names the pair each duck-type actually declares, and the migration record's claim
+    is narrowed to the interface that paragraph is about: `AdapterRequest` declared neither sibling,
+    so the fold the carve-out prevents (`response: { type, text }`) was never live there. The
+    argument is preserved in force; only the over-broad supporting claim changed. Prose only — no
+    type, no runtime byte. The gate never parses CONTRACT.md prose, so it could not have caught this.
+
+- **P24 carve-out (b)'s obligation binds the authoring layer, not the transport contract below
+  it — recorded, with no guard added to `AdapterRequest`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
+  `AdapterRequest.body`/`bodyType` keeps being re-raised as an un-discharged (b) obligation: its
+  JSDoc says `multipart` is "only read when `bodyType: 'multipart'`", which is prose sitting where
+  a type guard appears to belong, and `{ bodyType: 'json', multipart: {…} }` does typecheck and sit
+  inert. The obligation does not reach it, and the reason is now written down in the rule itself
+  rather than rediscovered each time.
+
+    (b) is about **authored config** — its stated harm is a tag/option pairing that typechecks
+    while the option is inert, which needs a consumer who supplied the inert half. Nobody supplies it
+    here. `buildRequest` derives every member from the authored `wire` envelope, and the six surfaces
+    that shape a request patch the engine's `base` (`{ ...base, bodyType: 'json' }`) instead of
+    composing one from scratch. A consumer writing a custom adapter, surface or `AuthStrategy` reads
+    these fields; the one genuinely authored position — calling an `Adapter` directly with a literal,
+    which the published OAuth2 rotation scenario does — supplies a live combination, never a dead
+    one. That is the mirror image of the layering carve-out (a) already states.
+
+    Two facts made it a ruling rather than a preference. The pairing is **not symmetric**: `array`
+    carries the same "only read when `bodyType: 'form'`" prose but is SPENT config, not dead — the
+    query string is serialised with it before any body exists and it is then forwarded
+    unconditionally, so `{ bodyType: 'json', array: 'repeat' }` is the engine's own correct output
+    and a symmetric guard would outlaw it. And a guard is **not additive**, which both discharged
+    precedents (`MultipartOnlyOnMultipartBody`, `OneEndpointSpelling`) were: the narrowest
+    R8-recognised mutual-exclusion shape breaks `buildRequest` in the engine and in two surfaces,
+    because `{ ...base, bodyType: 'json' }` cannot prove `multipart` is absent from a spread. It
+    would tax the one consumer-authored position it exists to protect.
+
+    No type, no runtime byte and no JSDoc changes. The gate's `AdapterRequest.body` allow-list
+    entry previously said only "carve-out (b), the canonical case"; it now records that the
+    obligation is discharged one layer up, which is the omission that kept the question open.
 
 - **The core ↔ deno-kv backoff divergence is now declared on both sides.**
   ([CONTRACT.md P8](docs/CONTRACT.md#p8--same-concept--same-default-across-packages))
