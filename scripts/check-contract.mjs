@@ -613,7 +613,7 @@ const PREFIX_GROUP_ALLOW = new Map([
     // dominant field, not an independent option:
     [
         'AdapterRequest.body',
-        'bodyType is a discriminator tag for the dominant body payload, not a second option — carve-out (b), the canonical case',
+        "bodyType is a discriminator tag for the dominant body payload, not a second option — carve-out (b), the canonical case. The (b) mutual-exclusion obligation is DISCHARGED ONE LAYER UP, on the authored `wire` envelope (MultipartOnlyOnMultipartBody), not here: AdapterRequest is the engine-derived transport contract a consumer READS, and its sibling `array` is spent-not-dead config (the query string is serialised with it before any body exists), so `{ bodyType: 'json', array: 'repeat' }` is the engine's own correct output. See CONTRACT.md P24 carve-out (b), 'Scope of the (b) obligation'",
     ],
     // A REAL group that P22 pins flat — the standard owns the spelling, so folding it would
     // break the mirror the other half of the rule requires:

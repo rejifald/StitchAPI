@@ -878,6 +878,36 @@ mean two different things on the two surfaces, a P2 collision. `OneEndpointSpell
 compile error, while across `extends` fragments the spellings stay a legal last-writer-wins
 override. See the migration record for the silent case that motivated it.
 
+_Scope of the (b) obligation — it binds the AUTHORING layer, not the transport contract below it
+(2026-09-15):_ `AdapterRequest.body`/`bodyType` keeps being re-raised as an un-discharged (b)
+obligation, because its JSDoc says `multipart` is "only read when `bodyType: 'multipart'`" — prose
+sitting where a guard appears to belong. It is not one, and the rule is worth stating once so the
+question stops re-opening. The obligation is about **authored config**: its stated harm is a
+tag/option pairing that typechecks while the option is inert, and that harm needs a consumer who
+supplied the inert half. On `AdapterRequest` nobody does. The engine DERIVES every member from the
+authored `wire` envelope in `buildRequest`, and the surfaces that shape a request patch the `base`
+the engine handed them (`{ ...base, bodyType: 'json' }`) rather than composing one from scratch —
+so a consumer writing a custom adapter, surface or `AuthStrategy` READS these fields; the one
+genuinely authored position, calling an `Adapter` directly with a literal, supplies a live
+combination, never a dead one. This is the mirror image of the layering carve-out (a) already
+states: there, the exemption binds the layer that meets the foreign standard and not every layer
+above it; here, the obligation binds the layer a consumer authors and not every layer below it.
+`MultipartOnlyOnMultipartBody` and `OneEndpointSpelling` discharge it where it lands — on `wire`
+and on the endpoint slot — which is why nothing is missing underneath them.
+
+Two facts make this a ruling rather than a preference. First, the pairing on `AdapterRequest` is
+**not symmetric**: `array` carries the same "only read when `bodyType: 'form'`" prose but is not
+dead config at all — it is SPENT config. The engine serialises the query string with it before the
+body is built and then forwards it unconditionally, so `{ bodyType: 'json', array: 'repeat' }` is
+the engine's own correct output for any stitch that sets `wire.array` with a JSON body, and the
+authoring layer pins that as legal. A symmetric guard would outlaw the engine's own output.
+Second, a guard here is **not additive**, which both discharged precedents were: the narrowest
+R8-recognised mutual-exclusion shape over `bodyType`/`multipart` breaks `buildRequest` in the
+engine and in two surfaces, because `{ ...base, bodyType: 'json' }` cannot prove `multipart` is
+absent from a spread. It would tax the one consumer-authored position it exists to protect, and
+force every surface author to write `multipart: undefined`. The prose stays; it documents a
+transport READ, which is what it has always been.
+
 Applied on every surface that authors a stitch (`stitch`, `graphql`, `Seam.stitch`,
 `Seam.graphql` — both the inferring and the fallback overload, or a rejected config falls through
 to the loose one and typechecks after all). **`seam()` itself is exempt and stays non-generic:**

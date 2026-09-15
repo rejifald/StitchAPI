@@ -2671,6 +2671,38 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Notes
 
+- **P24 carve-out (b)'s obligation binds the authoring layer, not the transport contract below
+  it — recorded, with no guard added to `AdapterRequest`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
+  `AdapterRequest.body`/`bodyType` keeps being re-raised as an un-discharged (b) obligation: its
+  JSDoc says `multipart` is "only read when `bodyType: 'multipart'`", which is prose sitting where
+  a type guard appears to belong, and `{ bodyType: 'json', multipart: {…} }` does typecheck and sit
+  inert. The obligation does not reach it, and the reason is now written down in the rule itself
+  rather than rediscovered each time.
+
+    (b) is about **authored config** — its stated harm is a tag/option pairing that typechecks
+    while the option is inert, which needs a consumer who supplied the inert half. Nobody supplies it
+    here. `buildRequest` derives every member from the authored `wire` envelope, and the six surfaces
+    that shape a request patch the engine's `base` (`{ ...base, bodyType: 'json' }`) instead of
+    composing one from scratch. A consumer writing a custom adapter, surface or `AuthStrategy` reads
+    these fields; the one genuinely authored position — calling an `Adapter` directly with a literal,
+    which the published OAuth2 rotation scenario does — supplies a live combination, never a dead
+    one. That is the mirror image of the layering carve-out (a) already states.
+
+    Two facts made it a ruling rather than a preference. The pairing is **not symmetric**: `array`
+    carries the same "only read when `bodyType: 'form'`" prose but is SPENT config, not dead — the
+    query string is serialised with it before any body exists and it is then forwarded
+    unconditionally, so `{ bodyType: 'json', array: 'repeat' }` is the engine's own correct output
+    and a symmetric guard would outlaw it. And a guard is **not additive**, which both discharged
+    precedents (`MultipartOnlyOnMultipartBody`, `OneEndpointSpelling`) were: the narrowest
+    R8-recognised mutual-exclusion shape breaks `buildRequest` in the engine and in two surfaces,
+    because `{ ...base, bodyType: 'json' }` cannot prove `multipart` is absent from a spread. It
+    would tax the one consumer-authored position it exists to protect.
+
+    No type, no runtime byte and no JSDoc changes. The gate's `AdapterRequest.body` allow-list
+    entry previously said only "carve-out (b), the canonical case"; it now records that the
+    obligation is discharged one layer up, which is the omission that kept the question open.
+
 - **The core ↔ deno-kv backoff divergence is now declared on both sides.**
   ([CONTRACT.md P8](docs/CONTRACT.md#p8--same-concept--same-default-across-packages))
   `@stitchapi/deno-kv` resolves core's exported `BackoffOptions` envelope to **`base` 5ms / `max`
