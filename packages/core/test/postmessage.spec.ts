@@ -576,7 +576,15 @@ const withMessageListeners = async (
     };
     try {
         await body((origin, data) => {
-            for (const l of [...listeners]) l({ data, origin } as MessageEvent);
+            // `isTrusted: true` models USER-AGENT delivery, which is what a real
+            // `window.postMessage` from the peer frame produces. It is required now, and the fact
+            // that it is required is the signal the `isTrusted` gate is live: `channel.window`
+            // drops a synthesised event (`isTrusted === false`) before the origin gate runs,
+            // because `MessageEventInit.origin` is author-settable and the origin gate therefore
+            // cannot tell a forgery from the real thing. The forged half is exercised against a
+            // REAL `EventTarget` + REAL `MessageEvent` in `withRealMessageTarget` below.
+            for (const l of [...listeners])
+                l({ data, origin, isTrusted: true } as MessageEvent);
         });
     } finally {
         g.addEventListener = realAdd;
@@ -591,6 +599,315 @@ const settle = (): Promise<void> =>
             r();
         }, 10),
     );
+
+// ---------------------------------------------------------------------------
+// the forged-event attacker path (the in-band `''` sentinel regression)
+// ---------------------------------------------------------------------------
+// `withMessageListeners` above fakes `addEventListener` and hands the listener an object literal,
+// which is the right tool for asserting WHICH origins the gate admits but the wrong one for the
+// attack: an attacker does not get to choose the event's internals. This harness installs a REAL
+// `EventTarget` as the global message target, so the test dispatches a REAL `MessageEvent` exactly
+// as a script sharing the page's realm would:
+//
+//     window.dispatchEvent(new MessageEvent('message', { data: forged, origin: TRUSTED }))
+//
+// Everything about that event is then the platform's, not the test's — in particular `origin` and
+// `isTrusted`, which is precisely what is under test.
+interface RealTargetHandle {
+    dispatch: (init: MessageEventInit) => void;
+}
+
+const withRealMessageTarget = async (
+    body: (handle: RealTargetHandle) => Promise<void>,
+): Promise<void> => {
+    const target = new EventTarget();
+    const g = globalThis as unknown as EventTargetish;
+    const realAdd = g.addEventListener;
+    const realRemove = g.removeEventListener;
+    g.addEventListener = (t, l) => {
+        target.addEventListener(t, l as unknown as EventListener);
+    };
+    g.removeEventListener = (t, l) => {
+        target.removeEventListener(t, l as unknown as EventListener);
+    };
+    try {
+        await body({
+            dispatch: (init) => {
+                target.dispatchEvent(new MessageEvent('message', init));
+            },
+        });
+    } finally {
+        g.addEventListener = realAdd;
+        g.removeEventListener = realRemove;
+    }
+};
+
+describe('the origin gate has no in-band sentinel (security regression)', () => {
+    // The PLATFORM facts the whole fix rests on, pinned rather than asserted in a comment. If any
+    // of these ever changes, the sentinel argument below changes with it.
+    test('MessageEvent cannot spell the out-of-band sentinel, and defaults to the old in-band one', () => {
+        // `origin` is a USVString: there is no way to deliver a JS `null` through it. The casts
+        // are the point, not noise — `MessageEventInit.origin` is typed `string`, so these two
+        // shapes are what a JS caller or an `as any` produces, and the WebIDL coercion is what
+        // makes the out-of-band sentinel unspellable from data.
+        expect(
+            new MessageEvent('message', {
+                origin: null,
+            } as unknown as MessageEventInit).origin,
+        ).toBe('null'); // the STRING — not an `Origin`, so it stays unallow-listable
+        expect(
+            new MessageEvent('message', {
+                origin: undefined,
+            } as unknown as MessageEventInit).origin,
+        ).toBe('');
+        // …and `''` is its DEFAULT, which is exactly why `''` could never be a trust signal.
+        expect(new MessageEvent('message', {}).origin).toBe('');
+        // `isTrusted` is `[LegacyUnforgeable]`: `false` on a constructed event, and the init dict
+        // cannot set it. This is the only bit a same-realm script cannot forge.
+        expect(new MessageEvent('message', {}).isTrusted).toBe(false);
+        expect(
+            new MessageEvent('message', {
+                isTrusted: true,
+            } as MessageEventInit).isTrusted,
+        ).toBe(false);
+    });
+
+    // THE DEFECT, at the `channel.over` layer where no `isTrusted` gate exists to mask it: the gate
+    // used to read `origin === '' || allowed.includes(origin)`, so a message stamped `''` was waved
+    // through on ANY channel. `''` is now an ordinary untrusted string.
+    test('an inbound message stamped with the empty origin is DROPPED on a gated channel', async () => {
+        const seen: unknown[] = [];
+        const validated: unknown[] = [];
+        let handler:
+            ((data: unknown, origin: string | null) => void) | undefined;
+        const transport: MessageTransport = {
+            post: () => undefined,
+            subscribe: (h) => {
+                handler = h;
+                return () => undefined;
+            },
+        };
+        const ch = channel.over(transport, { from: [ORIGIN_B] });
+        ch.respond(
+            'ping',
+            (p) => {
+                seen.push(p);
+                return 'pong';
+            },
+            {
+                // Proves the gate runs FIRST: an implementation that validated then gated would
+                // tick this counter even while dropping the message.
+                input: (v: unknown): boolean => {
+                    validated.push(v);
+                    return true;
+                },
+            },
+        );
+        handler?.({ type: 'ping', id: '1', payload: { n: 1 } }, '');
+        await settle();
+        expect(seen).toEqual([]);
+        expect(validated).toEqual([]);
+        await ch.close();
+    });
+
+    // The sibling of the above: the literal `'null'` a sandboxed frame posts with is likewise just
+    // a string, and is NOT the out-of-band sentinel.
+    test("the literal origin 'null' is DROPPED and is not the sentinel", async () => {
+        const seen: unknown[] = [];
+        let handler:
+            ((data: unknown, origin: string | null) => void) | undefined;
+        const ch = channel.over(
+            {
+                post: () => undefined,
+                subscribe: (h) => {
+                    handler = h;
+                    return () => undefined;
+                },
+            },
+            { from: [ORIGIN_B] },
+        );
+        ch.respond('ping', (p) => {
+            seen.push(p);
+            return 'pong';
+        });
+        handler?.({ type: 'ping', payload: { n: 1 } }, 'null');
+        await settle();
+        expect(seen).toEqual([]);
+        await ch.close();
+    });
+
+    // The allow-list must not be inert — the #795 / P24 carve-out (b) bar. A transport's
+    // per-message "I have no origins" claim CANNOT widen a channel the caller gated, so it fails
+    // closed. `from: []` is the sharpest case: a deliberately fail-closed list stays fail-closed.
+    test.each([
+        ['a populated list', [ORIGIN_B] as const],
+        ['the deliberately empty list', [] as const],
+    ])(
+        'a transport passing `null` is DROPPED on a channel gated by %s',
+        async (_label, from) => {
+            const seen: unknown[] = [];
+            let handler:
+                ((data: unknown, origin: string | null) => void) | undefined;
+            const ch = channel.over(
+                {
+                    post: () => undefined,
+                    subscribe: (h) => {
+                        handler = h;
+                        return () => undefined;
+                    },
+                },
+                { from: [...from] },
+            );
+            ch.respond('ping', (p) => {
+                seen.push(p);
+                return 'pong';
+            });
+            handler?.({ type: 'ping', payload: { n: 1 } }, null);
+            await settle();
+            expect(seen).toEqual([]);
+            await ch.close();
+        },
+    );
+
+    // …and the exemption still WORKS where it is declared in code. `channel.private` takes no
+    // origin policy at all, so a `null`-origin message is delivered. This is the port bypass made
+    // provable without a real `MessagePort`.
+    test('an UNGATED channel (`channel.private`) delivers a `null`-origin message', async () => {
+        const seen: unknown[] = [];
+        let handler:
+            ((data: unknown, origin: string | null) => void) | undefined;
+        const ch = channel.private({
+            post: () => undefined,
+            subscribe: (h) => {
+                handler = h;
+                return () => undefined;
+            },
+        });
+        ch.respond('ping', (p) => {
+            seen.push(p);
+            return 'pong';
+        });
+        handler?.({ type: 'ping', payload: { n: 1 } }, null);
+        await settle();
+        expect(seen).toEqual([{ n: 1 }]);
+        await ch.close();
+    });
+
+    // THE HEADLINE REGRESSION — the attack itself, on the real `channel.window` inbound path, with
+    // a real `MessageEvent` dispatched at a real `EventTarget`. Before the fix this reached the
+    // responder and the reply correlation on BOTH variants: `origin: ''` slipped the in-band
+    // sentinel, and `origin: <allow-listed>` slipped the literal `includes` because
+    // `MessageEventInit.origin` is author-settable. Now neither does.
+    test.each([
+        ['the empty origin (the in-band sentinel)', ''],
+        ['a correctly-spelled allow-listed origin', 'https://app.example.com'],
+    ])(
+        'a same-realm forged MessageEvent carrying %s reaches nothing',
+        async (_label, forgedOrigin) => {
+            await withRealMessageTarget(async ({ dispatch }) => {
+                const posts: { msg: unknown; origin: string }[] = [];
+                const ch = channel.window({
+                    target: fakeWindow(posts),
+                    origins: 'https://app.example.com',
+                });
+
+                const handled: unknown[] = [];
+                ch.respond('delete-account', (p) => {
+                    handled.push(p);
+                    return { deleted: true };
+                });
+
+                // A real in-flight request, so the forged REPLY path is covered too: an attacker
+                // who guesses (or reads) the minted id must not be able to resolve it.
+                const events: unknown[] = [];
+                const sub = ch.events('price-tick');
+                const drain = (async () => {
+                    for await (const e of sub.stream()) {
+                        if (e.type === 'delta') events.push(e.chunk);
+                    }
+                })();
+                drain.catch(() => undefined);
+
+                let settled: unknown = 'NOT-SETTLED';
+                const pending = ch.request('slow', { timeout: { each: 60 } });
+                const p = pending({ body: {} }).then(
+                    (v) => (settled = { ok: v }),
+                    () => (settled = 'REJECTED'),
+                );
+                await settle();
+                const sent = posts.find(
+                    (x) => (x.msg as { type?: string }).type === 'slow',
+                );
+                const mintedId = (sent?.msg as { id?: string } | undefined)?.id;
+                expect(typeof mintedId).toBe('string');
+
+                const postsBefore = posts.length;
+
+                // === the attack: three forged envelopes, one per demux path ===
+                dispatch({
+                    data: {
+                        type: 'delete-account',
+                        id: 'a1',
+                        payload: { all: true },
+                    },
+                    origin: forgedOrigin,
+                });
+                dispatch({
+                    data: { type: 'price-tick', payload: { px: 999 } },
+                    origin: forgedOrigin,
+                });
+                dispatch({
+                    data: {
+                        type: 'slow-result',
+                        id: mintedId,
+                        payload: { pwned: true },
+                    },
+                    origin: forgedOrigin,
+                });
+                await settle();
+
+                // No responder ran, and nothing was posted in reply.
+                expect(handled).toEqual([]);
+                expect(posts.length).toBe(postsBefore);
+                // No event delta was delivered.
+                expect(events).toEqual([]);
+                // No pending request resolved — it is still in flight, and goes on to reject via
+                // the engine's own timeout rather than resolving with the attacker's payload.
+                expect(settled).toBe('NOT-SETTLED');
+
+                await p;
+                expect(settled).toBe('REJECTED');
+                await ch.close();
+                await drain.catch(() => undefined);
+            });
+        },
+    );
+
+    // The other half of the same gate: a REAL user-agent delivery is unaffected. Node cannot mint
+    // an `isTrusted: true` event through `dispatchEvent`, so this half rides the object-literal
+    // harness — which is exactly why that harness now stamps `isTrusted: true`.
+    test('a genuine user-agent delivery on the same channel still arrives', async () => {
+        await withMessageListeners(async (deliver) => {
+            const ch = channel.window({
+                target: fakeWindow([]),
+                origins: 'https://app.example.com',
+            });
+            const handled: unknown[] = [];
+            ch.respond('delete-account', (p) => {
+                handled.push(p);
+                return { deleted: true };
+            });
+            deliver('https://app.example.com', {
+                type: 'delete-account',
+                id: 'real',
+                payload: { all: true },
+            });
+            await settle();
+            expect(handled).toEqual([{ all: true }]);
+            await ch.close();
+        });
+    });
+});
 
 describe('channel.window guards', () => {
     test('a wildcard origin throws at runtime, through the scalar shorthand (defense in depth beyond the Origin type)', () => {

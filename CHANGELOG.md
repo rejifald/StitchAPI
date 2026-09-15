@@ -2743,6 +2743,92 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Security
 
+- **`stitchapi/postmessage` — the inbound origin gate no longer trusts the empty origin, and
+  `channel.window` drops synthesised events.** Two defects, one root cause. **Breaking**
+  (`MessageTransport.subscribe`'s signature widens); rc channel, so a hard break with no alias.
+
+    **The bypass.** The demux gate read `origin === '' || allowedOrigins.includes(origin)`. That
+    `''` was the documented `MessagePort` exemption — but `''` is also
+    `MessageEvent.origin`'s **default value**, so any script sharing the page's realm could run
+    `window.dispatchEvent(new MessageEvent('message', { data: forgedEnvelope }))` and land a
+    forged envelope in reply-correlation, the responder registry and the event fan-out with the
+    `from` list **never consulted**. Reproduced end to end: a `respond('delete-account', …)`
+    handler ran with the attacker's payload and posted a reply, an `events()` subscription
+    delivered a forged delta, and a pending `request()` resolved with `{ pwned: true }`. The
+    realistic actors are a third-party analytics or tag-manager script and an extension content
+    script — both routinely on the page, neither supposed to be able to impersonate a trusted
+    iframe.
+
+    **Root cause: an in-band sentinel.** `''` was a fact about the _transport_ ("this one does not
+    attribute origins") asserted by a value carried in the _data_ channel. The transport knows;
+    the byte stream must not be the thing claiming it. The fix moves the assertion out of band:
+
+    - `MessageTransport.subscribe` is now
+      `(handler: (data: unknown, origin: string | null) => void) => () => void`. **`null`** means
+      _this transport does not attribute origins_ — unspellable from data, because
+      `MessageEvent.origin` is a `USVString` (`{ origin: null }` coerces to the _string_ `'null'`,
+      `{ origin: undefined }` to `''`; no realm delivers a JS `null`). Every string, `''`
+      included, is now an ordinary untrusted origin, and since `Origin` is
+      `` `https://${string}` | `http://${string}` `` no allow-list can contain `''`.
+    - The exemption is a decision about the **channel**, not about a message. `makeChannel`'s list
+      is `string[] | null`, and the gate is
+      `allowedOrigins === null ? true : origin !== null && allowedOrigins.includes(origin)`. So a
+      transport's `null` is honoured only by a builder that declares **no** origin policy, and on a
+      channel the caller gated it **fails closed**. This is deliberate: had `channel.over` honoured
+      a per-message `null`, any transport could have rendered the caller's `from` — including the
+      deliberately fail-closed `from: []` — incapable of changing one decision, which is verbatim
+      the inert-security-control defect [#795](https://github.com/rejifald/StitchAPI/pull/795)
+      removed from the port builder ([P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+      carve-out (b)). Strict `=== null`, never `== null` or `??` — if `undefined` also meant "no
+      origins", a transport that merely _forgot_ the second argument would reopen the hole.
+    - `channel.port` passes `null` and builds with no list at all.
+
+    **The origin change alone does not close the threat model, and `channel.window` needed a second
+    fix.** `MessageEventInit.origin` is **author-settable** —
+    `new MessageEvent('message', { origin: 'https://app.example.com' }).origin` is exactly that —
+    so a same-realm script can spell any allow-listed origin and sail through a literal `includes`.
+    The `''` sentinel was only the laziest variant of the attack. `channel.window`'s listener now
+    drops any event whose `isTrusted` is **`false`**: the one bit a page script cannot forge
+    (`[LegacyUnforgeable]` in the DOM — own, non-configurable, survives prototype patching; `false`
+    on every constructed event, `true` only on user-agent delivery). It is written `=== false`, not
+    `!e.isTrusted`, so a polyfilled or non-DOM environment that omits the property is not silently
+    gated out of its own channel. A harness that must synthesise events uses `channel.over` with
+    its own transport.
+
+- **`channel.private(transport)` — a fourth namespace member, for a transport with no origin
+  dimension.** Added _as part of_ the fix above, because `channel.over` is now always gated and
+  something has to carry the legitimate origin-less case: an Electron `ipcRenderer` bridge, a Web
+  Worker bridge, a native host bridge, a test fake. It takes **no origin policy at all**, exactly
+  as `channel.port` takes none, and that structural absence is the point — an option shaped like a
+  security control that cannot change a decision is worse than an asymmetry. `channel.port` is
+  this builder with the `MessagePort` wiring supplied. Bundle cost, measured (esbuild
+  bundle+minify, gzip): the namespace floor moves 24243 → 24259 B (+16) for the member, and
+  24228 → 24259 (+31) for the whole fix.
+
+    **Migration — the sharp edge, stated plainly.** A hand-rolled `MessageTransport` that passes
+    `''` to mean "no origin dimension" — which is what `subscribe`'s **previous JSDoc explicitly
+    taught** — now has every inbound message **dropped** on a gated channel. It still typechecks,
+    so this is a _silent runtime_ break, and it is the one to look for. Pass `null`, or move the
+    channel to `channel.private`. The type widening itself is essentially non-breaking and is
+    pinned in `test-d`: `subscribe` is declared in method position, so parameter checking is
+    bivariant, and the inner handler is contravariant — an implementor annotating
+    `origin: string` still satisfies `MessageTransport`. The one residual _type_ break is a
+    consumer who reads `Parameters<MessageTransport['subscribe']>[0]` and dereferences `origin`,
+    now possibly `null`.
+
+    **Second behaviour change:** a **Worker realm using `channel.window`** receives parent messages
+    with `origin === ''` and will now **drop** them. Use `channel.port` or `channel.private`. The
+    case is narrower than it sounds and is stated here rather than buried: it is _inbound-only_,
+    because `DedicatedWorkerGlobalScope.postMessage` has no target-origin parameter, so
+    `channel.window`'s `post` throws there and no worker ever had a working round-trip — only an
+    `events()`-style inbound subscription with the target cast past its `Window` type was ever
+    live.
+
+    [ADR 0009](docs/adr/0009-postmessage-surface.md) carries the full argument (2026-09-15
+    amendment), and [CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+    carve-out (b) — whose applied instance quoted the old gate verbatim as its proof — is restated:
+    the port exemption stands, but as a structural absence rather than a short-circuit.
+
 - **`@stitchapi/swr` redacts caller-registered credential headers from the cache key.**
   `swrKey` forks query-core's key derivation rather than importing it — swr is one of the three
   stream-less adapters that deliberately carry no `@stitchapi/query-core` dependency

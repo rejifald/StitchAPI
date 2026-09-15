@@ -767,9 +767,20 @@ const getUser = frame.request('getUser');
 const user = await getUser({ body: { id: 7 } });
 ```
 
-One namespace, three ways to build: `channel.window(opts)` for a `Window` or iframe, `channel.port(port)` for a `MessagePort` (no origin gate — a port is gated by who you hand it to, and it is the right answer for a sandboxed frame), and `channel.over(transport, { from })` for any `MessageTransport` you supply. The namespace is not itself callable: the role belongs at the call site.
+One namespace, four ways to build, and the choice is _does this transport attribute origins_:
+
+| builder                             | transport                                                                                            | origin gate                                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `channel.window(opts)`              | a `Window` / iframe `contentWindow`                                                                  | gated by `origins`, and events with `isTrusted === false` are dropped                           |
+| `channel.over(transport, { from })` | any origin-bearing `MessageTransport`                                                                | gated by `from`                                                                                 |
+| `channel.port(port)`                | a `MessagePort`                                                                                      | none — a port is gated by who you hand it to (and it is the right answer for a sandboxed frame) |
+| `channel.private(transport)`        | a `MessageTransport` with no origin dimension — an Electron IPC bridge, a worker bridge, a test fake | none, by construction                                                                           |
+
+The namespace is not itself callable: the role belongs at the call site.
 
 Post to one frame while accepting from several with the envelope form: `origins: { to: 'https://app.example.com', from: ['https://app.example.com', 'https://widget.example.com'] }`.
+
+**Writing your own transport?** `subscribe(handler)` calls `handler(data, origin)`. Pass the peer's real origin as a string, or **`null`** to mean _this transport has no origin dimension_ — never `''`, which is an ordinary untrusted origin (it is `MessageEvent.origin`'s default, so it can arise by accident and must never be a trust signal). `null` is honoured only by `channel.private` / `channel.port`, which take no origin policy at all; on a channel built with `from`, a `null` origin **fails closed**, so a transport can never quietly widen a gate its caller set.
 
 Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, and `output` / `drift` compose with all of them.
 
