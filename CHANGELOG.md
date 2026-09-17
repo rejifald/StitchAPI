@@ -11,6 +11,8 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.8] — 2026-09-17
+
 ### Added
 
 - **`ApiKeyOptions` is exported from `stitchapi/auth`.**
@@ -3728,7 +3730,8 @@ causality push:
 - **Playground:** the browser Worker runner, handler registration, incremental
   streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.8...HEAD
+[1.0.0-rc.8]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...v1.0.0-rc.8
 [1.0.0-rc.7]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.4...v1.0.0-rc.5
