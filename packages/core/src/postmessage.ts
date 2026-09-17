@@ -94,6 +94,11 @@ export interface MessageTransport {
     /**
      * Subscribe to inbound messages; returns an unsubscribe fn.
      *
+     * Deliver only the PEER's messages. A transport listening on a shared bus — a `Window`'s
+     * global `'message'` event, which every frame on the page posts into — must check that the
+     * event's `source` IS the window it posts to, as `channel.window` does. The channel's origin
+     * gate runs after this and cannot do that job: two same-origin frames carry the same origin.
+     *
      * `origin` is `null` when THIS TRANSPORT DOES NOT ATTRIBUTE ORIGINS — a `MessagePort`, an
      * Electron IPC bridge, a worker bridge, a test fake. That is a claim only CODE can make: it
      * is produced by the transport, never carried in the data channel, so nothing a peer can put
