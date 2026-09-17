@@ -247,6 +247,8 @@
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
         "test:mcp-e2e": "vitest run test/mcp-e2e.spec.ts",
+        "test:browser": "playwright test",
+        "test:browser:install": "playwright install chromium",
         "check:types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
         "check:types-d": "tsup --silent && tsd",
         "check:lint": "eslint src test",
@@ -325,6 +327,7 @@
     "devDependencies": {
         "@arethetypeswrong/cli": "^0.18.5",
         "@eslint/js": "^9.39.5",
+        "@playwright/test": "^1.63.0",
         "@types/node": "^26.4.1",
         "@vitest/coverage-v8": "^4.1.11",
         "@vitest/eslint-plugin": "^1.6.27",

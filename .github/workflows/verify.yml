@@ -334,6 +334,11 @@ jobs:
     # Worker egress blocking and that a real RunResult.trace reaches the playground DAG. It
     # builds the docs app and drives a headless Chromium, so it runs as its own job rather
     # than inside the `verify` gate. Already a required check on `main`.
+    #
+    # Core's own real-browser suite (packages/core/test/browser) rides the same job and the same
+    # Chromium, and runs first because it needs no build and fails in seconds. It proves what a
+    # node fake can only assume: `stitchapi/postmessage`'s window channel is bound to its peer by
+    # `WindowProxy` identity, which survives a reload or navigation and not a remount.
     e2e:
         runs-on: ubuntu-latest
         timeout-minutes: 15
@@ -346,6 +351,7 @@ jobs:
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter @stitchapi/docs test:e2e:install
+            - run: pnpm --filter stitchapi test:browser
             - run: pnpm --filter @stitchapi/docs test:e2e
 
     # Docs search-relevance ratchet (apps/docs/scripts/search-eval.mts --assert): builds the
