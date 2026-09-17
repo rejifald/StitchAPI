@@ -11,6 +11,8 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.8] — 2026-09-17
+
 ### Added
 
 - **`ApiKeyOptions` is exported from `stitchapi/auth`.**
@@ -292,17 +294,22 @@ npm release are grouped under the in-development version that introduced them.
     **Bundle cost, stated rather than glossed.** A namespace pins all three members for anyone who
     uses any one of them: esbuild will not split an object literal to drop a dead half, the same
     effect `packages/core/scripts/bundle-size.mjs` already records for the `duration` facade.
-    Measured on this branch (esbuild bundle+minify, gzip), old surface → new:
+    Method, so the figures reproduce rather than have to be trusted: bundled from
+    `packages/core/src` with the settings `bundle-size.mjs` itself uses (esbuild `bundle`,
+    `minify`, `treeShaking`, `format: 'esm'`, `platform: 'neutral'`), gzip level 9, from an entry
+    importing exactly what that consumer imports. Old surface → new:
 
     | consumer uses      |     was |     now |  delta |
     | ------------------ | ------: | ------: | -----: |
-    | the port builder   | 23518 B | 24253 B | +735 B |
-    | the transport one  | 23909 B | 24253 B | +344 B |
-    | the window builder | 24094 B | 24253 B | +159 B |
-    | all three          | 24226 B | 24253 B |  +27 B |
+    | the port builder   | 23551 B | 24281 B | +730 B |
+    | the transport one  | 23939 B | 24281 B | +342 B |
+    | the window builder | 24122 B | 24281 B | +159 B |
+    | all three          | 24261 B | 24286 B |  +25 B |
 
-    The "now" column is one number three times, which IS the finding: the namespace has a flat
-    floor, so what a consumer pays no longer depends on which builder it reached for.
+    The "now" column is one number for any SINGLE builder, which IS the finding: the namespace has
+    a flat floor, so what a consumer pays no longer depends on which builder it reached for. The
+    all-three row reads 24286 rather than 24281 for a reason that is not library cost — its entry
+    names three symbols instead of one, and the entry is in the bundle too.
 
     The port-only consumer pays most, and the specific consequence is worth naming: it now carries
     the origin-validation apparatus (`assertOrigin`, `new URL()`, the global `'message'` listener)
@@ -1985,6 +1992,48 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`stitchapi/postmessage` — several same-origin frames on one page no longer hear each other.**
+  A page that renders many frames of ONE origin with a `channel.window` per frame — a gallery of
+  preview tiles, each a `blob:` document (which inherits its creator's origin) or a page off one
+  CDN host — handed every frame's messages to every channel. Every window channel listens on the
+  page's single global `'message'` event, and the gate checked the origin alone, which cannot tell
+  same-origin frames apart. So tiles resized on each other's `content-height` and went ready on
+  each other's `ready`; a responder answered requests its frame never sent and posted the answer
+  to its own frame; and a frame's own channel accepted a sibling frame's message as if the host
+  had sent it. Reproduced in Chromium against `1.0.0-rc.5` and against `main` before the fix.
+
+    The fix is the peer binding described under **Security** below: a window channel accepts a
+    message only when `event.source` IS its `target`, on top of the origin gate, in both
+    directions (`iframe.contentWindow` on the host side, `window.parent` in the frame). Three
+    properties of it are worth knowing if you depend on it:
+
+    - **Navigation and reload keep the binding.** They keep the frame's `WindowProxy`, so a channel
+      survives a reloaded document or a re-minted `blob:` `src` with no re-subscription. The origin
+      gate still matters beside it: a frame navigated to a foreign origin keeps the same
+      `WindowProxy`, and only the origin drops it.
+    - **A remount does not.** A new `<iframe>` element is a new window. A `Window` passed directly
+      stays bound to the discarded one; a thunk (`target: () => frame.contentWindow!`) is resolved
+      on every post and every inbound message, so it follows the new element.
+    - **A thunk that resolves to nothing accepts nothing.** `ref.current?.contentWindow` is
+      `undefined` before mount, and a detached iframe's `contentWindow` is `null`. The check as
+      first written, `source !== peer`, let a `null` source equal a `null` peer and deliver. It now
+      drops the message whenever the target resolves to `null` or `undefined`. This is hardening
+      rather than a demonstrated exploit: Chromium delivered no `null`-source window message in
+      probing.
+
+    `OriginOptions.from` is re-documented to match: it widens the **origins** accepted from
+    `target` (a popup that finishes a sign-in hop on another origin), never the set of windows.
+    The binding is now proven in a real browser as well as in the node suite
+    (`packages/core/test/browser`, run with `pnpm --filter stitchapi test:browser` and in CI's `e2e`
+    job), because the property it rests on, `WindowProxy` identity, is exactly what a node fake can
+    only assume.
+
+    **Upgrading from `1.0.0-rc.5`, `rc.6` or `rc.7`:** the window builder is also renamed in this
+    release. `windowChannel({ target, targetOrigin, allowedOrigins })` is now
+    `channel.window({ target, origins })` (the `channel` namespace entry under **Changed**). A
+    jsdom-based test of a window channel now receives nothing (the migration notes under
+    **Security**).
+
 - **`@stitchapi/express` and `@stitchapi/fastify`: a mid-stream throw now ends the SSE response with
   an `event: error` frame instead of ending it silently.**
   ([CONTRACT.md P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity)) Both
@@ -2742,6 +2791,148 @@ npm release are grouped under the in-development version that introduced them.
     untouched and it stays open.
 
 ### Security
+
+- **`stitchapi/postmessage` — the inbound origin gate no longer trusts the empty origin, and
+  `channel.window` accepts only genuine events from its own peer.** One root cause and the two
+  checks that finish the threat model it exposes. **Breaking** (`MessageTransport.subscribe`'s
+  signature widens, and a window channel stops delivering from windows other than its `target`);
+  rc channel, so a hard break with no alias.
+
+    **The bypass.** The demux gate read `origin === '' || allowedOrigins.includes(origin)`. That
+    `''` was the documented `MessagePort` exemption — but `''` is also
+    `MessageEvent.origin`'s **default value**, so any script sharing the page's realm could run
+    `window.dispatchEvent(new MessageEvent('message', { data: forgedEnvelope }))` and land a
+    forged envelope in reply-correlation, the responder registry and the event fan-out with the
+    `from` list **never consulted**. Reproduced end to end: a `respond('delete-account', …)`
+    handler ran with the attacker's payload and posted a reply, an `events()` subscription
+    delivered a forged delta, and a pending `request()` resolved with `{ pwned: true }`. The
+    realistic actors are a third-party analytics or tag-manager script and an extension content
+    script — both routinely on the page, neither supposed to be able to impersonate a trusted
+    iframe.
+
+    **Root cause: an in-band sentinel.** `''` was a fact about the _transport_ ("this one does not
+    attribute origins") asserted by a value carried in the _data_ channel. The transport knows;
+    the byte stream must not be the thing claiming it. The fix moves the assertion out of band:
+
+    - `MessageTransport.subscribe` is now
+      `(handler: (data: unknown, origin: string | null) => void) => () => void`. **`null`** means
+      _this transport does not attribute origins_ — unspellable from data, because
+      `MessageEvent.origin` is a `USVString` (`{ origin: null }` coerces to the _string_ `'null'`,
+      `{ origin: undefined }` to `''`; no realm delivers a JS `null`). Every string, `''`
+      included, is now an ordinary untrusted origin, and since `Origin` is
+      `` `https://${string}` | `http://${string}` `` no allow-list can contain `''`.
+    - The exemption is a decision about the **channel**, not about a message. `makeChannel`'s list
+      is `string[] | null`, and the gate is
+      `allowedOrigins === null ? true : origin !== null && allowedOrigins.includes(origin)`. So a
+      transport's `null` is honoured only by a builder that declares **no** origin policy, and on a
+      channel the caller gated it **fails closed**. This is deliberate: had `channel.over` honoured
+      a per-message `null`, any transport could have rendered the caller's `from` — including the
+      deliberately fail-closed `from: []` — incapable of changing one decision, which is verbatim
+      the inert-security-control defect [#795](https://github.com/rejifald/StitchAPI/pull/795)
+      removed from the port builder ([P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+      carve-out (b)). Strict `=== null`, never `== null` or `??` — if `undefined` also meant "no
+      origins", a transport that merely _forgot_ the second argument would reopen the hole.
+    - `channel.port` passes `null` and builds with no list at all.
+
+    **The origin change alone does not close the threat model, and `channel.window` needed two
+    more fixes.** `MessageEventInit.origin` is **author-settable** —
+    `new MessageEvent('message', { origin: 'https://app.example.com' }).origin` is exactly that —
+    so a same-realm script can spell any allow-listed origin and sail through a literal `includes`.
+    The `''` sentinel was only the laziest variant of the attack. `channel.window`'s listener now
+    drops any event whose `isTrusted` is **`false`**: the one bit a page script cannot forge
+    (`[LegacyUnforgeable]` in the DOM — own, non-configurable, survives prototype patching; `false`
+    on every constructed event, `true` only on user-agent delivery). It is written `=== false`, not
+    `!e.isTrusted`, so a polyfilled or non-DOM environment that omits the property is not silently
+    gated out of its own channel. A harness that must synthesise events uses `channel.over` with
+    its own transport.
+
+    **And `isTrusted` alone does not close it either, for a SAME-ORIGIN peer.** `isTrusted` stops
+    `dispatchEvent(new MessageEvent(…))`. It does not stop the real
+    `window.postMessage(forged, '*')`, which the user agent delivers as a genuinely trusted event
+    stamped with the **calling document's own origin**. Against a cross-origin peer that is
+    harmless — the attacker's origin is not on the list. Against a same-origin peer
+    (`origins: location.origin`, which is what the scalar shorthand means when parent and frame
+    share an origin) the forged origin **is** allow-listed and both checks pass. So the listener
+    also compares **`e.source`** to the channel's own target: a message must come from the peer
+    this channel talks to, not merely from an allow-listed origin. It holds in both directions
+    (parent→frame `iframe.contentWindow`, frame→parent `window.parent`), it is the standard
+    control (OWASP's postMessage guidance), and it is read in three states like the origin gate's
+    own `null` — a matching window passes, `null` (a dead browsing context, or a DOM that does not
+    attribute sources) **fails closed**, and an ABSENT property (a non-DOM global, an SSR pass, a
+    polyfill) is tolerated, exactly as `isTrusted === false` is. The actor this buys the most
+    against is the extension content script ADR 0009 names: it runs in an isolated world, so it
+    cannot call the page's handlers directly, but its `postMessage` arrives with the page's origin
+    and `isTrusted === true`. Against a same-realm script with arbitrary execution in that origin
+    it is defence in depth, not a boundary that was not already gone — but the guarantee this
+    surface publishes now matches what it enforces.
+
+    **A further behaviour change falls out of that:** a `channel.window` no longer delivers a
+    message from ANY window at an allow-listed origin — only from its own `target`. Two channels
+    on one page whose peers share an origin stop seeing each other's traffic. A caller who relied
+    on one window channel receiving from several frames should build one channel per frame (which
+    is what `target` always meant), or use `channel.over` with a transport of their own.
+
+    **The allow-list is now COPIED at construction.** `originList` returned the caller's own array
+    when one was passed, so the gate closed over live state: `allowed.push('https://evil.example.com')`
+    after the fact retargeted a running channel, and did it **past `assertOrigin`**, which only
+    ever sees the elements present at build time — the gate honoured strings the constructor
+    itself rejects (`allowed.length = 0` silently fail-closed a working channel the same way).
+    Not wire-reachable; it takes the app mutating its own config array, the realistic shape being
+    one `origins` array read from config and shared between channels. But this file's own header
+    and `PostMessageChannel`'s docblock both promise the policy is bound **once, at construction**,
+    and `[...list]` is what makes that true.
+
+- **`channel.private(transport)` — a fourth namespace member, for a transport with no origin
+  dimension.** Added _as part of_ the fix above, because `channel.over` is now always gated and
+  something has to carry the legitimate origin-less case: an Electron `ipcRenderer` bridge, a Web
+  Worker bridge, a native host bridge, a test fake. It takes **no origin policy at all**, exactly
+  as `channel.port` takes none, and that structural absence is the point — an option shaped like a
+  security control that cannot change a decision is worse than an asymmetry. `channel.port` is
+  this builder with the `MessagePort` wiring supplied. Bundle cost, re-measured in one pass with
+  the method the `#818` entry above states (the three figures previously quoted here were taken
+  against two different baselines and could not all be true): the namespace floor moves
+  24281 → 24363 B (+82) for the whole fix, of which `private` itself is +25 (24338 → 24363) and
+  the rest is the widened gate plus `channel.window`'s two listener checks.
+
+    **Migration — the sharp edge, stated plainly.** A hand-rolled `MessageTransport` that passes
+    `''` to mean "no origin dimension" — which is what `subscribe`'s **previous JSDoc explicitly
+    taught** — now has every inbound message **dropped** on a gated channel. It still typechecks,
+    so this is a _silent runtime_ break, and it is the one to look for. Pass `null`, or move the
+    channel to `channel.private`. The type widening itself is essentially non-breaking and is
+    pinned in `test-d`: `subscribe` is declared in method position, so parameter checking is
+    bivariant, and the inner handler is contravariant — an implementor annotating
+    `origin: string` still satisfies `MessageTransport`. The one residual _type_ break is a
+    consumer who reads `Parameters<MessageTransport['subscribe']>[0]` and dereferences `origin`,
+    now possibly `null`.
+
+    **Second behaviour change:** a **Worker realm using `channel.window`** receives parent messages
+    with `origin === ''` and will now **drop** them. Use `channel.port` or `channel.private`. The
+    case is narrower than it sounds and is stated here rather than buried: it is _inbound-only_,
+    because `DedicatedWorkerGlobalScope.postMessage` has no target-origin parameter, so
+    `channel.window`'s `post` throws there and no worker ever had a working round-trip — only an
+    `events()`-style inbound subscription with the target cast past its `Window` type was ever
+    live.
+
+    **Third, and the one most people will actually hit: a `jsdom` test environment.** jsdom's
+    `window.postMessage` delivers the message event with `isTrusted: true` but `origin: ''` (and
+    no `source`) — it does not attribute origins at all; its `Window.js` carries a literal
+    `// TODO: event.origin`. Verified on the `jsdom@30` this repo resolves. That event clears the
+    `isTrusted` guard and is then **dropped by the origin gate**, because no `Origin`-typed
+    allow-list can contain `''`. Before this change the in-band sentinel delivered it. So a
+    consumer running `environment: 'jsdom'` in vitest or jest, whose iframe-integration test was
+    green against `channel.window({ target, origins: 'https://app.example.com' })`, now sees
+    **nothing** arrive: no `respond` handler runs, no `events()` delta lands, and a `request()`
+    hangs until the engine's `timeout`. Nothing throws and nothing is logged, which is exactly why
+    it is called out here. The fix in a test is not `channel.over` — that builder is now **always**
+    gated, so it drops `''` too — it is **`channel.private`** with a transport of your own, which
+    is the seam that exists for a primitive with no origin dimension, and a jsdom window is
+    precisely that. The same applies to any DOM test double that does not attribute origins; check
+    yours rather than assume.
+
+    [ADR 0009](docs/adr/0009-postmessage-surface.md) carries the full argument (2026-09-15
+    amendment), and [CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+    carve-out (b) — whose applied instance quoted the old gate verbatim as its proof — is restated:
+    the port exemption stands, but as a structural absence rather than a short-circuit.
 
 - **`@stitchapi/swr` redacts caller-registered credential headers from the cache key.**
   `swrKey` forks query-core's key derivation rather than importing it — swr is one of the three
@@ -3539,7 +3730,8 @@ causality push:
 - **Playground:** the browser Worker runner, handler registration, incremental
   streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.8...HEAD
+[1.0.0-rc.8]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...v1.0.0-rc.8
 [1.0.0-rc.7]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.4...v1.0.0-rc.5

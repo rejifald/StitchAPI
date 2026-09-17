@@ -78,7 +78,8 @@ jobs:
     # Pre-publish browser gate: the Playwright harness (real Chromium) proves the
     # sandbox CSP + Worker egress blocking and that a RunResult.trace reaches the
     # playground DAG. A release waits on it so we never publish a broken browser
-    # sandbox. Mirrors the `e2e` job in verify.yml.
+    # sandbox. Mirrors the `e2e` job in verify.yml, including core's own real-browser suite
+    # (the postMessage window-peer binding), so a release never ships that binding untested.
     e2e:
         needs: preflight
         runs-on: ubuntu-latest
@@ -92,6 +93,7 @@ jobs:
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter @stitchapi/docs test:e2e:install
+            - run: pnpm --filter stitchapi test:browser
             - run: pnpm --filter @stitchapi/docs test:e2e
 
     publish-npm:
