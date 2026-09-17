@@ -1990,6 +1990,48 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`stitchapi/postmessage` — several same-origin frames on one page no longer hear each other.**
+  A page that renders many frames of ONE origin with a `channel.window` per frame — a gallery of
+  preview tiles, each a `blob:` document (which inherits its creator's origin) or a page off one
+  CDN host — handed every frame's messages to every channel. Every window channel listens on the
+  page's single global `'message'` event, and the gate checked the origin alone, which cannot tell
+  same-origin frames apart. So tiles resized on each other's `content-height` and went ready on
+  each other's `ready`; a responder answered requests its frame never sent and posted the answer
+  to its own frame; and a frame's own channel accepted a sibling frame's message as if the host
+  had sent it. Reproduced in Chromium against `1.0.0-rc.5` and against `main` before the fix.
+
+    The fix is the peer binding described under **Security** below: a window channel accepts a
+    message only when `event.source` IS its `target`, on top of the origin gate, in both
+    directions (`iframe.contentWindow` on the host side, `window.parent` in the frame). Three
+    properties of it are worth knowing if you depend on it:
+
+    - **Navigation and reload keep the binding.** They keep the frame's `WindowProxy`, so a channel
+      survives a reloaded document or a re-minted `blob:` `src` with no re-subscription. The origin
+      gate still matters beside it: a frame navigated to a foreign origin keeps the same
+      `WindowProxy`, and only the origin drops it.
+    - **A remount does not.** A new `<iframe>` element is a new window. A `Window` passed directly
+      stays bound to the discarded one; a thunk (`target: () => frame.contentWindow!`) is resolved
+      on every post and every inbound message, so it follows the new element.
+    - **A thunk that resolves to nothing accepts nothing.** `ref.current?.contentWindow` is
+      `undefined` before mount, and a detached iframe's `contentWindow` is `null`. The check as
+      first written, `source !== peer`, let a `null` source equal a `null` peer and deliver. It now
+      drops the message whenever the target resolves to `null` or `undefined`. This is hardening
+      rather than a demonstrated exploit: Chromium delivered no `null`-source window message in
+      probing.
+
+    `OriginOptions.from` is re-documented to match: it widens the **origins** accepted from
+    `target` (a popup that finishes a sign-in hop on another origin), never the set of windows.
+    The binding is now proven in a real browser as well as in the node suite
+    (`packages/core/test/browser`, run with `pnpm --filter stitchapi test:browser` and in CI's `e2e`
+    job), because the property it rests on, `WindowProxy` identity, is exactly what a node fake can
+    only assume.
+
+    **Upgrading from `1.0.0-rc.5`, `rc.6` or `rc.7`:** the window builder is also renamed in this
+    release. `windowChannel({ target, targetOrigin, allowedOrigins })` is now
+    `channel.window({ target, origins })` (the `channel` namespace entry under **Changed**). A
+    jsdom-based test of a window channel now receives nothing (the migration notes under
+    **Security**).
+
 - **`@stitchapi/express` and `@stitchapi/fastify`: a mid-stream throw now ends the SSE response with
   an `event: error` frame instead of ending it silently.**
   ([CONTRACT.md P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity)) Both
