@@ -69,14 +69,14 @@
         "zod": "^4.4.3"
     },
     "devDependencies": {
-        "@types/node": "^26.4.1",
+        "@types/node": "^26.6.1",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
         "vitest": "^4.1.11",
-        "@huggingface/transformers": "^4.2.0"
+        "@huggingface/transformers": "^4.3.0"
     },
     "peerDependencies": {
-        "@huggingface/transformers": "^4.2.0"
+        "@huggingface/transformers": "^4.3.0"
     },
     "peerDependenciesMeta": {
         "@huggingface/transformers": {
