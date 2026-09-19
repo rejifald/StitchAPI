@@ -6,6 +6,7 @@
 import {
     type ChannelOptions,
     type MessageTransport,
+    type Origin,
     type PostMessageChannel,
     type WindowChannelOptions,
     channel,
@@ -562,7 +563,9 @@ interface EventTargetish {
 }
 
 const withMessageListeners = async (
-    body: (deliver: (origin: string, data: unknown) => void) => Promise<void>,
+    body: (
+        deliver: (origin: string, data: unknown, source?: unknown) => void,
+    ) => Promise<void>,
 ): Promise<void> => {
     const listeners = new Set<(e: MessageEvent) => void>();
     const g = globalThis as unknown as EventTargetish;
@@ -575,8 +578,31 @@ const withMessageListeners = async (
         if (t === 'message') listeners.delete(l);
     };
     try {
-        await body((origin, data) => {
-            for (const l of [...listeners]) l({ data, origin } as MessageEvent);
+        await body((origin, data, source) => {
+            // `isTrusted: true` models USER-AGENT delivery, which is what a real
+            // `window.postMessage` from the peer frame produces. It is required now, and the fact
+            // that it is required is the signal the `isTrusted` gate is live: `channel.window`
+            // drops a synthesised event (`isTrusted === false`) before the origin gate runs,
+            // because `MessageEventInit.origin` is author-settable and the origin gate therefore
+            // cannot tell a forgery from the real thing. The forged half is exercised against a
+            // REAL `EventTarget` + REAL `MessageEvent` in `withRealMessageTarget` below.
+            //
+            // `source` is OMITTED unless a caller passes one, which is itself under test: the
+            // listener tolerates an ABSENT source (a non-DOM global, an SSR pass, a polyfill —
+            // the same tolerance `isTrusted === false` has) and gates a PRESENT one. The
+            // same-realm `window.postMessage` forgery — trusted, allow-listed origin, wrong
+            // source — is the `source`-carrying case below.
+            for (const l of [...listeners])
+                l(
+                    (source === undefined
+                        ? { data, origin, isTrusted: true }
+                        : {
+                              data,
+                              origin,
+                              isTrusted: true,
+                              source,
+                          }) as MessageEvent,
+                );
         });
     } finally {
         g.addEventListener = realAdd;
@@ -591,6 +617,520 @@ const settle = (): Promise<void> =>
             r();
         }, 10),
     );
+
+// ---------------------------------------------------------------------------
+// the forged-event attacker path (the in-band `''` sentinel regression)
+// ---------------------------------------------------------------------------
+// `withMessageListeners` above fakes `addEventListener` and hands the listener an object literal,
+// which is the right tool for asserting WHICH origins the gate admits but the wrong one for the
+// attack: an attacker does not get to choose the event's internals. This harness installs a REAL
+// `EventTarget` as the global message target, so the test dispatches a REAL `MessageEvent` exactly
+// as a script sharing the page's realm would:
+//
+//     window.dispatchEvent(new MessageEvent('message', { data: forged, origin: TRUSTED }))
+//
+// Everything about that event is then the platform's, not the test's — in particular `origin` and
+// `isTrusted`, which is precisely what is under test.
+interface RealTargetHandle {
+    dispatch: (init: MessageEventInit) => void;
+}
+
+const withRealMessageTarget = async (
+    body: (handle: RealTargetHandle) => Promise<void>,
+): Promise<void> => {
+    const target = new EventTarget();
+    const g = globalThis as unknown as EventTargetish;
+    const realAdd = g.addEventListener;
+    const realRemove = g.removeEventListener;
+    g.addEventListener = (t, l) => {
+        target.addEventListener(t, l as unknown as EventListener);
+    };
+    g.removeEventListener = (t, l) => {
+        target.removeEventListener(t, l as unknown as EventListener);
+    };
+    try {
+        await body({
+            dispatch: (init) => {
+                target.dispatchEvent(new MessageEvent('message', init));
+            },
+        });
+    } finally {
+        g.addEventListener = realAdd;
+        g.removeEventListener = realRemove;
+    }
+};
+
+describe('the origin gate has no in-band sentinel (security regression)', () => {
+    // The PLATFORM facts the whole fix rests on, pinned rather than asserted in a comment. If any
+    // of these ever changes, the sentinel argument below changes with it.
+    test('MessageEvent cannot spell the out-of-band sentinel, and defaults to the old in-band one', () => {
+        // `origin` is a USVString: there is no way to deliver a JS `null` through it. The casts
+        // are the point, not noise — `MessageEventInit.origin` is typed `string`, so these two
+        // shapes are what a JS caller or an `as any` produces, and the WebIDL coercion is what
+        // makes the out-of-band sentinel unspellable from data.
+        expect(
+            new MessageEvent('message', {
+                origin: null,
+            } as unknown as MessageEventInit).origin,
+        ).toBe('null'); // the STRING — not an `Origin`, so it stays unallow-listable
+        expect(
+            new MessageEvent('message', {
+                origin: undefined,
+            } as unknown as MessageEventInit).origin,
+        ).toBe('');
+        // …and `''` is its DEFAULT, which is exactly why `''` could never be a trust signal.
+        expect(new MessageEvent('message', {}).origin).toBe('');
+        // `isTrusted` is `[LegacyUnforgeable]`: `false` on a constructed event, and the init dict
+        // cannot set it. This is the only bit a same-realm script cannot forge.
+        expect(new MessageEvent('message', {}).isTrusted).toBe(false);
+        expect(
+            new MessageEvent('message', {
+                isTrusted: true,
+            } as MessageEventInit).isTrusted,
+        ).toBe(false);
+    });
+
+    // THE DEFECT, at the `channel.over` layer where no `isTrusted` gate exists to mask it: the gate
+    // used to read `origin === '' || allowed.includes(origin)`, so a message stamped `''` was waved
+    // through on ANY channel. `''` is now an ordinary untrusted string.
+    test('an inbound message stamped with the empty origin is DROPPED on a gated channel', async () => {
+        const seen: unknown[] = [];
+        const validated: unknown[] = [];
+        let handler:
+            ((data: unknown, origin: string | null) => void) | undefined;
+        const transport: MessageTransport = {
+            post: () => undefined,
+            subscribe: (h) => {
+                handler = h;
+                return () => undefined;
+            },
+        };
+        const ch = channel.over(transport, { from: [ORIGIN_B] });
+        ch.respond(
+            'ping',
+            (p) => {
+                seen.push(p);
+                return 'pong';
+            },
+            {
+                // Proves the gate runs FIRST: an implementation that validated then gated would
+                // tick this counter even while dropping the message.
+                input: (v: unknown): boolean => {
+                    validated.push(v);
+                    return true;
+                },
+            },
+        );
+        handler?.({ type: 'ping', id: '1', payload: { n: 1 } }, '');
+        await settle();
+        expect(seen).toEqual([]);
+        expect(validated).toEqual([]);
+        await ch.close();
+    });
+
+    // The sibling of the above: the literal `'null'` a sandboxed frame posts with is likewise just
+    // a string, and is NOT the out-of-band sentinel.
+    test("the literal origin 'null' is DROPPED and is not the sentinel", async () => {
+        const seen: unknown[] = [];
+        let handler:
+            ((data: unknown, origin: string | null) => void) | undefined;
+        const ch = channel.over(
+            {
+                post: () => undefined,
+                subscribe: (h) => {
+                    handler = h;
+                    return () => undefined;
+                },
+            },
+            { from: [ORIGIN_B] },
+        );
+        ch.respond('ping', (p) => {
+            seen.push(p);
+            return 'pong';
+        });
+        handler?.({ type: 'ping', payload: { n: 1 } }, 'null');
+        await settle();
+        expect(seen).toEqual([]);
+        await ch.close();
+    });
+
+    // The allow-list must not be inert — the #795 / P24 carve-out (b) bar. A transport's
+    // per-message "I have no origins" claim CANNOT widen a channel the caller gated, so it fails
+    // closed. `from: []` is the sharpest case: a deliberately fail-closed list stays fail-closed.
+    test.each([
+        ['a populated list', [ORIGIN_B] as const],
+        ['the deliberately empty list', [] as const],
+    ])(
+        'a transport passing `null` is DROPPED on a channel gated by %s',
+        async (_label, from) => {
+            const seen: unknown[] = [];
+            let handler:
+                ((data: unknown, origin: string | null) => void) | undefined;
+            const ch = channel.over(
+                {
+                    post: () => undefined,
+                    subscribe: (h) => {
+                        handler = h;
+                        return () => undefined;
+                    },
+                },
+                { from: [...from] },
+            );
+            ch.respond('ping', (p) => {
+                seen.push(p);
+                return 'pong';
+            });
+            handler?.({ type: 'ping', payload: { n: 1 } }, null);
+            await settle();
+            expect(seen).toEqual([]);
+            await ch.close();
+        },
+    );
+
+    // The policy is bound at CONSTRUCTION, not ALIASED. `originList` used to hand `makeChannel`
+    // the CALLER's array when one was passed, and the gate closed over it — so `allowed.push(…)`
+    // retargeted a live channel, and `allowed.length = 0` silently fail-closed a working one.
+    // The sharper half is the second assertion: an entry added afterwards skipped `assertOrigin`
+    // entirely, so the gate honoured a string the constructor itself rejects. Not wire-reachable
+    // — it takes the app mutating its own config array — but the file's first paragraph and
+    // `PostMessageChannel`'s docblock both promise binding ONCE at construction, and this is what
+    // makes that promise true.
+    test('mutating the array passed as `from` after construction cannot retarget the gate', async () => {
+        const allowed: Origin[] = [ORIGIN_B];
+        const seen: unknown[] = [];
+        let handler:
+            ((data: unknown, origin: string | null) => void) | undefined;
+        const ch = channel.over(
+            {
+                post: () => undefined,
+                subscribe: (h) => {
+                    handler = h;
+                    return () => undefined;
+                },
+            },
+            { from: allowed },
+        );
+        ch.respond('ping', (p) => {
+            seen.push(p);
+            return 'pong';
+        });
+
+        // (1) a widening push does not widen the gate…
+        allowed.push(ORIGIN_A);
+        handler?.({ type: 'ping', payload: { n: 1 } }, ORIGIN_A);
+        // (2) …and an entry the CONSTRUCTOR would have thrown on is not honoured either. The cast
+        //     is the point: `channel.over(t, { from: 'not-an-origin' })` throws, so a gate that
+        //     accepted this string was routing around its own validation.
+        allowed.push('not-an-origin' as unknown as Origin);
+        handler?.({ type: 'ping', payload: { n: 2 } }, 'not-an-origin');
+        await settle();
+        expect(seen).toEqual([]);
+
+        // (3) …and emptying it cannot fail-close a channel that was built open.
+        allowed.length = 0;
+        handler?.({ type: 'ping', payload: { n: 3 } }, ORIGIN_B);
+        await settle();
+        expect(seen).toEqual([{ n: 3 }]);
+        await ch.close();
+    });
+
+    // …and the exemption still WORKS where it is declared in code. `channel.private` takes no
+    // origin policy at all, so a `null`-origin message is delivered. This is the port bypass made
+    // provable without a real `MessagePort`.
+    test('an UNGATED channel (`channel.private`) delivers a `null`-origin message', async () => {
+        const seen: unknown[] = [];
+        let handler:
+            ((data: unknown, origin: string | null) => void) | undefined;
+        const ch = channel.private({
+            post: () => undefined,
+            subscribe: (h) => {
+                handler = h;
+                return () => undefined;
+            },
+        });
+        ch.respond('ping', (p) => {
+            seen.push(p);
+            return 'pong';
+        });
+        handler?.({ type: 'ping', payload: { n: 1 } }, null);
+        await settle();
+        expect(seen).toEqual([{ n: 1 }]);
+        await ch.close();
+    });
+
+    // THE HEADLINE REGRESSION — the attack itself, on the real `channel.window` inbound path, with
+    // a real `MessageEvent` dispatched at a real `EventTarget`. Before this commit both variants
+    // reached the responder and the reply correlation: `origin: ''` slipped the in-band sentinel,
+    // and `origin: <allow-listed>` slipped the literal `includes` because `MessageEventInit.origin`
+    // is author-settable. Now neither does.
+    //
+    // WHAT THESE TWO CASES DO AND DO NOT DISCRIMINATE, stated because the labels alone mislead
+    // and mutation testing is what settles it. `withRealMessageTarget` dispatches a CONSTRUCTED
+    // `MessageEvent`: its `isTrusted` is always `false` AND its `source` defaults to `null`, so
+    // `channel.window` returns twice over before the origin gate is reached. Mutation-checked:
+    // restoring `origin === '' ||` in `makeChannel`'s gate leaves BOTH variants green (only the
+    // `channel.over` test above goes red), and so does removing the `isTrusted` guard (the peer
+    // check drops the same events). These are end-to-end assertions that the real attack reaches
+    // NOTHING — worth having, since they drive every demux path at once — but they pin no single
+    // guard. Each guard's own discriminating test is elsewhere: the gate's is the `channel.over`
+    // case above, where no `isTrusted` guard exists to mask it; `isTrusted`'s is the
+    // peer-as-`source` case below; the peer check's is the same-origin `window.postMessage` case
+    // below.
+    test.each([
+        ['the empty origin (defence in depth: `isTrusted` drops it first)', ''],
+        ['a correctly-spelled allow-listed origin', 'https://app.example.com'],
+    ])(
+        'a same-realm forged MessageEvent carrying %s reaches nothing',
+        async (_label, forgedOrigin) => {
+            await withRealMessageTarget(async ({ dispatch }) => {
+                const posts: { msg: unknown; origin: string }[] = [];
+                const ch = channel.window({
+                    target: fakeWindow(posts),
+                    origins: 'https://app.example.com',
+                });
+
+                const handled: unknown[] = [];
+                ch.respond('delete-account', (p) => {
+                    handled.push(p);
+                    return { deleted: true };
+                });
+
+                // A real in-flight request, so the forged REPLY path is covered too: an attacker
+                // who guesses (or reads) the minted id must not be able to resolve it.
+                const events: unknown[] = [];
+                const sub = ch.events('price-tick');
+                const drain = (async () => {
+                    for await (const e of sub.stream()) {
+                        if (e.type === 'delta') events.push(e.chunk);
+                    }
+                })();
+                drain.catch(() => undefined);
+
+                let settled: unknown = 'NOT-SETTLED';
+                const pending = ch.request('slow', { timeout: { each: 60 } });
+                const p = pending({ body: {} }).then(
+                    (v) => (settled = { ok: v }),
+                    () => (settled = 'REJECTED'),
+                );
+                await settle();
+                const sent = posts.find(
+                    (x) => (x.msg as { type?: string }).type === 'slow',
+                );
+                const mintedId = (sent?.msg as { id?: string } | undefined)?.id;
+                expect(typeof mintedId).toBe('string');
+
+                const postsBefore = posts.length;
+
+                // === the attack: three forged envelopes, one per demux path ===
+                dispatch({
+                    data: {
+                        type: 'delete-account',
+                        id: 'a1',
+                        payload: { all: true },
+                    },
+                    origin: forgedOrigin,
+                });
+                dispatch({
+                    data: { type: 'price-tick', payload: { px: 999 } },
+                    origin: forgedOrigin,
+                });
+                dispatch({
+                    data: {
+                        type: 'slow-result',
+                        id: mintedId,
+                        payload: { pwned: true },
+                    },
+                    origin: forgedOrigin,
+                });
+                await settle();
+
+                // No responder ran, and nothing was posted in reply.
+                expect(handled).toEqual([]);
+                expect(posts.length).toBe(postsBefore);
+                // No event delta was delivered.
+                expect(events).toEqual([]);
+                // No pending request resolved — it is still in flight, and goes on to reject via
+                // the engine's own timeout rather than resolving with the attacker's payload.
+                expect(settled).toBe('NOT-SETTLED');
+
+                await p;
+                expect(settled).toBe('REJECTED');
+                await ch.close();
+                await drain.catch(() => undefined);
+            });
+        },
+    );
+
+    // The `isTrusted` guard's OWN discriminating coverage. Every forgery above is now stopped by
+    // the peer check as well — a constructed `MessageEvent`'s `source` defaults to `null`, which
+    // fails closed — so nothing above can tell which guard did the work. Here the forged event
+    // ALSO spells the right source: the channel's target is a real `MessagePort` (its
+    // `postMessage` is the only thing the transport asks of a target, and a `MessagePort` is the
+    // one `source` value a constructed `MessageEvent` accepts outside a DOM). Origin allow-listed,
+    // source correct — `isTrusted` is all that is left, and it is the one bit a page script
+    // cannot spell.
+    test("a synthesised event naming the channel's own peer as `source` is still dropped", async () => {
+        const pair = new MessageChannel();
+        try {
+            await withRealMessageTarget(async ({ dispatch }) => {
+                const ch = channel.window({
+                    target: pair.port1 as unknown as Window,
+                    origins: 'https://app.example.com',
+                });
+                const handled: unknown[] = [];
+                ch.respond('delete-account', (p) => {
+                    handled.push(p);
+                    return { deleted: true };
+                });
+                dispatch({
+                    data: {
+                        type: 'delete-account',
+                        id: 'a1',
+                        payload: { all: true },
+                    },
+                    origin: 'https://app.example.com',
+                    source: pair.port1,
+                });
+                await settle();
+                expect(handled).toEqual([]);
+                await ch.close();
+            });
+        } finally {
+            pair.port1.close();
+            pair.port2.close();
+        }
+    });
+
+    // The other half of the same gate: a REAL user-agent delivery is unaffected. Node cannot mint
+    // an `isTrusted: true` event through `dispatchEvent`, so this half rides the object-literal
+    // harness — which is exactly why that harness now stamps `isTrusted: true`.
+    test('a genuine user-agent delivery on the same channel still arrives', async () => {
+        await withMessageListeners(async (deliver) => {
+            const ch = channel.window({
+                target: fakeWindow([]),
+                origins: 'https://app.example.com',
+            });
+            const handled: unknown[] = [];
+            ch.respond('delete-account', (p) => {
+                handled.push(p);
+                return { deleted: true };
+            });
+            deliver('https://app.example.com', {
+                type: 'delete-account',
+                id: 'real',
+                payload: { all: true },
+            });
+            await settle();
+            expect(handled).toEqual([{ all: true }]);
+            await ch.close();
+        });
+    });
+
+    // THE VECTOR `isTrusted` DOES NOT CLOSE — and the reason the peer check exists. A script
+    // sharing the page's realm can skip `dispatchEvent` entirely and call the REAL
+    // `window.postMessage(forged, '*')`. The user agent then delivers a genuinely trusted event
+    // stamped with the CALLING document's own origin, so `isTrusted` is really `true` and the
+    // origin really is the page's. Cross-origin that is harmless (the attacker's origin is not on
+    // the list); with a SAME-ORIGIN peer — `origins: location.origin`, which is what the scalar
+    // shorthand means when parent and frame share an origin — it is allow-listed, and before the
+    // `source` check both guards waved it through. The extension content script ADR 0009 names is
+    // exactly this actor: isolated world, so it cannot call the page's handlers, but its
+    // `postMessage` arrives with the page's origin and `isTrusted === true`.
+    //
+    // The OBJECT-LITERAL harness is the right one here precisely because the event under test is
+    // GENUINE: `isTrusted: true` is what user-agent delivery looks like and Node cannot mint one
+    // through `dispatchEvent`. What is forged is the SOURCE WINDOW, which is the whole point.
+    test('a same-origin `window.postMessage` forgery — trusted, allow-listed, wrong `source` — reaches nothing', async () => {
+        await withMessageListeners(async (deliver) => {
+            const posts: { msg: unknown; origin: string }[] = [];
+            const peer = fakeWindow(posts); // the iframe this channel talks to
+            const attacker = fakeWindow([]); // any other window in the same realm
+            const ch = channel.window({
+                target: peer,
+                origins: 'https://app.example.com',
+            });
+
+            const handled: unknown[] = [];
+            ch.respond('delete-account', (p) => {
+                handled.push(p);
+                return { deleted: true };
+            });
+            const events: unknown[] = [];
+            const sub = ch.events('price-tick');
+            const drain = (async () => {
+                for await (const e of sub.stream()) {
+                    if (e.type === 'delta') events.push(e.chunk);
+                }
+            })();
+            drain.catch(() => undefined);
+            await settle();
+            const postsBefore = posts.length;
+
+            const forged = {
+                type: 'delete-account',
+                id: 'atk',
+                payload: { user: 'victim' },
+            };
+            deliver('https://app.example.com', forged, attacker);
+            deliver(
+                'https://app.example.com',
+                { type: 'price-tick', payload: { px: 999 } },
+                attacker,
+            );
+            await settle();
+            expect(handled).toEqual([]);
+            expect(events).toEqual([]);
+            expect(posts.length).toBe(postsBefore);
+
+            // …and the SAME envelope from the channel's REAL peer is delivered. That is what makes
+            // this a test of the peer check rather than of the origin gate: origin, `isTrusted`
+            // and payload are byte-identical across the two deliveries, and only `source` differs.
+            deliver('https://app.example.com', forged, peer);
+            await settle();
+            expect(handled).toEqual([{ user: 'victim' }]);
+
+            await ch.close();
+            await drain.catch(() => undefined);
+        });
+    });
+
+    // The three states of `source`, pinned. `null` is a REAL event whose source browsing context
+    // is gone (or a DOM that does not attribute sources — jsdom) and cannot BE the peer, so it
+    // fails closed, the same reading the origin gate gives its own `null`. ABSENT is an
+    // environment that has no such property at all, and must not be gated out of its own channel
+    // — the tolerance `isTrusted === false` has, and the state every other delivery in this file
+    // exercises by omitting the argument.
+    test.each([
+        ['`null` (a dead browsing context) fails closed', null, []],
+        ['ABSENT (a non-DOM environment) is tolerated', undefined, [{ n: 1 }]],
+    ])(
+        'a trusted, allow-listed event whose `source` is %s',
+        async (_label, source, expected) => {
+            await withMessageListeners(async (deliver) => {
+                const peer = fakeWindow([]);
+                const ch = channel.window({
+                    target: peer,
+                    origins: 'https://app.example.com',
+                });
+                const handled: unknown[] = [];
+                ch.respond('ping', (p) => {
+                    handled.push(p);
+                    return 'pong';
+                });
+                // Passing `undefined` IS omitting the property — the helper keys the two states off
+                // exactly that, so `null` must be passed through rather than coalesced away.
+                deliver(
+                    'https://app.example.com',
+                    { type: 'ping', id: 'x', payload: { n: 1 } },
+                    source,
+                );
+                await settle();
+                expect(handled).toEqual(expected);
+                await ch.close();
+            });
+        },
+    );
+});
 
 describe('channel.window guards', () => {
     test('a wildcard origin throws at runtime, through the scalar shorthand (defense in depth beyond the Origin type)', () => {
@@ -791,11 +1331,15 @@ describe('channel.window guards', () => {
         });
     });
 
+    // `from` widens the ORIGINS one window may answer from, never the set of windows: a window
+    // channel is bound to its `target` (see the peer-binding block below). So every delivery here
+    // comes from that one window — a frame that moves between the app and widget origins.
     test('`from` widens the inbound gate without widening the outbound address', async () => {
         await withMessageListeners(async (deliver) => {
             const posts: { msg: unknown; origin: string }[] = [];
+            const frame = fakeWindow(posts);
             const ch = channel.window({
-                target: fakeWindow(posts),
+                target: frame,
                 origins: {
                     to: 'https://app.example.com',
                     from: [
@@ -818,27 +1362,28 @@ describe('channel.window guards', () => {
             // Inbound: BOTH listed origins reach the responder. This is the half the envelope
             // exists to add, and the ONLY assertion that can see it — `posts[0].origin` comes
             // from `policy.to` alone, so a gate that silently narrowed back to `[to]` (turning a
-            // working parent/app/widget channel into one that drops every widget message, with
-            // no error) would leave a post-shape assertion green.
-            deliver('https://app.example.com', {
-                type: 'probe',
-                id: 'a',
-                payload: { via: 'app' },
-            });
-            deliver('https://widget.example.com', {
-                type: 'probe',
-                id: 'b',
-                payload: { via: 'widget' },
-            });
+            // working app→widget channel into one that drops every widget message, with no
+            // error) would leave a post-shape assertion green.
+            deliver(
+                'https://app.example.com',
+                { type: 'probe', id: 'a', payload: { via: 'app' } },
+                frame,
+            );
+            deliver(
+                'https://widget.example.com',
+                { type: 'probe', id: 'b', payload: { via: 'widget' } },
+                frame,
+            );
             await settle();
             expect(seen).toEqual([{ via: 'app' }, { via: 'widget' }]);
 
-            // …and an origin outside `from` is still dropped before dispatch.
-            deliver('https://evil.example.com', {
-                type: 'probe',
-                id: 'c',
-                payload: { via: 'evil' },
-            });
+            // …and an origin outside `from` is still dropped before dispatch — from the SAME
+            // window, so it is the origin gate doing it, not the peer check.
+            deliver(
+                'https://evil.example.com',
+                { type: 'probe', id: 'c', payload: { via: 'evil' } },
+                frame,
+            );
             await settle();
             expect(seen).toEqual([{ via: 'app' }, { via: 'widget' }]);
 
@@ -876,6 +1421,264 @@ describe('channel.window guards', () => {
             await settle();
             expect(seen).toEqual([{ via: 'widget' }]);
             await ch.close();
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// channel.window is bound to its PEER — several frames on one page
+// ---------------------------------------------------------------------------
+// The shape that surfaced this: a design gallery rendering many preview tiles, each an iframe of
+// the SAME origin (a `blob:` document inherits its creator's origin; a CDN serves every tile from
+// one host), each with its own host channel. Every `channel.window` listens on the page's ONE
+// global `'message'` event, so an origin-only gate handed every tile's `ready` and
+// `content-height` to every channel: tiles resized and went ready on each other's messages. The
+// origin cannot tell the tiles apart; the posting window can. These pin the binding at the level
+// a consumer sees it — `events` and `respond` across channels — plus the thunk and navigation
+// semantics it rests on. The real-browser proof, with true `WindowProxy` identity across reload,
+// re-mint and remount, is `test/browser/postmessage-window-peer.browser.ts`.
+describe('channel.window is bound to its peer (several frames on one page)', () => {
+    const HOST = 'https://host.example.com';
+
+    // Drain `events(type)` into `into`; the returned drain settles once the channel closes.
+    const hear = (
+        ch: PostMessageChannel,
+        type: string,
+        into: unknown[],
+    ): Promise<void> =>
+        (async () => {
+            for await (const e of ch.events(type).stream()) {
+                if (e.type === 'delta') into.push(e.chunk);
+            }
+        })().catch(() => undefined);
+
+    test("two same-origin frames, two channels: each hears only its own frame's events", async () => {
+        await withMessageListeners(async (deliver) => {
+            const frameA = fakeWindow([]);
+            const frameB = fakeWindow([]);
+            // The gallery's own spelling: a thunk over each tile's frame, one origin for all.
+            const tileA = channel.window({
+                target: () => frameA,
+                origins: HOST,
+            });
+            const tileB = channel.window({
+                target: () => frameB,
+                origins: HOST,
+            });
+            const heardA: unknown[] = [];
+            const heardB: unknown[] = [];
+            const drains = [
+                hear(tileA, 'template/ready', heardA),
+                hear(tileA, 'template/content-height', heardA),
+                hear(tileB, 'template/ready', heardB),
+                hear(tileB, 'template/content-height', heardB),
+            ];
+            await settle();
+
+            deliver(HOST, { type: 'template/ready', payload: 'A' }, frameA);
+            deliver(
+                HOST,
+                { type: 'template/content-height', payload: 111 },
+                frameA,
+            );
+            deliver(HOST, { type: 'template/ready', payload: 'B' }, frameB);
+            deliver(
+                HOST,
+                { type: 'template/content-height', payload: 222 },
+                frameB,
+            );
+            await settle();
+
+            expect(heardA).toEqual(['A', 111]);
+            expect(heardB).toEqual(['B', 222]);
+
+            await tileA.close();
+            await tileB.close();
+            await Promise.all(drains);
+        });
+    });
+
+    test('a request from one frame runs only its own channel responder, and the answer goes back to that frame', async () => {
+        await withMessageListeners(async (deliver) => {
+            const postsA: { msg: unknown; origin: string }[] = [];
+            const postsB: { msg: unknown; origin: string }[] = [];
+            const frameA = fakeWindow(postsA);
+            const frameB = fakeWindow(postsB);
+            const tileA = channel.window({
+                target: () => frameA,
+                origins: HOST,
+            });
+            const tileB = channel.window({
+                target: () => frameB,
+                origins: HOST,
+            });
+            const ranA: unknown[] = [];
+            const ranB: unknown[] = [];
+            tileA.respond('focus', (p) => {
+                ranA.push(p);
+                return { tile: 'A' };
+            });
+            tileB.respond('focus', (p) => {
+                ranB.push(p);
+                return { tile: 'B' };
+            });
+
+            deliver(
+                HOST,
+                { type: 'focus', id: 'q1', payload: { selector: '#hero' } },
+                frameB,
+            );
+            await settle();
+
+            // Before the binding, tile A ALSO ran — and answered frame A, which never asked.
+            expect(ranA).toEqual([]);
+            expect(postsA).toEqual([]);
+            expect(ranB).toEqual([{ selector: '#hero' }]);
+            expect(postsB).toEqual([
+                {
+                    msg: {
+                        type: 'focus-result',
+                        id: 'q1',
+                        payload: { tile: 'B' },
+                    },
+                    origin: HOST,
+                },
+            ]);
+
+            await tileA.close();
+            await tileB.close();
+        });
+    });
+
+    // Navigation and reload keep a frame's `WindowProxy` — `iframe.contentWindow` is the same
+    // object before and after (the browser test asserts it) — so the binding survives both with
+    // no re-subscription. That is also why the origin gate is NOT redundant beside it: the same
+    // window can navigate to a foreign origin, and only the origin tells those documents apart.
+    test('the same window across navigation: the peer check keeps matching, the origin gate still decides', async () => {
+        await withMessageListeners(async (deliver) => {
+            const frame = fakeWindow([]);
+            const ch = channel.window({ target: frame, origins: HOST });
+            const heard: unknown[] = [];
+            const drain = hear(ch, 'template/ready', heard);
+            await settle();
+
+            deliver(HOST, { type: 'template/ready', payload: 1 }, frame);
+            // The frame navigates cross-origin: the same window, a foreign document.
+            deliver(
+                'https://elsewhere.example.com',
+                { type: 'template/ready', payload: 2 },
+                frame,
+            );
+            // …then reloads back at the allowed origin: still the same window.
+            deliver(HOST, { type: 'template/ready', payload: 3 }, frame);
+            await settle();
+
+            expect(heard).toEqual([1, 3]);
+            await ch.close();
+            await drain;
+        });
+    });
+
+    // A REMOUNT is different: a new `<iframe>` element is a new browsing context with a new
+    // `WindowProxy`. A thunk target is resolved on every inbound message, so it follows the
+    // remount, and the old window stops matching the moment the thunk stops returning it. (A
+    // `Window` passed directly stays bound to the old context — the thunk is the form to use
+    // when the element can be replaced.)
+    test('a thunk target is resolved per inbound message, so it follows a remount', async () => {
+        await withMessageListeners(async (deliver) => {
+            const first = fakeWindow([]);
+            let mounted = first;
+            const ch = channel.window({
+                target: () => mounted,
+                origins: HOST,
+            });
+            const heard: unknown[] = [];
+            const drain = hear(ch, 'template/ready', heard);
+            await settle();
+
+            deliver(HOST, { type: 'template/ready', payload: 'first' }, first);
+            await settle();
+            mounted = fakeWindow([]); // the tile re-renders with a new <iframe>
+            deliver(HOST, { type: 'template/ready', payload: 'stale' }, first);
+            deliver(
+                HOST,
+                { type: 'template/ready', payload: 'second' },
+                mounted,
+            );
+            await settle();
+
+            expect(heard).toEqual(['first', 'second']);
+            await ch.close();
+            await drain;
+        });
+    });
+
+    // A thunk over a ref resolves to NOTHING while its frame is not mounted: `ref.current?.
+    // contentWindow` is `undefined` before mount, and a detached `<iframe>`'s `contentWindow` is
+    // `null`. That channel has no peer, so no source may match it. `null` is the case a bare
+    // `source !== peer` got wrong: a `null` source — a DOM that does not attribute sources, or a
+    // context already gone — EQUALS a `null` peer, and the message was delivered.
+    test.each([
+        ['`null` (a detached iframe)', null],
+        ['`undefined` (an unmounted ref)', undefined],
+    ])(
+        'a thunk resolving to %s has no peer: no source matches it, `null` included',
+        async (_label, nothing) => {
+            await withMessageListeners(async (deliver) => {
+                const ch = channel.window({
+                    target: () => nothing as unknown as Window,
+                    origins: HOST,
+                });
+                const heard: unknown[] = [];
+                const drain = hear(ch, 'template/content-height', heard);
+                await settle();
+
+                deliver(
+                    HOST,
+                    { type: 'template/content-height', payload: 1 },
+                    null,
+                );
+                deliver(
+                    HOST,
+                    { type: 'template/content-height', payload: 2 },
+                    fakeWindow([]),
+                );
+                await settle();
+
+                expect(heard).toEqual([]);
+                await ch.close();
+                await drain;
+            });
+        },
+    );
+
+    test('a thunk that throws drops the message and never throws out of the global listener', async () => {
+        await withMessageListeners(async (deliver) => {
+            const ch = channel.window({
+                // `ref.current!.contentWindow!` before the frame mounts.
+                target: () => {
+                    throw new TypeError(
+                        "Cannot read properties of null (reading 'contentWindow')",
+                    );
+                },
+                origins: HOST,
+            });
+            const heard: unknown[] = [];
+            const drain = hear(ch, 'template/ready', heard);
+            await settle();
+
+            expect(() => {
+                deliver(
+                    HOST,
+                    { type: 'template/ready', payload: 'x' },
+                    fakeWindow([]),
+                );
+            }).not.toThrow();
+            await settle();
+
+            expect(heard).toEqual([]);
+            await ch.close();
+            await drain;
         });
     });
 });

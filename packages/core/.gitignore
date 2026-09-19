@@ -1,0 +1,4 @@
+# Playwright output (`pnpm test:browser`, see playwright.config.ts)
+/test-results/
+/playwright-report/
+/blob-report/
