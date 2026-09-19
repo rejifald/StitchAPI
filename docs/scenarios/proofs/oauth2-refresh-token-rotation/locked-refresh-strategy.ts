@@ -18,8 +18,12 @@ import type {
 
 export interface LockedRotatingRefreshOptions {
     tokenUrl: string;
-    clientId: string;
-    clientSecret: string;
+    /**
+     * WHO the client is at the token endpoint — the same `{ id, secret }` envelope `oauth2()`
+     * takes (CONTRACT.md P24), so a reader moving between the built-in flow and this strategy
+     * spells the credentials one way.
+     */
+    client: { id: string; secret: string };
     /** Vault namespace — the connected account. Every worker must pass the SAME value. */
     key: string;
     seedRefreshToken: string;
@@ -73,8 +77,8 @@ export function lockedRotatingRefresh(
             body: {
                 grant_type: 'refresh_token',
                 refresh_token: stored ?? opts.seedRefreshToken,
-                client_id: opts.clientId,
-                client_secret: opts.clientSecret,
+                client_id: opts.client.id,
+                client_secret: opts.client.secret,
             },
             bodyType: 'form',
         });

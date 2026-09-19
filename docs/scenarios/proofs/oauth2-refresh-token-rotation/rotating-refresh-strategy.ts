@@ -19,8 +19,12 @@ import type {
 export interface RotatingRefreshOptions {
     /** The provider's token endpoint. */
     tokenUrl: string;
-    clientId: string;
-    clientSecret: string;
+    /**
+     * WHO the client is at the token endpoint — the same `{ id, secret }` envelope `oauth2()`
+     * takes (CONTRACT.md P24), so a reader moving between the built-in flow and this strategy
+     * spells the credentials one way.
+     */
+    client: { id: string; secret: string };
     /** Vault namespace — the CONNECTED ACCOUNT, which is the correct scope of mutual exclusion. */
     key: string;
     /** Refresh token to start from; used only when the vault holds none yet. */
@@ -59,8 +63,8 @@ export function rotatingRefresh(opts: RotatingRefreshOptions): AuthStrategy {
             body: {
                 grant_type: 'refresh_token',
                 refresh_token: stored ?? opts.seedRefreshToken,
-                client_id: opts.clientId,
-                client_secret: opts.clientSecret,
+                client_id: opts.client.id,
+                client_secret: opts.client.secret,
             },
             bodyType: 'form',
         });
