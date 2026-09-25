@@ -8,6 +8,7 @@ import { Hero } from './components/hero';
 import { Metrics } from './components/metrics';
 import { NotThis } from './components/not-this';
 import { Problem } from './components/problem';
+import { StudioBand } from './components/studio-band';
 import { Surfaces } from './components/surfaces';
 
 import { appName } from '@/lib/shared';
@@ -55,6 +56,7 @@ export default function HomePage() {
             <FromTheBlog />
             <Cta />
             <Footer />
+            <StudioBand lang="en" />
         </main>
     );
 }
