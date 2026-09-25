@@ -128,12 +128,19 @@ export function StudioBand({ lang }: { lang: StudioBandLang }) {
             className={cn(
                 fixelText.variable,
                 fixelDisplay.variable,
-                'w-full border-t border-band-line bg-band-bg',
+                // The gutter lives here, on the full-bleed element — same as
+                // the footer's own <footer className="px-6 py-10">. Putting
+                // it on the max-w-5xl div below instead (as this used to)
+                // eats 48px OUT of that 1024px column rather than bounding it
+                // before the column is centered, so the band's content edges
+                // sat inset from the footer's at every width above 375.
+                'w-full border-t border-band-line bg-band-bg px-6 py-10 lg:py-12',
             )}
         >
             {/* Full-bleed background + top rule above; content in the footer's
-                own column (max-w-5xl, matching gutters). */}
-            <div className="mx-auto max-w-5xl px-6 py-10 lg:py-12">
+                own column (max-w-5xl, no padding of its own — matching it
+                edge for edge, not just by the same max-width). */}
+            <div className="mx-auto max-w-5xl">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-4">
                     <h2
                         id="studio-band-title"

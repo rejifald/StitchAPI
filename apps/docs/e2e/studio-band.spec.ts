@@ -143,4 +143,33 @@ test.describe('studio band', () => {
         expect(outline.offset).toBe('3px');
         expect(outline.color).toBe('rgb(180, 52, 59)'); // --band-accent light
     });
+
+    test('content column shares left/right edges with the footer', async ({
+        page,
+    }) => {
+        for (const width of [1440, 375]) {
+            await page.setViewportSize({ width, height: 900 });
+            await page.goto('/');
+
+            const footerBox = await page.locator('footer > div').boundingBox();
+            const bandBox = await page.locator(`${BAND} > div`).boundingBox();
+            if (!footerBox || !bandBox) {
+                throw new Error(
+                    `could not measure the footer/band column at ${width}px`,
+                );
+            }
+
+            const leftDiff = Math.abs(bandBox.x - footerBox.x);
+            const rightDiff = Math.abs(
+                bandBox.x + bandBox.width - (footerBox.x + footerBox.width),
+            );
+            // Same column as the footer, not just the same max-width: the
+            // band used to pad its own max-w-5xl div, eating 48px out of
+            // that column instead of bounding it before centering — a
+            // regression that only showed above the 375 breakpoint, where
+            // max-w-5xl never binds and the two happen to coincide anyway.
+            expect(leftDiff, `left edge at ${width}px`).toBeLessThan(1);
+            expect(rightDiff, `right edge at ${width}px`).toBeLessThan(1);
+        }
+    });
 });
