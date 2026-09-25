@@ -18,6 +18,10 @@
 # A failure here opens no PR and blocks no merge — it fails a scheduled run,
 # which is what surfaces the notification. Treat a red run as production being
 # down for every agent that has this server configured.
+#
+# Preview deployments are off for the docs project, so every deployment this
+# guard can ever see is a production one — see the `deployment_status` trigger
+# below for how that gets verified as it goes live.
 name: MCP smoke
 
 on:
@@ -31,8 +35,10 @@ on:
                 description: 'Base URL to probe (defaults to production)'
                 required: false
                 default: 'https://stitchapi.dev'
-    # Probe each deployment as it goes live — Vercel reports one of these to GitHub
-    # per deployment, with the URL to hit in `environment_url`.
+    # Vercel reports one of these to GitHub per deployment, with the URL to hit
+    # in `environment_url`. Preview deployments are off for the docs project, so
+    # in practice every deployment_status event here describes a production
+    # deploy — this fires as each one goes live.
     #
     # This replaces a `pull_request` trigger, which was wrong twice over. It probed
     # PRODUCTION rather than the change under review, so it went red on every PR
@@ -72,15 +78,16 @@ jobs:
             #   schedule          → production (the cold-start check)
             #   workflow_dispatch → whatever was asked for, production by default
             #
-            # A preview URL is SSO-protected (Vercel Authentication, deploymentType
-            # `all_except_custom_domains`), so probing one needs the automation
-            # bypass secret. When it is absent we SKIP rather than fail: the
-            # production paths need no secret and must stay meaningful on their own,
-            # and a repo without the secret configured should not see a permanently
-            # red check it cannot fix from the repo. Configuring
+            # Deployment protection (Vercel Authentication, deploymentType
+            # `all_except_custom_domains`) protects any URL other than stitchapi.dev —
+            # including a deployment's own generated URL — so probing one needs the
+            # automation bypass secret. When it is absent we SKIP rather than fail:
+            # the production paths need no secret and must stay meaningful on their
+            # own, and a repo without the secret configured should not see a
+            # permanently red check it cannot fix from the repo. Configuring
             # VERCEL_AUTOMATION_BYPASS_SECRET (Vercel → Project → Settings →
-            # Deployment Protection → Protection Bypass for Automation) turns the
-            # preview half on.
+            # Deployment Protection → Protection Bypass for Automation) enables
+            # probing those URLs too.
             - name: Resolve target
               id: target
               env:
@@ -97,12 +104,13 @@ jobs:
                       echo "::notice::deployment_status carried no environment_url — nothing to probe."
                       echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
                     fi
-                    # Production is reachable on its unprotected custom domain; a
-                    # preview is only reachable with the bypass secret.
+                    # stitchapi.dev is the only unprotected URL; any other one —
+                    # including a production deployment's own generated URL — needs
+                    # the bypass secret.
                     case "$url" in
                       *stitchapi.dev*) ;;
                       *) if [ "$HAS_BYPASS" != "true" ]; then
-                           echo "::warning::Skipping preview probe for $url — VERCEL_AUTOMATION_BYPASS_SECRET is not configured, so the deployment answers 401 Protected deployment. Add it to enable per-preview MCP smoke checks."
+                           echo "::warning::Skipping probe for $url — VERCEL_AUTOMATION_BYPASS_SECRET is not configured, so the deployment answers 401 Protected deployment. Add it to enable MCP smoke checks on protected deployment URLs."
                            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
                          fi ;;
                     esac
