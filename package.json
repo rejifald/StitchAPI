@@ -34,7 +34,7 @@
         "prepare": "lefthook install"
     },
     "devDependencies": {
-        "@eslint/js": "^9.39.5",
+        "@eslint/js": "^10.0.1",
         "@trivago/prettier-plugin-sort-imports": "^6.0.2",
         "@vitest/eslint-plugin": "^1.6.27",
         "eslint": "^10.10.0",
