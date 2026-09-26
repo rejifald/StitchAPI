@@ -15,8 +15,8 @@
         "stitchapi": "workspace:*"
     },
     "devDependencies": {
-        "@types/node": "^26.4.1",
-        "tsx": "^4.23.13",
+        "@types/node": "^26.6.2",
+        "tsx": "^4.23.15",
         "typescript": "^6.0.3"
     },
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
