@@ -192,7 +192,30 @@ jobs:
             # broken AutoTypeTable path/name, an unregistered MDX component, or a
             # generator throw all pass type-check and only fail at build. Building the
             # docs app runs generateStaticParams over every page and surfaces those.
-            - run: pnpm --filter @stitchapi/docs build
+            #
+            # Deploy-envelope gate (#829): the build runs the size of Vercel's build
+            # machine — 2 CPUs, 8 GB, no swap — not this runner's 4 CPUs / 16 GB. From
+            # 2026-09-19 every production deploy was OOM-killed in `next build` while
+            # this step built the same commits green, because nothing here was that
+            # small. A transient systemd scope makes it that small: MemoryMax=8G with
+            # swap off, so the kernel OOM-kills past the ceiling the way Vercel's does,
+            # and two CPUs. check-build-memory.mjs runs the app's `build` script inside
+            # it and fails on an OOM kill, a failed build, or a peak above 6 GiB of
+            # memory the kernel cannot reclaim: a quarter of the machine stays free for
+            # the Vercel CLI, the build's page cache, and growth. The number and its
+            # derivation live in the script. As before, the search-index prebuild skips
+            # here (it needs the vendored model); search-relevance builds the index.
+            #
+            # pnpm by absolute path: the scope's command is looked up on sudo's PATH,
+            # not the runner's. --uid/--gid run the build as the runner user, so it
+            # writes nothing root-owned into the workspace.
+            - name: Build the docs in Vercel's build envelope (2 CPUs, 8 GB, no swap)
+              run: >-
+                  sudo --preserve-env systemd-run --scope --quiet --collect
+                  --property=MemoryMax=8G --property=MemorySwapMax=0
+                  --property=CPUQuota=200% --property=AllowedCPUs=0-1
+                  --uid="$(id -u)" --gid="$(id -g)" --setenv=PATH="$PATH"
+                  "$(command -v pnpm)" --filter @stitchapi/docs check:build-memory
 
     verify:
         # This job's ONLY purpose is to keep the required-check name `verify`
