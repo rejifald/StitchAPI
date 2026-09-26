@@ -58,6 +58,41 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
     reactStrictMode: true,
+    // Production builds run on webpack, not Turbopack (`next build --webpack` in
+    // package.json). That, this block, and the `cache` line in webpack() below are
+    // what keep the deploy build inside Vercel's build machine: 2 CPUs, 8 GB, no
+    // swap (#829).
+    //
+    // Twoslash makes this app heavy to bundle: its hover popups turn the MDX (docs +
+    // blog) into 54 MiB of generated JSX, against 11 MiB without them. Turbopack
+    // compiles that twice, once for the pages and once more for the route handlers
+    // that import the same `source` (llms.txt, the og images, the sitemap, the MCP
+    // route), and its loader pool keeps two twoslash TypeScript environments alive
+    // for the whole build. Cold, on two CPUs, `next build` peaked at 7.3–7.9 GiB
+    // and was OOM-killed at 8 GiB. No Turbopack setting measured brought it under
+    // 6.5 GiB (filesystem cache off, server source maps off, both), and a warm
+    // twoslash cache made it worse (8.9 GiB): faster loaders, more in flight.
+    // webpack compiles the MDX once, for pages and route handlers alike.
+    //
+    // - webpackBuildWorker: compile in a child process that exits before type
+    //   checking and prerendering start. Next turns it on by default only when
+    //   there is no custom webpack(), and this config has one.
+    // - No persistent webpack cache in production builds (webpack() below). Writing
+    //   it (over 2 GB) ran the build worker out of V8 heap on an 8 GB machine.
+    //   Without it the compile runs cold every time: 65–85 s on two CPUs, no
+    //   slower than a cold Turbopack compile.
+    // - --max-old-space-size=3072 on `next build` (package.json). The build worker
+    //   holds 1.5–1.75 GB of live heap, and Node's default cap on an 8 GB machine is
+    //   about 2.2 GB: a heap crash after a quarter more content. 3 GB moves that
+    //   cliff out to about where CI's memory budget sits. Higher costs memory for
+    //   nothing, since V8 lets the heap grow toward its cap: at 4 GB the build
+    //   peaked 0.2–0.3 GiB higher than at 3.
+    //
+    // `next dev` stays on Turbopack. CI builds inside the same envelope and fails
+    // over a 6 GiB budget: scripts/check-build-memory.mjs, run by verify-docs.
+    experimental: {
+        webpackBuildWorker: true,
+    },
     // Trace from the pnpm workspace root, not Next's inferred app dir. The search
     // routes' externalized native deps (transformers.js + onnxruntime-node) are
     // hoisted to <workspaceRoot>/node_modules/.pnpm, so their trace paths climb
@@ -150,7 +185,9 @@ const config = {
             dev: process.env.NODE_ENV !== 'production',
         });
     },
-    webpack(webpackConfig, { isServer }) {
+    webpack(webpackConfig, { isServer, dev }) {
+        // No persistent cache in production builds — see `experimental` above.
+        if (!dev) webpackConfig.cache = false;
         // Guard with !isServer so codegen runs once per compilation cycle,
         // not twice (webpack compiles server and client separately).
         if (!isServer) {

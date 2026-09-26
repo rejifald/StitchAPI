@@ -26,7 +26,7 @@
 // budget at the ceiling passes a build one content change away from the OOM kill.
 // 6 GiB keeps a quarter of the machine free. For scale: on the commits #829 lists,
 // `next build` (Turbopack) peaked at 7.3–7.9 GiB and was OOM-killed at the 8 GiB
-// ceiling; the webpack build that replaced it peaks near 3.6 GiB. Raise the number
+// ceiling; the webpack build that replaced it peaks at 3.9–4.2 GiB. Raise the number
 // only as a conscious act — here, in the same PR, saying why — the way the core
 // package's bundle-size ceilings work.
 //

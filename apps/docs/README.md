@@ -19,13 +19,14 @@ Open http://localhost:3000 with your browser.
 
 ## Scripts
 
-| Script        | What it does                                       |
-| ------------- | -------------------------------------------------- |
-| `dev`         | Start the Next.js dev server.                      |
-| `build`       | Production build (`next build`).                   |
-| `start`       | Serve the production build.                        |
-| `check:types` | Generate Fumadocs/Next types, then `tsc --noEmit`. |
-| `check:lint`  | Lint with `eslint-config-next`.                    |
+| Script               | What it does                                                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `dev`                | Start the Next.js dev server (Turbopack).                                                                                        |
+| `build`              | Production build (`next build --webpack`, the build Vercel deploys).                                                             |
+| `start`              | Serve the production build.                                                                                                      |
+| `check:types`        | Generate Fumadocs/Next types, then `tsc --noEmit`.                                                                               |
+| `check:lint`         | Lint with `eslint-config-next`.                                                                                                  |
+| `check:build-memory` | Run `build` inside a memory-limited cgroup and fail if it would not fit Vercel's 2-CPU / 8 GB build machine (CI: `verify-docs`). |
 
 `check:types` and `check:lint` participate in the workspace verify gate
 (`pnpm -r ...`, CI, and the lefthook hooks).
