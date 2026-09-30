@@ -575,7 +575,7 @@ describe('lineReader teardown + cap (shared streaming plumbing)', () => {
         // No `\n` ever arrives, so the carry grows unbounded — the cap turns that into a clean throw.
         await expect(async () => {
             for await (const _ of lineReader(streamOf(['x'.repeat(200)]), 64)) {
-                void _;
+                // drain
             }
         }).rejects.toThrow(
             /un-terminated line exceeded the stream\.buffer\.chars cap/,

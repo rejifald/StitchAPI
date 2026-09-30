@@ -513,6 +513,7 @@ type DominantKey<T> = {
  * no change here. A plain object passes through **by reference**; `undefined` stays `undefined`,
  * so an absent slot stays absent under `exactOptionalPropertyTypes`.
  */
+// eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
 export function envelope<T extends NonNullable<unknown>>(
     value: T,
     key: DominantKey<T> & string,
