@@ -329,7 +329,7 @@
         "@eslint/js": "^10.0.1",
         "@playwright/test": "^1.63.0",
         "@types/node": "^26.4.1",
-        "@vitest/coverage-v8": "^4.1.11",
+        "@vitest/coverage-v8": "^5.0.2",
         "@vitest/eslint-plugin": "^1.6.27",
         "axios": "^1.20.0",
         "esbuild": "^0.28.2",
@@ -340,7 +340,7 @@
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.68.0",
-        "vitest": "^4.1.11",
+        "vitest": "^5.0.2",
         "zod": "^4.4.3"
     },
     "tsd": {
