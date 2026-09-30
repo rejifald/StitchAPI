@@ -60,7 +60,7 @@
         "hono": "^4.0.0"
     },
     "devDependencies": {
-        "@types/node": "^26.6.2",
+        "@types/node": "^26.6.3",
         "hono": "^4.13.9",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
