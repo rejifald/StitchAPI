@@ -22,8 +22,11 @@ vi.mock('../lib/search-index/embed', () => ({
 }));
 
 // Stub the Orama seam so no persisted index file is read and search() is a no-op.
-// loadIndex() also readFileSync()s the build-time index (absent in this env), so
-// stub node:fs's readFileSync too — restore() then just gets a placeholder.
+// loadIndex() resolves the index path through appPath() (stubbed: no index in
+// this env), then readFileSync()s it (stubbed too: restore() gets a placeholder).
+vi.mock('../lib/search-index/app-path', () => ({
+    appPath: () => '/nonexistent/docs-index.json',
+}));
 vi.mock('node:fs', () => ({
     readFileSync: vi.fn(() => '{}'),
 }));

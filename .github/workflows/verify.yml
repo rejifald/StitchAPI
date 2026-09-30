@@ -216,6 +216,15 @@ jobs:
                   --property=CPUQuota=200% --property=AllowedCPUs=0-1
                   --uid="$(id -u)" --gid="$(id -g)" --setenv=PATH="$PATH"
                   "$(command -v pnpm)" --filter @stitchapi/docs check:build-memory
+            # Function-trace gate (#829): the build above compiles but never packages
+            # functions, so it went green while Vercel's deploy failed at "Deploying
+            # outputs" with `ENOENT: lstat .next/lock`. The webpack trace of /api/mcp
+            # and /api/search-docs had swept in the whole app directory (content, tests,
+            # .next/cache, and .next/lock, which `next build` deletes when it exits).
+            # This step reads the *.nft.json traces the build above just wrote and fails
+            # if one reaches into .next outside server/, or into test/, e2e/ or scripts/.
+            - name: Fail if a function trace reaches build scratch or the app's tests
+              run: pnpm --filter @stitchapi/docs check:traces
 
     verify:
         # This job's ONLY purpose is to keep the required-check name `verify`
