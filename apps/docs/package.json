@@ -12,6 +12,7 @@
         "check:lint": "eslint .",
         "check:core-build": "node scripts/check-core-build.mjs",
         "check:build-memory": "node scripts/check-build-memory.mjs",
+        "check:traces": "node scripts/check-traces.mjs",
         "gen:docs": "node scripts/generate-skeleton.mjs",
         "gen:completions": "node scripts/gen-stitch-completions.mjs",
         "gen:cover": "node --import tsx/esm scripts/gen-cover.mjs",
