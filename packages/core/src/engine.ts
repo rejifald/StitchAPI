@@ -964,7 +964,7 @@ async function* paginated(
     const acc: unknown[] = [];
     let pageInput = input;
     let page = 0;
-    let lastStatus = 200;
+    let lastStatus: number;
 
     const first = buildRequest(cfg, pageInput);
     yield startEvt(name, first, input, run);
