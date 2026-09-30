@@ -182,7 +182,7 @@ Inference is always overridable. (Progressive disclosure: it usually "just works
 
 **Explicit strategies [proposed]:** `bearer()`, `apiKey()`, `basic()`, `cookieSession()`, `oauth2()` — each a value you can name, share, and `extends`.
 
-**The boundary — the selling point.** The secret resolves at call time from `env()` / `secretsFile()` / a secret manager. The stitch **declaration** is committed; the secret is not. So:
+**The boundary — the selling point.** The secret resolves at call time from `env()` / `credential.file()` / a secret manager. The stitch **declaration** is committed; the secret is not. So:
 
 ```
 Agent today:  GET /api/websites  →  401 (httpOnly cookie wall)  →  dead end.
@@ -227,11 +227,11 @@ Validation is **not** binary pass/fail, and it needs **no snapshot**. The declar
 ```ts
 output: drift(Torrent, {
   ignore: ['meta', '_debug'],      // acknowledged, unconsumed fields — never reported
-  severity: { coerced: 'info' },   // re-level a kind; or pass a level / list to filter
+  level: { coerced: 'info' },      // re-level a kind; or pass a level / list to filter
 }),
 ```
 
-Severity lives in the **schema**, not a parallel `critical`/`watch` system: make a field required and its loss throws (`invalid`); make it `.optional()`/`.nullable()` and that variance validates clean and is never drift. Soft drift is always non-fatal; `severity` (a level, list, or per-kind map) filters or re-levels it, and `ignore` silences known-but-unconsumed paths. All drift becomes events on the stream → console/JSONL/OTLP. (Author-contract drift in fields you don't declare needs a published spec or observation, deliberately out of scope — see ADR 0015.)
+Severity lives in the **schema**, not a parallel `critical`/`watch` system: make a field required and its loss throws (`invalid`); make it `.optional()`/`.nullable()` and that variance validates clean and is never drift. Soft drift is always non-fatal; `level` (a level, list, or per-kind map) filters or re-levels it, and `ignore` silences known-but-unconsumed paths. All drift becomes events on the stream → console/JSONL/OTLP. (Author-contract drift in fields you don't declare needs a published spec or observation, deliberately out of scope — see ADR 0015.)
 
 This directly answers the "I care about some fields, not others, but still want to know" need — and turns a silent HTML-scrape breakage into a loud, leveled signal.
 
@@ -379,7 +379,7 @@ const listWebsites = stitch({
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token',
-        secret: secretsFile('app'),
+        secret: credential.file('app'),
         refresh: [401],
     }),
 });
@@ -416,7 +416,7 @@ const listings = stitch({
     // `id` required in the schema → its loss throws; soft drift is leveled here
     output: drift(Listing.array(), {
         ignore: ['[].meta'], // acknowledged, unconsumed
-        severity: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
+        level: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
     }),
 });
 ```

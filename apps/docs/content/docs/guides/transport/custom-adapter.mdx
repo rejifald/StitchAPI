@@ -38,7 +38,7 @@ const getUser = stitch({
 
 ## Options
 
-An adapter is `(req: AdapterRequest) => Promise<AdapterResponse>` — a plain
+An adapter is `(req: AdapterRequest) => Promise<AdapterResult>` — a plain
 function, so nothing needs to be registered or subclassed. Four rules make it a
 transport the engine can drive:
 
@@ -55,7 +55,7 @@ transport the engine can drive:
   buffering a stream the caller expected to consume incrementally.
 
 `req` carries what the transport needs and nothing about policy:
-`{ url, method, headers, body?, bodyType?, multipart?, responseType?, stream?, onProgress?, signal? }`.
+`{ url, method, headers, body?, bodyType?, multipart?, array?, response?, stream?, onProgress?, signal? }`.
 The response is `{ status, headers, body, url? }`, where `body` is the parsed
 value — or a `ReadableStream<Uint8Array>` when `stream` was set. See
 [Reference → Config types](/docs/reference/config-types) for the full shapes.
@@ -96,10 +96,10 @@ checks run against it, so the plain one-function form stays valid.
 
 ### Prove it against the contract
 
-`verifyAdapterContract(adapter, baseUrl)` from `stitchapi/testing` runs your
+`conformance.adapter(adapter, baseUrl)` from `stitchapi/testing` runs your
 transport against a fixture host and checks the rules above: status passthrough
 for 200/404/500, request delivery, lowercased response headers, text and JSON
-decoding, and both abort paths. Mount `adapterContractFixture` on any server —
+decoding, and both abort paths. Mount `conformance.fixture` on any server —
 `node:http`, hono, a service worker — and point the verifier at it. See
 [Conformance kits](/docs/reference/conformance-kits) for the fixture and the
 report shape.

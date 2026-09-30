@@ -191,9 +191,14 @@ stitch({ extends: gqlBase, wire: { body: 'form' } });
 const widened = [gqlBase]; // inferred `Frag[]`, not `[Frag]`
 stitch({ extends: widened, wire: { body: 'form' } });
 
-// The same fail-open applies to a fragment typed as `Partial<StitchConfig>` rather than inferred
-// from its literal: optional properties satisfy no probe, so it reads as supplying nothing.
-declare const opaque: Partial<import('../src').StitchConfig>;
+// The same fail-open applies to a fragment typed as `AtLeastOne<StitchConfig>` rather than
+// inferred from its literal: every arm makes ONE key required and leaves the rest optional, so an
+// opaque one satisfies no probe and reads as supplying nothing. Spelled `AtLeastOne` rather than
+// `Partial` because `extends` no longer accepts a bare `Partial` at all — the opaque `extends: {}`
+// is rejected at the slot (CONTRACT.md P20), which is a separate guard from this one.
+declare const opaque: import('../src').AtLeastOne<
+    import('../src').StitchConfig
+>;
 stitch({ extends: [opaque], wire: { body: 'form' } });
 
 // ── `NoWireBodyOnGraphql` fails open when the slot lives only in a fragment ──

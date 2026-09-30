@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/vue",
-    "version": "1.0.0-rc.7",
+    "version": "1.0.0-rc.8",
     "type": "commonjs",
     "description": "Vue 3 bindings for StitchAPI — reactive useStitch/useStitchStream composables over @stitchapi/query-core, plus an optional TanStack Query stitchQueryOptions helper. Streaming-first: re-render as `delta` chunks arrive.",
     "main": "lib/index.js",
@@ -56,15 +56,15 @@
     "peerDependencies": {
         "@stitchapi/query-core": "^1.0.0-rc.1",
         "stitchapi": "^1.0.0-rc.1",
-        "vue": "^3.5.41"
+        "vue": "^3.5.42"
     },
     "devDependencies": {
         "@stitchapi/query-core": "workspace:*",
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.4.1",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
         "vitest": "^4.1.11",
-        "vue": "^3.5.41"
+        "vue": "^3.5.42"
     }
 }

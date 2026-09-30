@@ -4,7 +4,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.7`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
+> **StitchAPI is at `1.0.0-rc.8`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 **Turn any REST, GraphQL, SSE, or LLM API into a typed, resilient function.** Its one primitive — a **stitch** — takes a single endpoint and hands you back a callable: declare the endpoint's contract once (input, output, auth, resilience) and call it like a local function. No server, no codegen, no config files — only explicit composition. The same definition your code calls, the CLI runs and an AI agent can invoke without ever touching a credential.
 
@@ -112,7 +112,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Leveled drift detection** - live responses are validated against the declared schema (the contract); a required field missing/incompatible **throws**, while soft drift (a coercion, an undeclared or defaulted field) surfaces as a non-fatal `warn` / `info` / `verbose` finding instead of a silent `undefined`.
 - **Declared resilience** - retry with backoff and `Retry-After`, proactive throttle (rate + concurrency, per stitch or per host), total / per-attempt timeouts with real aborts, a circuit breaker, and idempotency keys.
 - **Read-through caching** - an opt-in response cache with in-process request coalescing, keyed by a derived, principal-scoped key — sound by construction (it refuses to cache a shape it can't fingerprint) and loaded lazily from `stitchapi/cache`.
-- **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `secretsFile()` and never reach the caller.
+- **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `credential.file()` and never reach the caller.
 - **Data shaping** - `pick` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
 - **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
 - **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
@@ -353,13 +353,13 @@ const listOrders = stitch({
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
             ignore: ['[].meta'], // acknowledged, unconsumed fields — don't report them
-            severity: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
+            level: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
         },
     ),
 });
 ```
 
-Drift is **schema-anchored** — no snapshot to manage. Severity lives in the schema: a required field that goes missing or turns incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift you read off the event stream. So natural variance is never a false alarm — an optional field absent, a `string | null` that's null, an empty or heterogeneous array all validate clean and report nothing. `ignore` silences fields you know about without bloating the schema; `severity` filters (a level / list) or re-levels (a map) the soft signals. Drift watches the surface you declared; what the provider changes in fields you don't model is, by definition, change you don't consume.
+Drift is **schema-anchored** — no snapshot to manage. Severity lives in the schema: a required field that goes missing or turns incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift you read off the event stream. So natural variance is never a false alarm — an optional field absent, a `string | null` that's null, an empty or heterogeneous array all validate clean and report nothing. `ignore` silences fields you know about without bloating the schema; `level` filters (a level / list) or re-levels (a map) the soft signals. Drift watches the surface you declared; what the provider changes in fields you don't model is, by definition, change you don't consume.
 
 The request side validates too. `input` takes a schema per part, and a mismatch fails fast with a `ValidationError` before any request is sent:
 
@@ -405,10 +405,11 @@ Throttle waits and retries emit `throttled` / `retry` events on the stream, so t
 
 Three more knobs round out the resilience set:
 
-- **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
+- **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open). Both knobs default (`failures` 5, `cooldown` `'30s'`), so declaring `circuit` at all is the only decision you have to make:
 
     ```ts
     circuit: { failures: 5, cooldown: '30s' } // or the positional [5, '30s']
+    circuit: { cooldown: '1m' } // set one, take the default for the other
     ```
 
 - **`idempotency`** injects a stable `Idempotency-Key` header on writes, so a safe retry can't duplicate a side effect:
@@ -467,7 +468,7 @@ Concurrent identical in-flight calls in one process **coalesce** onto a single s
 
 ## Auth as a boundary
 
-Auth is a field on the stitch (or on a fragment it extends) — never global. Secrets resolve **at call time**: `env()` reads an environment variable, `secretsFile()` reads `~/.stitch/secrets.json` (falling back to env). The stitch declaration is committable, and the caller — your code or an agent — invokes the stitch and gets data without ever seeing the credential.
+Auth is a field on the stitch (or on a fragment it extends) — never global. Secrets resolve **at call time**: `env()` reads an environment variable, `credential.file()` reads `~/.stitch/secrets.json` (falling back to env). The stitch declaration is committable, and the caller — your code or an agent — invokes the stitch and gets data without ever seeing the credential.
 
 Header strategies — `bearer`, `apiKey` (default header `x-api-key`), `basic`:
 
@@ -491,8 +492,10 @@ const listOrders = stitch({
     path: 'https://api.example.com/users/{id}/orders',
     auth: oauth2({
         tokenUrl: 'https://api.example.com/oauth/token',
-        clientId: env('OAUTH_CLIENT_ID'),
-        clientSecret: env('OAUTH_CLIENT_SECRET'),
+        client: {
+            id: env('OAUTH_CLIENT_ID'),
+            secret: env('OAUTH_CLIENT_SECRET'),
+        },
         scope: 'orders:read', // optional, space-delimited
     }),
 });
@@ -504,7 +507,7 @@ Give two stitches the same `key` plus a shared [store](#pluggable-state-store) a
 
 ```ts
 import { stitch } from 'stitchapi';
-import { cookieSession, env, secretsFile } from 'stitchapi/auth';
+import { cookieSession, credential, env } from 'stitchapi/auth';
 
 const signIn = stitch({
     method: 'POST',
@@ -520,10 +523,10 @@ const listUsers = stitch({
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token', // captured from Set-Cookie, replayed each call
-        loginInput: () => ({
+        credentialsOf: () => ({
             body: {
                 email: env('APP_USER')(),
-                password: secretsFile('APP_PASS')(),
+                password: credential.file('APP_PASS')(),
             },
         }),
         refresh: [401], // the wall → re-login, then retry (default)
@@ -748,19 +751,38 @@ const status = await git({ body: ['status', '--porcelain'] }); // stdout string
 
 ### postMessage
 
-`postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `allowedOrigins` is the security gate, and a wildcard `targetOrigin` is forbidden — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
+`postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `origins` is the security gate, and a wildcard is forbidden by the type _and_ at construction — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
 
 ```ts
-import { windowChannel } from 'stitchapi/postmessage';
+import { channel } from 'stitchapi/postmessage';
 
-const channel = windowChannel({
+const frame = channel.window({
     target: iframe.contentWindow!,
-    targetOrigin: 'https://app.example.com',
+    // where messages go, and whom they may come from — one policy.
+    // The bare origin is shorthand for `{ to: X, from: [X] }`.
+    origins: 'https://app.example.com',
 });
 
-const getUser = channel.request({ type: 'getUser' });
+const getUser = frame.request('getUser');
 const user = await getUser({ body: { id: 7 } });
 ```
+
+One namespace, four ways to build, and the choice is _does this transport attribute origins_:
+
+| builder                             | transport                                                                                            | origin gate                                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `channel.window(opts)`              | a `Window` / iframe `contentWindow`                                                                  | gated by `origins`, plus the two peer checks below                                              |
+| `channel.over(transport, { from })` | any origin-bearing `MessageTransport`                                                                | gated by `from`                                                                                 |
+| `channel.port(port)`                | a `MessagePort`                                                                                      | none — a port is gated by who you hand it to (and it is the right answer for a sandboxed frame) |
+| `channel.private(transport)`        | a `MessageTransport` with no origin dimension — an Electron IPC bridge, a worker bridge, a test fake | none, by construction                                                                           |
+
+The namespace is not itself callable: the role belongs at the call site.
+
+When the one window you talk to may answer from more origins than you address it at — a popup that finishes a sign-in hop on another origin — widen the inbound half with the envelope form: `origins: { to: 'https://app.example.com', from: ['https://app.example.com', 'https://auth.example.com'] }`. That widens the origins accepted from `target`, never the set of windows.
+
+**A window channel accepts only from its own peer.** The origin gate is not the whole check there. `channel.window` also drops any event the user agent did not deliver (`isTrusted === false` — a script in the page can spell any `origin` it likes on a `new MessageEvent`), and any event whose `source` is not the `target` this channel posts to. The second check is the one that matters for a **same-origin** frame, where a third-party script — analytics, a tag manager, an extension content script — can call the real `window.postMessage` and arrive with an origin that is allow-listed by definition. The consequence is worth knowing: one channel per frame, which is what `target` always meant, and a channel will not receive from other frames that happen to share an allow-listed origin. That is also what keeps a page of same-origin frames apart — a gallery of `blob:` or single-CDN previews, one host channel per tile, where every tile's `ready` used to reach every channel. The binding survives the frame navigating or reloading, which keeps the same `WindowProxy`; a remounted `<iframe>` is a new window, so pass a thunk (`target: () => frame.contentWindow!`) when the element can be replaced. A thunk is resolved per message, and while it resolves to nothing the channel accepts nothing.
+
+**Writing your own transport?** `subscribe(handler)` calls `handler(data, origin)`. Pass the peer's real origin as a string, or **`null`** to mean _this transport has no origin dimension_ — never `''`, which is an ordinary untrusted origin (it is `MessageEvent.origin`'s default, so it can arise by accident and must never be a trust signal). `null` is honoured only by `channel.private` / `channel.port`, which take no origin policy at all; on a channel built with `from`, a `null` origin **fails closed**, so a transport can never quietly widen a gate its caller set. And if the transport listens on a shared bus, such as a `Window`'s global `'message'` event, deliver only what its peer posts: check that `event.source` is the window you post to, as `channel.window` does. The origin gate cannot tell two same-origin frames apart.
 
 Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, and `output` / `drift` compose with all of them.
 

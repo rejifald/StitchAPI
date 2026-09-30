@@ -9,7 +9,7 @@
 //                              response, which is the only way to correlate the two (C9)
 //
 // The read side has one more seam than the capture supposes: `Surface.interpret` receives the whole
-// `AdapterResponse`, headers included, so the ETag does NOT have to come out through `onResponse`.
+// `AdapterResult`, headers included, so the ETag does NOT have to come out through `onResponse`.
 //
 //   pnpm exec tsx docs/scenarios/proofs/conditional-requests-304/c2-replay-the-validator.ts
 import { stitch, verdictOf } from '../../../../packages/core/src/index';
@@ -94,7 +94,7 @@ async function main(): Promise<void> {
 
     // ── (c) `Surface.interpret` can read the ETag itself — `onResponse` is not required ───────
     // The capture asks whether the ETag is readable "off the previous response (`hooks.onResponse`?
-    // `interpret`?)". Both. `interpret` gets the full `AdapterResponse`.
+    // `interpret`?)". Both. `interpret` gets the full `AdapterResult`.
     {
         const clock = manualClock();
         const api = new FakeEtagApi({ clock });
@@ -247,7 +247,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        'YES on both halves, and the seams are not interchangeable. `hooks.onRequest` puts `If-None-Match` on the wire byte-for-byte (measured `["(none)","\\"v1.t1\\"","\\"v1.t1\\""]` → statuses `[200,304,304]`, 1 billed response out of 3), and the ETag is readable from `hooks.onResponse` — but ALSO from `Surface.interpret`, which the capture treats as an open question: `interpret` receives the whole `AdapterResponse`, so `res.headers["etag"]` is right there (measured `["\\"v1.t1\\"","\\"v1.t1\\""]`). The ordering finding is the one worth carrying: `Surface.buildRequest` runs ONCE PER RUN (engine.ts:253, before `attemptLoop`), so a validator set there is baked into every `cloneReq` — measured 3 identical validators across 3 attempts and a run that fails — while `hooks.onRequest` runs ONCE PER ATTEMPT (engine.ts:652) and can DROP the header on a re-attempt, measured `["\\"v1.t1\\"","(none)"]` → `[304,200]` → `ok: true`. Replaying the validator alone still leaves the caller with `undefined` on every unchanged poll (measured versions `[1,null,null]`), which is C3',
+        'YES on both halves, and the seams are not interchangeable. `hooks.onRequest` puts `If-None-Match` on the wire byte-for-byte (measured `["(none)","\\"v1.t1\\"","\\"v1.t1\\""]` → statuses `[200,304,304]`, 1 billed response out of 3), and the ETag is readable from `hooks.onResponse` — but ALSO from `Surface.interpret`, which the capture treats as an open question: `interpret` receives the whole `AdapterResult`, so `res.headers["etag"]` is right there (measured `["\\"v1.t1\\"","\\"v1.t1\\""]`). The ordering finding is the one worth carrying: `Surface.buildRequest` runs ONCE PER RUN (engine.ts:253, before `attemptLoop`), so a validator set there is baked into every `cloneReq` — measured 3 identical validators across 3 attempts and a run that fails — while `hooks.onRequest` runs ONCE PER ATTEMPT (engine.ts:652) and can DROP the header on a re-attempt, measured `["\\"v1.t1\\"","(none)"]` → `[304,200]` → `ok: true`. Replaying the validator alone still leaves the caller with `undefined` on every unchanged poll (measured versions `[1,null,null]`), which is C3',
     );
 }
 

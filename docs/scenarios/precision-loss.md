@@ -82,7 +82,7 @@ The library's own type comment settles where the damage happens:
 body: unknown;
 ```
 
-`AdapterResponse.body` is **already parsed** (`http-adapter.ts:135`,
+`AdapterResult.body` is **already parsed** (`http-adapter.ts:135`,
 `parsed = text === '' ? undefined : JSON.parse(text)`). So every seam this pass has relied on —
 `Surface.interpret`, `transform`, `output`, `drift()`, `hooks.onResponse` — runs **downstream of
 the corruption**, and none of them can see the raw text.
@@ -140,7 +140,7 @@ value the vendor sent.
 seam."_ It is not. `wire: { response: 'text' }` is **published config** honoured at
 `http-adapter.ts:123` — an `else if` that returns _before_ the JSON branch at `:135`. The repair
 is 16 lines on the **stock transport**, not a custom adapter. I reasoned from
-`AdapterResponse.body` being pre-parsed and never checked whether config could stop the parse
+`AdapterResult.body` being pre-parsed and never checked whether config could stop the parse
 happening.
 
 **"Validation cannot help."** `z.number().refine(Number.isSafeInteger)` separates corrupted from

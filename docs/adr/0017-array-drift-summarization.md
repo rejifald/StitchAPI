@@ -19,6 +19,20 @@
 > (ADR 0016): the change is in the classify layer that feeds _both_ the `drift`
 > event stream and (once 0016 lands) `Inspection.findings`.
 
+> [!IMPORTANT]
+>
+> **Amendment — `severity` is `level`, and `DriftSeverity` is gone.** The
+> pre-GA hard-break sweep collapsed the two words for one concept onto `level`
+> ([CONTRACT.md P1](../CONTRACT.md#p1--one-word-one-concept-one-value-space)):
+> the drift option is **`DriftOptions.level`**, and the re-declared
+> `DriftSeverity` alias was **deleted** rather than renamed — the narrow soft set
+> is derived, `Exclude<DriftLevel, 'error'>`. So the `DriftFinding` sketch below
+> reads `level: DriftLevel` (the union already contains `'error'`), and the two
+> places that say "apply `ignore`/`severity` after grouping" mean `ignore`/`level`.
+> Neither the grouping decision nor `sample?: string` is affected. See
+> [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep)
+> (P1, drift level).
+
 ## Context
 
 0015 computes soft drift as `diff(raw, validated)` and renders each diff op into

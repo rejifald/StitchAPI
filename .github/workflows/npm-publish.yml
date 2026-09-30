@@ -57,7 +57,7 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -70,7 +70,7 @@ jobs:
             - run: pnpm check:exports
             - run: pnpm check:release
             - name: Upload coverage to Codecov
-              uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+              uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
               with:
                   token: ${{ secrets.CODECOV_TOKEN }}
                   files: ./packages/core/coverage/lcov.info
@@ -78,20 +78,22 @@ jobs:
     # Pre-publish browser gate: the Playwright harness (real Chromium) proves the
     # sandbox CSP + Worker egress blocking and that a RunResult.trace reaches the
     # playground DAG. A release waits on it so we never publish a broken browser
-    # sandbox. Mirrors the `e2e` job in verify.yml.
+    # sandbox. Mirrors the `e2e` job in verify.yml, including core's own real-browser suite
+    # (the postMessage window-peer binding), so a release never ships that binding untested.
     e2e:
         needs: preflight
         runs-on: ubuntu-latest
         timeout-minutes: 15
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter @stitchapi/docs test:e2e:install
+            - run: pnpm --filter stitchapi test:browser
             - run: pnpm --filter @stitchapi/docs test:e2e
 
     publish-npm:
@@ -108,7 +110,7 @@ jobs:
             id-token: write # mint the OIDC token npm exchanges for publish auth (+ provenance)
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -210,7 +212,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             - name: Generate SPDX SBOM
-              uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+              uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
               with:
                   path: .
                   format: spdx-json
@@ -219,7 +221,7 @@ jobs:
                   upload-release-assets: false
 
             - name: Generate CycloneDX SBOM
-              uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+              uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
               with:
                   path: .
                   format: cyclonedx-json

@@ -6,16 +6,18 @@
  * ({@link Adapter}), the state store ({@link StitchStore}), and the trace sink
  * ({@link TraceSink}) each have a small documented surface, core ships only
  * platform defaults for them, and vendor implementations live in their own
- * packages. ANY implementation that passes the relevant `verify*Contract`
- * function here is a valid seam implementation — third-party authors run the
- * kit in their own CI to prove compliance without depending on StitchAPI
- * internals.
+ * packages. ANY implementation that passes its seam's member of
+ * {@link conformance} here is a valid seam implementation — third-party
+ * authors run the kit in their own CI to prove compliance without depending on
+ * StitchAPI internals.
+ *
+ * The seam is the dimension, so it is the name: `conformance.store`,
+ * `conformance.adapter`, `conformance.sink`, `conformance.fingerprint`.
  *
  * Framework-agnostic and browser-safe by design: every verifier is a plain
- * async function that RETURNS a {@link ContractReport} (no vitest/jest
- * imports, no `node:*` modules, no `process.env`), so it runs inside any test
- * runner — or a browser. Pair with {@link assertConformance} for a one-line
- * test body.
+ * function that RETURNS a {@link ContractReport} (no vitest/jest imports, no
+ * `node:*` modules, no `process.env`), so it runs inside any test runner — or
+ * a browser. Pair with {@link conformance.assert} for a one-line test body.
  */
 import type { SchemaFingerprint, SchemaFingerprinter } from './fingerprint';
 import { type StandardSchemaV1, isStandardSchema } from './standard-schema';
@@ -29,13 +31,17 @@ import type {
 import { parseDuration, stripTrailingSlashes } from './util';
 
 /**
- * The outcome of one `verify*Contract` run.
+ * The outcome of one {@link conformance} verifier run.
  *
  * Rules are checked independently — one violation never masks another — so a
  * failing report lists EVERY broken rule, each with a human-readable detail.
  */
 export interface ContractReport {
-    /** Which seam was verified: `'store'`, `'adapter'`, or `'sink'`. */
+    /**
+     * Which seam was verified — `'store'`, `'adapter'`, `'sink'` or
+     * `'fingerprint'`, one per {@link conformance} member. This is the
+     * dimension the namespace is keyed by.
+     */
     seam: string;
     /** `true` when every rule passed. */
     ok: boolean;
@@ -46,14 +52,17 @@ export interface ContractReport {
 }
 
 /**
+ * Assert half of {@link conformance}; the namespace carries the contract.
+ * Internal — the entry exports the namespace, not this.
+ *
  * Throw one readable `Error` listing every violation in `report`; a no-op when
  * the report is clean. The one-liner for user test bodies:
  *
  * ```ts
- * assertConformance(await verifyStoreContract(() => myStore()));
+ * conformance.assert(await conformance.store(() => myStore()));
  * ```
  */
-export function assertConformance(report: ContractReport): void {
+function assertConformance(report: ContractReport): void {
     if (report.ok) return;
     const lines = report.violations
         .map((v) => `  - ${v.rule}: ${v.detail}`)
@@ -130,7 +139,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-// Accept the documented AdapterResponse body contract ("parsed JSON when
+// Accept the documented AdapterResult body contract ("parsed JSON when
 // possible, else text"): an already-parsed object, or raw JSON text.
 function asJsonObject(body: unknown, label: string): Record<string, unknown> {
     let value = body;
@@ -150,6 +159,9 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Store seam of {@link conformance}; the namespace carries the contract.
+ * Internal — the entry exports the namespace, not this.
+ *
  * Verify that a {@link StitchStore} implementation honors the store contract
  * the engine relies on for throttle counters and auth/session state:
  *
@@ -170,7 +182,7 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  * @param opts `ttl` — the expiry window the TTL rules use, as ms or a
  *   duration string (`'250ms'`, `'1s'`). Default 60ms.
  */
-export async function verifyStoreContract(
+async function verifyStoreContract(
     makeStore: () => StitchStore | Promise<StitchStore>,
     opts?: {
         /** Expiry window the TTL rules use — ms, or a duration string. Default 60ms. */
@@ -437,7 +449,7 @@ export async function verifyStoreContract(
         const free = store.release.bind(store);
         rules.push(
             [
-                'lease: fills to the limit, then refuses',
+                'lease: fills to the concurrency cap, then refuses',
                 async () => {
                     const key = k('sem');
                     const got = [];
@@ -552,7 +564,7 @@ const SLOW_DELAY_MS = 300;
 const ABORT_AFTER_MS = 25;
 const ABORT_PROMPT_MS = 200;
 
-/** The request shape {@link adapterContractFixture} consumes. */
+/** The request shape {@link conformance.fixture} consumes. */
 export interface FixtureRequest {
     /** HTTP method, any case. */
     method: string;
@@ -564,8 +576,10 @@ export interface FixtureRequest {
     body?: string;
 }
 
-/** The response shape {@link adapterContractFixture} produces. */
-export interface FixtureResponse {
+/** The result {@link conformance.fixture} produces — the response the host is to send. Named
+ *  `*Result` per P3: a house-coined PRODUCED shape (it carries the house-only `delay`), so the
+ *  `*Response` suffix is not available to it. */
+export interface FixtureResult {
     status: number;
     /** Response headers (lowercased names). */
     headers: Record<string, string>;
@@ -576,7 +590,10 @@ export interface FixtureResponse {
 }
 
 /**
- * The echo contract {@link verifyAdapterContract} verifies a transport
+ * Fixture half of {@link conformance}; the namespace carries the contract.
+ * Internal — the entry exports the namespace, not this.
+ *
+ * The echo contract {@link conformance.adapter} verifies a transport
  * against, as a PURE function — request in, response out, no server — so you
  * can mount it on anything: `node:http`, hono, a service worker, ...
  *
@@ -596,7 +613,7 @@ export interface FixtureResponse {
  * Host duties: lowercase request header names, hand over the raw request body
  * text, and honor `delay` (the in-flight abort rule depends on it).
  */
-export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
+function adapterContractFixture(req: FixtureRequest): FixtureResult {
     const path = req.path.split('?', 1)[0] ?? req.path;
     const method = req.method.toUpperCase();
 
@@ -604,7 +621,7 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
         status: number,
         value: unknown,
         headers: Record<string, string> = {},
-    ): FixtureResponse => ({
+    ): FixtureResult => ({
         status,
         headers: { 'content-type': 'application/json', ...headers },
         body: JSON.stringify(value),
@@ -652,15 +669,18 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
 }
 
 /**
+ * Adapter seam of {@link conformance}; the namespace carries the contract.
+ * Internal — the entry exports the namespace, not this.
+ *
  * Verify that an {@link Adapter} implements the transport contract against a
- * host serving {@link adapterContractFixture} at `opts.baseUrl`:
+ * host serving {@link conformance.fixture} at `opts.baseUrl`:
  *
  * - Status passthrough: 200/404/500 all RESOLVE — an adapter never throws on
  *   a non-2xx status; only network/abort errors reject.
  * - Request delivery: method, headers, and the JSON-encoded body reach the
  *   server intact.
  * - Response headers are readable using LOWERCASED names (the documented
- *   {@link AdapterResponse} case convention).
+ *   {@link AdapterResult} case convention).
  * - Body decoding: a `text/plain` body round-trips as a string; an
  *   `application/json` body round-trips as parsed data.
  * - Abort: a pre-aborted `AbortSignal` rejects, and an in-flight abort
@@ -670,7 +690,7 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
  * @param opts Origin of a server mounting the fixture — a bare string, or
  *   `{ baseUrl }`, e.g. `'http://127.0.0.1:4123'`.
  */
-export async function verifyAdapterContract(
+async function verifyAdapterContract(
     adapter: Adapter,
     opts: string | { baseUrl: string },
 ): Promise<ContractReport> {
@@ -738,7 +758,7 @@ export async function verifyAdapterContract(
                     throw new Error(
                         `expected headers['x-stitch-echo'] === 'json', got ${show(
                             res.headers['x-stitch-echo'],
-                        )} — AdapterResponse headers must use lowercased names`,
+                        )} — AdapterResult headers must use lowercased names`,
                     );
                 }
             },
@@ -885,6 +905,9 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
 ];
 
 /**
+ * Sink seam of {@link conformance}; the namespace carries the contract.
+ * Internal — the entry exports the namespace, not this.
+ *
  * Verify that a {@link TraceSink} implements the sink contract: `handle` must
  * accept a canonical fixture sequence covering ALL `StitchEvent` variants —
  * `start`, `progress`, `drift`, `delta`, `result`, `error`, `done` — without
@@ -895,7 +918,7 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
  * @param makeSink Factory for the sink under test; awaited, so it may set up
  *   async state. One sink instance receives the whole sequence in order.
  */
-export async function verifySinkContract(
+async function verifySinkContract(
     makeSink: () => TraceSink | Promise<TraceSink>,
 ): Promise<ContractReport> {
     const sink = await makeSink();
@@ -1018,19 +1041,22 @@ function callFingerprint(
 }
 
 /**
+ * Fingerprint seam of {@link conformance}; the namespace carries the contract.
+ * Internal — the entry exports the namespace, not this.
+ *
  * Verify a {@link SchemaFingerprinter} against the ADR 0004 contract:
  * vendor agreement, a sync/serialisable result shape, determinism + stability
  * (no false positives), sensitivity (no false negatives), soundness-or-abstain,
  * and — when provided — committed cross-version snapshots.
  *
  * Synchronous, framework-agnostic and browser-safe, like the other verifiers.
- * Pair with {@link assertConformance}:
+ * Pair with {@link conformance.assert}:
  *
  * ```ts
- * assertConformance(verifyFingerprintContract(zodFingerprinter, zodFixtures));
+ * conformance.assert(conformance.fingerprint(zodFingerprinter, zodFixtures));
  * ```
  */
-export function verifyFingerprintContract(
+function verifyFingerprintContract(
     fingerprinter: SchemaFingerprinter,
     fixtures: FingerprintFixtures,
 ): ContractReport {
@@ -1174,10 +1200,58 @@ export function verifyFingerprintContract(
     return runRulesSync('fingerprint', rules);
 }
 
+/**
+ * The conformance kit — one namespace over the four pluggable seams
+ * ({@link ContractReport.seam} is the discriminator, and these are its four
+ * values). Each verifier RETURNS a {@link ContractReport}; `assert` is what
+ * turns one into a failing test.
+ *
+ * ```ts
+ * conformance.assert(await conformance.store(() => myStore()));
+ * ```
+ *
+ * The shape is the token grammars' and `secrets`': one name per dimension, the
+ * dimension named at the call site, rather than four `verify<Seam>Contract`
+ * functions plus a loose assert — six names on one entry for one decision, and
+ * the seam already discriminates the report they all return.
+ *
+ * - `conformance.store(makeStore, opts?)` — the {@link StitchStore} contract
+ *   the engine relies on for throttle counters and auth/session state.
+ * - `conformance.adapter(adapter, baseUrl)` — the {@link Adapter} transport
+ *   contract, against a host serving `conformance.fixture`.
+ * - `conformance.sink(makeSink)` — the {@link TraceSink} contract, over a
+ *   canonical fixture sequence covering every `StitchEvent` variant.
+ * - `conformance.fingerprint(fingerprinter, fixtures)` — the
+ *   {@link SchemaFingerprinter} contract (ADR 0004). Synchronous; the other
+ *   three are async.
+ * - `conformance.assert(report)` — throw one readable `Error` listing every
+ *   violation, or no-op on a clean report.
+ *
+ * `conformance.fixture(req)` sits here rather than standing alone because it
+ * is not an independent capability: it is the SERVER half of the adapter
+ * contract, the pure request-in/response-out function `conformance.adapter`
+ * verifies against, and it cannot be used apart from it. Same call the token
+ * grammars made putting `format` beside `parse` — the other direction of one
+ * contract belongs under one name, not loose beside it.
+ *
+ * Every member is framework-agnostic and browser-safe: no vitest/jest imports,
+ * no `node:*` modules, no `process.env`, so the kit runs in any test runner —
+ * or a browser. Third-party seam authors run it in their own CI to prove
+ * compliance without depending on StitchAPI internals.
+ */
+export const conformance = {
+    assert: assertConformance,
+    store: verifyStoreContract,
+    adapter: verifyAdapterContract,
+    sink: verifySinkContract,
+    fingerprint: verifyFingerprintContract,
+    fixture: adapterContractFixture,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Mocking kit — for testing your own stitches and the code that calls them
 // ---------------------------------------------------------------------------
-// The conformance verifiers above are for VENDORS proving a custom seam (store /
+// The `conformance` namespace above is for VENDORS proving a custom seam (store /
 // adapter / sink / fingerprinter) complies. The exports below are for APP AUTHORS,
 // the other audience: a mock transport to drive a stitch definition against canned
 // responses, fake stitches to stand in for the real thing when testing calling
@@ -1216,5 +1290,5 @@ export {
     type StubStitchOptions,
 } from './test-stub';
 // A manual Clock (ADR 0010): inject it as `clock` to drive retry/throttle/timeout/circuit timing by
-// hand — `advance(ms)` instead of real waiting. The system clock is `systemClock` (main entry).
+// hand — `advance('30s')` instead of real waiting. The system clock is `systemClock` (main entry).
 export { manualClock, type ManualClock } from './test-clock';

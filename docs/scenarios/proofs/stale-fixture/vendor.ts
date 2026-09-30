@@ -18,7 +18,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 /** The day the cassette was cut. Carried as a literal because C1(f) asks who else knows it. */
@@ -107,7 +107,7 @@ export function vendorAdapter(
     } = {},
 ): FakeVendor {
     const seen: AdapterRequest[] = [];
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         seen.push(req);
         if (opts.delayMs !== undefined && opts.delayMs > 0) {
             await new Promise<void>((resolve, reject) => {
@@ -142,7 +142,7 @@ export function sequenceAdapter(
     headersFor?: (i: number) => Record<string, string>,
 ): FakeVendor {
     const seen: AdapterRequest[] = [];
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         const i = seen.length;
         seen.push(req);
         const step = steps[Math.min(i, steps.length - 1)] as readonly [

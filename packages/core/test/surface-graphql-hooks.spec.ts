@@ -10,7 +10,7 @@
 import { graphqlSurface } from '../src/surface';
 import type {
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     ResolvedStitchConfig,
     StitchInput,
 } from '../src/types';
@@ -31,10 +31,10 @@ const base: AdapterRequest = {
 function build(c: ResolvedStitchConfig, input: StitchInput): AdapterRequest {
     return graphqlSurface.buildRequest!(c, input, base);
 }
-function interpret(res: AdapterResponse) {
+function interpret(res: AdapterResult) {
     return graphqlSurface.interpret!(res, cfg());
 }
-const res = (body: unknown, status = 200): AdapterResponse => ({
+const res = (body: unknown, status = 200): AdapterResult => ({
     status,
     headers: {},
     body,

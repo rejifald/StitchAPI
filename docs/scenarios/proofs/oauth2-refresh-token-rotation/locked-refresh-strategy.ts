@@ -1,13 +1,13 @@
 // USER CODE, part 2 — everything in rotating-refresh-strategy.ts PLUS cross-process mutual
 // exclusion, built on the only two `StitchStore` primitives that can express a lock:
 // `increment(key, ttl)` (atomic; the winner is whoever gets `1`) and `set(key, undefined)`
-// (a delete, part of the documented store contract — see `verifyStoreContract`, testing.ts:224).
+// (a delete, part of the documented store contract — see `conformance.store`, testing.ts:236).
 //
 // Losers do NOT redeem. They poll the vault until the winner publishes a new access token, which
 // is what keeps a single-use refresh token from being presented twice.
 //
-// CAVEAT the proof cannot check: `verifyStoreContract` only requires `increment` to be atomic
-// WITHIN a process (testing.ts:160-162, 291). A real deployment needs a backend whose increment is
+// CAVEAT the proof cannot check: `conformance.store` only requires `increment` to be atomic
+// WITHIN a process (testing.ts:172-174, 303). A real deployment needs a backend whose increment is
 // atomic ACROSS processes (Redis `INCR`, `UPDATE ... RETURNING`). That is a stronger guarantee
 // than the store contract demands.
 import type {
@@ -18,8 +18,12 @@ import type {
 
 export interface LockedRotatingRefreshOptions {
     tokenUrl: string;
-    clientId: string;
-    clientSecret: string;
+    /**
+     * WHO the client is at the token endpoint — the same `{ id, secret }` envelope `oauth2()`
+     * takes (CONTRACT.md P24), so a reader moving between the built-in flow and this strategy
+     * spells the credentials one way.
+     */
+    client: { id: string; secret: string };
     /** Vault namespace — the connected account. Every worker must pass the SAME value. */
     key: string;
     seedRefreshToken: string;
@@ -73,8 +77,8 @@ export function lockedRotatingRefresh(
             body: {
                 grant_type: 'refresh_token',
                 refresh_token: stored ?? opts.seedRefreshToken,
-                client_id: opts.clientId,
-                client_secret: opts.clientSecret,
+                client_id: opts.client.id,
+                client_secret: opts.client.secret,
             },
             bodyType: 'form',
         });

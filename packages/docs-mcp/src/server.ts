@@ -21,8 +21,8 @@ function excerpt(text: string): string {
     return flat.length > EXCERPT_LEN ? `${flat.slice(0, EXCERPT_LEN)}…` : flat;
 }
 
-function absoluteUrl(pageUrl: string, anchor: string): string {
-    return `${SITE_URL}${pageUrl}${anchor ? `#${anchor}` : ''}`;
+function absoluteUrl(path: string, anchor: string): string {
+    return `${SITE_URL}${path}${anchor ? `#${anchor}` : ''}`;
 }
 
 export function createServer(): McpServer {
@@ -59,10 +59,10 @@ export function createServer(): McpServer {
             const hits = await searchDocs(query, { limit: limit ?? 5 });
             const results = hits.map((hit) => ({
                 title:
-                    hit.heading && hit.heading !== hit.pageTitle
-                        ? `${hit.pageTitle} — ${hit.heading}`
-                        : hit.pageTitle,
-                url: absoluteUrl(hit.pageUrl, hit.anchor),
+                    hit.heading && hit.heading !== hit.title
+                        ? `${hit.title} — ${hit.heading}`
+                        : hit.title,
+                url: absoluteUrl(hit.path, hit.anchor),
                 excerpt: excerpt(hit.text),
                 score: Number(hit.score.toFixed(4)),
             }));

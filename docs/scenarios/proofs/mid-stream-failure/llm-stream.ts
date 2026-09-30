@@ -20,7 +20,7 @@ import type { Surface } from '../../../../packages/core/src/surface';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     ResolvedStitchConfig,
     StitchEvent,
     StitchInput,
@@ -42,7 +42,7 @@ export function llmSurface(transport: Adapter, connectAttempts = 4): Surface {
         id: 'llm-sse',
         // Rule 1 — connect only. Nothing has been decoded yet, so a replay here is free of the
         // duplication hazard by construction.
-        execute: async (req: AdapterRequest): Promise<AdapterResponse> => {
+        execute: async (req: AdapterRequest): Promise<AdapterResult> => {
             let res = await transport(req);
             for (
                 let i = 1;
@@ -54,7 +54,7 @@ export function llmSurface(transport: Adapter, connectAttempts = 4): Surface {
         },
         // Rules 2 and 3 — the body's own verdict, in the one hook that sees the body end.
         stream: async function* (
-            res: AdapterResponse,
+            res: AdapterResult,
             cfg: ResolvedStitchConfig,
         ) {
             let sawDone = false;

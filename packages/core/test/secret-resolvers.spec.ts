@@ -1,8 +1,8 @@
-// The REQUIRED secret resolvers: `env` (an environment variable) and `secretFrom` (an arbitrary
-// injected source). Both resolve at call time and throw on a missing OR empty value — a blank
-// credential is never silently sent. (The optional, never-throwing path is `optionalEnv`, covered
-// in optional-env.spec.ts.) The thunks are exercised directly here — no engine, no network.
-import { env, secretFrom } from '../src/auth';
+// The REQUIRED secret resolvers: `env` (an environment variable) and `credential.from` (an
+// arbitrary injected source). Both resolve at call time and throw on a missing OR empty value — a
+// blank credential is never silently sent. (The optional, never-throwing path is `env.optional`,
+// covered in optional-env.spec.ts.) The thunks are exercised directly here — no engine, no network.
+import { credential, env } from '../src/auth';
 
 describe('env() (required)', () => {
     test('resolves the variable when set', () => {
@@ -31,11 +31,11 @@ describe('env() (required)', () => {
     });
 });
 
-describe('secretFrom() (required)', () => {
+describe('credential.from() (required)', () => {
     test('resolves via a function source `(name) => value`', () => {
         const source = (name: string): string | undefined =>
             name === 'GITHUB_TOKEN' ? 'fn-secret' : undefined;
-        expect(secretFrom(source, 'GITHUB_TOKEN')()).toBe('fn-secret');
+        expect(credential.from(source, 'GITHUB_TOKEN')()).toBe('fn-secret');
     });
 
     test('resolves via an object source `{ get(name) }`', () => {
@@ -44,23 +44,23 @@ describe('secretFrom() (required)', () => {
                 return name === 'GITHUB_TOKEN' ? 'obj-secret' : undefined;
             },
         };
-        expect(secretFrom(source, 'GITHUB_TOKEN')()).toBe('obj-secret');
+        expect(credential.from(source, 'GITHUB_TOKEN')()).toBe('obj-secret');
     });
 
     test('throws when the source returns undefined', () => {
-        expect(() => secretFrom(() => undefined, 'MISSING')()).toThrow(
+        expect(() => credential.from(() => undefined, 'MISSING')()).toThrow(
             /missing secret MISSING/,
         );
-        expect(() => secretFrom({ get: () => undefined }, 'MISSING')()).toThrow(
-            /missing secret MISSING/,
-        );
+        expect(() =>
+            credential.from({ get: () => undefined }, 'MISSING')(),
+        ).toThrow(/missing secret MISSING/);
     });
 
     test("throws when the source returns empty ('')", () => {
-        expect(() => secretFrom(() => '', 'BLANK')()).toThrow(
+        expect(() => credential.from(() => '', 'BLANK')()).toThrow(
             /missing secret BLANK/,
         );
-        expect(() => secretFrom({ get: () => '' }, 'BLANK')()).toThrow(
+        expect(() => credential.from({ get: () => '' }, 'BLANK')()).toThrow(
             /missing secret BLANK/,
         );
     });

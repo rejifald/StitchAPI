@@ -1,9 +1,10 @@
 // stitch stream → Express SSE response. A stitch's `.stream()` (and a `StitchResult.stream()`) is an
 // `AsyncIterable<StitchEvent>`; an SSE endpoint wants `text/event-stream` frames. This adapts the
 // Fastify `sendStitchSse` bridge to Express's `res` (which is a Node `http.ServerResponse`): write
-// frames straight to the socket. Each `delta` becomes one `data:` frame; an `error` event ends the
-// stream with a named `event: error` frame; stream end closes it; and a client disconnect (`res` or
-// `req` 'close') aborts the upstream iterator rather than leaving it running.
+// frames straight to the socket. Each `delta` becomes one `data:` frame; an `error` event — or a
+// throw mid-stream — ends the stream with a named `event: error` frame; stream end closes it; and a
+// client disconnect (`res` or `req` 'close') aborts the upstream iterator rather than leaving it
+// running.
 //
 // The frame types, the `delta`/`error` shorthand folds, the SSE wire serializer, and the
 // secure-by-default error framing are shared with every other HTTP adapter via
@@ -17,27 +18,47 @@ import {
     resolveDelta,
     resolveError,
     sseFrame,
+    toErrorEvent,
     toIterable,
 } from 'stitchapi/sse-emit';
 
 export type { StitchEventSource };
 
-export interface StreamStitchSseOptions extends SseEmitOptions {
+/**
+ * How each `delta` / terminal `error` becomes an SSE frame (see {@link SseEmitOptions}) — the
+ * host-parity shape, identical in `@stitchapi/{elysia,fastify,hono,nest}` because all of them
+ * alias core's one `SseEmitOptions`.
+ *
+ * Express's extra `req` fallback is NOT on this type: it lives on
+ * {@link ExpressStreamStitchSseOptions}, which is what {@link streamStitchSse} accepts. One
+ * exported identifier denotes one structural contract (P9), so the name that is shared across
+ * hosts keeps the shared shape and the divergent side is framework-qualified.
+ */
+export type StreamStitchSseOptions = SseEmitOptions;
+
+/**
+ * What {@link streamStitchSse} accepts: the shared {@link StreamStitchSseOptions} plus Express's
+ * one framework-specific field. Framework-qualified (ADR 0012 rule 6 — the
+ * `SolidStitchStore`/`SvelteStitchStore` precedent) precisely because it diverges from the shape
+ * the other hosts ship under the shared name.
+ */
+export type ExpressStreamStitchSseOptions = SseEmitOptions & {
     /**
      * The Express request, when available. Express normally fires `close` on the *response* on
      * disconnect, but passing `req` lets the helper also listen on the request socket for
      * environments/proxies that signal disconnect there — either fires the upstream teardown.
      */
     req?: Request;
-}
+};
 
 /**
  * Stream a stitch's output to an Express {@link Response} as Server-Sent Events. Pass the stitch's
  * `.stream()` generator (or any `StitchEventSource`): each `delta` becomes one SSE frame, an
- * `error` event ends the stream with a named `event: error` frame (a generic `data: error` by
- * default — the raw message is withheld to avoid disclosing internal topology; opt in via
- * `error`), and stream end closes the response. The non-output events (`start` / `progress` /
- * `drift` / `result` / `done`) are control signals and are not forwarded to the client.
+ * `error` event — or a throw mid-stream — ends the stream with a named `event: error` frame (a
+ * generic `data: error` by default — the raw message is withheld to avoid disclosing internal
+ * topology; opt in via `error`), and stream end closes the response. The non-output events
+ * (`start` / `progress` / `drift` / `result` / `done`) are control signals and are not forwarded to
+ * the client.
  *
  * Writes raw frames straight to the socket, so do **not** also `res.send()`/`res.json()` from the
  * same handler. Resolves once the response is fully written (or the client disconnects). On
@@ -54,7 +75,7 @@ export interface StreamStitchSseOptions extends SseEmitOptions {
 export async function streamStitchSse<T>(
     res: Response,
     source: StitchEventSource<T>,
-    options: StreamStitchSseOptions = {},
+    options: ExpressStreamStitchSseOptions = {},
 ): Promise<void> {
     const delta = resolveDelta(options.delta);
     const error = resolveError(options.error);
@@ -109,11 +130,28 @@ export async function streamStitchSse<T>(
             }
             // start / progress / info / drift / result / done are control signals: not forwarded.
         }
+    } catch (err) {
+        // A throw (not a surfaced `error` event): still withhold the raw message by default —
+        // normalise it to an error event so an `error.data` opt-in sees a consistent shape. The
+        // client frame is written only while the connection is live; `error.observe` fires either
+        // way, so a failure that races a disconnect is still logged server-side.
+        error.observe?.(err);
+        if (active) {
+            res.write(
+                sseFrame(
+                    error.data
+                        ? error.data(toErrorEvent(err))
+                        : DEFAULT_ERROR_DATA,
+                    error.event ?? 'error',
+                ),
+            );
+        }
     } finally {
         res.off('close', onClose);
         options.req?.off('close', onClose);
         if (active) {
-            // Normal completion (not a disconnect): close the iterator and end the response.
+            // Normal completion (or a caught throw — not a disconnect): close the iterator and end
+            // the response.
             void iterator.return?.(undefined);
             res.end();
         }

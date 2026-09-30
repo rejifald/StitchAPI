@@ -94,36 +94,42 @@ Both `delta` and `error` also accept a bare function as shorthand for `{ data }`
 `delta: (c) => c.text`, `error: (e) => e.message` — plus `delta.event` / `delta.id`
 and `error.event` for the SSE `event:` / `id:` lines.
 
-## Errors: `stitchError(err)` / `stitchOnError(options?)`
+## Errors: `stitchError`
 
 A failed stitch rejects with a `StitchError` carrying the upstream `status`.
-Register `stitchOnError()` as your app's `onError` so handlers need no per-route
+Register `stitchError.handler()` as your app's `onError` so handlers need no per-route
 try/catch:
 
 ```ts
-app.onError(stitchOnError());
+app.onError(stitchError.handler());
 // default 502, body `{ error: 'Bad Gateway' }` — neither the upstream's
 // 401/404/etc. status nor the raw error message is leaked to your client (a
 // transport failure would otherwise read like `getaddrinfo ENOTFOUND
 // payments.internal.corp`, disclosing internal topology).
 
 // propagate the upstream status instead:
-app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }));
 
 // or shape your own error envelope (this opts in to the raw message):
-app.onError(stitchOnError({ body: (e) => ({ error: e.message }) }));
+app.onError(stitchError.handler({ body: (e) => ({ error: e.message }) }));
 ```
 
-Or map a single error by hand — `stitchError` returns a Hono `HTTPException`, or
+Or map a single error by hand — `stitchError.map` returns a Hono `HTTPException`, or
 `undefined` for a non-Stitch error so you can rethrow it untouched:
 
 ```ts
 try {
     return c.json(await c.get('stitch').stitch('/users')());
 } catch (err) {
-    throw stitchError(err) ?? err;
+    throw stitchError.map(err) ?? err;
 }
 ```
+
+`stitchError.is(err)` is the guard on its own.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this one
+concept: `.is` everywhere, `.map` wherever the framework has a mapped value to return, and
+`.handler` wherever it has an error hook to register on.
 
 ## Pairing with a store
 

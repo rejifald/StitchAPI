@@ -231,17 +231,27 @@ async function main(): Promise<void> {
                 string,
                 unknown
             >;
-        const named = [...Object.keys(core), ...Object.keys(testing)].sort();
+        // Descend one level into namespace-valued exports (`conformance`, `secrets`, the token
+        // grammars) — a flat `Object.keys` would let a member hide behind its namespace, and the
+        // one name this scan is looking for lives inside one.
+        const flatten = (mod: Record<string, unknown>): string[] =>
+            Object.keys(mod).flatMap((key) => {
+                const value = mod[key];
+                return value !== null && typeof value === 'object'
+                    ? [key, ...Object.keys(value).map((m) => `${key}.${m}`)]
+                    : [key];
+            });
+        const named = [...flatten(core), ...flatten(testing)].sort();
         const fixtureWords = named.filter((n) =>
             /fixture|cassette|record|snapshot|stale|fresh|expire/i.test(n),
         );
         checkSeq(
             'exports mentioning fixture/cassette/record/snapshot/stale/freshness',
             fixtureWords,
-            ['adapterContractFixture'],
+            ['conformance.fixture'],
         );
         note(
-            'and `adapterContractFixture` is the ADAPTER echo contract — for people writing transports, not people holding a stale invoice body',
+            'and `conformance.fixture` is the ADAPTER echo contract — for people writing transports, not people holding a stale invoice body',
             '',
         );
         note('total exported names across both entries', named.length);
@@ -295,7 +305,7 @@ async function main(): Promise<void> {
 
     finish(
         'C1',
-        'PARTIAL, AND THE HALF THAT IS MISSING IS THE SCENARIO. A shared `output` schema DOES catch a fixture that drifts from the contract: all four mutations — `legacy_ref` removed, `amount_cents` renamed, `paid` retyped, `customer_email` nulled — fail the call, through the library\'s own `mockAdapter` as well as a hand-written one, and `drift()` names each one. But that is the fixture drifting from the SCHEMA. The scenario is the VENDOR drifting from the schema while the fixture sits still, and measured, that run is: test ok=true with zero findings, production ok=false, five keys different. Nothing offline closes it, because offline the only bytes are the fixture\'s. Of the exported names across the main entry and `stitchapi/testing`, exactly one matches /fixture|cassette|record|snapshot|stale|fresh|expire/ — `adapterContractFixture`, which is the transport echo contract for plugin authors — and `__config` has no metadata slot, so "recorded on 2026-02-04" is not expressible in the library at all',
+        'PARTIAL, AND THE HALF THAT IS MISSING IS THE SCENARIO. A shared `output` schema DOES catch a fixture that drifts from the contract: all four mutations — `legacy_ref` removed, `amount_cents` renamed, `paid` retyped, `customer_email` nulled — fail the call, through the library\'s own `mockAdapter` as well as a hand-written one, and `drift()` names each one. But that is the fixture drifting from the SCHEMA. The scenario is the VENDOR drifting from the schema while the fixture sits still, and measured, that run is: test ok=true with zero findings, production ok=false, five keys different. Nothing offline closes it, because offline the only bytes are the fixture\'s. Of the exported names across the main entry and `stitchapi/testing`, exactly one matches /fixture|cassette|record|snapshot|stale|fresh|expire/ — `conformance.fixture`, which is the transport echo contract for plugin authors — and `__config` has no metadata slot, so "recorded on 2026-02-04" is not expressible in the library at all',
     );
 }
 

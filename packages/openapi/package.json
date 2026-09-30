@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/openapi",
-    "version": "1.0.0-rc.7",
+    "version": "1.0.0-rc.8",
     "type": "commonjs",
     "description": "Eject selected operations from an OpenAPI document into ready-to-own StitchAPI source — a build-time code generator, separate from the zero-dep runtime.",
     "main": "lib/index.js",
@@ -60,7 +60,7 @@
         "yaml": "^2.4.2"
     },
     "devDependencies": {
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.4.1",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
         "vitest": "^4.1.11"

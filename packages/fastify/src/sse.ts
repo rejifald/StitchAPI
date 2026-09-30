@@ -2,8 +2,9 @@
 // is an `AsyncGenerator<StitchEvent>`; an SSE endpoint wants `text/event-stream` frames. This
 // adapts the Nest `stitchSse` bridge (`packages/nest/src/sse.ts`) to Fastify's `reply`, writing
 // frames straight to `reply.raw` (Fastify ships no `reply.sse` of its own). Each `delta`
-// becomes one `data:` frame; an `error` event ends the stream; stream end closes it; and a
-// client disconnect aborts the upstream generator rather than leaving it running.
+// becomes one `data:` frame; an `error` event — or a throw mid-stream — ends the stream; stream
+// end closes it; and a client disconnect aborts the upstream generator rather than leaving it
+// running.
 //
 // The frame types, the `delta`/`error` shorthand folds, the SSE wire serializer, and the
 // secure-by-default error framing are shared with every other HTTP adapter via
@@ -17,6 +18,7 @@ import {
     resolveDelta,
     resolveError,
     sseFrame,
+    toErrorEvent,
     toIterable,
 } from 'stitchapi/sse-emit';
 
@@ -26,9 +28,9 @@ export type StreamStitchSseOptions = SseEmitOptions;
 /**
  * Stream a stitch's output to a Fastify {@link FastifyReply} as Server-Sent Events. Pass the
  * stitch's `.stream()` generator (or any `StitchEventSource`): each `delta` becomes
- * one SSE frame, an `error` event ends the stream with a named `event: error` frame (a generic
- * `data: error` by default — the raw message is withheld to avoid disclosing internal topology;
- * opt in via `error`), and stream end closes the response. The non-output events (`start` /
+ * one SSE frame, an `error` event — or a throw mid-stream — ends the stream with a named
+ * `event: error` frame (a generic `data: error` by default — the raw message is withheld to
+ * avoid disclosing internal topology; opt in via `error`), and stream end closes the response. The non-output events (`start` /
  * `progress` / `drift` / `result` / `done`) are control signals and are not forwarded to the client.
  *
  * Takes over the reply via `reply.hijack()` and writes raw frames, so do **not** also `send()`
@@ -96,11 +98,29 @@ export async function streamStitchSse<T>(
                 );
                 break;
             }
+            // start / progress / info / drift / result / done are control signals: not forwarded.
+        }
+    } catch (err) {
+        // A throw (not a surfaced `error` event): still withhold the raw message by default —
+        // normalise it to an error event so an `error.data` opt-in sees a consistent shape. The
+        // client frame is written only while the connection is live; `error.observe` fires either
+        // way, so a failure that races a disconnect is still logged server-side.
+        error.observe?.(err);
+        if (active) {
+            res.write(
+                sseFrame(
+                    error.data
+                        ? error.data(toErrorEvent(err))
+                        : DEFAULT_ERROR_DATA,
+                    error.event ?? 'error',
+                ),
+            );
         }
     } finally {
         res.off('close', onClose);
         if (active) {
-            // Normal completion (not a disconnect): close the iterator and end the response.
+            // Normal completion (or a caught throw — not a disconnect): close the iterator and
+            // end the response.
             void iterator.return?.(undefined);
             res.end();
         }

@@ -44,15 +44,15 @@ cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
 
 ## What each script establishes
 
-| Script                       | Question                                             | Measured                                                                                                            |
-| ---------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `c1-serve-raw-body.ts`       | can `serve` receive a signed webhook?                | **No — 404 at all five paths tried**, body already `JSON.parse`d, and the signature header dropped entirely         |
-| `c2-no-inbound-primitive.ts` | is there ANY inbound-signature primitive?            | **No.** 72 runtime exports, 4 matches, all BYO-plugin conformance suites. The one HMAC signs OUTBOUND only          |
-| `c3-serve-seams.ts`          | is there a seam — surface, hook, `ServeBodyOptions`? | **No.** The mount point that exists is defeated by verifying: reading the stream leaves `readBody` hanging          |
-| `c4-out-of-order.ts`         | does fetch-on-receipt make ordering moot?            | **PAYLOAD order yes, WRITE order no.** Converged `active/pro`; two concurrent handlers still landed on the older v2 |
-| `c5-dedup-ledger.ts`         | can `StitchStore` be the dedup ledger?               | **Yes, and the ownership is the other way round.** `get`+`set` triple-processed; `increment` processed exactly once |
-| `c6-fast-ack.ts`             | does anything help with ack-now-process-later?       | **No, and `void call()` is a silent DROP.** The ack measured exactly 10 virtual seconds late through `serve`        |
-| `c7-the-boundary.ts`         | the honest end-to-end answer, and its shape          | **154 lines of receipt / 63 of reaction** — 71% of the code is the half StitchAPI does not participate in           |
+| Script                       | Question                                             | Measured                                                                                                                         |
+| ---------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `c1-serve-raw-body.ts`       | can `serve` receive a signed webhook?                | **No — 404 at all five paths tried**, body already `JSON.parse`d, and the signature header dropped entirely                      |
+| `c2-no-inbound-primitive.ts` | is there ANY inbound-signature primitive?            | **No.** 89 runtime exports, 0 matches; the only near-misses are the BYO-plugin conformance kit. The one HMAC signs OUTBOUND only |
+| `c3-serve-seams.ts`          | is there a seam — surface, hook, `ServeBodyOptions`? | **No.** The mount point that exists is defeated by verifying: reading the stream leaves `readBody` hanging                       |
+| `c4-out-of-order.ts`         | does fetch-on-receipt make ordering moot?            | **PAYLOAD order yes, WRITE order no.** Converged `active/pro`; two concurrent handlers still landed on the older v2              |
+| `c5-dedup-ledger.ts`         | can `StitchStore` be the dedup ledger?               | **Yes, and the ownership is the other way round.** `get`+`set` triple-processed; `increment` processed exactly once              |
+| `c6-fast-ack.ts`             | does anything help with ack-now-process-later?       | **No, and `void call()` is a silent DROP.** The ack measured exactly 10 virtual seconds late through `serve`                     |
+| `c7-the-boundary.ts`         | the honest end-to-end answer, and its shape          | **154 lines of receipt / 63 of reaction** — 71% of the code is the half StitchAPI does not participate in                        |
 
 ## Files
 
@@ -90,10 +90,13 @@ cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
 - **A form-encoded provider cannot be received at all.** Slack signs an
   `application/x-www-form-urlencoded` body; `serve` answered **400 `invalid JSON body`** before any
   of the above could matter.
-- **C2 by enumeration rather than grep.** Importing all six public entry points and filtering 72
-  runtime exports for `/verif|hmac|signature|webhook|…/` returned exactly four names, and all four
-  are BYO-plugin conformance suites (`verifyStoreContract`, `verifyAdapterContract`,
-  `verifySinkContract`, `verifyFingerprintContract`). `AuthStrategy` is `{apply, name, scheme}` —
+- **C2 by enumeration rather than grep.** Importing all six public entry points and filtering 89
+  runtime exports for `/verif|hmac|signature|webhook|…/` returned **nothing** — the enumeration
+  descends one level into namespace exports, so no member hides behind one. The only names that
+  ever matched are the BYO-plugin conformance verifiers, now spelled `conformance.store`,
+  `conformance.adapter`, `conformance.sink` and `conformance.fingerprint`; the proof enumerates the
+  whole six-member namespace explicitly rather than letting the rename quietly retire the finding.
+  `AuthStrategy` is `{apply, name, scheme}` —
   `apply(req, ctx)` mutates an OUTGOING request and `scheme` is a declarative wire description
   (types.ts:1234-1236). `awsSigV4` ran here and produced an `AWS4-HMAC-SHA256` header on an outbound
   request; its subtle key is imported with usages `['sign']` (aws-sigv4/src/index.ts:84), so it
@@ -147,8 +150,8 @@ cd packages/core && pnpm exec tsc --noEmit --ignoreConfig \
 - **Durability is the real gap in the default, and the swap is first-class.**
   `memoryStore.close()` is `data.clear()` (store.ts:59-61) — the ledger did **not** survive, so a
   deploy inside the retry window re-processes every event still being retried. A BYO durable store
-  over the same interface survived a restart and passed **all 11 rules** of `verifyStoreContract`
-  (testing.ts:173) with **0 violations**; `redisStore` / `cloudflareKvStore` / `denoKvStore` are that
+  over the same interface survived a restart and passed **all 11 rules** of `conformance.store`
+  (testing.ts:185) with **0 violations**; `redisStore` / `cloudflareKvStore` / `denoKvStore` are that
   interface.
 - **C6's finding is a silent data-loss bug in the obvious workaround.** `void call(input)` — the
   spelling anyone writes to ack-then-continue — made **0 HTTP calls and raised 0 errors**. A stitch

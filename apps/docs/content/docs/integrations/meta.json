@@ -21,6 +21,8 @@
         "rtk-query",
         "swr",
         "tanstack-query",
+        "---File transfers---",
+        "download",
         "---State stores---",
         "stores",
         "---Validation---",

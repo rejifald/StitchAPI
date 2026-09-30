@@ -23,7 +23,7 @@ import { fileSink } from '../../../../packages/core/src/trace';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     StitchEvent,
     StitchStore,
     TraceContext,
@@ -140,7 +140,7 @@ export function fakeVendor(
     } = {},
 ): FakeVendor {
     const seen: AdapterRequest[] = [];
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         seen.push({ ...req, headers: { ...req.headers } });
         return {
             status: opts.status ?? 200,

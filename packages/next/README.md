@@ -7,7 +7,7 @@
 Next App Router route handlers are Web-standard — they take a `Request` and return a `Response` — so a stitch already runs in one directly: define a `seam` once and call it in the handler. What's worth a helper is the two bits you'd otherwise hand-roll on the Web platform:
 
 - **`streamStitchSse(stitch.stream())`** — turn a streaming stitch into a `text/event-stream` `Response`.
-- **`stitchErrorResponse(err)`** — map a thrown `StitchError` to a `Response` with a safe status, or `undefined` for anything else so you can rethrow it.
+- **`stitchError`** — one namespace for turning a stitch failure into HTTP: `.map(err)` maps a thrown `StitchError` to a `Response` with a safe status, or `undefined` for anything else so you can rethrow it; `.is(err)` is the guard on its own.
 
 Built on Web standards only (`Response`, `ReadableStream`, `TextEncoder`) — **no `next` import** — so the same helpers also work in Remix, SvelteKit endpoints, Bun, Deno, and Workers.
 
@@ -27,7 +27,7 @@ A non-streaming endpoint is just the stitch plus the error helper:
 // app/api/users/[id]/route.ts
 import { getUser } from '@/lib/api';
 
-import { stitchErrorResponse } from '@stitchapi/next';
+import { stitchError } from '@stitchapi/next';
 
 export async function GET(
     _req: Request,
@@ -37,14 +37,16 @@ export async function GET(
     try {
         return Response.json(await getUser({ params: { id } }));
     } catch (err) {
-        const mapped = stitchErrorResponse(err);
+        const mapped = stitchError.map(err);
         if (mapped) return mapped; // a Stitch failure → safe JSON Response
         throw err; // anything else falls through untouched
     }
 }
 ```
 
-`stitchErrorResponse` maps a `StitchError` to `502` by default (never leaking the upstream's status) and returns `undefined` for any other error, so the map-or-rethrow composition stays one branch; pass `{ status: (e) => e.status ?? 502 }` to propagate the upstream status. The body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the raw `err.message` is withheld, since it can leak an internal hostname (`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). Opt in with `{ body: (e) => ({ error: e.message }) }` when the upstream messages are safe to expose.
+`stitchError.map` maps a `StitchError` to `502` by default (never leaking the upstream's status) and returns `undefined` for any other error, so the map-or-rethrow composition stays one branch; pass `{ status: (e) => e.status ?? 502 }` to propagate the upstream status. The body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the raw `err.message` is withheld, since it can leak an internal hostname (`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). Opt in with `{ body: (e) => ({ error: e.message }) }` when the upstream messages are safe to expose.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this one concept. There is no `.handler` here: a route handler is its own `Request` → `Response` function, so Next has no central error hook to register one on — you map in the handler's own `catch`, as above.
 
 ## Streaming with SSE
 

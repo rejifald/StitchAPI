@@ -52,7 +52,7 @@ test('auth-wall: me() auto-logs-in and never asks the caller for a secret', asyn
         path: '/login',
     });
 
-    // Set per the task. STITCH_USER/STITCH_PASS are inert here; the loginInput below
+    // Set per the task. STITCH_USER/STITCH_PASS are inert here; the credentialsOf below
     // resolves DEMO_USER / DEMO_PASS at call time via env().
     process.env['STITCH_USER'] = 'u';
     process.env['STITCH_PASS'] = 'p';
@@ -66,7 +66,7 @@ test('auth-wall: me() auto-logs-in and never asks the caller for a secret', asyn
             login: signIn,
             cookie: 'sid',
             tenancy: 'app',
-            loginInput: () => ({
+            credentialsOf: () => ({
                 body: { user: env('DEMO_USER')(), pass: env('DEMO_PASS')() },
             }),
         }),

@@ -56,7 +56,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.7`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
+> **StitchAPI is at `1.0.0-rc.8`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 ---
 
@@ -262,13 +262,13 @@ const listOrders = stitch({
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
             ignore: ['[].meta'], // acknowledged, unconsumed — don't report it
-            severity: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
+            level: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
         },
     ),
 });
 ```
 
-Drift is schema-anchored — no snapshot to manage. Severity lives in the schema: a required field missing/incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift on the event stream. Declared variance (an optional field, a nullable, an empty array) validates clean, so it's never a false alarm; `ignore` silences known-but-unconsumed fields and `severity` filters or re-levels the soft signals. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift?utm_source=github).
+Drift is schema-anchored — no snapshot to manage. Severity lives in the schema: a required field missing/incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift on the event stream. Declared variance (an optional field, a nullable, an empty array) validates clean, so it's never a false alarm; `ignore` silences known-but-unconsumed fields and `level` filters or re-levels the soft signals. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift?utm_source=github).
 
 ## Resilience: retry, throttle, timeout
 
@@ -316,7 +316,7 @@ Caching is sound by construction: a stitch with an `output` schema caches only w
 
 ## Auth as a boundary
 
-Auth is a field on the stitch — never global. Secrets resolve **at call time** (`env()`, `secretsFile()`), the declaration is committable, and the caller gets data without ever seeing the credential:
+Auth is a field on the stitch — never global. Secrets resolve **at call time** (`env()`, `credential.file()`), the declaration is committable, and the caller gets data without ever seeing the credential:
 
 ```ts
 import { stitch } from 'stitchapi';

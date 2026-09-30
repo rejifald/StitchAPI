@@ -39,11 +39,17 @@ const DIAG_LIMIT = 30;
 // the hard gate is generous — it catches a page falling OUT of reach (the
 // >8/>30 regressions this PR fixed), not a ±1 wobble at the edge — while the
 // TARGET below is the standard every query is actually tuned to.
+//
+// The "as of" figures below are a dated snapshot, not an invariant. Only the
+// FLOOR is asserted, so nothing notices when the live numbers drift away from
+// the annotation: they read 0.920 / 0.953 here until 2026-08-28 while CI had
+// been reporting 0.880 / 0.933 for many runs. Trust a recent `search-relevance`
+// run on `main` over this comment, and re-date it when you touch it.
 const ASSERT = process.argv.includes('--assert');
 const TARGET_RANK = 3; // what we tune for; queries past it are reported, not failed
 const HARD_MAX_RANK = 5; // fail if any expected page ranks worse than this (or is missing)
-const MIN_RELEVANCE_AT_1 = 0.84; // floor; current 0.920 (25-query golden)
-const MIN_MRR = 0.9; // floor; current 0.953
+const MIN_RELEVANCE_AT_1 = 0.84; // floor; 0.880 (22/25) as of 2026-08-28
+const MIN_MRR = 0.9; // floor; 0.933 as of 2026-08-28
 
 const here = dirname(fileURLToPath(import.meta.url));
 const golden: GoldenCase[] = JSON.parse(

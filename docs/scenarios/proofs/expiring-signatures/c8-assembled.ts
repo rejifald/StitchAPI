@@ -22,7 +22,7 @@ import { stitch, verdictOf } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/index';
 import { manualClock } from '../../../../packages/core/src/testing';
 import type {
-    AdapterResponse,
+    AdapterResult,
     AuthStrategy,
     Clock,
 } from '../../../../packages/core/src/types';
@@ -52,7 +52,7 @@ function sigV4WithSkewCorrection(opts: {
         clock: opts.clock,
         offset: opts.offset,
     });
-    let skewed: AdapterResponse | undefined;
+    let skewed: AdapterResult | undefined;
     return {
         name: 'sigV4WithSkewCorrection',
         apply: inner.apply,

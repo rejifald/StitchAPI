@@ -87,29 +87,33 @@ app.get('/chat', (c) => {
 });
 ```
 
-## Errors — `stitchOnError`
+## Errors — `stitchError`
 
 A failed stitch rejects with a `StitchError` carrying the upstream `status`.
-Register `stitchOnError()` as your app's `onError` so handlers need no per-route
+Register `stitchError.handler()` as your app's `onError` so handlers need no per-route
 try/catch — it maps a `StitchError` to a Hono `HTTPException` (`502` by default,
 so an upstream's status is never leaked) and rethrows everything else:
 
 ```ts twoslash
-import { stitchOnError } from '@stitchapi/hono';
+import { stitchError } from '@stitchapi/hono';
 import { Hono } from 'hono';
 
 const app = new Hono();
 
 // default 502 — an upstream's 401/404/etc. is never leaked to your client.
-app.onError(stitchOnError());
+app.onError(stitchError.handler());
 
 // or propagate the upstream status instead:
-app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }));
 ```
 
-Or map a single error by hand with `stitchError(err)`, which returns an
+Or map a single error by hand with `stitchError.map(err)`, which returns an
 `HTTPException` — or `undefined` for a non-Stitch error, so you can rethrow it
-untouched.
+untouched. `stitchError.is(err)` is the guard on its own.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this
+one concept: `.is` everywhere, `.map` wherever the framework has a mapped value to
+return, `.handler` wherever it has an error hook.
 
 <Callout type="info">
     On Cloudflare Workers and other multi-runtime deployments, pair the seam

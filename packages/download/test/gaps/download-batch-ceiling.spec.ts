@@ -27,10 +27,10 @@ const blobText = async (b: Blob): Promise<string> =>
     new TextDecoder().decode(await b.arrayBuffer());
 
 // Narrow to the fulfilled arm by THROWING (not a conditional `expect`, which the lint forbids).
-const okValue = (r: ItemResult): DownloadResult => {
+const okData = (r: ItemResult): DownloadResult => {
     if (r.status !== 'fulfilled')
         throw new Error(`expected fulfilled but got ${r.status}`);
-    return r.value;
+    return r.data;
 };
 
 test('the batch caps the wire at `concurrency` and admits queued items in FIFO order', async () => {
@@ -70,7 +70,7 @@ test('the batch caps the wire at `concurrency` and admits queued items in FIFO o
     expect(results).toHaveLength(N);
     expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
     for (let i = 0; i < N; i++)
-        expect(await blobText(okValue(results[i]!).blob)).toBe(
+        expect(await blobText(okData(results[i]!).blob)).toBe(
             `body${paths[i]!}`,
         );
     expect(server.callCount()).toBe(N);

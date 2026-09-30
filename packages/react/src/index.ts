@@ -23,8 +23,7 @@ import {
     type StitchQuery,
     type StitchQueryResult,
     createStitchQuery,
-    keyInputFor,
-    nameOf,
+    stitchKey,
 } from '@stitchapi/query-core';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSyncExternalStore } from 'react';
@@ -45,12 +44,13 @@ export type {
 // binding, so the key format (and its secret-redaction guarantees) cannot drift
 // between frameworks. Re-exported here so React apps import everything from
 // `@stitchapi/react`.
-export {
-    deriveQueryKey,
-    keyInputFor,
-    nameOf,
-    stitchQueryOptions,
-} from '@stitchapi/query-core';
+//
+// The derivation is ONE namespace — `stitchKey.of` / `.name` / `.input` — not the
+// three verb-prefixed functions it replaced (`deriveQueryKey`/`nameOf`/`keyInputFor`),
+// which were three names on five barrels for one key. Named `stitchKey` and not a
+// bare `queryKey` for the same reason the adapter is `stitchQueryOptions` and not
+// `queryOptions`: TanStack Query owns both words (ADR 0012).
+export { stitchKey, stitchQueryOptions } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
 // Hook options & result
@@ -92,11 +92,11 @@ export interface UseStitchResult<T> extends StitchQueryResult<T> {
 // literal does not. A caller who keys differently passes explicit `deps`.
 function defaultKey(input: unknown): string {
     try {
-        // Sanitise first (via query-core's `keyInputFor`): an inline `onProgress`
+        // Sanitise first (via query-core's `stitchKey.input`): an inline `onProgress`
         // (fresh identity per render) would otherwise churn the structural key
         // and loop; a per-call `signal` would add non-deterministic noise. Both
         // are runtime-only, so they are dropped.
-        return JSON.stringify(keyInputFor(input));
+        return JSON.stringify(stitchKey.input(input));
     } catch {
         // Non-serialisable input (a function, a cyclic object) → opt out of
         // structural keying; the caller should pass explicit `deps`.
@@ -133,12 +133,12 @@ function useStitchInternal<T>(
 
     // The dependency list that triggers a fresh handle (and re-fetch). Default: a
     // structural key of the input + a stable name for the stitch (NOT its function
-    // identity; via query-core's `nameOf`, so two nameless stitches on different
+    // identity; via query-core's `stitchKey.name`, so two nameless stitches on different
     // paths don't share a dep key) + the streaming flags. Pass `options.deps` to
     // override.
     const depKey = deps
         ? deps
-        : [nameOf(stitch), defaultKey(input), streaming, mode, enabled];
+        : [stitchKey.name(stitch), defaultKey(input), streaming, mode, enabled];
 
     const query: StitchQuery<T> = useMemo(
         () =>

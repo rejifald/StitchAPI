@@ -45,7 +45,7 @@ import { seam } from 'stitchapi';
 export const api = seam({
     baseUrl: 'https://api.example.com',
     adapter: expoFetchAdapter(),
-    secretStore: expoSecureStore(SecureStore),
+    vault: expoSecureStore(SecureStore),
 });
 ```
 

@@ -2,6 +2,7 @@
 // diff of raw-vs-validated into leveled soft findings; `validationErrors` turns hard validation issues
 // into fatal `invalid` findings. The diff is pure, so these use plain objects (no Zod needed).
 import { classifyDiff, validationErrors } from '../src/drift';
+import type { DriftOptions } from '../src/types';
 
 describe('classifyDiff', () => {
     test('a stripped key → undeclared (info) at its path', () => {
@@ -203,15 +204,15 @@ describe('classifyDiff', () => {
         ).toEqual([]);
     });
 
-    describe('severity', () => {
+    describe('level', () => {
         test('a bare level is an allowlist — only that tier surfaces', () => {
             // undeclared defaults to info, so requesting only 'warn' drops it...
             expect(
-                classifyDiff({ a: 1, b: 2 }, { a: 1 }, { severity: 'warn' }),
+                classifyDiff({ a: 1, b: 2 }, { a: 1 }, { level: 'warn' }),
             ).toEqual([]);
             // ...while a coercion (default warn) passes the same filter.
             expect(
-                classifyDiff({ n: '1' }, { n: 1 }, { severity: 'warn' }),
+                classifyDiff({ n: '1' }, { n: 1 }, { level: 'warn' }),
             ).toHaveLength(1);
         });
 
@@ -220,7 +221,7 @@ describe('classifyDiff', () => {
                 { a: 1, b: 2 },
                 { a: 1 },
                 {
-                    severity: ['info', 'verbose'],
+                    level: ['info', 'verbose'],
                 },
             );
             expect(findings[0]?.change).toBe('undeclared');
@@ -231,10 +232,26 @@ describe('classifyDiff', () => {
                 { a: 1, b: 2 },
                 { a: 1 },
                 {
-                    severity: { undeclared: 'warn' },
+                    level: { undeclared: 'warn' },
                 },
             );
             expect(findings[0]?.level).toBe('warn');
+        });
+
+        // The accepted set is DERIVED — `Exclude<DriftLevel, 'error'>` — rather than re-listed as a
+        // second literal union that could drift from `DriftLevel`. `'error'` belongs to a hard
+        // validation failure, so it is not authorable here, in any of the three shapes. These
+        // `@ts-expect-error` directives are checked by `check:types`; an unused one fails.
+        test("`'error'` is not an authorable level, in any shape", () => {
+            const rejected = (): DriftOptions[] => [
+                // @ts-expect-error — a bare `'error'` is not in `Exclude<DriftLevel, 'error'>`.
+                { level: 'error' },
+                // @ts-expect-error — nor inside the allowlist form.
+                { level: ['warn', 'error'] },
+                // @ts-expect-error — nor as a re-leveling map's value.
+                { level: { undeclared: 'error' } },
+            ];
+            expect(typeof rejected).toBe('function');
         });
     });
 });

@@ -89,9 +89,9 @@ model — acknowledged but unconsumed surface. The grammar: nested keys join wit
 A stale entry in `ignore` is harmless — you keep ignoring a field that is still
 present.
 
-### `severity`
+### `level`
 
-`severity` controls how soft drift is leveled or filtered. Three shapes:
+`level` controls how soft drift is leveled or filtered. Three shapes:
 
 ```ts twoslash
 import { drift, stitch } from 'stitchapi';
@@ -102,7 +102,7 @@ const a = stitch({
     baseUrl: 'https://api.example.com',
     path: '/a',
     output: drift(z.object({ id: z.number() }), {
-        severity: 'warn', // only coerced findings surface; undeclared (info) and defaulted (verbose) are dropped
+        level: 'warn', // only coerced findings surface; undeclared (info) and defaulted (verbose) are dropped
     }),
 });
 
@@ -111,7 +111,7 @@ const b = stitch({
     baseUrl: 'https://api.example.com',
     path: '/b',
     output: drift(z.object({ id: z.number() }), {
-        severity: ['info', 'warn'], // drop verbose (defaulted), surface the rest
+        level: ['info', 'warn'], // drop verbose (defaulted), surface the rest
     }),
 });
 
@@ -120,12 +120,12 @@ const c = stitch({
     baseUrl: 'https://api.example.com',
     path: '/c',
     output: drift(z.object({ id: z.number() }), {
-        severity: { coerced: 'info', defaulted: 'info' },
+        level: { coerced: 'info', defaulted: 'info' },
     }),
 });
 ```
 
-Omit `severity` to surface all soft drift at its default level.
+Omit `level` to surface all soft drift at its default level.
 
 ## Variance is not drift
 

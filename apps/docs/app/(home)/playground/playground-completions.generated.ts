@@ -141,7 +141,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "circuit",
             type: "property",
             detail: "| [failures: number, cooldown: number | string] | AtLeastOne<CircuitOptions>",
-            info: "Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`). The positional form names both at once — `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.",
+            info: "Circuit breaker that fast-fails a repeatedly failing dependency. Both knobs have defaults (`failures` `5`, `cooldown` `'30s'`), so the object form may set either alone — but the opaque `circuit: {}` is still rejected (P20 — `AtLeastOne`): an empty envelope says nothing `circuit: [5, '30s']` does not say better. The positional form names both at once — `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.",
         },
         {
             label: "idempotency",
@@ -170,8 +170,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "extends",
             type: "property",
-            detail: "| Partial<StitchConfig> | Stitch | string | (Partial<StitchConfig> | Stitch | string)[]",
-            info: "Fragment(s) to deep-merge under this config — strings, partials, or other stitches. A single fragment is shorthand for a one-element list (CONTRACT.md P7).",
+            detail: "| AtLeastOne<StitchConfig> | Stitch | string | (AtLeastOne<StitchConfig> | Stitch | string)[]",
+            info: "Fragment(s) to deep-merge under this config — strings, partials, or other stitches. A single fragment is shorthand for a one-element list (CONTRACT.md P7). A partial must declare at least one slot: the opaque `extends: {}` contributes nothing to the merge and is rejected (CONTRACT.md P20 — `AtLeastOne`).",
         },
         {
             label: "adapter",
@@ -190,6 +190,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             type: "property",
             detail: "StitchStore",
             info: "Pluggable state store for throttle + session. Default in-memory.",
+        },
+        {
+            label: "vault",
+            type: "property",
+            detail: "StitchStore",
+            info: "Backend for the **vault** — the reserved, redacted namespace auth tokens and sessions live in (ADR 0002 §4). Defaults to a namespace over `store`, so secrets and throttle counters share one backend; point this at a KMS/Vault/keychain store (`expoSecureStore`) to harden the secrets alone. The split is by **visibility**, not backend — either may be distributed. Live object — stripped from `__config`.",
         },
         {
             label: "trace",

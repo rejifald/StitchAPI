@@ -89,7 +89,7 @@ export function dirnameOf(path: string): string {
 - **No static `node:` specifier exists in the reachable graph.** `getBuiltinModule`
   takes `'node:fs'` as a _runtime string_, so a browser bundler never tries to
   resolve it. Off Node, `process` is absent → the optional chain returns
-  `undefined` → file features (JSONL trace, drift snapshots, `secretsFile`) become
+  `undefined` → file features (JSONL trace, drift snapshots, `credential.file`) become
   explicit no-ops, never crashes.
 - **Crypto uses Web Crypto** (`globalThis.crypto`) with a non-secret Math.random
   fallback for idempotency keys / span ids.

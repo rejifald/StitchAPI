@@ -5,8 +5,8 @@
 // in-process single-flights), sharing one store + one key.
 //
 // HONEST LIMIT of this simulation: the two "workers" share one `memoryStore` inside one Node
-// process, so the atomicity the lock relies on is the in-process atomicity `verifyStoreContract`
-// guarantees (testing.ts:291). A real deployment needs a backend whose `increment` is atomic
+// process, so the atomicity the lock relies on is the in-process atomicity `conformance.store`
+// guarantees (testing.ts:303). A real deployment needs a backend whose `increment` is atomic
 // across processes. What this proves is that the LOGIC is expressible with the primitives on
 // offer — not that `memoryStore` is a distributed lock.
 //
@@ -35,8 +35,7 @@ const makeWorker = (
         adapter: provider.resourceAdapter({ delayMs: 5 }),
         auth: lockedRotatingRefresh({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             key: KEY,
             seedRefreshToken: 'RT-0',
             adapter: provider.tokenAdapter({ delayMs: 15 }),

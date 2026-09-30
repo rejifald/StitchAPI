@@ -22,10 +22,10 @@ beforeEach(() => {
 const blobText = async (b: Blob): Promise<string> =>
     new TextDecoder().decode(await b.arrayBuffer());
 
-const okValue = (r: ItemResult): DownloadResult => {
+const okData = (r: ItemResult): DownloadResult => {
     if (r.status !== 'fulfilled')
         throw new Error(`expected fulfilled but got ${r.status}`);
-    return r.value;
+    return r.data;
 };
 const asRejected = (
     r: ItemResult,
@@ -86,9 +86,9 @@ test('downloadAll settles per item and never rejects — a 404 + a RST are isola
     ]);
 
     // Successful items carry their COMPLETE, uncorrupted bytes despite failing siblings sharing the run.
-    expect(await blobText(okValue(results[0]!).blob)).toBe('ok/ok-0');
-    expect(await blobText(okValue(results[2]!).blob)).toBe('ok/ok-1');
-    expect(await blobText(okValue(results[4]!).blob)).toBe('ok/ok-2');
+    expect(await blobText(okData(results[0]!).blob)).toBe('ok/ok-0');
+    expect(await blobText(okData(results[2]!).blob)).toBe('ok/ok-1');
+    expect(await blobText(okData(results[4]!).blob)).toBe('ok/ok-2');
 
     // The failures are classified: a terminal 404, and a retryable transport RST (undici "fetch failed").
     const e404 = asRejected(results[1]!);
@@ -98,7 +98,7 @@ test('downloadAll settles per item and never rejects — a 404 + a RST are isola
     const eRst = asRejected(results[3]!);
     expect(eRst.retryable).toBe(true);
     expect(eRst.code).toBeDefined();
-    expect(eRst.reason.message).toMatch(/fetch failed/i);
+    expect(eRst.error.message).toMatch(/fetch failed/i);
 
     expect(server.callCount()).toBe(ITEMS.length);
 });

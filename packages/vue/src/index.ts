@@ -22,8 +22,7 @@ import {
     type StitchQuery,
     type StitchQueryResult,
     createStitchQuery,
-    keyInputFor,
-    nameOf,
+    stitchKey,
 } from '@stitchapi/query-core';
 import { compact } from 'stitchapi';
 import {
@@ -47,14 +46,15 @@ export type {
 } from '@stitchapi/query-core';
 
 // The TanStack Query adapter is implemented once in `@stitchapi/query-core`
-// (`deriveQueryKey` + `stitchQueryOptions`) so a stitch keys identically in every
+// (`stitchKey` + `stitchQueryOptions`) so a stitch keys identically in every
 // framework binding. Re-exported here so Vue apps import from one place.
-export {
-    deriveQueryKey,
-    keyInputFor,
-    nameOf,
-    stitchQueryOptions,
-} from '@stitchapi/query-core';
+//
+// The derivation is ONE namespace — `stitchKey.of` / `.name` / `.input` — not the
+// three verb-prefixed functions it replaced (`deriveQueryKey`/`nameOf`/`keyInputFor`),
+// which were three names on five barrels for one key. Named `stitchKey` and not a
+// bare `queryKey` for the same reason the adapter is `stitchQueryOptions` and not
+// `queryOptions`: TanStack Query owns both words (ADR 0012).
+export { stitchKey, stitchQueryOptions } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
 // Composable result
@@ -97,8 +97,18 @@ export interface VueUseStitchResult<T> {
  * Options for {@link useStitch} / {@link useStitchStream}: the query-core
  * options minus `streaming` — which composable you call decides that
  * (`useStitch` is unary, `useStitchStream` streams).
+ *
+ * **Framework-qualified** (CONTRACT.md P9, ADR 0012 rule 6), for the same reason as
+ * {@link VueUseStitchResult}. `@stitchapi/react` declares a bare `UseStitchOptions<T>`
+ * that admits a react-only `deps` member — its explicit re-create trigger — and
+ * `@stitchapi/react-native` and `@stitchapi/expo` republish that declaration verbatim
+ * through `export *`, so the bare name already denotes react's contract on THREE
+ * published packages. This composable has no `deps`: the re-create trigger is watched
+ * off the reactive `input` / `options` themselves, so passing one here would be
+ * silently ignored rather than honoured. One name, two contracts — so the divergent
+ * side takes the prefix and react keeps the bare name as the reference declaration.
  */
-export interface UseStitchOptions<T> extends Omit<
+export interface VueUseStitchOptions<T> extends Omit<
     CreateStitchQueryOptions<T>,
     'streaming'
 > {}
@@ -109,12 +119,12 @@ export interface UseStitchOptions<T> extends Omit<
 
 // A structural key of the input so an equal-shaped literal does not re-create the
 // handle, but `{ id: 1 }` → `{ id: 2 }` does. Mirrors `@stitchapi/react`. Sanitises
-// first via query-core's `keyInputFor` so an inline `onProgress` (fresh identity
+// first via query-core's `stitchKey.input` so an inline `onProgress` (fresh identity
 // per render) can't churn the key and loop, and a per-call `signal` adds no
 // non-deterministic noise — both are runtime-only.
 function defaultKey(input: unknown): string {
     try {
-        return JSON.stringify(keyInputFor(input));
+        return JSON.stringify(stitchKey.input(input));
     } catch {
         // Non-serialisable input (a function, a cyclic object) → opt out of
         // structural keying; falling back to a fresh key re-creates each time.
@@ -128,7 +138,7 @@ function defaultKey(input: unknown): string {
 function useStitchInternal<T>(
     stitch: StitchLike<T>,
     input: MaybeRefOrGetter<unknown>,
-    options: MaybeRefOrGetter<UseStitchOptions<T>>,
+    options: MaybeRefOrGetter<VueUseStitchOptions<T>>,
     streaming: boolean,
 ): VueUseStitchResult<T> {
     // The single reactive cell every consumer reads through. The core hands out a
@@ -177,10 +187,10 @@ function useStitchInternal<T>(
 
     // Re-create the handle (and re-fetch) when a structural key of the input or
     // the streaming-relevant options change. A stable name for the stitch (via
-    // `nameOf`, NOT the raw `name` — so two nameless stitches on different paths
+    // `stitchKey.name`, NOT the raw `name` — so two nameless stitches on different paths
     // don't share a dep key) joins the key so two stitches with the same input
     // still differ.
-    const name = nameOf(stitch);
+    const name = stitchKey.name(stitch);
     const depKey = (): string => {
         const opts = toValue(options);
         return JSON.stringify([
@@ -248,17 +258,17 @@ function useStitchInternal<T>(
 export function useStitch<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeRefOrGetter<QueryInput<S>>,
-    options?: MaybeRefOrGetter<UseStitchOptions<QueryOutput<S>>>,
+    options?: MaybeRefOrGetter<VueUseStitchOptions<QueryOutput<S>>>,
 ): VueUseStitchResult<QueryOutput<S>>;
 export function useStitch<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeRefOrGetter<Input>,
-    options?: MaybeRefOrGetter<UseStitchOptions<T>>,
+    options?: MaybeRefOrGetter<VueUseStitchOptions<T>>,
 ): VueUseStitchResult<T>;
 export function useStitch<T>(
     stitch: StitchLike<T>,
     input: MaybeRefOrGetter<unknown>,
-    options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
+    options: MaybeRefOrGetter<VueUseStitchOptions<T>> = {},
 ): VueUseStitchResult<T> {
     return useStitchInternal<T>(stitch, input, options, false);
 }
@@ -286,17 +296,17 @@ export function useStitch<T>(
 export function useStitchStream<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeRefOrGetter<QueryInput<S>>,
-    options?: MaybeRefOrGetter<UseStitchOptions<QueryOutput<S>>>,
+    options?: MaybeRefOrGetter<VueUseStitchOptions<QueryOutput<S>>>,
 ): VueUseStitchResult<QueryOutput<S>>;
 export function useStitchStream<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeRefOrGetter<Input>,
-    options?: MaybeRefOrGetter<UseStitchOptions<T>>,
+    options?: MaybeRefOrGetter<VueUseStitchOptions<T>>,
 ): VueUseStitchResult<T>;
 export function useStitchStream<T>(
     stitch: StitchLike<T>,
     input: MaybeRefOrGetter<unknown>,
-    options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
+    options: MaybeRefOrGetter<VueUseStitchOptions<T>> = {},
 ): VueUseStitchResult<T> {
     return useStitchInternal<T>(stitch, input, options, true);
 }

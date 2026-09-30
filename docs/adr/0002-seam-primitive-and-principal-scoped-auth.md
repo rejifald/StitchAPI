@@ -4,6 +4,8 @@
 - **Date:** 2026-06-13
 - **Tags:** authoring-surface, auth, security, multi-tenant, runtime, agents
 
+> **Amendment — `cookieSession`'s credential callback is `credentialsOf`, and fastify has one `seam` slot.** Two spellings quoted below were renamed in the pre-GA hard-break sweep, with no aliases (P19). `CookieSessionOptions.loginInput` is now **`credentialsOf`** ([CONTRACT.md P6](../CONTRACT.md#p6--key-is-a-string-keyof-is-a-function)'s derivation-function convention: the `Of` suffix says it is a function and the stem says what it returns; `loginInput` named the consumer, and its `login` prefix put it in a P24 group with the required `login` stitch). Read `loginInput` as `credentialsOf` throughout — including `loginInput?: (principal?) => StitchInput` in Decision 3 and §"the supported multi-tenant pattern"; when and how the callback runs is unchanged (resolved at call time, receives the bound `principal`, credentials never originate from the caller). Separately, fastify's `seamConfig` — cited below (in the 2026-09-03 vault amendment) as one of the three slots that type their config as `SeamConfig` — is **gone**: `seam` is the single field, taking either a prebuilt `Seam` or `AtLeastOne<SeamConfig>`. See [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep) (P6/P24, P20+P13) and [`packages/core/src/auth.ts`](../../packages/core/src/auth.ts).
+
 ## Context
 
 Composing a stitch from shared defaults today means threading a fragment (baseUrl,
@@ -101,9 +103,18 @@ deprecation window, and no migration path is owed.
       (principal for sessions).
 
     Both may be in-memory **or** distributed. The default is **one `StitchStore` with a
-    reserved, redacted secret namespace**; a separate `secretStore` is an _optional_ override
+    reserved, redacted secret namespace**; a separate backend is an _optional_ override
     for a hardened vault (KMS/Vault with audit). The vault is **not** memory-only — sensitive
     ≠ unshareable, and shared tokens/sessions across workers are deliberate features.
+
+    > **Amendment 2026-09-03 — the override is `vault`, a `StitchConfig` slot, not a seam-only
+    > `secretStore`.** This decision is unchanged (two namespaces, split by visibility, either
+    > distributable); only where the override is declared changed. It was `secretStore` on
+    > `SeamOptions`, which made a hardened vault reachable from `seam()` **alone** — a standalone
+    > `stitch()`, fastify's `seamConfig` and a nest feature seam all type their config as
+    > `SeamConfig` and silently had no way to name it. It is now `vault?: StitchStore` on
+    > `StitchConfig`, projected to every surface, and `SeamOptions` is deleted. See
+    > [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep) (P16).
 
 5.  **Shared budgets are sealed; per-stitch override may only TIGHTEN, never escape.** A
     stitch may add a stricter local throttle that **stacks** on the seam's (both gates must

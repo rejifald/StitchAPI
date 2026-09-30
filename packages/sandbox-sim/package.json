@@ -8,8 +8,8 @@
         "test": "tsx src/dispatch.test.ts && tsx src/adapters/fetch-shim.test.ts && tsx src/handlers/streaming-llm.test.ts && tsx src/handlers/registration.test.ts && tsx src/handlers/auth-resilience.test.ts && tsx src/handlers/errors-status.test.ts && tsx src/handlers/events.test.ts && tsx src/handlers/graphql.test.ts && tsx src/handlers/pagination.test.ts"
     },
     "devDependencies": {
-        "@types/node": "^22.10.0",
-        "tsx": "^4.23.12",
+        "@types/node": "^26.4.1",
+        "tsx": "^4.23.13",
         "typescript": "^6.0.3"
     },
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",

@@ -144,7 +144,7 @@ export const pages: Page[] = [
         path: 'getting-started/migration-notes',
         title: 'Migration notes',
         description:
-            'Three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that differ from a naive baseline and surprise migrators.',
+            'Auth strategies import from stitchapi/auth and the four secret resolvers fold into two namespaces, plus three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that surprise migrators.',
         kind: 'guide',
     },
 
@@ -560,7 +560,7 @@ export const pages: Page[] = [
         path: 'guides/auth/secret-resolvers',
         title: 'Secret resolvers',
         description:
-            'Resolve secrets lazily at call time with env() and secretsFile() instead of hard-coding them.',
+            'Resolve secrets lazily at call time with env() and credential.file() instead of hard-coding them.',
         kind: 'guide',
     },
 
@@ -862,14 +862,14 @@ export const pages: Page[] = [
         path: 'reference/seam',
         title: 'seam()',
         description:
-            'SeamOptions — every prop a seam takes, the eight per-endpoint keys it refuses — plus the Seam handle and the lifecycle-free PrincipalSeam that seam.as() returns.',
+            'SeamConfig — every prop a seam takes, the eight per-endpoint keys it refuses — plus the Seam handle and the lifecycle-free PrincipalSeam that seam.as() returns.',
         kind: 'reference',
     },
     {
         path: 'reference/auth-strategies',
         title: 'Auth strategies',
         description:
-            'bearer, apiKey, basic, cookieSession, oauth2, and the env() and secretsFile() resolvers.',
+            'bearer, apiKey, basic, cookieSession, oauth2, and the env and credential secret resolvers.',
         kind: 'reference',
     },
     {

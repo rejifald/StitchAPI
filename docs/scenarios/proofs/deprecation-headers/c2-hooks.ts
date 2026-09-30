@@ -19,7 +19,7 @@
 import { stitch } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/index';
 import type {
-    AdapterResponse,
+    AdapterResult,
     HookContext,
     StitchEvent,
     TraceSink,
@@ -200,7 +200,7 @@ async function main(): Promise<void> {
         const r = await stitch({
             name: 'users',
             url: 'https://api.vendor.test/v1/users',
-            adapter: async (): Promise<AdapterResponse> => {
+            adapter: async (): Promise<AdapterResult> => {
                 n += 1;
                 return {
                     status: n < 3 ? 503 : 200,
@@ -296,7 +296,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        'IT SEES THEM, AND IT CAN DO FAR MORE THAN OBSERVE — which is the problem. `ctx.res` on a 200 is the full `AdapterResponse`, so both headers parse out of `ctx.res.headers` with `ctx.name` alongside. The hook\'s RETURN value is ignored, exactly as the docs say. But `ctx.res` is the engine\'s live object, handed over at engine.ts:705 and read again by `interpret` at engine.ts:775, so MUTATION is a real write channel: mutating `res.body` added a key to the value the caller received, mutating `res.status` turned the vendor\'s 200 into a thrown `HTTP 503`, and mutating `res.headers` made the surface read `"REWRITTEN BY HOOK"` instead of the real `Sunset`. The hooks guide says hooks "never change what a stitch returns"; measured, that is true only of the return value. Three further limits make it the wrong seat for this scenario anyway: it fires once PER ATTEMPT (3 firings for 1 retried call, each carrying the notice), `HookContext` has no `emit`/`run`/`findings` so nothing it learns can reach the event stream or the drift report, and the only way out is a closure with no de-duplication of its own',
+        'IT SEES THEM, AND IT CAN DO FAR MORE THAN OBSERVE — which is the problem. `ctx.res` on a 200 is the full `AdapterResult`, so both headers parse out of `ctx.res.headers` with `ctx.name` alongside. The hook\'s RETURN value is ignored, exactly as the docs say. But `ctx.res` is the engine\'s live object, handed over at engine.ts:705 and read again by `interpret` at engine.ts:775, so MUTATION is a real write channel: mutating `res.body` added a key to the value the caller received, mutating `res.status` turned the vendor\'s 200 into a thrown `HTTP 503`, and mutating `res.headers` made the surface read `"REWRITTEN BY HOOK"` instead of the real `Sunset`. The hooks guide says hooks "never change what a stitch returns"; measured, that is true only of the return value. Three further limits make it the wrong seat for this scenario anyway: it fires once PER ATTEMPT (3 firings for 1 retried call, each carrying the notice), `HookContext` has no `emit`/`run`/`findings` so nothing it learns can reach the event stream or the drift report, and the only way out is a closure with no de-duplication of its own',
     );
 }
 

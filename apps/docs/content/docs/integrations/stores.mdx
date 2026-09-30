@@ -15,7 +15,7 @@ and every worker shares the same counters and sessions.
 Each driver is a thin peer-dependency (or zero-dependency) package that imports no
 client of its own — it runs on a small structural surface, so the client you
 already use is a drop-in, and a test double is too. All three are proven against
-the same `verifyStoreContract` from `stitchapi/testing`.
+the same `conformance.store` kit from `stitchapi/testing`.
 
 ## Which store?
 

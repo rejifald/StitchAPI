@@ -152,7 +152,14 @@ apps/docs/.search-index/
 # HuggingFace by scripts/fetch-embed-model.mts as a deploy build step, never
 # committed — same rationale as apps/docs/.search-index/ above. See
 # apps/docs/lib/search-index/embed.ts.
-apps/docs/.model-cache/
+#
+# Globbed rather than pinned to MODEL_DIR's current value (.model-cache) because
+# the weights are ~87 MB and the exact directory name is not fixed in practice:
+# anything debugging search locally points transformers.js's env.cacheDir
+# wherever is convenient, and a stray apps/docs/.model/ from one such session is
+# what prompted this. A miss here is expensive — the tree looks clean, then one
+# `git add -A` stages 87 MB of ONNX weights.
+apps/docs/.model*/
 
 # @stitchapi/docs-mcp's bundled docs snapshot: copied in from apps/docs's
 # .search-index by scripts/copy-bundle.mjs at package build time, not committed —

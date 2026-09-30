@@ -1,4 +1,4 @@
-// `optionalEnv` + `bearer`'s optional-secret path. A required Secret (`bearer(env('X'))`,
+// `env.optional` + `bearer`'s optional-secret path. A required Secret (`bearer(env('X'))`,
 // `bearer('literal')`) is unchanged — it throws on a missing var and never announces. An optional
 // secret attaches only when present, otherwise skips the header and announces the miss as an
 // `info` event (never the token). The unit tests drive `apply` directly; the integration test
@@ -14,7 +14,7 @@ import type {
     StitchEvent,
     TraceSink,
 } from '../src';
-import { bearer, env, optionalEnv } from '../src/auth';
+import { bearer, env } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -50,12 +50,12 @@ function recorder(): {
     return { ctx, infos };
 }
 
-describe('bearer(optionalEnv()) (unit)', () => {
+describe('bearer(env.optional()) (unit)', () => {
     test('var set: attaches the header and announces the source, never the token', () => {
         process.env['MY_TOKEN'] = 'sekret-value';
         const req = fakeReq('https://api.example.com/x');
         const { ctx, infos } = recorder();
-        void bearer(optionalEnv('MY_TOKEN')).apply(req, ctx);
+        void bearer(env.optional('MY_TOKEN')).apply(req, ctx);
         expect(req.headers['authorization']).toBe('Bearer sekret-value');
         expect(infos).toHaveLength(1);
         expect(infos[0]?.topic).toBe('auth');
@@ -66,7 +66,7 @@ describe('bearer(optionalEnv()) (unit)', () => {
     test('var unset: no header, announces the miss naming the var', () => {
         const req = fakeReq('https://api.example.com/x');
         const { ctx, infos } = recorder();
-        void bearer(optionalEnv('MY_TOKEN')).apply(req, ctx);
+        void bearer(env.optional('MY_TOKEN')).apply(req, ctx);
         expect(req.headers['authorization']).toBeUndefined();
         expect(infos[0]?.detail).toContain('MY_TOKEN');
         expect(infos[0]?.detail).toContain('not set');
@@ -76,14 +76,14 @@ describe('bearer(optionalEnv()) (unit)', () => {
         process.env['MY_TOKEN'] = '';
         const req = fakeReq('https://api.example.com/x');
         const { ctx } = recorder();
-        void bearer(optionalEnv('MY_TOKEN')).apply(req, ctx);
+        void bearer(env.optional('MY_TOKEN')).apply(req, ctx);
         expect(req.headers['authorization']).toBeUndefined();
     });
 
     test('browser (no process env): resolves absent, attaches nothing', () => {
         const req = fakeReq('https://api.example.com/x');
         const { ctx, infos } = recorder();
-        const token = optionalEnv('MY_TOKEN');
+        const token = env.optional('MY_TOKEN');
         const saved = (globalThis as { process?: unknown }).process;
         (globalThis as { process?: unknown }).process = undefined;
         void bearer(token).apply(req, ctx);
@@ -111,7 +111,7 @@ describe('bearer() required path is unchanged', () => {
     });
 });
 
-describe('bearer(optionalEnv()) (integration)', () => {
+describe('bearer(env.optional()) (integration)', () => {
     let server: MockServer;
     beforeAll(async () => {
         server = await startMockServer();
@@ -140,7 +140,7 @@ describe('bearer(optionalEnv()) (integration)', () => {
         };
         const thing = stitch({
             url: `${server.url}/thing`,
-            auth: bearer(optionalEnv('DEMO_TOKEN')),
+            auth: bearer(env.optional('DEMO_TOKEN')),
             trace: sink,
         });
 

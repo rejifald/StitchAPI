@@ -1,0 +1,34 @@
+{
+    "version": 1,
+    "project": "stitchapi",
+    "lang": "en",
+    "title": "Other projects by the studio",
+    "studio": {
+        "name": "Oleks Crane",
+        "href": "https://olekscrane.com/work/stitchapi"
+    },
+    "all": { "label": "All projects", "href": "https://olekscrane.com/work" },
+    "related": [
+        {
+            "name": "Yakir",
+            "tagline": "Pin your docs to the truth so they can’t drift.",
+            "href": "https://olekscrane.com/work/yakir"
+        },
+        {
+            "name": "Langtell",
+            "tagline": "Tell me the language.",
+            "href": "https://olekscrane.com/work/langtell"
+        },
+        {
+            "name": "Pervigil",
+            "tagline": "Keeps the machine awake while long jobs run.",
+            "href": "https://olekscrane.com/work/pervigil"
+        }
+    ],
+    "ask": {
+        "heading": "Have something to build?",
+        "body": "Tell me what you’re working on.",
+        "label": "Discuss a project",
+        "href": "https://olekscrane.com/contact"
+    }
+}

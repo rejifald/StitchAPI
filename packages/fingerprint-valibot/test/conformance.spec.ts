@@ -1,10 +1,7 @@
 // Conformance proof for the Valibot fingerprint strategy (StitchAPI ADR 0004).
 import { valibotFingerprinter } from '../src';
 
-import {
-    assertConformance,
-    verifyFingerprintContract,
-} from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import type { FingerprintFixtures } from 'stitchapi/testing';
 import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
@@ -192,14 +189,11 @@ const fixtures: FingerprintFixtures = {
 
 describe('@stitchapi/fingerprint-valibot', () => {
     it('passes the fingerprint conformance contract', () => {
-        const report = verifyFingerprintContract(
-            valibotFingerprinter,
-            fixtures,
-        );
+        const report = conformance.fingerprint(valibotFingerprinter, fixtures);
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);
         expect(() => {
-            assertConformance(report);
+            conformance.assert(report);
         }).not.toThrow();
     });
 

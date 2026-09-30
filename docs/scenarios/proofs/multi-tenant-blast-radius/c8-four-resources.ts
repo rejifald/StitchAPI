@@ -65,8 +65,7 @@ function tenantAware(opts: { seamThrottle?: boolean } = {}) {
         // token: per-tenant, fail-closed, by the PRINCIPAL.
         auth: oauth2({
             tokenUrl: 'https://idp.vendor.test/token',
-            clientId: 'saas-app',
-            clientSecret: 'shh',
+            client: { id: 'saas-app', secret: 'shh' },
             adapter: idp.adapter(),
             tenancy: 'principal',
         }),

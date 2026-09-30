@@ -17,12 +17,13 @@ import { makeStitch } from './stitch';
 import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
+    type AtLeastOne,
     type DriftFinding,
     type NoRequestShapeOnLlm,
     type NoUnknownKeys,
     type NoUnknownNestedKeys,
     type Seam,
-    type SeamOptions,
+    type SeamConfig,
     type Stitch,
     type StitchConfig,
     type StitchInput,
@@ -52,7 +53,16 @@ export interface LlmRequest {
 export interface LlmResult {
     text: string;
     model?: string;
-    usage?: { inputTokens?: number; outputTokens?: number };
+    /**
+     * Token usage, when the provider reports it. `input` / `output`, not `inputTokens` /
+     * `outputTokens`: the envelope already says "tokens", and the two vendors disagree about
+     * the wire spelling anyway — anthropic sends `input_tokens`/`output_tokens`, openai sends
+     * `prompt_tokens`/`completion_tokens`. Echoing either one here would make the NORMALISED
+     * shape speak one vendor's dialect (CONTRACT.md P24: the envelope names the subject, the
+     * field names the dimension — the same reading that took `LlmOptions.maxTokens` to
+     * `tokens`). Each provider's `parse` converts at the edge, just below.
+     */
+    usage?: { input?: number; output?: number };
     /** Why the provider stopped generating, in the PROVIDER's own vocabulary — anthropic's
      *  `stop_reason` (`end_turn`, `max_tokens`, …), openai's `finish_reason` (`stop`, `length`, …).
      *  The field name is normalised; the VALUE is not, because there is no cross-vendor standard to
@@ -94,10 +104,10 @@ const truncatedBy = (finishReason?: string): boolean | undefined =>
 // empty `findings` array on all eight observers.
 //
 // It reuses the `coerced` change kind rather than minting one, following `flagFinding`'s precedent:
-// a new kind would widen `SoftDriftChange`, the per-kind severity map and its documented defaults
+// a new kind would widen `SoftDriftChange`, the per-kind level map and its documented defaults
 // for a diagnostic that reads the same either way. `coerced` is the honest fit of the three soft
 // kinds — the value that reached you is not the value that was meant — and its default level is
-// already `warn`, so kind and severity agree instead of arguing.
+// already `warn`, so kind and level agree instead of arguing.
 const truncationFinding = (reason: string | undefined): DriftFinding => ({
     level: 'warn',
     path: 'finishReason',
@@ -353,13 +363,24 @@ function bindSeam(s: Seam): LlmSeamApi {
  * The llm surface's authoring helper — callable for the terse form (`llm(config)`) plus:
  * - `llm.stitch(config)` — a standalone llm stitch (alias of the callable).
  * - `llm.bind(existingSeam)` — bind llm members to an existing seam.
- * - `llm.bind(options)` — a new seam whose members default to llm.
+ * - `llm.bind(options)` — a new seam, configured by `options`, whose members default to llm.
+ * - `llm.bind(seam())` — the all-defaults new seam (the opaque `bind({})` is a compile error, P20).
  * - `llm.surface` — the llm {@link Surface} identity.
  */
 export const llm = Object.assign(llmStitch, {
     surface: llmSurface,
     stitch: llmStitch,
-    bind: (arg: Seam | SeamOptions): LlmSeamApi =>
+    /**
+     * Bind llm members to a seam: an existing {@link Seam} is used as-is, anything else is a
+     * {@link SeamConfig} this builds a NEW seam from.
+     *
+     * The config arm is `AtLeastOne<SeamConfig>`, so the opaque `bind({})` is a compile error
+     * (CONTRACT.md P20). `{}` failed `isSeam`, fell through to `seam({})`, and silently built a
+     * whole second runtime — its own store, vault, trace sink and lifecycle — behind the most
+     * opaque spelling available. The all-defaults case has an unambiguous spelling that says what
+     * it does: `llm.bind(seam())`.
+     */
+    bind: (arg: Seam | AtLeastOne<SeamConfig>): LlmSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });
 
@@ -410,8 +431,8 @@ export const anthropic: LlmProvider = {
         if (b.model !== undefined) result.model = b.model;
         if (b.usage)
             result.usage = compact({
-                inputTokens: b.usage.input_tokens,
-                outputTokens: b.usage.output_tokens,
+                input: b.usage.input_tokens,
+                output: b.usage.output_tokens,
             });
         if (b.stop_reason) result.finishReason = b.stop_reason;
         return result;
@@ -457,8 +478,8 @@ export const openai: LlmProvider = {
         if (b.model !== undefined) result.model = b.model;
         if (b.usage)
             result.usage = compact({
-                inputTokens: b.usage.prompt_tokens,
-                outputTokens: b.usage.completion_tokens,
+                input: b.usage.prompt_tokens,
+                output: b.usage.completion_tokens,
             });
         const fr = b.choices?.[0]?.finish_reason;
         if (fr) result.finishReason = fr;

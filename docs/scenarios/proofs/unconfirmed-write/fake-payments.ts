@@ -33,7 +33,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     Clock,
 } from '../../../../packages/core/src/types';
 
@@ -213,7 +213,7 @@ export class FakePayments {
     }
 
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const url = new URL(req.url);
             if (req.method === 'GET') return this.handleQuery(url);
             return this.handleCharge(req, url);
@@ -221,7 +221,7 @@ export class FakePayments {
     }
 
     /** `GET /charges?ref=…` — the recovery query. Authoritative: it reads the same ledger. */
-    private handleQuery(url: URL): AdapterResponse {
+    private handleQuery(url: URL): AdapterResult {
         const ref = url.searchParams.get('ref');
         const found = this.charges.filter((c) => c.ref === ref);
         this.calls.push({
@@ -242,7 +242,7 @@ export class FakePayments {
     private async handleCharge(
         req: AdapterRequest,
         url: URL,
-    ): Promise<AdapterResponse> {
+    ): Promise<AdapterResult> {
         this.prune();
         const n = this.calls.length + 1;
         const writeN = ++this.writes;
@@ -262,7 +262,7 @@ export class FakePayments {
             body: unknown,
             replayed: boolean,
             createdCharge: boolean,
-        ): Promise<AdapterResponse> => {
+        ): Promise<AdapterResult> => {
             this.calls.push({
                 n,
                 writeN,

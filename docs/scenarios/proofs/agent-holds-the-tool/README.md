@@ -167,7 +167,8 @@ boundary is entirely the operator's.** That is the finding this directory exists
   vendor body contains a credential-shaped string, and a `cookieSession` whose login stitch is
   itself registered and callable — none of them put a held credential into a JSON-RPC payload. The
   registered login stitch is the sharpest of those: an agent can call it, and gets `HTTP 401`,
-  because the login credential lives in `cookieSession.loginInput` and the MCP path never reaches it.
+  because the login credential lives in `cookieSession.credentialsOf` and the MCP path never reaches
+  it.
 - **The one leak is `apiKey({ in: 'query' })`, not MCP.** The auth guide already warns that a key in
   the URL "leaks wherever URLs go — server access logs, proxies, the browser history, a `Referer`
   header". What C4 adds is one more destination: an unfiltered error message, and therefore the

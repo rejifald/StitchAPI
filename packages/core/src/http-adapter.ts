@@ -3,7 +3,7 @@ import type {
     Adapter,
     AdapterProgress,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     MultipartNesting,
     ResponseType,
 } from './types';
@@ -35,7 +35,7 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
     const fetchImpl = opts?.fetch ?? fetch;
     const fetchAdapterRequest: Adapter = async function fetchAdapterRequest(
         req: AdapterRequest,
-    ): Promise<AdapterResponse> {
+    ): Promise<AdapterResult> {
         const method = req.method.toUpperCase();
         const headers: Record<string, string> = { ...req.headers };
 
@@ -107,15 +107,15 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             return {
                 status: response.status,
                 headers: resHeaders,
-                body: decodeResponseBody(req.responseType, contentType, bytes),
+                body: decodeResponseBody(req.response, contentType, bytes),
                 url: finalUrl,
             };
         }
 
-        // Read the body. An explicit responseType wins (arrayBuffer/blob for binary
+        // Read the body. An explicit `response` wins (arrayBuffer/blob for binary
         // downloads, text/json to force a shape); otherwise auto-detect by content-type.
         let parsed: unknown;
-        const responseType = req.responseType;
+        const responseType = req.response;
         if (responseType === 'arrayBuffer') {
             parsed = await response.arrayBuffer();
         } else if (responseType === 'blob') {
@@ -209,7 +209,7 @@ const MAX_REDIRECTS = 20;
 // detect that (no `location`) and return it as-is — the browser is already following the redirect
 // under CORS, which itself prevents the cross-origin custom-header leak (preflight). So:
 // manual-follow where the 3xx is readable (Node/undici), platform-safe otherwise. Returns the
-// final response and the URL it came from (for AdapterResponse.url).
+// final response and the URL it came from (for AdapterResult.url).
 async function followRedirects(
     fetchImpl: typeof fetch,
     startUrl: string,
@@ -345,14 +345,14 @@ export function encodeRequestBody(req: AdapterRequest): {
     if (req.body === undefined || req.body === null) return { body: undefined };
     if (typeof req.body === 'string') return { body: req.body };
     if (req.bodyType === 'form') {
-        // Same walker the query string uses, so one `arrayFormat` governs both urlencoded
+        // Same walker the query string uses, so one `wire.array` governs both urlencoded
         // surfaces and a nested object no longer stringifies to `[object Object]`
         // (ADR 0005 Decision 6, extended to the form arm). `URLSearchParams` does the
         // encoding, which keeps a space spelled `+` here as it always has been.
         const params = new URLSearchParams();
         for (const [k, v] of flattenParams(
             req.body as Record<string, unknown>,
-            req.arrayFormat,
+            req.array,
         )) {
             params.append(k, v);
         }

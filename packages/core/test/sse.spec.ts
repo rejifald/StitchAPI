@@ -258,6 +258,125 @@ describe('sse over the engine (event spine + await)', () => {
     });
 });
 
+describe('aborting mid-stream stops delivery deterministically (no transport race)', () => {
+    // The old version of this test drove a REAL server with a 40ms `chunkDelay` and depended on
+    // the abort reaching the transport before the next chunk decoded — flaky under load, since that
+    // race could resolve either way. `streamOf` below never reads `req.signal` at all (neither it
+    // nor `streamAdapter` are abort-aware), so every chunk is ready the instant it is pulled: the
+    // second chunk is UNCONDITIONALLY already "decoded" by the time the consumer aborts and the
+    // loop asks for it, on every single run. That reproduces the exact race deterministically and
+    // proves the assertions hold only because of `runStreaming`'s own abort guard — never because a
+    // transport happened to notice the signal (this one never does).
+    test('a chunk already decoded before the caller aborts is still not delivered', async () => {
+        const events = sse({
+            url: 'https://x.test/abortable',
+            adapter: streamAdapter(
+                streamOf([
+                    'data: {"n":1}\n\n',
+                    'data: {"n":2}\n\n',
+                    'data: {"n":3}\n\n',
+                ]),
+            ),
+        });
+        const ctl = new AbortController();
+        const deltas: unknown[] = [];
+        let sawError = false;
+        let doneOk: boolean | undefined;
+        for await (const e of events.stream({ signal: ctl.signal })) {
+            if (e.type === 'delta') {
+                deltas.push(e.chunk);
+                ctl.abort(); // stop after the first event — chunks 2 and 3 are already sitting in
+                // `streamOf`, ready to hand over the instant the next `pull()` asks for them
+            } else if (e.type === 'error') sawError = true;
+            else if (e.type === 'done') doneOk = e.ok;
+        }
+        expect(deltas).toEqual([{ data: { n: 1 } }]);
+        expect(sawError).toBe(true);
+        expect(doneOk).toBe(false);
+    });
+
+    test('a chunk whose validation aborts is neither collected nor delivered', async () => {
+        // The loop-ENTRY guard cannot catch this one. With an `output` contract set, validation is
+        // an `await` sitting between that guard and the `chunks.push` + `delta` yield, so an abort
+        // landing during it would still see the chunk collected and delivered — the same defect
+        // displaced by one await, and reachable by any streaming stitch with an output schema.
+        // Aborting from inside `validate` puts the abort in exactly that window on every run, with
+        // no timing dependence. Found in review of the loop-entry guard, which claimed to cover
+        // "every other effect below" and did not.
+        const ctl = new AbortController();
+        const events = sse({
+            url: 'https://x.test/abort-during-validate',
+            adapter: streamAdapter(
+                streamOf(['data: {"n":1}\n\n', 'data: {"n":2}\n\n']),
+            ),
+            output: asValidator({
+                validate: (value: unknown) => {
+                    ctl.abort();
+                    return Promise.resolve({ ok: true as const, value });
+                },
+            }),
+        });
+        const deltas: unknown[] = [];
+        let sawError = false;
+        let doneOk: boolean | undefined;
+        for await (const e of events.stream({ signal: ctl.signal })) {
+            if (e.type === 'delta') deltas.push(e.chunk);
+            else if (e.type === 'error') sawError = true;
+            else if (e.type === 'done') doneOk = e.ok;
+        }
+        // NOT `[{ data: { n: 1 } }]`: the abort landed before this chunk was ever handed over, so
+        // the caller sees none of it — and the awaited result, fed by the same `chunks`, agrees.
+        expect(deltas).toEqual([]);
+        expect(sawError).toBe(true);
+        expect(doneOk).toBe(false);
+    });
+
+    test('an aborted resumable stream (sse.reconnect) never tries to reconnect', async () => {
+        // Every event carries an `id:`, so `resumeToken` sees one on the very first delta —
+        // `recoverable` is true the moment the stream drops, exactly the shape that would otherwise
+        // reconnect. Proves the reconnect predicate's abort check wins over "recoverable, attempts
+        // left": the caller cancelled, so no `progress: reconnect` is ever emitted and the body is
+        // never reopened.
+        let opens = 0;
+        const events = sse({
+            url: 'https://x.test/abortable-resumable',
+            sse: { reconnect: { attempts: 3, delay: 1 } },
+            adapter: (req) => {
+                opens++;
+                if (!req.stream) throw new Error('expected stream');
+                return Promise.resolve({
+                    status: 200,
+                    headers: {},
+                    body: streamOf([
+                        'id: 1\ndata: {"n":1}\n\n',
+                        'id: 2\ndata: {"n":2}\n\n',
+                        'id: 3\ndata: {"n":3}\n\n',
+                    ]),
+                });
+            },
+        });
+        const ctl = new AbortController();
+        const deltas: unknown[] = [];
+        const reconnects: unknown[] = [];
+        let sawError = false;
+        let doneOk: boolean | undefined;
+        for await (const e of events.stream({ signal: ctl.signal })) {
+            if (e.type === 'delta') {
+                deltas.push(e.chunk);
+                ctl.abort(); // stop after the first event
+            } else if (e.type === 'progress' && e.phase === 'reconnect') {
+                reconnects.push(e);
+            } else if (e.type === 'error') sawError = true;
+            else if (e.type === 'done') doneOk = e.ok;
+        }
+        expect(deltas).toEqual([{ id: '1', data: { n: 1 } }]);
+        expect(reconnects).toEqual([]); // never even attempted
+        expect(sawError).toBe(true);
+        expect(doneOk).toBe(false);
+        expect(opens).toBe(1); // the body was never reopened
+    });
+});
+
 describe('sse keeps auth + lifecycle hooks (streaming is not a bypass of the spine)', () => {
     test('auth.apply runs and onRequest/onResponse fire on a streaming open', async () => {
         const seen: string[] = [];
@@ -382,35 +501,6 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
         ]);
         expect(ev.result).toEqual(ev.deltas);
         expect(ev.done?.ok).toBe(true);
-    });
-
-    test('aborting mid-stream stops delivery and ends with error+done', async () => {
-        server.route('GET', '/abortable', {
-            headers: { 'content-type': 'text/event-stream' },
-            stream: {
-                chunks: [
-                    'data: {"n":1}\n\n',
-                    'data: {"n":2}\n\n',
-                    'data: {"n":3}\n\n',
-                ],
-                chunkDelay: 40,
-            },
-        });
-        const events = sse({ baseUrl: server.url, path: '/abortable' });
-        const ctl = new AbortController();
-        const deltas: unknown[] = [];
-        let sawError = false;
-        let doneOk: boolean | undefined;
-        for await (const e of events.stream({ signal: ctl.signal })) {
-            if (e.type === 'delta') {
-                deltas.push(e.chunk);
-                ctl.abort(); // stop after the first event
-            } else if (e.type === 'error') sawError = true;
-            else if (e.type === 'done') doneOk = e.ok;
-        }
-        expect(deltas).toEqual([{ data: { n: 1 } }]);
-        expect(sawError).toBe(true);
-        expect(doneOk).toBe(false);
     });
 
     test('breaking out of .stream() early cancels the underlying body (no leak)', async () => {

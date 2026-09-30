@@ -9,6 +9,7 @@
 // capture config with a `const` type parameter, so the literal array's per-fragment slot types
 // survive (a pre-widened `Fragment[]` array would fall back to the top-level read).
 import { seam, stitch } from '..';
+import type { StitchConfig } from '..';
 import { output } from './_util';
 import { type CallArg } from './_util';
 
@@ -123,6 +124,19 @@ expectType<{ name: string }>(null as unknown as CallArg<typeof member>['body']);
 seam({ baseUrl: 'https://x', input: { body: z.object({ name: z.string() }) } });
 // @ts-expect-error — a seam fragment cannot declare `output` (SeamConfig omits it).
 seam({ baseUrl: 'https://x', output: userSchema });
+
+// 8b) …and the seam adds NOTHING of its own either. Its parameter is `SeamConfig`, a projection
+//     of `StitchConfig` — CONTRACT.md P16: a config field is declared once, on `StitchConfig`,
+//     and projected, never re-declared per surface. `secretStore` was exactly that re-declaration
+//     for one release (a `SeamOptions = SeamConfig & { secretStore }` intersection), and the cost
+//     was silent: the hardened vault it configured was unreachable from a standalone `stitch()`,
+//     from fastify's `seamConfig`, and from a nest feature seam, all three of which type their
+//     config slot as `SeamConfig`. No ratchet sees an intersection literal, so the gate is here.
+type SeamOnlySlots = Exclude<
+    keyof Parameters<typeof seam>[0],
+    keyof StitchConfig
+>;
+expectType<never>(null as unknown as SeamOnlySlots);
 
 // 9) REGRESSION GUARD: a config with NO `extends` is byte-identical to the top-level-only read.
 //    A required top-level `body` stays required; no `extends` machinery changes its inference.

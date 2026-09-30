@@ -316,7 +316,7 @@ const user = await getUser({ params: { id: 1 } });
 жорсткий контракт: відсутнє обовʼязкове поле кидає помилку. **Дрифт** — мʼякий, не
 фатальний сигнал: `undeclared` (поле, якого немає у вашій схемі), `coerced`
 (`"42"` → `42`), `defaulted` (спрацював `.default()`). Знані, але не споживані
-поля глушимо через `ignore`, а рівні перевизначаємо через `severity`:
+поля глушимо через `ignore`, а рівні перевизначаємо через `level`:
 
 ```ts twoslash
 import { drift, stitch } from 'stitchapi';
@@ -328,7 +328,7 @@ const getUser = stitch({
     path: 'https://api.example.com/users/{id}',
     output: drift(User, {
         ignore: ['meta'], // знане, але не споживане поле — не сигналити
-        severity: { coerced: 'info' }, // перевизначити рівень, не завалюючи виклик
+        level: { coerced: 'info' }, // перевизначити рівень, не завалюючи виклик
     }),
 });
 ```

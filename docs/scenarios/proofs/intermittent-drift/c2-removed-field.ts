@@ -108,7 +108,7 @@ async function main(): Promise<void> {
 
     // ── (c) `.default()` in the schema → `verbose|defaulted`, and a fabricated value ─────────
     // The third outcome. The caller receives a `currency` the vendor did not send, and the only
-    // trace is the QUIETEST level in the vocabulary — dropped entirely by `severity: 'warn'`.
+    // trace is the QUIETEST level in the vocabulary — dropped entirely by `level: 'warn'`.
     {
         const o = await against(
             z.object({

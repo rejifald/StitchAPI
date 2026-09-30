@@ -12,8 +12,8 @@
 // The two guarded fields sit at different DEPTHS, because the fields do: `method` is a flat
 // `StitchConfig` slot, while the response decoding lives in the `wire` envelope. The nested arm has
 // to reject `wire.response` without closing the rest of `wire`, so the envelope's other members are
-// asserted still-authorable below. (`AdapterRequest` keeps the flat `responseType` — that is the
-// transport contract one layer down, and no guard here touches it.)
+// asserted still-authorable below. (`AdapterRequest` keeps the field FLAT, spelled `response`
+// like the authoring slot — the transport contract one layer down, which no guard here touches.)
 //
 // A THIRD field is claimed by the same surface and pinned here with them: `kind`. The `download()`
 // preset builds `{ ...config, kind: downloadSurface }`, spreading the caller's `kind` in and

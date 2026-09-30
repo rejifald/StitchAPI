@@ -372,6 +372,32 @@ describe('denoKvStore — increment TTL window', () => {
         spy.mockRestore();
     });
 
+    test("a curve with no bounds uses deno-kv's own 5ms / 250ms, not core's 100ms / 10s", async () => {
+        // The P8 divergence documented on `DenoKvRetryOptions.backoff`, made
+        // observable. `backoff` is core's `BackoffOptions` envelope, but a lost
+        // compare-and-set needs a de-phasing tick, not a recovery window — so an
+        // unbounded curve resolves to base 5ms / max 250ms here. Under core's
+        // defaults the first gap would be 100 and nothing would reach a ceiling.
+        const delays: number[] = [];
+        const spy = vi
+            .spyOn(globalThis, 'setTimeout')
+            .mockImplementation((fn: () => void, ms?: number) => {
+                delays.push(ms ?? 0);
+                fn();
+                return 0 as unknown as ReturnType<typeof setTimeout>;
+            });
+        const rec = recordingKv({ failAtomic: true });
+        const store = denoKvStore(rec.kv, {
+            retry: { attempts: 8, backoff: 'expo' },
+        });
+        await expect(store.increment('x', 1000)).rejects.toThrow(
+            /lost 8 compare-and-set races/,
+        );
+        // 5 · 2^(n−1) over seven gaps, clamped by `max` on the last.
+        expect(delays).toEqual([5, 10, 20, 40, 80, 160, 250]);
+        spy.mockRestore();
+    });
+
     // eslint-disable-next-line vitest/expect-expect -- type-level test: the assertion IS the `@ts-expect-error` below, enforced by tsc, so there is nothing to expect()
     test('the empty object is a compile error (P20), the envelope needs a field', () => {
         // @ts-expect-error `{}` must not satisfy AtLeastOne<DenoKvRetryOptions>

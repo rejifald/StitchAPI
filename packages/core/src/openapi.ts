@@ -304,7 +304,7 @@ function securityKeyBase(s: SecurityScheme): string {
 // `[]` for http/apiKey (which take no scopes).
 function scopesOf(s: SecurityScheme): string[] {
     return s.type === 'oauth2'
-        ? Object.keys(s.flows.clientCredentials?.scopes ?? {})
+        ? Object.keys(s.flows.clientCredentials.scopes)
         : [];
 }
 

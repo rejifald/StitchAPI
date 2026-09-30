@@ -60,7 +60,7 @@ export type QueryInput<S> =
  * into Redux state (`body` is the parsed response payload, plain JSON data), so a
  * consumer can branch on a stored error exactly as on the thrown one. Fields that
  * would not survive `JSON.stringify` intact (functions, class instances, cycles) are
- * dropped, as is `RateLimitError.response`: core documents the raw `AdapterResponse`
+ * dropped, as is `RateLimitError.response`: core documents the raw `AdapterResult`
  * as riding on the live instance only, never a serialized surface. */
 export interface StitchQueryFnError {
     readonly name: string;
@@ -112,7 +112,7 @@ function serializeError(reason: unknown): StitchQueryFnError {
         const own = reason as unknown as Record<string, unknown>;
         for (const key of Object.keys(reason)) {
             // The raw response carrier stays behind: core documents
-            // `RateLimitError.response` (the full `AdapterResponse`, headers and all)
+            // `RateLimitError.response` (the full `AdapterResult`, headers and all)
             // as living on the thrown instance ONLY — it must never serialise into a
             // sink, and Redux state (devtools, persistence) is exactly such a sink.
             // The P10 projection of it (`status`/`body`/`url`) is already lifted onto

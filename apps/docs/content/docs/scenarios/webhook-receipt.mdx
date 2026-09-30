@@ -52,8 +52,9 @@ The byte gap is real and measured: the provider signed **162 bytes**; a parse→
 round-trip produces **153** logically identical bytes, and verification returns
 `bad-signature`.
 
-There is also **no inbound-signature primitive anywhere** in the packages. Enumerating all 72
-runtime exports, the four that match `/verif|hmac|…/` are BYO-plugin conformance suites. The
+There is also **no inbound-signature primitive anywhere** in the packages. Enumerating all 89
+runtime exports — one level into namespace exports, so nothing hides behind one — **none** match
+`/verif|hmac|…/`; the only near-misses are the BYO-plugin conformance kit. The
 one HMAC in the repo is `@stitchapi/aws-sigv4`, whose key is imported with
 `usages: ['sign']` — it structurally cannot verify.
 
@@ -84,7 +85,7 @@ config rather than handler code.
 
 The **dedup ledger** is also first-class, and the store is yours to supply — `redisStore`,
 `cloudflareKvStore` and `denoKvStore` all implement the same interface, so durability is a
-one-line change and `verifyStoreContract` proves a BYO one conforms (measured: all 11 rules, 0
+one-line change and `conformance.store` proves a BYO one conforms (measured: all 11 rules, 0
 violations).
 
 <Callout type="warn">

@@ -10,7 +10,7 @@ import {
     createStoreThrottle,
     memoryStore,
 } from '../../src/store';
-import type { Adapter, AdapterResponse, StitchEvent } from '../../src/types';
+import type { Adapter, AdapterResult, StitchEvent } from '../../src/types';
 
 // A real timer so a test can advance past a 1ms rate window between acquires.
 const tick = (ms = 3): Promise<void> =>
@@ -190,7 +190,7 @@ test('otlp sink: the internal open-span map is empty after a completed run', () 
 test('abort during a retry backoff rejects promptly (well under the backoff delay)', async () => {
     // An adapter that always 503s instantly, forcing the retry/backoff path.
     const always503: Adapter = () =>
-        Promise.resolve<AdapterResponse>({
+        Promise.resolve<AdapterResult>({
             status: 503,
             headers: {},
             body: { error: 'unavailable' },
@@ -231,7 +231,7 @@ test('abort during a retry backoff rejects promptly (well under the backoff dela
 // An ALREADY-aborted signal must reject without ever sleeping the backoff.
 test('an already-aborted signal rejects without sleeping the backoff', async () => {
     const always503: Adapter = () =>
-        Promise.resolve<AdapterResponse>({
+        Promise.resolve<AdapterResult>({
             status: 503,
             headers: {},
             body: {},

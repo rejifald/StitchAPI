@@ -119,7 +119,7 @@ describe('stitchQueryFn', () => {
             override name = 'RateLimitError';
             status = 429;
             retryAfter = 1000; // plain data → carried
-            // The full AdapterResponse lives on the thrown instance ONLY (core's rule) —
+            // The full AdapterResult lives on the thrown instance ONLY (core's rule) —
             // its headers (set-cookie & co.) must never reach Redux state.
             response = {
                 status: 429,

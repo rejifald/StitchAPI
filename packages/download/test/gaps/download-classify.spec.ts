@@ -51,7 +51,7 @@ test('a mid-body RST is retryable with a transport code; a 404 is terminal (HTTP
     const rst = asRejected(results[0]!);
     expect(rst.retryable).toBe(true);
     expect(rst.code).toBeDefined();
-    expect(rst.reason.message).toMatch(/fetch failed/i);
+    expect(rst.error.message).toMatch(/fetch failed/i);
 
     // The 404: a response-level failure → terminal, coded from its status.
     const e404 = asRejected(results[1]!);
@@ -71,7 +71,7 @@ test('ECONNREFUSED (nothing listening) is classified retryable', async () => {
     expect(refused.retryable).toBe(true);
     // The connect refusal surfaces its code (ECONNREFUSED) via the captured cause chain, or at least a
     // transport-shaped message — never a terminal classification.
-    expect(refused.code ?? refused.reason.message).toMatch(
+    expect(refused.code ?? refused.error.message).toMatch(
         /ECONNREFUSED|refused|fetch failed/i,
     );
 });

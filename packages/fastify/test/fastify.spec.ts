@@ -2,21 +2,22 @@
 // `adapter` (no network), so every stitch call resolves against canned responses. We drive the
 // app with `fastify.inject()` and assert the four contracts: the seam is decorated, the
 // request-scoped principal binds (a route reads `currentStitch()` and `request.stitch`),
-// `streamStitchSse` streams events, and `stitchErrorHandler` maps a StitchError to a status.
+// `streamStitchSse` streams events, and `stitchError.handler` maps a StitchError to a status.
 import {
     currentStitch,
-    isStitchError,
-    stitchErrorHandler,
+    stitchError,
     stitchPlugin,
     streamStitchSse,
 } from '../src';
+import * as api from '../src';
 
 import Fastify from 'fastify';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
+    Seam,
     StitchEvent,
 } from 'stitchapi';
 import { isSeam } from 'stitchapi';
@@ -24,7 +25,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 // A fake adapter: route by URL path so one seam serves several test endpoints. It records the
 // requests it sees so a test can assert the principal-scoped auth state, etc.
-function fakeAdapter(handler: (req: AdapterRequest) => AdapterResponse): {
+function fakeAdapter(handler: (req: AdapterRequest) => AdapterResult): {
     adapter: Adapter;
     seen: AdapterRequest[];
 } {
@@ -42,7 +43,7 @@ afterEach(async () => {
 });
 
 describe('stitchPlugin', () => {
-    test('decorates the app with the seam (built from seamConfig)', async () => {
+    test('decorates the app with the seam (built from a seam config)', async () => {
         const { adapter } = fakeAdapter(() => ({
             status: 200,
             headers: {},
@@ -51,7 +52,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: { baseUrl: 'https://api.test', adapter },
+            seam: { baseUrl: 'https://api.test', adapter },
             logger: false,
         });
         await app.ready();
@@ -78,12 +79,38 @@ describe('stitchPlugin', () => {
         };
 
         const app = Fastify();
-        await app.register(stitchPlugin, { seam: borrowed, logger: false });
+        await app.register(stitchPlugin, { seam: borrowed });
         await app.ready();
         expect(app.stitch).toBe(borrowed);
         await app.close();
         // A borrowed seam is the app's to dispose — the plugin must not close it.
         expect(closed).toBe(false);
+    });
+
+    test('closes a seam it BUILT on app close (ownsSeam = closeSeam ?? built)', async () => {
+        // The build/borrow discriminant is now `isSeam(options.seam)` rather than a
+        // `seamConfig` key, so pin the ownership rule it feeds: a BUILT seam is owned.
+        const { adapter } = fakeAdapter(() => ({
+            status: 200,
+            headers: {},
+            body: {},
+        }));
+        const app = Fastify();
+        await app.register(stitchPlugin, {
+            seam: { baseUrl: 'https://api.test', adapter },
+            logger: false,
+        });
+        await app.ready();
+
+        let closed = false;
+        const built = app.stitch;
+        const origClose = built.close.bind(built);
+        built.close = async () => {
+            closed = true;
+            await origClose();
+        };
+        await app.close();
+        expect(closed).toBe(true);
     });
 
     test('binds a request-scoped principal on request.stitch and currentStitch()', async () => {
@@ -96,7 +123,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: { baseUrl: 'https://api.test', adapter },
+            seam: { baseUrl: 'https://api.test', adapter },
             principal: (r) => (r.headers['x-tenant'] as string) || undefined,
             logger: false,
         });
@@ -132,7 +159,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: { baseUrl: 'https://api.test', adapter },
+            seam: { baseUrl: 'https://api.test', adapter },
             principal: () => undefined, // anonymous
             logger: false,
         });
@@ -163,7 +190,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: {
+            seam: {
                 baseUrl: 'https://api.test',
                 adapter: fakeAdapter(() => ({
                     status: 200,
@@ -193,7 +220,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: {
+            seam: {
                 baseUrl: 'https://api.test',
                 adapter: fakeAdapter(() => ({
                     status: 200,
@@ -230,7 +257,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: {
+            seam: {
                 baseUrl: 'https://api.test',
                 adapter: fakeAdapter(() => ({
                     status: 200,
@@ -266,7 +293,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: {
+            seam: {
                 baseUrl: 'https://api.test',
                 adapter: fakeAdapter(() => ({
                     status: 200,
@@ -303,7 +330,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: {
+            seam: {
                 baseUrl: 'https://api.test',
                 adapter: fakeAdapter(() => ({
                     status: 200,
@@ -328,6 +355,78 @@ describe('stitchPlugin', () => {
         expect((observed[0] as Error).message).toContain('ENOTFOUND');
     });
 
+    test('a throw mid-stream still ends the reply with a named event: error frame', async () => {
+        // The upstream generator THROWS instead of surfacing an `error` event — an adapter socket
+        // that dies mid-stream, a `transform` that blows up on a chunk. Without the consume
+        // loop's catch arm the hijacked reply just ended: no `event: error` frame reached the
+        // client and `error.observe` never fired (CONTRACT.md P16 — the four peer hosts all
+        // handle it).
+        const observed: unknown[] = [];
+        async function* events(): AsyncGenerator<StitchEvent> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
+        }
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seam: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-throw', (_request, reply) =>
+            streamStitchSse(reply, events(), {
+                error: { observe: (err) => observed.push(err) },
+            }),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-throw' });
+        expect(res.body).toBe('data: partial\n\nevent: error\ndata: error\n\n');
+        // The throw is framed with the SAME generic token as a surfaced error event — the raw
+        // message can disclose internal topology.
+        expect(res.body).not.toContain('payments.internal.corp');
+        expect(res.body).not.toContain('ENOTFOUND');
+        // … while `error.observe` still sees the real throw server-side.
+        expect((observed[0] as Error).message).toContain('ENOTFOUND');
+    });
+
+    test('error.data shapes a throw exactly as it shapes an error event', async () => {
+        // `toErrorEvent` normalises the throw, so an `error.data` opt-in sees one consistent
+        // shape whether the failure arrived as an event or as an exception.
+        async function* events(): AsyncGenerator<StitchEvent> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            throw new Error('upstream blew up');
+        }
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seam: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-throw', (_request, reply) =>
+            streamStitchSse(reply, events(), { error: (e) => e.message }),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-throw' });
+        expect(res.body).toBe(
+            'data: partial\n\nevent: error\ndata: upstream blew up\n\n',
+        );
+    });
+
     test('the registered error handler maps a StitchError to 502 by default', async () => {
         // The fake adapter returns 503 → the stitch throws a StitchError with status 503.
         const { adapter } = fakeAdapter(() => ({
@@ -338,7 +437,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: { baseUrl: 'https://api.test', adapter },
+            seam: { baseUrl: 'https://api.test', adapter },
             logger: false,
         });
         app.get('/fail', async (request) => {
@@ -362,7 +461,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: { baseUrl: 'https://api.test', adapter },
+            seam: { baseUrl: 'https://api.test', adapter },
             logger: false,
             errorHandler: { status: (e) => e.status ?? 502 },
         });
@@ -378,7 +477,7 @@ describe('stitchPlugin', () => {
     test('errorHandler:true registers the default mapping (the new P13 spelling, at runtime)', async () => {
         // `true` never type-checked before, so this asserts the RUNTIME honours it — not just
         // that the signature widened. It must behave exactly like omitting the key: register
-        // the 502-by-default mapping, NOT pass `true` through to `stitchErrorHandler`.
+        // the 502-by-default mapping, NOT pass `true` through to `stitchError.handler`.
         const { adapter } = fakeAdapter(() => ({
             status: 503,
             headers: {},
@@ -387,7 +486,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: { baseUrl: 'https://api.test', adapter },
+            seam: { baseUrl: 'https://api.test', adapter },
             logger: false,
             errorHandler: true,
         });
@@ -402,11 +501,60 @@ describe('stitchPlugin', () => {
 
     test('the empty errorHandler bag is rejected (compile-time, P20)', () => {
         void (() =>
-            // @ts-expect-error — `{}` is not a valid bag: enable-with-defaults is `true`
             Fastify().register(stitchPlugin, {
-                seamConfig: { baseUrl: 'https://api.test' },
+                seam: { baseUrl: 'https://api.test' },
+                // @ts-expect-error — `{}` is not a valid bag: enable-with-defaults is `true`
                 errorHandler: {},
             }));
+        expect(true).toBe(true);
+    });
+
+    // --- the `seam` field: ONE slot, two things it accepts -------------------
+    //
+    // `seam` used to be half of an XOR pair (`seam` / `seamConfig`, each `?: never` on the
+    // other's variant), and `seamConfig: {}` type-checked — an opaque empty object that silently
+    // BUILT a seam with every default (CONTRACT.md P20). It is now one field taking either a
+    // prebuilt `Seam` or a >=1-field `SeamConfig`, discriminated at runtime by `isSeam`. The
+    // assertions that matter below are the `@ts-expect-error` directives, enforced by
+    // `check:types` (an unused directive is itself an error) — the closures are never invoked.
+    const prebuilt = null as unknown as Seam;
+
+    test('the opaque `seam: {}` is rejected (compile-time, P20)', () => {
+        void (() =>
+            // @ts-expect-error — `{}` is neither a prebuilt Seam nor a >=1-field SeamConfig.
+            // Build an all-defaults seam yourself (`seam: seam()`) and pass it prebuilt.
+            Fastify().register(stitchPlugin, { seam: {} }));
+        expect(true).toBe(true);
+    });
+
+    test('both a prebuilt seam and a >=1-field config compile', () => {
+        void (() => [
+            Fastify().register(stitchPlugin, { seam: prebuilt }),
+            Fastify().register(stitchPlugin, { seam: { retry: 3 } }),
+        ]);
+        expect(true).toBe(true);
+    });
+
+    test('`logger` on a BORROWED seam is rejected (compile-time, P13)', () => {
+        void (() =>
+            // @ts-expect-error — `logger` is honoured only when the plugin BUILDS the seam. On a
+            // borrowed one the bridge has nothing to inject, so `logger: true` (the documented
+            // default!) was a silent no-op; it is unrepresentable here instead.
+            Fastify().register(stitchPlugin, { seam: prebuilt, logger: true }));
+        expect(true).toBe(true);
+    });
+
+    test('`logger` on a BUILT seam still compiles', () => {
+        void (() => [
+            Fastify().register(stitchPlugin, {
+                seam: { baseUrl: 'https://api.test' },
+                logger: true,
+            }),
+            Fastify().register(stitchPlugin, {
+                seam: { baseUrl: 'https://api.test' },
+                logger: { lifecycle: false },
+            }),
+        ]);
         expect(true).toBe(true);
     });
 
@@ -419,7 +567,7 @@ describe('stitchPlugin', () => {
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
-            seamConfig: { baseUrl: 'https://api.test', adapter },
+            seam: { baseUrl: 'https://api.test', adapter },
             logger: false,
         });
         app.get('/boom', async () => {
@@ -433,16 +581,16 @@ describe('stitchPlugin', () => {
     });
 });
 
-describe('isStitchError / stitchErrorHandler unit', () => {
-    test('isStitchError discriminates by name', () => {
+describe('stitchError.is / stitchError.handler unit', () => {
+    test('stitchError.is discriminates by name', () => {
         const e = Object.assign(new Error('x'), { name: 'StitchError' });
-        expect(isStitchError(e)).toBe(true);
-        expect(isStitchError(new Error('plain'))).toBe(false);
-        expect(isStitchError('nope')).toBe(false);
+        expect(stitchError.is(e)).toBe(true);
+        expect(stitchError.is(new Error('plain'))).toBe(false);
+        expect(stitchError.is('nope')).toBe(false);
     });
 
-    test('stitchErrorHandler rethrows a non-stitch error', () => {
-        const handler = stitchErrorHandler();
+    test('stitchError.handler rethrows a non-stitch error', () => {
+        const handler = stitchError.handler();
         const plain = new Error('plain') as never;
         expect(() =>
             handler(
@@ -494,7 +642,7 @@ describe('isStitchError / stitchErrorHandler unit', () => {
             { name: 'StitchError' },
         ) as unknown as FastifyError;
         const cap = captureReply();
-        stitchErrorHandler()(err, {} as FastifyRequest, cap.reply);
+        stitchError.handler()(err, {} as FastifyRequest, cap.reply);
 
         expect(cap.statusCode).toBe(502); // status stays masked
         const serialized = JSON.stringify(cap.sent);
@@ -510,7 +658,7 @@ describe('isStitchError / stitchErrorHandler unit', () => {
             status: 401,
         }) as unknown as FastifyError;
         const cap = captureReply();
-        stitchErrorHandler()(err, {} as FastifyRequest, cap.reply);
+        stitchError.handler()(err, {} as FastifyRequest, cap.reply);
 
         expect(cap.statusCode).toBe(502);
         expect(JSON.stringify(cap.sent)).not.toContain('HTTP 401');
@@ -523,7 +671,7 @@ describe('isStitchError / stitchErrorHandler unit', () => {
             { name: 'StitchError' },
         ) as unknown as FastifyError;
         const cap = captureReply();
-        stitchErrorHandler({ body: (e) => ({ error: e.message }) })(
+        stitchError.handler({ body: (e) => ({ error: e.message }) })(
             err,
             {} as FastifyRequest,
             cap.reply,
@@ -533,5 +681,48 @@ describe('isStitchError / stitchErrorHandler unit', () => {
         expect(cap.sent).toEqual({
             error: 'getaddrinfo ENOTFOUND payments.internal.corp',
         });
+    });
+});
+
+// --- public-surface pin: the error family is ONE namespace -------------------
+//
+// This package has no dedicated public-surface spec (only core does), so the pin lives here,
+// beside the behaviour it guards. It mirrors the intent of core's `REMOVED_SECRET_FUNCTIONS`
+// in `packages/core/test/public-api-surface.spec.ts`, in both directions:
+//
+//  - PRESENT, as a WHOLE: `stitchError` is an OBJECT whose members are exactly `is` and `handler` (no `map`: a Fastify error
+//    handler writes onto the mutable `reply` and returns no mapped value to hand back).
+//    The key set is pinned rather than each member independently, so adding or dropping one is
+//    a deliberate edit here — the same call core's `SECRET_NAMESPACE_MEMBERS` makes. Object-ness
+//    is asserted explicitly because `stitchError` was a FUNCTION in `@stitchapi/hono` before the
+//    fold, and a bare `typeof === 'function'` check would have passed for it.
+//  - ABSENT: every verb-prefixed spelling the namespace replaced, across all six adapters — not
+//    only the ones this package carried. Pre-GA `rc`, so they were removed outright rather than
+//    aliased (CONTRACT.md P19); re-adding one would put two spellings of one call back on the
+//    barrel, which is exactly the drift this fold closes.
+describe('public surface: the stitchError namespace', () => {
+    const MEMBERS = ['is', 'handler'] as const;
+
+    test('exports stitchError as a namespace object', () => {
+        expect(typeof api.stitchError).toBe('object');
+        expect(Object.keys(api.stitchError).sort()).toEqual(
+            [...MEMBERS].sort(),
+        );
+    });
+
+    test.each(MEMBERS)('exports stitchError.%s as a function', (member) => {
+        expect(
+            typeof (api.stitchError as Record<string, unknown>)[member],
+        ).toBe('function');
+    });
+
+    test.each([
+        'isStitchError',
+        'stitchErrorHandler',
+        'stitchOnError',
+        'stitchErrorResponse',
+        'toHttpException',
+    ] as const)('does NOT export %s — the namespace replaced it', (name) => {
+        expect(name in (api as Record<string, unknown>)).toBe(false);
     });
 });

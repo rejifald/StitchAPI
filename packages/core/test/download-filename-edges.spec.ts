@@ -8,7 +8,7 @@
 //                             raw segment; a trailing slash uses the last NON-empty segment; a
 //                             non-absolute URL yields undefined.
 import { download } from '../src/download';
-import type { Adapter, AdapterResponse } from '../src/types';
+import type { Adapter, AdapterResult } from '../src/types';
 
 // A fake adapter that hands back a Blob body plus optional response headers / final url
 // (mirrors download.spec.ts's blobAdapter).
@@ -17,7 +17,7 @@ function blobAdapter(init: {
     url?: string;
 }): Adapter {
     return () => {
-        const res: AdapterResponse = {
+        const res: AdapterResult = {
             status: 200,
             headers: init.headers ?? {},
             body: new Blob(['x']),

@@ -23,7 +23,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     Clock,
 } from '../../../../packages/core/src/types';
 
@@ -124,7 +124,7 @@ export class FakeStreamProvider {
     }
 
     adapter(): Adapter {
-        return (req: AdapterRequest): Promise<AdapterResponse> => {
+        return (req: AdapterRequest): Promise<AdapterResult> => {
             const lastEventId = req.headers['Last-Event-ID'];
             const openNo = this.opens.length + 1;
 

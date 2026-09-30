@@ -4,13 +4,7 @@
 // violations in a report (not throws), and the entry itself must stay
 // browser-bundleable.
 import { fetchAdapter, memoryStore } from '../src';
-import {
-    adapterContractFixture,
-    assertConformance,
-    verifyAdapterContract,
-    verifySinkContract,
-    verifyStoreContract,
-} from '../src/testing';
+import { conformance } from '../src/testing';
 import type { ContractReport, FixtureRequest } from '../src/testing';
 import type {
     Adapter,
@@ -33,7 +27,7 @@ process.env['STITCH_TRACE_FILE'] = join(
 const ROOT = join(import.meta.dirname, '..');
 
 // ---------------------------------------------------------------------------
-// fixture host: mount the PURE adapterContractFixture on raw node:http
+// fixture host: mount the PURE conformance.fixture on raw node:http
 // ---------------------------------------------------------------------------
 
 interface FixtureHost {
@@ -61,7 +55,7 @@ function mountFixture(): Promise<FixtureHost> {
                 headers: collectHeaders(req),
                 ...(raw === '' ? {} : { body: raw }),
             };
-            const out = adapterContractFixture(fixtureReq);
+            const out = conformance.fixture(fixtureReq);
             const respond = (): void => {
                 res.writeHead(out.status, out.headers);
                 res.end(out.body);
@@ -111,9 +105,9 @@ function brokenStore(): StitchStore {
     };
 }
 
-describe('verifyStoreContract', () => {
+describe('conformance.store', () => {
     test('memoryStore passes the store contract', async () => {
-        const report = await verifyStoreContract(memoryStore);
+        const report = await conformance.store(memoryStore);
         expect(report.seam).toBe('store');
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);
@@ -121,12 +115,12 @@ describe('verifyStoreContract', () => {
             'increment: 20 concurrent calls net exactly +20',
         );
         expect(() => {
-            assertConformance(report);
+            conformance.assert(report);
         }).not.toThrow();
     });
 
     test('a broken store yields the expected NAMED violations without throwing', async () => {
-        const report = await verifyStoreContract(brokenStore);
+        const report = await conformance.store(brokenStore);
         expect(report.ok).toBe(false);
         const failed = report.violations.map((v) => v.rule);
         expect(failed).toContain('set: a ttl entry expires');
@@ -151,7 +145,7 @@ describe('verifyStoreContract', () => {
 // adapter contract
 // ---------------------------------------------------------------------------
 
-describe('verifyAdapterContract', () => {
+describe('conformance.adapter', () => {
     let host: FixtureHost;
     beforeAll(async () => {
         host = await mountFixture();
@@ -160,9 +154,9 @@ describe('verifyAdapterContract', () => {
         await host.close();
     });
 
-    test('fetchAdapter passes the adapter contract against adapterContractFixture', async () => {
+    test('fetchAdapter passes the adapter contract against conformance.fixture', async () => {
         // A bare origin string is the `{ baseUrl }` shorthand.
-        const report = await verifyAdapterContract(fetchAdapter(), host.url);
+        const report = await conformance.adapter(fetchAdapter(), host.url);
         expect(report.seam).toBe('adapter');
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);
@@ -170,7 +164,7 @@ describe('verifyAdapterContract', () => {
             'abort: an in-flight abort rejects promptly',
         );
         expect(() => {
-            assertConformance(report);
+            conformance.assert(report);
         }).not.toThrow();
     });
 
@@ -180,7 +174,7 @@ describe('verifyAdapterContract', () => {
             if (res.status >= 400) throw new Error(`HTTP ${res.status}`);
             return res;
         };
-        const report = await verifyAdapterContract(throwing, {
+        const report = await conformance.adapter(throwing, {
             baseUrl: host.url,
         });
         expect(report.ok).toBe(false);
@@ -198,7 +192,7 @@ describe('verifyAdapterContract', () => {
 // sink contract
 // ---------------------------------------------------------------------------
 
-describe('verifySinkContract', () => {
+describe('conformance.sink', () => {
     test('a recording TraceSink passes and receives all 8 event variants', async () => {
         const events: StitchEvent[] = [];
         let flushed = false;
@@ -210,7 +204,7 @@ describe('verifySinkContract', () => {
                 flushed = true;
             },
         });
-        const report = await verifySinkContract(makeSink);
+        const report = await conformance.sink(makeSink);
         expect(report.seam).toBe('sink');
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);
@@ -235,7 +229,7 @@ describe('verifySinkContract', () => {
                 }
             },
         });
-        const report = await verifySinkContract(makeSink);
+        const report = await conformance.sink(makeSink);
         expect(report.ok).toBe(false);
         expect(report.violations).toEqual([
             {
@@ -248,10 +242,10 @@ describe('verifySinkContract', () => {
 });
 
 // ---------------------------------------------------------------------------
-// assertConformance
+// conformance.assert
 // ---------------------------------------------------------------------------
 
-describe('assertConformance', () => {
+describe('conformance.assert', () => {
     test('throws one readable Error listing EVERY violation', () => {
         const failing: ContractReport = {
             seam: 'adapter',
@@ -264,7 +258,7 @@ describe('assertConformance', () => {
         };
         let message = '';
         try {
-            assertConformance(failing);
+            conformance.assert(failing);
         } catch (error) {
             message = (error as Error).message;
         }

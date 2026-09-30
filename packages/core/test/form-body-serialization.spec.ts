@@ -53,7 +53,7 @@ describe('form bodies serialise through the shared urlencoded walker', () => {
         expect(params.get('a[b][c]')).toBe('1');
     });
 
-    // ── One `arrayFormat` now governs BOTH urlencoded surfaces ───────────────
+    // ── One `wire.array` now governs BOTH urlencoded surfaces ────────────────
     test("default is 'indices', matching the query string's default", async () => {
         const params = new URLSearchParams(await formWire({ ids: [1, 2] }));
         expect(params.get('ids[0]')).toBe('1');
@@ -61,7 +61,7 @@ describe('form bodies serialise through the shared urlencoded walker', () => {
         expect(params.has('ids')).toBe(false);
     });
 
-    test("arrayFormat: 'brackets' applies to a form body", async () => {
+    test("wire.array: 'brackets' applies to a form body", async () => {
         const params = new URLSearchParams(
             await formWire({ ids: [1, 2] }, 'brackets'),
         );
@@ -69,7 +69,7 @@ describe('form bodies serialise through the shared urlencoded walker', () => {
         expect(params.has('ids[0]')).toBe(false);
     });
 
-    test("arrayFormat: 'repeat' applies to a form body", async () => {
+    test("wire.array: 'repeat' applies to a form body", async () => {
         const params = new URLSearchParams(
             await formWire({ ids: [1, 2] }, 'repeat'),
         );

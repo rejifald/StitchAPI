@@ -13,9 +13,6 @@
   "test/composables.spec.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 1
-    },
-    "@typescript-eslint/no-redundant-type-constituents": {
-      "count": 1
     }
   }
 }

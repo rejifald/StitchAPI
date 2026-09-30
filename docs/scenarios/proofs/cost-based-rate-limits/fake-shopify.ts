@@ -11,7 +11,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     Clock,
 } from '../../../../packages/core/src/types';
 
@@ -141,7 +141,7 @@ export class FakeShopify {
      * so the operation name is what prices the call.
      */
     adapter(): Adapter {
-        return async (req: AdapterRequest): Promise<AdapterResponse> => {
+        return async (req: AdapterRequest): Promise<AdapterResult> => {
             const body = (req.body ?? {}) as {
                 operationName?: string;
                 variables?: Record<string, unknown>;

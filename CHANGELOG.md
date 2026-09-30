@@ -11,7 +11,40 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.8] — 2026-09-17
+
 ### Added
+
+- **`ApiKeyOptions` is exported from `stitchapi/auth`.**
+  ([P14](docs/CONTRACT.md#p14--multi-field-envelopes-are-named-exported-and-may-shorthand-their-dominant-field)
+  / [P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity)) `BasicOptions`,
+  `OAuth2Options` and `CookieSessionOptions` are all exported; `apiKey`'s alone was module-private,
+  so its three fields inlined into the emitted `.d.ts` as an anonymous shape a consumer could
+  neither import nor extend. Its JSDoc defended that with "none of the auth option types are
+  exported" — a sentence that had stopped being true of its three siblings, which is exactly the
+  parity argument running the other way. Additive: no existing spelling moves.
+
+- **`manualClock().advance()` takes a duration token — `advance('30s')`, not only `advance(30_000)`.**
+  ([P17](docs/CONTRACT.md#p17--one-canonical-duration-form)) Every consumer-authored duration in the
+  library already accepted the grammar; the clock that drives them did not, so a test reading
+  `retry: { backoff: { base: '10s' } }` had to hand-convert the same window to `10_000` one line
+  later.
+
+    The parameter is `number | string` and the token is parsed **before** the arithmetic, which is
+    the half of P17 that carries the weight: `current + '30s'` string-concatenates to `'030s'`
+    rather than throwing, so widening the type without moving the parse would have been worse than
+    not widening at all. A token the grammar cannot read lands on the field's default (`0`) and
+    advances nothing.
+
+- **A `stitchapi/testing` SSE fixture's `retry` takes a duration token — `retry: '3s'`.**
+  ([P17](docs/CONTRACT.md#p17--one-canonical-duration-form)) `SseFixtureEvent.retry` is now
+  `number | string`, parsed at the one write site in `frameSse`, so `'3s'` reaches the wire as
+  `retry: 3000`. It matters more here than in most widenings because the SSE grammar **ignores** a
+  non-numeric `retry:` value rather than rejecting it (see `applyFieldLine` in `sse.ts`): an
+  unparsed token would have been framed as the dead line `retry: 3s` and silently dropped by the
+  consumer, which is the silent collapse P17's parse clause exists to stop. A value the grammar
+  cannot read now emits **no** `retry:` line at all — the field's default — instead of a line the
+  reader discards.
 
 - **`@stitchapi/download` — a batch downloader over the stitch resilience chain.** `downloadAll`
   for a fire-and-collect batch, `DownloadManager` for a live queue: FIFO admission, a `concurrency`
@@ -20,6 +53,13 @@ npm release are grouped under the in-development version that introduced them.
   on it, and request dedupe so the same URL in flight twice is fetched once. Zero runtime
   dependencies and its own size gate. Every item is an ordinary stitch, so `retry`, `throttle`,
   `timeout` and tracing apply unchanged.
+
+    **Documented** at [Integrations → Batch downloads](https://stitchapi.dev/docs/integrations/download)
+    ([#460](https://github.com/rejifald/StitchAPI/issues/460)) — the whole surface on one page:
+    `downloadAll` and `DownloadManager`, the `ItemResult` arms, FIFO admission against
+    `throttle.concurrency`, the cancel-one/cancel-all split, the progress + ETA fields, the two
+    clocks (`idle` vs wall-clock `timeout`), the retryable/terminal classification, and the
+    dedupe caveat that a follower cannot be cancelled independently of the shared fetch.
 
 - **`QUERY` is a first-class method — a read that carries a request body.**
   ([draft-ietf-httpbis-safe-method-w-body](https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/))
@@ -74,7 +114,7 @@ npm release are grouped under the in-development version that introduced them.
     `@stitchapi/redis` (a sorted set) and `@stitchapi/deno-kv` (compare-and-set):
 
     ```ts
-    lease ? (key, token, limit, ttl, now) : Promise<boolean>; // take, renew, or refuse
+    lease ? (key, token, concurrency, ttl, now) : Promise<boolean>; // take, renew, or refuse
     release ? (key, token) : Promise<void>; // idempotent
     ```
 
@@ -129,7 +169,7 @@ npm release are grouped under the in-development version that introduced them.
     ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)), so optional is
     the only additive shape. **Existing custom stores need no changes.**
 
-    If you do implement it, `verifyStoreContract` now checks it — but only when present, so
+    If you do implement it, `conformance.store` now checks it — but only when present, so
     omitting it is not a contract failure. The rule that matters is the atomicity one: 20 concurrent
     reservations must come back as 20 distinct, evenly spaced instants, because a non-atomic cell
     hands several callers the same instant, which is the exact burst the verb exists to remove.
@@ -186,6 +226,1172 @@ npm release are grouped under the in-development version that introduced them.
     No behaviour change — the parser, its grammar, and its throw are exactly as they were.
 
 ### Changed
+
+- **BREAKING CHANGE: the `postMessage` builders are one `channel` namespace, and a channel's
+  origin policy is one `origins` envelope.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+  / [P12](docs/CONTRACT.md#p12--envelope--scalar-shorthand)
+  / [P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity))
+  `windowChannel`'s `targetOrigin` and `allowedOrigins` were one dimension — the channel's origin
+  policy — spelled as two fields, and the proof was in their own docs: one was documented as the
+  other's default. They fold into `origins`, with the bare origin as the P12 shorthand.
+  `channel()`'s `allowedOrigins` becomes `from` — the inbound half's own name, byte-identical to
+  `OriginOptions.from` (P1/P16).
+
+    ```ts
+    -import { windowChannel } from 'stitchapi/postmessage';
+    +import { channel } from 'stitchapi/postmessage';
+
+    -const ch = windowChannel({
+    +const ch = channel.window({
+        target: iframe.contentWindow!,
+    -   targetOrigin: 'https://app.example.com',
+    +   origins: 'https://app.example.com', // ≡ { to: X, from: [X] }
+    });
+
+    // asymmetric: post to one frame, accept from several
+    -const wide = windowChannel({
+    +const wide = channel.window({
+        target: iframe.contentWindow!,
+    -   targetOrigin: 'https://app.example.com',
+    -   allowedOrigins: ['https://app.example.com', 'https://widget.example.com'],
+    +   origins: {
+    +       to: 'https://app.example.com',
+    +       from: ['https://app.example.com', 'https://widget.example.com'],
+    +   },
+    });
+
+    -channel(transport, { allowedOrigins: ['https://app.example.com'] });
+    +channel.over(transport, { from: ['https://app.example.com'] });
+
+    -portChannel(port);
+    +channel.port(port);
+    ```
+
+    | Was                                                        | Now                                         |
+    | ---------------------------------------------------------- | ------------------------------------------- |
+    | `windowChannel(opts)`                                      | `channel.window(opts)`                      |
+    | `portChannel(port)`                                        | `channel.port(port)`                        |
+    | `channel(transport, opts)`                                 | `channel.over(transport, opts)`             |
+    | `WindowChannelOptions.targetOrigin: Origin`                | `origins.to` (or the bare `origins: X`)     |
+    | `WindowChannelOptions.allowedOrigins?: string \| string[]` | `origins.from?: Origin \| Origin[]`         |
+    | `ChannelOptions.allowedOrigins: string \| string[]`        | `ChannelOptions.from: Origin \| Origin[]`   |
+    | —                                                          | `OriginOptions` (`{ to, from? }`), exported |
+
+    **One namespace, three peers.** `channel`/`windowChannel`/`portChannel` repeated the subject
+    noun and varied only the role word — the cluster shape `otlp.sink`/`exporter`/`json` replaced
+    (`otlpSink`/`otlpHttpExporter`/`toOtlpJson`), and `secrets.register`/`has`/`redact` before it.
+    The barrel states the rule above its token grammars: one name per dimension, the role named at
+    the call site, rather than a barrel of verb-prefixed functions. `over` is this surface's own
+    word — ADR 0009 already said "over any `MessageTransport`".
+
+    **Not callable.** `channel(...)` is a compile error, deliberately. [P12](docs/CONTRACT.md#p12--envelope--scalar-shorthand)
+    reserves a bare call for the DOMINANT case, and here the generic builder is the RARE one — its
+    only in-repo callers are tests, while the README and every doc reach for the window builder.
+    Making the rare member bare and the common one a property would invert that hierarchy, so all
+    three are peers on a plain object, the shape `otlp` and `secrets` already have.
+
+    **Bundle cost, stated rather than glossed.** A namespace pins all three members for anyone who
+    uses any one of them: esbuild will not split an object literal to drop a dead half, the same
+    effect `packages/core/scripts/bundle-size.mjs` already records for the `duration` facade.
+    Method, so the figures reproduce rather than have to be trusted: bundled from
+    `packages/core/src` with the settings `bundle-size.mjs` itself uses (esbuild `bundle`,
+    `minify`, `treeShaking`, `format: 'esm'`, `platform: 'neutral'`), gzip level 9, from an entry
+    importing exactly what that consumer imports. Old surface → new:
+
+    | consumer uses      |     was |     now |  delta |
+    | ------------------ | ------: | ------: | -----: |
+    | the port builder   | 23551 B | 24281 B | +730 B |
+    | the transport one  | 23939 B | 24281 B | +342 B |
+    | the window builder | 24122 B | 24281 B | +159 B |
+    | all three          | 24261 B | 24286 B |  +25 B |
+
+    The "now" column is one number for any SINGLE builder, which IS the finding: the namespace has
+    a flat floor, so what a consumer pays no longer depends on which builder it reached for. The
+    all-three row reads 24286 rather than 24281 for a reason that is not library cost — its entry
+    names three symbols instead of one, and the entry is in the bundle too.
+
+    The port-only consumer pays most, and the specific consequence is worth naming: it now carries
+    the origin-validation apparatus (`assertOrigin`, `new URL()`, the global `'message'` listener)
+    that `portChannel` deliberately has none of, per the #795 change recorded below. The
+    `postmessage` subpath is **not** budgeted by `bundle-size.mjs` (its three scenarios are the
+    whole root entry, `import { stitch }`, and `stitchapi/auth`), so no gate moves — verified, not
+    assumed. The trade was made knowingly: NAMES freeze at the stable tag, BYTES stay recoverable
+    afterwards — split the subpath, or add a `stitchapi/postmessage/port` entry — so the reversible
+    cost is the one to pay.
+
+    **`channel()` takes `from`, not `origins`** — the one place this entry's own cross-surface-parity
+    argument cuts against the envelope. `origins` on both builders would be a single token over two
+    **incomparable** value-spaces: neither union is a superset of the other, so
+    `origins: ['https://a', 'https://b']` is valid on `channel` and a compile error on
+    `channel.window`, and the scalar shorthand `origins: X` would mean `{ to: X, from: [X] }` on one
+    surface and `[X]` on the other. That is the P1/P16 collision an envelope exists to avoid, not to
+    create, and P24 carve-out (b)'s **endpoint-slot** record is the governing precedent: it declined
+    a dominant-field shorthand for `url` precisely because that "would mean two different things on
+    the two surfaces". Under `from` the inbound half has ONE meaning and ONE value-space across the
+    whole surface (`ChannelOptions.from` and `OriginOptions.from` are identical in name and type),
+    and `origins` appears only where a second dimension actually exists. The differing **nesting
+    level** is fine and carries the same precedent — that slot's members "do not share a level"
+    either, with `baseUrl` as seam vocabulary beside per-endpoint `url`/`path`.
+
+    Honest about severity: unlike the endpoint slot, this collision has **no silent failure mode**.
+    Every divergence between the two builders is a compile error, so nothing was ever mis-gated by
+    it. It is taken as surface hygiene because the API freezes at the stable tag, not because it
+    was a defect.
+
+    **The lint allow-list entry is deleted, not reworded.** It defended the flat pair on P22:
+    `targetOrigin` is `window.postMessage()`'s own parameter name. It is — and that is not what the
+    mirror carve-out protects. The value is passed **positionally**
+    (`resolveTarget().postMessage(message, opts.targetOrigin, transfer ?? [])`), so no DOM code ever
+    reads a property of that name off our object and renaming it adds **no** translation: there was
+    no identity mapping to preserve. `XhrLike.responseType` is exempt because it is literally
+    `xhr.responseType = …` on a foreign object; an IDL _parameter_ name is documentation, not a
+    seam. Fifth instance of this reversal, after `AdapterRequest.responseType` and
+    `AdapterRequest.arrayFormat` (both 2026-09-04), `DocSearchHit` (2026-09-09) and
+    `OAuth2Options.client` (2026-09-14). The entry also grouped by the shared **prefix**, which is
+    what the lint mechanically detects, where P24 treats a shared prefix as a _signal_ of an
+    envelope rather than its boundary — so `target`, the transport handle, stays flat beside
+    `origins`.
+
+    **Both halves narrow from `string` to `Origin`,** which closes a live trap:
+    `allowedOrigins: '*'` type-checked and then silently dropped **every** inbound message, because
+    the gate is a literal `includes`, not a wildcard match — a channel that looked configured and
+    received nothing. The `Origin` template literal cannot express the rest of that trap, so the
+    construction-time guard that threw on `targetOrigin === '*'` now runs over **both** halves and
+    rejects any authored origin that is not `new URL(x).origin`: `'https://*.example.com'`,
+    `'https://app.example.com/'`, `'https://App.Example.com'` and `'https://app.example.com:443'`
+    all satisfied the type and all matched nothing. The error names the corrected spelling, echoes
+    the value the caller actually wrote, and names the slot they actually wrote it in — the P12
+    shorthand reports `origins`, not the `origins.to` it normalises to internally, and `channel()`
+    reports `from`, the only origin key that exists on `ChannelOptions`. A **missing** policy — the
+    shape a stale `targetOrigin` / `allowedOrigins` call site produces once this alias-free break
+    lands, reachable from JS, an `as any`, a stale `.d.ts`, or options parsed from JSON — is its own
+    directed error naming the rename on each builder, rather than an undefined dereference two lines
+    later. Failing loud at construction is only worth anything if the noise says what to fix.
+
+    Narrowing to `Origin` also means a **dynamic** origin — `location.origin`, a value read from
+    config, a plain `const ALLOWED = ['https://a', 'https://b']` that widens to `string[]` — must
+    assert itself (`const ALLOWED: Origin[] = [...]`, or a `satisfies`) at the boundary. That is
+    the intended cost, not a free win. It also rejects `'null'`, the origin a **sandboxed** iframe
+    posts with: deliberate, since every sandboxed frame everywhere shares it — hand such a frame a
+    `MessagePort` and use `channel.port`, which is gated by who you hand the port to. Hard break, no
+    alias ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc`
+    channel).
+
+- **BREAKING CHANGE: the four secret resolvers are now two namespaces — `optionalEnv`,
+  `secretsFile` and `secretFrom` are replaced by `env.optional`, `credential.file` and
+  `credential.from`.**
+  ([ADR 0021](docs/adr/0021-auth-strategies-move-to-a-subpath.md)
+  / [P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space))
+  Four verb-prefixed names on the `stitchapi/auth` subpath for what is really **two** decisions,
+  which is the shape the token grammars, `secrets` and `otlp` already moved away from. Same
+  reasoning, same fix: one name per dimension, the distinction named at the call site.
+
+    | Was                        | Now                             |
+    | -------------------------- | ------------------------------- |
+    | `env(name)`                | `env(name)` — unchanged         |
+    | `optionalEnv(name)`        | `env.optional(name)`            |
+    | `secretsFile(name)`        | `credential.file(name)`         |
+    | `secretFrom(source, name)` | `credential.from(source, name)` |
+
+    **Two namespaces, not one, because there are two dimensions.** `env` and `optionalEnv` name
+    the SAME source and vary only by **requiredness** — so requiredness becomes a modifier on one
+    callable name, and `env` stays callable (`env('NAME')` throws, `env.optional('NAME')` resolves
+    to absent) rather than growing a redundant `env.required`. `secretsFile` and `secretFrom` vary
+    by **source**, so the source is named at the call site on a namespace grouping the sources that
+    are not the process environment. Folding all four under one name would have put two unrelated
+    distinctions behind one word.
+
+    **The noun is `credential`, and `secrets` was rejected.** `secrets` is already the ROOT
+    barrel's trace-redaction namespace (`secrets.register` / `has` / `redact`, `src/util.ts`).
+    Reusing it on `stitchapi/auth` would put two different objects behind one name on two entry
+    points — a P1 violation that no amount of subpath separation makes readable. `credential` is
+    the noun the existing `Secret` type already describes, and it scans zero collisions repo-wide.
+
+    **Behaviour is byte-for-byte what it was** — same resolution order, same `~/.stitch/secrets.json`
+    → env-var fallback ladder, same empty-value rejection on both required resolvers, same
+    `OptionalSecret` brand and `label`, same announced `info` event from `bearer`. Only the
+    spelling moved, and the `Fix:` hint in the two thrown messages now names the new spellings
+    (`missing env var X` / `missing secret X` are unchanged). `OptionalSecret`, `Secret` and
+    `SecretSource` are unchanged and still exported as types; `EnvResolver` is newly exported as
+    the type of the callable `env`.
+
+    No aliases and no `@deprecated` shims: pre-GA, and keeping the old spellings would leave two
+    ways to write one call on the subpath, which is the thing being removed (a `@deprecated` tag in
+    published src is itself a contract violation — `check:contract` R7). All three removed names
+    are pinned **absent** from `stitchapi/auth` so an alias cannot drift back, and both namespaces
+    are pinned as wholes — `env` as a callable-plus-`optional` pair, `credential` as both members —
+    because in each case the half with no caller inside core is the half that would vanish
+    unnoticed.
+
+    **`@stitchapi/nest` moves with it**: `fromNestConfig` delegates to `credential.from` instead of
+    `secretFrom`. Its own public signature and behaviour are unchanged.
+
+    The implementations stay plain module functions in `auth.ts` and the namespaces are thin
+    facades over them, matching `secrets` and `fingerprinters`. `stitchapi/auth — whole surface`
+    measures 5.21 → 5.28 KB gzip (13.51 → 13.58 minified, +72 B) for the two facade objects;
+    headroom drops 0.14 → 0.07 KB and the budget is **not** raised. `stitchapi — whole entry`
+    (24.60) and `import { stitch }` (21.80) are unchanged to the byte — the auth surface is not on
+    either path (ADR 0021).
+
+    **One tree-shaking cost, stated plainly.** `credential` is a bare object literal, so a bundler
+    drops it whole and an import that does not use it pays nothing. `env` cannot be: making one
+    name both callable and property-bearing requires mutating a function at module scope, and no
+    bundler elides that — `Object.assign` is an opaque call, and a plain `env.optional = …`
+    assignment is a side effect esbuild will not prove away either (measured: 848 B vs 871 B, so
+    the alternative buys 23 B and costs a cast). A `/* @__PURE__ */` annotation does not rescue it
+    because tsup minifies this module on the way to `lib/` and strips the annotation from the
+    published artifact. Because the call is top-level, the cost lands on **every** importer of
+    `stitchapi/auth`, not only one that touches `env`: an import of `bearer` alone grows 434 → 871 B
+    raw, **267 → 472 B gzip (+205 B)**. Under the old four-function surface those two impls tree-shook
+    for free. This is the price of `env` staying callable — the dominant case — rather than becoming
+    an `env.required`/`env.optional` pair, and it is paid only on a subpath a consumer opted into by
+    importing a strategy. None of the three budgeted scenarios move.
+
+- **BREAKING CHANGE: `oauth2`'s `clientId`/`clientSecret`/`clientAuth` fold into one `client`
+  envelope.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+  / [P18](docs/CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary))
+  Three flat members shared the leading word `client`, which is the literal shape P24 folds. They
+  stayed flat only because the lint allow-list carried a carve-out calling them an RFC 6749 mirror.
+
+    ```ts
+    auth: oauth2({
+        tokenUrl: 'https://api.example.com/oauth/token',
+    -   clientId: env('CLIENT_ID'),
+    -   clientSecret: env('CLIENT_SECRET'),
+    -   clientAuth: 'basic',
+    +   client: {
+    +       id: env('CLIENT_ID'),
+    +       secret: env('CLIENT_SECRET'),
+    +       via: 'basic',
+    +   },
+        scope: 'orders.read',
+    }),
+    ```
+
+    | Was                             | Now             |
+    | ------------------------------- | --------------- |
+    | `clientId: Secret`              | `client.id`     |
+    | `clientSecret: Secret`          | `client.secret` |
+    | `clientAuth: 'post' \| 'basic'` | `client.via`    |
+
+    **The carve-out was wrong twice over.** `clientAuth` is not an RFC 6749 parameter at all —
+    §2.3.1 describes the client authentication _methods_ (`client_secret_post` /
+    `client_secret_basic`) and defines no such request field; the nearest standardized one is RFC
+    7591's `token_endpoint_auth_method`. So the rationale covered two of the three members it
+    claimed. And `OAuth2Options` is not a mirror in the sense this repo uses: its sibling
+    `OAuth2ClientCredentialsFlow` states the test in its own JSDoc — spelled "exactly as the spec
+    spells it … so `stitch export --openapi` emits it as an identity mapping" — while
+    `OAuth2Options` translates the very members it exempted: `clientId`/`clientSecret` are
+    re-cased to `client_id`/`client_secret` where the token-request form body is built, and under
+    `client.via: 'basic'` they leave the body altogether for an `Authorization` header. (`scope`
+    and `audience` do reach the body under their own names, but they were never part of the
+    exempted group, and most of the interface never becomes a body key at all.) A contract that
+    already re-cases the RFC's own names is the translated house contract of P18's second half.
+    The allow-list entry is **deleted**, not reworded; R8 now
+    passes because the group is gone.
+
+    **The envelope is `OAuth2ClientOptions`, exported** (P14), and the slot is a plain required
+    `client: OAuth2ClientOptions` — **not** `AtLeastOne<…>`. That wrapper exists to make `{}` a
+    compile error on an all-optional bag; here `id` and `secret` are required, so `client: {}`
+    already is one (the `CacheOptions.ttl` reading of P15), and `AtLeastOne` would have been
+    actively harmful — each of its arms re-optionalises the members it did not pick, so
+    `client: { id }` would have started type-checking. No scalar shorthand either: `id` and
+    `secret` are co-equal, so no field dominates (P12/P14). `tokenUrl` **stays flat** — the
+    endpoint is a different subject from the identity calling it.
+
+    **The third member is `via`, not `auth`.**
+    ([P2](docs/CONTRACT.md#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one))
+    The obvious short spelling inside the envelope would have collided with `StitchConfig.auth`,
+    which holds an `AuthStrategy` — a behaviour object with a required `apply` closure — against a
+    closed `'post' | 'basic'` string union here. One token, two concepts, two value-spaces, and the
+    two nest inside a single call expression: `auth: oauth2({ client: { auth: 'basic' } })`. P2
+    forbids that even when each side is individually defensible, and locality is not a defence —
+    it is the argument P2 exists to foreclose. `via` reads at the call site ("the client
+    authenticates _via_ basic"), collides with nothing, and leaves the `'post' | 'basic'`
+    vocabulary and the RFC mapping untouched.
+
+    Nothing about the wire changes: `client_id`/`client_secret` still go in the form body under
+    the default `client.via: 'post'` and into the Basic header under `'basic'`, still applied
+    last so `params` can never shadow them. Redaction is unaffected — `secret` is matched as a
+    stem. Hard break, no alias
+    ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel);
+    type-level tests pin all three old spellings, `client: {}`, each half-filled `client`, and
+    `client.auth`, as compile errors.
+
+- **BREAKING CHANGE: `AdapterResponse` is now `AdapterResult`, repo-wide.**
+  ([CONTRACT.md P3](docs/CONTRACT.md#p3--one-suffix-system)) The suffix system reserves `*Response`
+  for the platform object or a faithful mirror of it, and `*Result` for a shape the house coined.
+  This one is house-coined in every member: `headers` is lower-cased and flattened to a plain
+  record, `body` is already read (parsed JSON when possible, else text, or a live
+  `ReadableStream<Uint8Array>`), and `url` is present only where the transport exposes one. Nothing
+  on it is the platform type, so it was wearing the one suffix that promises it is.
+
+    ```ts
+    // a custom adapter, before → after
+    -import type { Adapter, AdapterResponse } from 'stitchapi';
+    +import type { Adapter, AdapterResult } from 'stitchapi';
+    -const mine: Adapter = async (req): Promise<AdapterResponse> => { … };
+    +const mine: Adapter = async (req): Promise<AdapterResult> => { … };
+    ```
+
+    A mechanical rename — every `AdapterResponse` becomes `AdapterResult`, with no shape change and
+    no behaviour change. It reaches further than most because the type is threaded through
+    `Adapter`, `Surface.interpret`/`classify`, `AuthStrategy.shouldRefresh`,
+    `CookieSessionRefreshOptions.when`, `HookContext.res`, `RateLimitError.response` and
+    `@stitchapi/shell`'s executor — but every one of those positions is inferred at an ordinary call
+    site, so only code that **names** the type has to change. Hard break, no alias
+    ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel);
+    a type-level test pins the old name as gone, so no alias can quietly restore it.
+
+- **BREAKING CHANGE: `stitchapi/testing`'s `FixtureResponse` is now `FixtureResult`.**
+  ([CONTRACT.md P3](docs/CONTRACT.md#p3--one-suffix-system)) Same rule as `AdapterResult` above, and
+  the tell is the same: the shape `conformance.fixture` produces carries a house-only `delay` the
+  host is asked to honour, so it is a produced shape rather than a mirror of anything on the wire.
+  Its JSDoc now states that rather than leaving the suffix to be read as a coincidence.
+
+    ```ts
+    -import type { FixtureRequest, FixtureResponse } from 'stitchapi/testing';
+    +import type { FixtureRequest, FixtureResult } from 'stitchapi/testing';
+    ```
+
+    `delay` deliberately stays a raw-ms `number`. A duration the library **produces** is P17's
+    complement, not its widening clause — the host reads this value, it does not author it.
+
+- **BREAKING CHANGE (`@stitchapi/download`): `ItemResult` carries `data` and `error`, not `value`
+  and `reason`.** ([CONTRACT.md P5](docs/CONTRACT.md#p5--one-success-field-one-failure-field)) The
+  envelope borrowed `Promise.allSettled`'s **shape** — a `status` discriminator, plus a `cancelled`
+  arm of our own — and borrowed its field names along with it, which made this the one StitchAPI
+  runtime envelope where the success payload is not `data` and the failure payload is not `error`.
+  P5 carves out exactly one exception, the Standard-Schema `ValidationResult`; the `allSettled`
+  spelling is not on that list.
+
+    ```ts
+    for (const r of await downloadAll(items)) {
+    -    if (r.status === 'fulfilled') save(r.value.blob, r.value.filename);
+    -    else if (r.status === 'rejected') report(r.reason, r.retryable, r.code);
+    +    if (r.status === 'fulfilled') save(r.data.blob, r.data.filename);
+    +    else if (r.status === 'rejected') report(r.error, r.retryable, r.code);
+    }
+    ```
+
+    `status`, `id`, `retryable`, `code` and the three arms are unchanged, and so is the `cancelled`
+    arm's deliberate absence of a payload. `classifyFailure`'s first parameter is renamed
+    `reason` → `error` to match; its positional signature is unchanged, so only a JSDoc reader
+    notices.
+
+- **BREAKING CHANGE (`@stitchapi/download`): `DownloadCancelledError` and `DownloadIdleTimeoutError`
+  extend `StitchError`, and a stalled item settles with the idle-timeout instance itself.**
+  ([CONTRACT.md P10](docs/CONTRACT.md#p10--error-class-taxonomy-parity)) Both were bare `Error`
+  subclasses beside a `StitchError`-typed `ItemResult.error`, which is the parity `RateLimitError`
+  closed in this same cycle. They now inherit `status?` / `attempts` / `body?` / `url?` and keep
+  `name` as their own discriminator; `attempts` is the base default `0`, because the batch raises
+  both outside the engine's attempt loop and has no attempt count to report.
+
+    **The bug the second half fixes.** A stall used to settle with a _flattened_ base `StitchError`
+    carrying the real instance on `.cause` — so `instanceof DownloadIdleTimeoutError` failed on the
+    value the consumer was actually handed, and `idle` (the window that elapsed with no forward
+    progress, the one number the error exists to report) was reachable only by walking `.cause`.
+    That is precisely P10's "no field is reachable only through `.cause`". `#stalled` is now a
+    `Map<DownloadId, DownloadIdleTimeoutError>` holding the instance the watchdog raised, used as
+    both the abort reason and the settle error, so the item carries it in person:
+
+    ```ts
+    // before — the class and its window were one level down
+    -if (r.status === 'rejected' && r.reason.cause instanceof DownloadIdleTimeoutError)
+    -    warn(r.id, `stalled for ${(r.reason.cause as DownloadIdleTimeoutError).idle}ms`);
+    // after — readable on the error you are handed
+    +if (r.status === 'rejected' && r.error instanceof DownloadIdleTimeoutError)
+    +    warn(r.id, `stalled for ${r.error.idle}ms`);
+    ```
+
+    Migration — **check the order of your `instanceof` arms**, the same hazard the `RateLimitError`
+    entry below carries: a leading `instanceof StitchError` arm now swallows both download classes,
+    so test the subclass first. `toStitchError`'s existing `instanceof StitchError` pass-through
+    became load-bearing in the process (it is what stops the downgrade for anything that arrives
+    raw, e.g. the throttle-acquire abort path), and its JSDoc now says so instead of describing the
+    arm as an optimisation.
+
+    `DownloadCancelledError` was checked for inertness in the same pass and **is** observable, so
+    no de-export is owed: the `cancelled` arm deliberately carries no `error`, but the instance is
+    the abort reason on the item's signal, so a `hooks.onError` supplied per item or under
+    `defaults` receives it as `ctx.error` — verified end to end through `downloadAll` +
+    `batch.cancel(id)`, and now documented on the class and in the README.
+
+- **BREAKING CHANGE: `DriftOptions.severity` is now `DriftOptions.level`, and the `DriftSeverity`
+  alias is removed.** ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space))
+  One knob was spelled two ways across one hop: you authored `severity` and read back
+  `DriftFinding.level`, for the same value from the same value-space. `level` wins because it is
+  the word on the side you cannot rename — the finding — and because the option's whole job is to
+  set it.
+
+    ```ts
+    // before
+    drift: { severity: 'warn' },
+    drift: { severity: { coerced: 'info', defaulted: 'info' } },
+    // after
+    drift: { level: 'warn' },
+    drift: { level: { coerced: 'info', defaulted: 'info' } },
+    ```
+
+    `DriftSeverity` is **deleted rather than renamed**: it re-declared `'warn' | 'info' | 'verbose'`
+    by hand beside `DriftLevel`, so the two could drift apart the next time a level was added. The
+    narrow type is now derived — `Exclude<DriftLevel, 'error'>` — and that is what `DriftOptions.level`
+    accepts, so `error` stays what it always was: a hard validation failure, never something soft
+    drift can be re-levelled into. Import `DriftLevel` and exclude, if you were naming the old alias:
+
+    ```ts
+    -import type { DriftSeverity } from 'stitchapi';
+    +import type { DriftLevel } from 'stitchapi';
+    +type DriftSeverity = Exclude<DriftLevel, 'error'>;
+    ```
+
+    Behaviour is unchanged: the three shapes (a single level, a bare list as an allowlist, a
+    per-kind map as a re-leveller), the per-kind defaults (`undeclared` → `info`, `coerced` → `warn`,
+    `defaulted` → `verbose`) and the interaction with `ignore` are all exactly as they were. Inside
+    `drift.ts`, `resolveSeverity` is `resolveLevel` and the local narrow alias is `SoftDriftLevel`,
+    so no helper speaks the old word either. `tsc` catches the migration — `NoUnknownNestedKeys`
+    rejects a leftover `severity` at the `drift:` slot by name.
+
+- **BREAKING CHANGE: `StitchStore.lease`'s third parameter is `concurrency`, not `limit`.**
+  ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space)) The verb is the
+  fleet-wide half of `throttle.concurrency` (ADR 0025) and backs exactly that slot, but spelled its
+  cap `limit` — so one cap read as two names across one hop, and `createStoreThrottle` held the
+  seam together with `const limit = opts?.concurrency;`. That line is now the identity read
+  `const concurrency = opts?.concurrency;`.
+
+    ```ts
+    // a custom store, before → after
+    -lease(key, token, limit, ttl, now) { … held.size < limit … }
+    +lease(key, token, concurrency, ttl, now) { … held.size < concurrency … }
+    ```
+
+    **A positional rename, so JavaScript callers are unaffected** and TypeScript only complains
+    where the name is written down — an implementation's parameter list, or a caller using a named
+    destructure. `memoryStore.lease`, the `vaultView` forwarder, `@stitchapi/redis`'s three bundled
+    adapters and `redisStore`'s forwarding arrow, and `@stitchapi/deno-kv`'s `denoKvStore` all
+    follow the same rename. Semantics, arity and argument order are untouched, and a store without
+    the `lease`/`release` pair still falls back to the per-process limiter exactly as before.
+
+- **BREAKING CHANGE (`@stitchapi/redis`): `RedisDriver.releaseLease` is now `RedisDriver.release`.**
+  ([CONTRACT.md P18](docs/CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary))
+  `RedisDriver` is a house contract — the seam you implement to put a custom client behind
+  `redisStore` — so it speaks house vocabulary, and the house word for giving a lease slot back is
+  `StitchStore.release`. The divergence had a defence in its JSDoc: that `close` already owned the
+  connection-lifecycle sense of "release". But `StitchStore` carries `release` and `close` side by
+  side without anyone confusing them, so the qualifier bought nothing and cost the driver seam its
+  parity with the very interface it exists to implement. That JSDoc paragraph is replaced by the
+  reasoning for the rename.
+
+    ```ts
+    // a custom driver, before → after
+    -    async releaseLease(key, token) { … },
+    +    async release(key, token) { … },
+    ```
+
+    The pair is still all-or-nothing — implement `lease` **and** `release`, or neither — and a
+    driver with neither still leaves `concurrency` per-process. The three bundled adapters
+    (`fromIoredis`, `fromNodeRedis`, `fromUpstash`) are unchanged in behaviour; only the member name
+    and `redisStore`'s forwarding line moved.
+
+- **BREAKING CHANGE (types only): `StitchConfig.extends` no longer accepts `{}`.**
+  ([CONTRACT.md P20](docs/CONTRACT.md#p20--no-empty-object-config-enable-with-defaults-is-a-scalar))
+  Both forms narrow from `Partial<StitchConfig>` to `AtLeastOne<StitchConfig>` — the single
+  fragment and the list element alike — and `stitch.ts`'s `Fragment` alias mirrors the slot exactly
+  so the spelling a consumer writes and the spelling core names cannot drift.
+
+    ```ts
+    // before: compiled, contributed nothing to the merge
+    -stitch({ url, extends: {} });
+    -stitch({ url, extends: [shared, {}] });
+    // after: say what the layer contributes, or drop it
+    +stitch({ url, extends: shared });
+    ```
+
+    An empty layer merges nothing, so it is indistinguishable from "I meant to configure this and
+    forgot" — the case P20 exists to reject. Composition itself is untouched: a string, a `Stitch`,
+    a one-element shorthand and deep-merge precedence all behave exactly as before. Internally
+    assembled layers keep their own wider type (`seam()`'s shared fragment is legitimately empty
+    when `seam()` takes no options), so the narrowing lands on the authored slot only, rather than
+    being laundered through a cast at every internal call site.
+
+- **BREAKING CHANGE (types only): `sse.bind({})`, `stream.bind({})`, `graphql.bind({})` and
+  `llm.bind({})` are compile errors.**
+  ([CONTRACT.md P20](docs/CONTRACT.md#p20--no-empty-object-config-enable-with-defaults-is-a-scalar))
+  The config arm of each `bind` widens from `SeamConfig` to `AtLeastOne<SeamConfig>`. The opaque
+  spelling was not merely uninformative here — `{}` failed the `isSeam()` guard, fell through to
+  `seam({})`, and silently built a **second whole runtime**: its own store, its own vault, its own
+  trace sink, its own lifecycle to close. The most opaque spelling available produced the most
+  expensive outcome.
+
+    ```ts
+    // before — looked like "bind with defaults", built a second seam
+    -const api = sse.bind({});
+    // after — the all-defaults spelling says what it does
+    +const api = sse.bind(seam());
+    ```
+
+    `bind(existingSeam)` and `bind({ baseUrl: … })` are unchanged, and so is the runtime
+    discrimination (`isSeam(arg) ? arg : seam(arg)`). `download.bind` is **not** included: it was
+    outside this pass and still takes a bare `SeamConfig`.
+
+- **BREAKING CHANGE (types only): a `SecurityScheme`'s oauth2 arm must declare its flow.**
+  ([CONTRACT.md P20](docs/CONTRACT.md#p20--no-empty-object-config-enable-with-defaults-is-a-scalar))
+  `flows.clientCredentials` goes from optional to required, so `flows: {}` — a scheme that declares
+  `type: 'oauth2'` and then describes no flow at all — is a type error.
+
+    ```ts
+    -scheme: { type: 'oauth2', flows: {} },
+    +scheme: { type: 'oauth2', flows: { clientCredentials: { tokenUrl, scopes } } },
+    ```
+
+    `flows` itself stays inline rather than becoming a named interface: a single member is not a
+    multi-field sub-object. `OAuth2ClientCredentialsFlow` keeps OpenAPI 3.1's own spelling
+    (`tokenUrl` / `scopes` / `refreshUrl`,
+    [P22](docs/CONTRACT.md#p22--a-standards-interop-contract-uses-the-standards-field-names)), so
+    `stitch export --openapi` still emits it as an identity mapping.
+
+- **BREAKING CHANGE (types only): the three postMessage verb option types no longer inherit
+  `adapter`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+  carve-out (b), closing clause) `RequestOptions`, `EmitOptions` and `EventsOptions` were each
+  `Partial<Omit<StitchConfig, 'kind' | 'url'>> & { … }`. Every postMessage surface carries an
+  `execute` hook and the engine resolves `cfg.kind.execute ?? rt.adapter`, so a caller's adapter is
+  **never** consulted here — not even as a fallback. `channel.request(type, { adapter: myTransport })`
+  typechecked while the transport sat inert, reading as "this call goes over my adapter" and being
+  false. Same defect, same file, as the `allowedOrigins` `portChannel` lost above.
+
+    ```ts
+    -channel.request('ping', { adapter: myTransport, retry: { attempts: 3 } });
+    +channel.request('ping', { retry: { attempts: 3 } });
+    +// reach a different transport at the real seam: build the channel over a different
+    +// MessageTransport (P21).
+    ```
+
+    The three now share **one** base alias — `PostMessageVerbConfig`, which is
+    `Partial<Omit<StitchConfig, 'kind' | 'url' | 'adapter'>>` — so they cannot drift apart again.
+    Everything else is unchanged: the resilience chain (`retry` / `throttle` / `timeout` / `circuit` / `trace` / `signal`) all
+    applies through the engine exactly as it does on every other surface, and `kind` / `url` were
+    already withheld (the surface owns one, the other is synthesised as a `postmessage:<type>`
+    pseudo-endpoint).
+
+- **BREAKING CHANGE (`@stitchapi/shell`, types only): `ShellOptions` no longer accepts `adapter`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+  carve-out (b), closing clause) The omit widens from `Omit<StitchConfig, 'kind' | 'wire'>` to
+  `Omit<StitchConfig, 'kind' | 'wire' | 'adapter'>`. Same engine rule as the postMessage entry
+  above: the shell surface carries `execute`, so `shell({ command, adapter: fetchAdapter() })` used
+  to typecheck with the caller's transport never consulted — not even when the command failed to
+  spawn.
+
+    ```ts
+    -shell({ command: ['git', 'status'], adapter: fetchAdapter() });
+    +shell({ command: ['git', 'status'] });
+    ```
+
+    The resilience keys stay, because they genuinely apply: `retry`, `throttle`, `circuit`,
+    `timeout` and `trace` all wrap `execute`.
+
+- **BREAKING CHANGE: `serveStdio()` returns an exported `StdioHandle`, and its `close` is
+  `() => Promise<void>`.** ([CONTRACT.md P11](docs/CONTRACT.md#p11--asyncsync-signature-parity))
+  It was the lone synchronous `close()` on the published API — `ServeHandle.close`,
+  `StitchStore.close`, `Seam.close` and `PostMessageChannel.close` are all async — so a host
+  awaiting a set of handles in a loop hit one that was not a promise. Detaching the stdin listener
+  is itself synchronous, so the returned promise is already settled: awaiting it is the uniform
+  spelling, never a wait.
+
+    ```ts
+    const handle = serveStdio(registry);
+    -handle.close();
+    +(await handle.close());
+    ```
+
+    The return shape is also promoted from an anonymous `{ server; close }` to a named, exported
+    `StdioHandle` — the `ServeHandle` precedent — so a host that stores the handle on a field or
+    passes it on can name its type. `server` is unchanged.
+
+- **BREAKING CHANGE: `CookieSessionOptions.loginInput` is now `credentialsOf`.**
+  ([CONTRACT.md P6](docs/CONTRACT.md#p6--key-is-a-string-keyof-is-a-function) /
+  [P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)) The
+  derivation-function convention is `key` for a value and `keyOf` for a function that produces one:
+  the `Of` suffix says it is a function, and the stem says what it returns. `loginInput` did
+  neither — it named the _consumer_ of the value rather than the value, and its `login` prefix put
+  it in a P24 group with `login` itself, which is a required `Stitch` rather than a callback. A
+  shared leading word across two different value-kinds is what needed a lint carve-out to stay
+  flat; renaming dissolves the group instead.
+
+    ```ts
+    auth: cookieSession({
+        login: stitch({ url: '/login', method: 'POST' }),
+    -   loginInput: (principal) => ({ body: credentialsFor(principal) }),
+    +   credentialsOf: (principal) => ({ body: credentialsFor(principal) }),
+    }),
+    ```
+
+    `login` itself is unchanged, and so is everything about when and how the callback runs: it is
+    still resolved at call time, still receives the bound `principal` (`undefined` when none), and
+    credentials still never originate from the caller. The implementation's local is renamed
+    `loginInput` → `credentials` to match.
+
+- **BREAKING CHANGE: `CookieSessionOptions.onAuthFailure` is now `onFailure`.**
+  ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space)) The envelope
+  already names the subject — inside `CookieSessionOptions` the only observable failure is a login
+  attempt, which is exactly what its sibling `onRefresh` watches — so the `Auth` stem restated what
+  the container had already said. This is the same envelope-supplies-the-subject reading that lets
+  an inner cap be spelled `chars` rather than `bodyChars`.
+
+    ```ts
+    auth: cookieSession({
+        login,
+        cookie: 'sid',
+    -   onAuthFailure: (info) => metrics.count('login.failed', { phase: info.step }),
+    +   onFailure: (info) => metrics.count('login.failed', { phase: info.step }),
+    }),
+    ```
+
+    The payload type stays **`AuthFailureResult`**, deliberately: an exported type sits in a flat
+    namespace where the subject has to be explicit, while a field sits inside an envelope that
+    already supplies it — the same rule read at two levels, not an inconsistency. Nothing about when
+    the hook fires changes: once per actual attempt, only when no cookie was captured, with a throw
+    still caught and announced on the `auth` trace topic. No other auth strategy carries hooks, so
+    there is no parity to keep.
+
+- **BREAKING CHANGE (`@stitchapi/fastify`): `seamConfig` is merged into `seam` — one option carries
+  the seam.**
+  ([CONTRACT.md P20](docs/CONTRACT.md#p20--no-empty-object-config-enable-with-defaults-is-a-scalar))
+  The plugin took a prebuilt seam on `seam` and a config to build one from on `seamConfig`, with
+  each arm declaring the other `?: never`. Two option names for one slot, discriminated at the type
+  level only — while core already exports `isSeam()`, which tells the two apart at runtime for
+  free, and which is what every `bind` helper uses for exactly this.
+
+    ```ts
+    await app.register(stitchPlugin, {
+    -   seamConfig: { baseUrl: 'https://api.example.com', retry: { attempts: 3 } },
+    +   seam: { baseUrl: 'https://api.example.com', retry: { attempts: 3 } },
+    });
+    // passing a prebuilt seam is unchanged
+    await app.register(stitchPlugin, { seam: existingSeam });
+    ```
+
+    | Was                                | Now                                                   |
+    | ---------------------------------- | ----------------------------------------------------- |
+    | `FastifyStitchPluginSeamOptions`   | `FastifyStitchPluginBorrowOptions`                    |
+    | `FastifyStitchPluginConfigOptions` | `FastifyStitchPluginBuildOptions`                     |
+    | `seamConfig: SeamConfig`           | `seam: AtLeastOne<SeamConfig>` (on the **build** arm) |
+    | `seam: Seam`, `seamConfig?: never` | `seam: Seam` (on the **borrow** arm)                  |
+
+    `FastifyStitchPluginOptions` **keeps its name** and stays the union of the two arms; the arms
+    are renamed for what they do (borrow a seam the app owns, or build one) rather than for which
+    field used to be set. The config form needs **at least one** field — `seam: {}` is a compile
+    error, not a silent "build one with every default"; for an all-defaults seam, build it yourself
+    and pass it prebuilt (`seam: seam()`), adding `closeSeam: true` if you still want the plugin to
+    close it. Ownership is unchanged in substance: the plugin closes a seam it built, never a
+    borrowed one, unless `closeSeam` says otherwise.
+
+- **BREAKING CHANGE (`@stitchapi/fastify`): `logger` lives on the build arm only.**
+  ([CONTRACT.md P13](docs/CONTRACT.md#p13--boolean-toggle-means-enable-with-defaults)) The Pino
+  bridge is injected as the seam's `trace` at **build** time, so on a borrowed seam — whose runtime
+  is already fixed — `logger: true` had nothing to switch on. It sat on the shared
+  `FastifyStitchPluginCommon` base and was silently ignored there, which is exactly the toggle P13
+  rules out. It moves to `FastifyStitchPluginBuildOptions`, and the borrow arm declares
+  `logger?: never`:
+
+    ```ts
+    // before: compiled, did nothing
+    -await app.register(stitchPlugin, { seam: prebuilt, logger: true });
+    // after: a compile error — trace a seam you build yourself at build time
+    +const prebuilt = seam({ trace: fastifyLoggerSink(app.log) });
+    +await app.register(stitchPlugin, { seam: prebuilt });
+    ```
+
+    Its JSDoc also drops the narrow carve-out it used to claim — "ignored when a prebuilt `seam` is
+    passed _and_ it already has its own `trace`" — which described a condition that was never the
+    real rule. The rule it states now is the one the code follows: honoured only when the plugin
+    builds the seam, and an explicit `trace` on that config wins. The default is unchanged
+    (`true`, the cross-host canonical default) wherever the option is still representable.
+
+- **BREAKING CHANGE (`@stitchapi/express`): `StreamStitchSseOptions` is the shared shape; the
+  `req`-bearing one is `ExpressStreamStitchSseOptions`.**
+  ([CONTRACT.md P9](docs/CONTRACT.md#p9--unique-by-shape-exported-types), ADR 0012 rule 6) Five
+  hosts publish `StreamStitchSseOptions`, and on four of them it is core's bare `SseEmitOptions`.
+  Express's was an `interface … extends SseEmitOptions` with an extra `req` — one exported
+  identifier denoting two structural contracts, which is the thing P9 forbids. The divergent side
+  takes the framework-qualified name; the shared name keeps the shared shape.
+
+    ```ts
+    // before
+    -import type { StreamStitchSseOptions } from '@stitchapi/express';
+    -const opts: StreamStitchSseOptions = { delta, req };
+    // after
+    +import type { ExpressStreamStitchSseOptions } from '@stitchapi/express';
+    +const opts: ExpressStreamStitchSseOptions = { delta, req };
+    ```
+
+    `StreamStitchSseOptions` is still exported and is now a type alias of `SseEmitOptions`
+    (`{ delta, error }`) — annotate a portable options object with it, and reach for
+    `ExpressStreamStitchSseOptions` as soon as you pass `req`. `streamStitchSse`'s parameter is the
+    qualified type, so **calls are unaffected**: only code that names the type has to change, and
+    an options object without `req` keeps typechecking under either name. `req`'s behaviour is
+    unchanged — Express normally fires `close` on the response, and passing `req` also listens on
+    the request socket for proxies that signal disconnect there.
+
+- **BREAKING CHANGE (`@stitchapi/next`): `SseResponseOptions` is now `StreamStitchSseOptions`.**
+  ([CONTRACT.md P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity)) One capability,
+  one name on the published surface: the other five SSE-capable hosts already ship
+  `StreamStitchSseOptions`, and next was the outlier. The interface is otherwise untouched — it
+  still `extends SseEmitOptions` and still adds next's own `headers` and `signal`, which is the
+  sanctioned way to diverge (add members, keep the name), as against express's case above where the
+  _shape_ under a shared name was the problem.
+
+    ```ts
+    -import type { SseResponseOptions } from '@stitchapi/next';
+    +import type { StreamStitchSseOptions } from '@stitchapi/next';
+    ```
+
+    `streamStitchSse`'s `options` parameter takes the new name; no member moves, so only an
+    explicit annotation has to change.
+
+- **BREAKING CHANGE (`@stitchapi/vue`): `UseStitchOptions` is now `VueUseStitchOptions`.**
+  ([CONTRACT.md P9](docs/CONTRACT.md#p9--unique-by-shape-exported-types), ADR 0012 rule 6) The bare
+  name already denoted react's contract on **three** published packages: `@stitchapi/react` declares
+  it with a react-only `deps` member (its explicit re-create trigger), and `@stitchapi/react-native`
+  and `@stitchapi/expo` republish that declaration verbatim through `export *`. Vue's composable has
+  no `deps` — its re-create trigger is watched off the reactive `input` / `options` themselves, so a
+  `deps` passed here would be silently ignored. One name, two contracts; the divergent side takes
+  the prefix and react keeps the bare name as the reference declaration. Follows the
+  `VueUseStitchResult` precedent set in 1.0.0-rc.7.
+
+    ```ts
+    -import type { UseStitchOptions } from '@stitchapi/vue';
+    +import type { VueUseStitchOptions } from '@stitchapi/vue';
+    ```
+
+    All seven internal uses move with it; no member changes, so a call site that never names the
+    type is unaffected. The interface's JSDoc — which previously asserted nothing about the name —
+    now records the qualification rationale, and vue's README gains an **Options** section (it
+    documented the return shape but never the options type) naming `VueUseStitchOptions` and stating
+    that react owns the bare name and the react-only `deps`.
+
+- **BREAKING CHANGE (`@stitchapi/react-native`, `@stitchapi/expo`): the store's `now` is now
+  `clock`.** ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space))
+  `AsyncStorageStoreOptions.now?: () => number` becomes `clock?: Clock`, defaulting to
+  `systemClock`, and all three read sites call `clock.now()`. The token `now` is already an
+  epoch-ms **number** on this contract — it is what the stored envelope's expiry is compared
+  against — so one word was carrying two value-spaces, a number in the envelope and a function in
+  the options.
+
+    ```ts
+    -asyncStorageStore(storage, { now: () => fakeTime });
+    +asyncStorageStore(storage, { clock: manualClock() }); // from 'stitchapi/testing'
+    ```
+
+    The replacement is strictly more capable: a `Clock` is the same time seam (ADR 0010) that
+    already drives a stitch's retry backoff and `@stitchapi/download`'s idle timer, so one
+    `manualClock()` now expires a store entry with `advance('5m')` instead of needing a bespoke
+    thunk. `ExpoSecureStoreOptions` inherits the change with no source edit of its own — it is a
+    type alias of `AsyncStorageStoreOptions`, so it picks up `clock` and loses `now` automatically;
+    a test now pins that pass-through rather than leaving it to be re-derived.
+
+- **`circuit.failures` and `circuit.cooldown` resolve to house defaults — `5` and `'30s'` — instead
+  of throwing.** ([CONTRACT.md P15](docs/CONTRACT.md#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults))
+  `createCircuit` used to throw when either was missing, on the reading that a breaker with an
+  invisible threshold fails silently. That reading was too wide. What P15 forbids is a knob whose
+  effective value nobody can find out; a default stated on `CircuitOptions` and in the docs is found
+  out by **reading**, exactly as `retry.backoff.base` (100ms) and `throttle.lease` (30s) already
+  are. `circuit` itself stays opt-in, so declaring it at all — not picking the threshold — remains
+  the decision a reviewer has to see.
+
+    ```ts
+    // now legal, and equivalent to the old { failures: 5, cooldown: '1m' }
+    circuit: { cooldown: '1m' },
+    circuit: { key: 'vendor-a' },
+    ```
+
+    Not a breaking change: every previously-legal config resolves to exactly what it did, the
+    positional `[failures, cooldown]` shorthand is unchanged, and both fields were already optional
+    at the type level. The opaque `circuit: {}` is **still** rejected (P20 — `AtLeastOne`): an empty
+    envelope says nothing `circuit: [5, '30s']` does not say better. The two numbers live in named
+    constants next to the resolver because the same pair is quoted in `CircuitOptions`' JSDoc, so
+    the contract and the resolution have one place to disagree rather than four.
+
+- **BREAKING CHANGE: `LlmResult.usage` is `{ input, output }`, not `{ inputTokens, outputTokens }`.**
+  The envelope already says "usage", and the two vendors disagree about the wire spelling anyway —
+  anthropic sends `input_tokens`/`output_tokens`, openai sends `prompt_tokens`/`completion_tokens`.
+  Ours echoed anthropic's, camelCased, which made the **normalised** shape speak one vendor's
+  dialect. Each provider's `parse` already converts at the edge; only the house name moves. Same
+  reading that took `LlmOptions.maxTokens` to `tokens` (CONTRACT.md P4/P24: the envelope names the
+  subject, the field names the dimension).
+
+    ```ts
+    - const inTok = res.usage?.inputTokens;
+    + const inTok = res.usage?.input;
+    ```
+
+- **BREAKING CHANGE: `@stitchapi/docs-mcp`'s `DocSearchHit` speaks house vocabulary — `pageUrl` is
+  `path`, `pageTitle` is `title`.** The Orama mirror exemption had been written against the type
+  `searchDocs` _returns_, one layer above the boundary. What meets Orama is the persisted index
+  document (Orama boosts and searches BY field name, so `FieldBoost.pageTitle` and the `properties`
+  list key on it) — and that schema is **unchanged**, so no reindex, no bundle rebuild, no
+  embedding regeneration. The MCP server was already converting to `title`/`url` at its own edge,
+  so the tool output every consumer actually reads is byte-identical.
+
+    `path` rather than `url` because the value is site-relative and composes with `anchor` into the
+    absolute link; naming it `url` would promise a whole address and hand back half of one.
+
+    The conversion also retires an `as unknown as Omit<DocSearchHit, 'score'>` cast that asserted
+    the stored document and the published hit were the same object — the coupling that let the
+    index's names leak onto the published type, and one that would have kept typechecking the day
+    the schema changed. The stored shape is now a named internal `IndexedDoc`, mapped field by field.
+
+    ```ts
+    -hits.map((h) => ({ title: h.pageTitle, href: h.pageUrl }));
+    +hits.map((h) => ({ title: h.title, href: h.path }));
+    ```
+
+- **`@stitchapi/download`'s opt-in `dedupe` keys off the RESOLVED request and ref-counts its
+  sharers — a behaviour change to a shipped opt-in feature.**
+  ([#455](https://github.com/rejifald/StitchAPI/issues/455)) Nothing moves unless you passed
+  `dedupe: true`; if you did, both halves of what it does changed. v1 documented two limits, and
+  these are them.
+
+    **The key is the resolved target, not the spelling.** It was `item.url`, else an explicit `id`,
+    else the enqueue index — so two `{ path: '/x' }` items sharing a `defaults.baseUrl` had two keys
+    and made two requests, and only items given a whole `url` ever collapsed. The key is now
+    `defaults` merged under the item and resolved: `baseUrl` + `path` (or a whole `url`), with the
+    query string sorted. `{ path: '/x' }` twice under one `baseUrl` is one fetch, and so are
+    `?a=1&b=2` and `?b=2&a=1`. An item's own `id` still wins where it has one — naming two items
+    alike declares them one download whatever their URLs, and naming them apart keeps them apart.
+    **More items collapse than before**, which is the point; give items you want fetched separately
+    distinct `id`s. A thunked `baseUrl`/`url` is resolved once more per item to build the key.
+
+    **Cancel is ref-counted.** Sharers used to hold a bare shared promise: cancelling a follower only
+    detached it — the fetch ran on and the follower still settled `fulfilled` when it finished — and
+    cancelling the leader aborted the one request everyone was waiting on, failing the followers.
+    Each sharer now settles `cancelled` on its own, and the request on the wire is aborted only when
+    the **last** sharer cancels. Cancelling the item that opened the request no longer fails the
+    others: the fetch outlives it, and its byte progress and `idle` window pass to a survivor.
+
+    **A settled group is no longer joinable.** Settling is what pumps the queue, and the key was
+    dropped a microtask later — so the item admitted by a group's own settlement could still find
+    that key and adopt its finished result, or its finished **failure**, without ever reaching the
+    wire (a 404 for a request it never sent, which is how a batch quietly stops retrying). The key
+    is dropped the instant the request settles. `dedupe` coalesces requests **in flight**; it is not
+    a cache, and a just-finished blob is never replayed onto a later item.
+
+    Unchanged: FIFO admission, the `concurrency` ceiling, per-item settling, `idle` semantics, and
+    the default — `dedupe` is still `false`, every item still its own request. The package's bundle
+    budget moves 2.65 KB → 3.05 KB gzip for the two mechanisms.
+
+- **The hosted docs MCP (`stitchapi.dev/api/mcp`) moves to MCP SDK v2.** `mcp-handler` 1.x → 2.x,
+  which swaps the peer from `@modelcontextprotocol/sdk` 1.x to `@modelcontextprotocol/server` 2.x.
+  The endpoint now serves the **2026-07-28** MCP specification natively and falls back to stateless
+  Streamable HTTP for 2025-era clients, from the one handler — so an agent on either protocol
+  generation keeps working. The two tools, their schemas and their responses are unchanged.
+
+    Nothing about the surface moved; the call sites did. The variadic `server.tool()` form is
+    removed in favour of `server.registerTool()`, whose middle argument is a config object, and
+    `inputSchema` now takes a full Standard Schema — `z.object({ … })` — rather than a raw Zod
+    shape. `createMcpHandler` drops from three arguments to two, merging the server options and
+    the handler config into one. The 1.x route and transport options (`basePath`, `maxDuration`,
+    `redisUrl`, the SSE endpoint trio, `sessionIdGenerator`) are gone entirely — the handler is
+    mounted by the route file's own path, which for this endpoint was always `/api/mcp`.
+
+    **This route had no test at all**, in either direction: `mcp-e2e` covers the separate stdio
+    library MCP (`stitchapi/mcp`), and the docs `e2e` suite only reaches the rendered site. It now
+    has one — an initialize handshake plus a `tools/list` assertion driven through the real exported
+    handler.
+
+- **BREAKING CHANGE: `AdapterRequest.responseType` is now `response`.** CONTRACT.md pinned this
+  to XHR's spelling in 2026-08 as "the XHR/fetch-facing contract". That read the wrong layer:
+  `AdapterRequest` is StitchAPI's own **normalized** transport contract, the category P18 names
+  beside `StitchStore` and `RedisDriver`. Its values already proved it —
+  `ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob'` is camelCase `arrayBuffer` where XHR
+  spells it `'arraybuffer'`, with no `'document'` arm — and every adapter already converts at its
+  own edge (`xhr.responseType = 'arraybuffer'`). So the field was normalized in values, member set
+  and authoring spelling, and foreign only in its name. It now matches `wire.response`, which is
+  what a consumer writes and which is **unchanged**. The XHR spelling stays on `XhrLike` /
+  `RnStreamingXhr` and axios's on `AxiosLikeConfig` — the duck-types that structurally meet those
+  APIs. Only a **custom adapter** reading the field is affected.
+
+    ```ts
+    // a custom adapter, before → after
+    - if (req.responseType === 'blob') { … }
+    + if (req.response === 'blob') { … }
+    ```
+
+- **BREAKING CHANGE: `AdapterRequest.arrayFormat` is now `array`.** #591 renamed the authoring
+  slot to `wire.array` but left the transport field spelled `arrayFormat`, so one capability was
+  spelled two ways across one edge. The neighbouring `responseType` keeps XHR's spelling because
+  an `xhr` adapter assigns it straight through (CONTRACT.md P24 carve-out (a) binds _the layer
+  that meets the standard_) — but nothing takes an `arrayFormat`: the walker is ours, and the
+  values `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins the values, never the
+  field name. Only a **custom adapter** that reads the field is affected; `wire.array`, the
+  spelling every consumer actually writes, is unchanged.
+
+    ```ts
+    // a custom adapter, before → after
+    - const fmt = req.arrayFormat;
+    + const fmt = req.array;
+    ```
+
+- **BREAKING CHANGE: `portChannel()` no longer takes an `allowedOrigins` option.** It accepted one
+  "for symmetry" with `channel()`/`windowChannel()` and threaded it into the gate — where it could
+  never be read. The gate is `origin === '' || allowed.includes(origin)` and a `MessagePort` always
+  delivers `''`, so the list short-circuited every time. An inert option is bad anywhere and worse
+  when it is shaped like a security control: `portChannel(port, { allowedOrigins: ['https://ok'] })`
+  gated nothing while reading as though it did. A port is gated by who you hand it to — it is
+  already a private, capability-style channel. Drop the argument; there is no behaviour to replace,
+  because there never was any.
+
+    ```ts
+    -portChannel(port, { allowedOrigins: ['https://app.example.com'] });
+    +portChannel(port);
+    ```
+
+- **`@stitchapi/nest` supports NestJS 12.** `peerDependencies` widen to
+  `^10.0.0 || ^11.0.0 || ^12.0.0` for both `@nestjs/common` and `@nestjs/core` — additive, so
+  nothing changes for a host on Nest 10 or 11. The adapter itself needed no code change; all 65
+  of its tests pass unmodified against Nest 12.
+
+    The bump has to be taken as **one coupled decision** rather than per-package. `@nestjs/common`
+    12 relocates the `interfaces` entry point that `@nestjs/core` 11 resolves against, so moving
+    `common` alone leaves every suite failing at import with
+    `Cannot find module '.../@nestjs/common/interfaces.js'`. `@nestjs/config` is pulled along for
+    the same reason: its 4.x line peers on `@nestjs/common` `^10.0.0 || ^11.0.0` and so cannot see
+    Nest 12 at all — the supporting line is `12.0.0`, which is where that package's versioning
+    realigned with the framework's.
+
+    Nest 12's own dependency moves ride along in the lockfile: `@nestjs/config` swaps `dotenv`
+    16 → 17 with `dotenv-expand` 12 → 13, and replaces `lodash` with `es-toolkit`.
+
+- **BREAKING CHANGE: `seam({ secretStore })` is now `vault`, an ordinary `StitchConfig` prop — and
+  `SeamOptions` is gone (`seam()` takes a `SeamConfig`).** The hardened backend for the auth vault
+  was declared on `SeamOptions = SeamConfig & { secretStore }`, which made it a **seam-only**
+  capability: a standalone `stitch()` built its vault over `store` with no way to point it
+  elsewhere, and the two host integrations that build a seam from config — fastify's plugin `seam`
+  (spelled `seamConfig` at the time; see the merge entry above) and a `@stitchapi/nest` **feature**
+  seam's `config` — type that slot as `SeamConfig` and so could
+  not name it either. CONTRACT.md P16 says a config field is declared once on `StitchConfig` and
+  projected; this one was re-declared per surface.
+
+    ```ts
+    // was — seam only
+    const api = seam({ secretStore: expoSecureStore(SecureStore) });
+    // now — anywhere a config goes, `stitch()` included
+    const api = seam({ vault: expoSecureStore(SecureStore) });
+    const me = stitch({ url: '…', vault: expoSecureStore(SecureStore), auth: cookieSession(…) });
+    ```
+
+    The name is the one the rest of the codebase already used for this thing (ADR 0002 §4,
+    `AuthContext.vault`, the docs); `secretStore` was a third spelling for it. Behaviour is
+    unchanged where it was reachable: the vault still defaults to a reserved, redacted namespace
+    over `store`, the split is still by visibility rather than backend, and a seam still shares one
+    vault across its members and closes a distinct backend on `close()`. `vault` is redacted from
+    `__config` exactly like `store`. Hard break, no alias (P19, `rc` channel).
+
+- **BREAKING CHANGE: the conformance kit on `stitchapi/testing` is now one `conformance` namespace
+  — `verifyStoreContract`, `verifyAdapterContract`, `verifySinkContract`,
+  `verifyFingerprintContract`, `assertConformance` and `adapterContractFixture` are replaced by
+  `conformance.store`, `.adapter`, `.sink`, `.fingerprint`, `.assert` and `.fixture`.**
+  Four identical `verify<Seam>Contract` shapes returning one `ContractReport`, read off one entry to
+  make one decision — the shape the token grammars and the secret-redaction trio each moved away
+  from. Same reasoning, same fix: one name per dimension, the dimension named at the call site.
+  The dimension here is the **seam**, and `ContractReport.seam` was already the discriminator the
+  export names refused to be.
+
+    | Was                                       | Now                                     |
+    | ----------------------------------------- | --------------------------------------- |
+    | `verifyStoreContract(make, opts?)`        | `conformance.store(make, opts?)`        |
+    | `verifyAdapterContract(adapter, baseUrl)` | `conformance.adapter(adapter, baseUrl)` |
+    | `verifySinkContract(makeSink)`            | `conformance.sink(makeSink)`            |
+    | `verifyFingerprintContract(fp, fixtures)` | `conformance.fingerprint(fp, fixtures)` |
+    | `assertConformance(report)`               | `conformance.assert(report)`            |
+    | `adapterContractFixture(req)`             | `conformance.fixture(req)`              |
+
+    ```ts
+    // was
+    assertConformance(await verifyStoreContract(() => myStore()));
+    // now
+    conformance.assert(await conformance.store(() => myStore()));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same rules, same rule names, same independent
+    rule-catching so one violation never masks another, same `ContractReport`, same per-run key
+    namespacing, same `ttl` duration grammar, same browser-safe no-`node:*` guarantee. Only the
+    spelling moved. No aliases: pre-GA, and keeping the old spellings would leave six verbose names
+    on the entry beside the namespace, which is the thing being removed.
+
+    **`adapterContractFixture` joins the namespace as `conformance.fixture`** rather than staying
+    standalone. It is not a verifier, but it is not an independent capability either: it is the
+    SERVER half of the adapter contract — the pure request-in/response-out function
+    `conformance.adapter` verifies a transport against — and it cannot be used apart from it. Same
+    call the token grammars made putting `format` beside `parse`. Leaving it out would have kept one
+    loose `*Contract*`-spelled name beside the namespace that replaced the other five, which is
+    precisely the drift the fold removes.
+
+    **Free on the bundle, and structurally so.** `stitchapi/testing` is imported by specs and never
+    reaches a production bundle, and the subpath is not size-gated; the gate was run on both sides
+    anyway and all three scenarios it does measure are byte-identical (whole entry 24.60 KB gzip,
+    `import { stitch }` 21.82 KB, `stitchapi/auth` 5.22 KB). The implementations stay plain module
+    functions in `testing.ts` and the namespace is a thin `as const` facade over them.
+
+- **BREAKING CHANGE: the six host adapters' error helpers are now one `stitchError` namespace —
+  `isStitchError`, `stitchErrorHandler`, `stitchOnError`, `stitchErrorResponse` and
+  `toHttpException` are replaced by `stitchError.is`, `stitchError.map` and
+  `stitchError.handler`.** ([ADR 0012](docs/adr/0012-integration-symbol-naming.md),
+  [CONTRACT.md §6](docs/CONTRACT.md))
+  One concept — "a stitch failed, turn it into HTTP" — carried two or three verb-prefixed
+  top-level names in each of `@stitchapi/express`, `/fastify`, `/hono`, `/elysia`, `/next` and
+  `/nest`, and the mapper alone had **four spellings**. `hono` and `elysia` were otherwise
+  perfectly parallel, down to an identically named `stitchOnError`, and diverged on exactly
+  that. It is the defect ADR 0012's own Context section opens with; that sweep fixed the
+  logger-sink family and never came back for this one.
+
+    | Package | Was                                                       | Now                                    |
+    | ------- | --------------------------------------------------------- | -------------------------------------- |
+    | express | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | fastify | `isStitchError` · `stitchErrorHandler`                    | `stitchError.is` · `.handler`          |
+    | hono    | `isStitchError` · `stitchError` · `stitchOnError`         | `stitchError.is` · `.map` · `.handler` |
+    | elysia  | `isStitchError` · `stitchErrorResponse` · `stitchOnError` | `stitchError.is` · `.map` · `.handler` |
+    | next    | `isStitchError` · `stitchErrorResponse`                   | `stitchError.is` · `.map`              |
+    | nest    | `isStitchError` · `toHttpException`                       | `stitchError.is` · `.map`              |
+
+    ```ts
+    // before
+    import { isStitchError, stitchOnError } from '@stitchapi/hono';
+    // after
+    import { stitchError } from '@stitchapi/hono';
+
+    app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+
+    app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }));
+    ```
+
+    **Behaviour is byte-for-byte what it was** — same `502`-by-default mapping, same
+    generic status-tied body, same `status` / `body` overrides, same pass-through for a
+    non-Stitch error. Only the spelling moved. No aliases: pre-GA `rc`, and keeping the old
+    spellings would leave the very names being removed on the barrel beside the namespace.
+
+    **Not every host has all three members, and the missing ones stay missing.** A member that
+    meant something different per package would re-create the drift this closes. `express` and
+    `fastify` have no `.map` — their handler writes onto a mutable `res` / `reply` and returns
+    no mapped artifact to hand back. `next` has no `.handler` — a route handler is its own
+    `Request` → `Response` function, so there is no central error hook to register one on.
+
+    **`StitchExceptionFilter` is unchanged and stays a top-level class** on `@stitchapi/nest`:
+    Nest registers a filter _instance_ through DI (`useGlobalFilters`,
+    `{ provide: APP_FILTER, useClass }`), the idiom ADR 0012 rule 1 blesses. It is pinned
+    present as a class so a later tidy-up cannot sweep it into the namespace.
+
+    **The plugin option slots are untouched** — `@stitchapi/fastify` still takes `errorHandler`
+    (after Fastify's `setErrorHandler`) and `@stitchapi/elysia` still takes `onError`. CONTRACT.md
+    P18's mirror clause binds a framework-hook _slot_, where the surrounding option bag supplies
+    the framework context; a named import strips exactly that context, which is why it does not
+    carry over to the exports.
+
+    **The namespace is a thin facade.** The implementations stay plain module functions and each
+    package's own call sites keep importing them directly, so nothing welds all three onto a
+    consumer that reaches one. Measured with esbuild from source: importing only `stitch` /
+    `streamStitchSse` bundles **none** of the error module, and a guard-only consumer pays
+    +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
+    siblings. None of these six has a size gate and all are server-side, so the trade is accepted
+    rather than budgeted.
+
+    **Why it drifted.** ADR 0012's 2026-06-20 conformance sweep covered ten packages;
+    `@stitchapi/express` (#207), `@stitchapi/elysia` (#208) and `@stitchapi/next` (#222) all landed
+    2026-06-19, one day earlier, and appear in neither its conformance nor its migration table.
+    Those three contributed `stitchErrorResponse` twice and half of both handler spellings. But
+    adjudication alone would not have saved them: every one of these names is `Stitch`-branded, so
+    all six pass ADR 0012's rules read one symbol at a time — and `toHttpException` proves it from
+    the other side, since nest _was_ swept and its one genuinely bare export was missed anyway.
+    Recorded as a dated addendum on ADR 0012 (its 2026-06-20 table is left intact) and in
+    CONTRACT.md §6.
+
+    Every old spelling is pinned **absent** in all six packages' specs — not only where it lived —
+    so "one dimension, one name" is a property of the family, not of each package on its own.
+
+- **BREAKING CHANGE: the query-key trio is now one `stitchKey` namespace — `deriveQueryKey`,
+  `nameOf` and `keyInputFor` are replaced by `stitchKey.of`, `stitchKey.name` and
+  `stitchKey.input`.** ([ADR 0012](docs/adr/0012-integration-symbol-naming.md))
+  Three verb-prefixed names for one two-segment key, re-exported wholesale onto five barrels
+  (`@stitchapi/query-core` and the React / Vue / Svelte / Angular bindings). Their own JSDoc
+  already described them as parts of one thing — "the first segment of a derived query key",
+  "the second segment" — and `deriveQueryKey` wore the exact `parseDuration` shape the house
+  convention rejects. Same reasoning as the token grammars and the `secrets` hatch, same fix:
+  one name per dimension, the segment named at the call site.
+
+    | Was                             | Now                           |
+    | ------------------------------- | ----------------------------- |
+    | `deriveQueryKey(stitch, input)` | `stitchKey.of(stitch, input)` |
+    | `nameOf(stitch)`                | `stitchKey.name(stitch)`      |
+    | `keyInputFor(input)`            | `stitchKey.input(input)`      |
+
+    **Behaviour is byte-for-byte what it was** — the same `[name, sanitised input]` tuple, the same
+    `name ?? path ?? url ?? 'stitch'` fallback chain, the same dropped runtime-only
+    `signal`/`onProgress`, the same header-value redaction layered over core's `secrets.has`
+    denylist. Only the spelling moved. `stitchQueryOptions` is untouched and still keys through
+    `stitchKey.of`. No aliases: pre-GA, and keeping the old spellings would leave three verbose
+    names beside the namespace on all five barrels, which is the thing being removed.
+
+    **`stitchKey`, not `queryKey`.** TanStack Query owns that word — `queryKey` is the field name
+    on the options object this package builds _for_ them — so a bare `queryKey` export would put
+    one word on two meanings on a single import path, the exact collision that made the adapter
+    `stitchQueryOptions` rather than `queryOptions`
+    ([ADR 0012](docs/adr/0012-integration-symbol-naming.md),
+    [P22](docs/CONTRACT.md#p22--a-standards-interop-contract-uses-the-standards-field-names)). The
+    **absence** of a bare `queryKey` is pinned too, so the shorter spelling cannot be added later
+    for symmetry.
+
+    **Measured on the bundle, both sides.** query-core has no size gate; measured anyway, esbuild
+    tree-shaken + gzip, the method `packages/core/scripts/bundle-size.mjs` uses. query-core's own
+    entry is free — 1598 → 1597 B gzip whole-entry, with the `createStitchQuery`-only and
+    `stitchQueryOptions`-only scenarios not moving at all. The React and Vue **hook-only**
+    scenarios grow 1876 → 1919 B and 1885 → 1928 B gzip (+43 B each): those two bindings sanitise
+    their dep key through the grammar, and a namespace object does not tree-shake, so `of` now
+    rides along with `input`/`name` for a consumer who never touches TanStack. `packages/core`'s
+    gated budgets do not move at all (24.60 / 21.82 / 5.22 KB gzip, unchanged).
+
+    The implementations stay plain module functions and query-core's own call sites (`of`'s body,
+    `stitchQueryOptions`) keep calling them directly, so the namespace is a thin facade rather
+    than an object that welds all three onto every consumer's path. `@stitchapi/solid` continues
+    to re-export only `stitchQueryOptions` and to point callers at query-core for the key itself;
+    that divergence from the other four bindings predates this fold and is left standing.
+
+- **BREAKING CHANGE: the fingerprinter registry is now one `fingerprinters` namespace on
+  `stitchapi/fingerprint` — `registerFingerprinter`, `getFingerprinter`, `listFingerprinters` and
+  `clearFingerprinters` are replaced by `fingerprinters.register`, `.get`, `.list` and `.clear`.**
+  ([ADR 0004](docs/adr/0004-standard-schema-fingerprint-for-cache-invalidation.md))
+  Four verb-prefixed names over one `Map`, each repeating a subject the subpath already names —
+  the shape `secrets` and the token grammars moved away from. Same reasoning, same fix: one name
+  per dimension, the verb at the call site.
+
+    | Was                         | Now                           |
+    | --------------------------- | ----------------------------- |
+    | `registerFingerprinter(fp)` | `fingerprinters.register(fp)` |
+    | `getFingerprinter(vendor)`  | `fingerprinters.get(vendor)`  |
+    | `listFingerprinters()`      | `fingerprinters.list()`       |
+    | `clearFingerprinters()`     | `fingerprinters.clear()`      |
+
+    **Behaviour is byte-for-byte what it was** — same process-local `Map`, same last-registration-
+    wins, same `undefined` on an unregistered vendor, same unordered `list`, same `clear`. Only the
+    spelling moved, so the one line each `@stitchapi/fingerprint-*` package's README asks you to
+    write becomes `fingerprinters.register(zodFingerprinter)` and nothing else changes. No aliases:
+    pre-GA, and `src/fingerprint.ts` **is** the subpath entry, so keeping an old spelling would put
+    it straight back on the published surface with no barrel in between.
+
+    **Free on the core gate**, measured both sides: all three budgeted scenarios are unchanged to
+    the byte on min+gzip — whole entry 24.60 KB, `import { stitch }` 21.82 KB, `stitchapi/auth`
+    5.22 KB, with the same 0.20 / 0.18 / 0.13 KB headroom. No budget raise. Nothing on the core
+    path reaches the registry: the root barrel never re-exported it, and `resolveFingerprint` —
+    which the cache does reach — still calls the module function directly rather than going through
+    the namespace, so `import { resolveFingerprint }` is byte-identical at 2.73 KB min / 1.29 KB
+    gzip. The namespace is a thin facade over four plain module functions for exactly that reason.
+
+    **What it does cost** is on the subpath, which the gate does not budget: a consumer importing
+    only `registerFingerprinter` (0.10 KB min / 0.11 KB gzip) now imports `fingerprinters` and gets
+    all four members (0.23 / 0.18), because esbuild will not split an object literal to drop a dead
+    property. That is ~70 B gzip on the one import line a vendor package asks for, and the whole
+    subpath entry is slightly _smaller_ than before (2.94 → 2.90 KB min, 1.37 KB gzip either way).
 
 - **BREAKING CHANGE: the OTLP trio is now one `otlp` namespace — `otlpSink`, `otlpHttpExporter`
   and `toOtlpJson` are replaced by `otlp.sink`, `otlp.exporter` and `otlp.json`.**
@@ -801,6 +2007,148 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`stitchapi/postmessage` — several same-origin frames on one page no longer hear each other.**
+  A page that renders many frames of ONE origin with a `channel.window` per frame — a gallery of
+  preview tiles, each a `blob:` document (which inherits its creator's origin) or a page off one
+  CDN host — handed every frame's messages to every channel. Every window channel listens on the
+  page's single global `'message'` event, and the gate checked the origin alone, which cannot tell
+  same-origin frames apart. So tiles resized on each other's `content-height` and went ready on
+  each other's `ready`; a responder answered requests its frame never sent and posted the answer
+  to its own frame; and a frame's own channel accepted a sibling frame's message as if the host
+  had sent it. Reproduced in Chromium against `1.0.0-rc.5` and against `main` before the fix.
+
+    The fix is the peer binding described under **Security** below: a window channel accepts a
+    message only when `event.source` IS its `target`, on top of the origin gate, in both
+    directions (`iframe.contentWindow` on the host side, `window.parent` in the frame). Three
+    properties of it are worth knowing if you depend on it:
+
+    - **Navigation and reload keep the binding.** They keep the frame's `WindowProxy`, so a channel
+      survives a reloaded document or a re-minted `blob:` `src` with no re-subscription. The origin
+      gate still matters beside it: a frame navigated to a foreign origin keeps the same
+      `WindowProxy`, and only the origin drops it.
+    - **A remount does not.** A new `<iframe>` element is a new window. A `Window` passed directly
+      stays bound to the discarded one; a thunk (`target: () => frame.contentWindow!`) is resolved
+      on every post and every inbound message, so it follows the new element.
+    - **A thunk that resolves to nothing accepts nothing.** `ref.current?.contentWindow` is
+      `undefined` before mount, and a detached iframe's `contentWindow` is `null`. The check as
+      first written, `source !== peer`, let a `null` source equal a `null` peer and deliver. It now
+      drops the message whenever the target resolves to `null` or `undefined`. This is hardening
+      rather than a demonstrated exploit: Chromium delivered no `null`-source window message in
+      probing.
+
+    `OriginOptions.from` is re-documented to match: it widens the **origins** accepted from
+    `target` (a popup that finishes a sign-in hop on another origin), never the set of windows.
+    The binding is now proven in a real browser as well as in the node suite
+    (`packages/core/test/browser`, run with `pnpm --filter stitchapi test:browser` and in CI's `e2e`
+    job), because the property it rests on, `WindowProxy` identity, is exactly what a node fake can
+    only assume.
+
+    **Upgrading from `1.0.0-rc.5`, `rc.6` or `rc.7`:** the window builder is also renamed in this
+    release. `windowChannel({ target, targetOrigin, allowedOrigins })` is now
+    `channel.window({ target, origins })` (the `channel` namespace entry under **Changed**). A
+    jsdom-based test of a window channel now receives nothing (the migration notes under
+    **Security**).
+
+- **`@stitchapi/express` and `@stitchapi/fastify`: a mid-stream throw now ends the SSE response with
+  an `event: error` frame instead of ending it silently.**
+  ([CONTRACT.md P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity)) Both
+  `streamStitchSse` helpers handled a surfaced `error` **event** and nothing else. An upstream
+  generator that _threw_ mid-stream — the ordinary shape of a transport fault reaching a
+  `.stream()` consumer — fell past the `while` loop into the `finally`, which closed the iterator
+  and called `res.end()`. The client therefore saw a clean, complete stream: no error frame, no way
+  to tell a finished response from a failed one. The throw then escaped the helper, rejecting the
+  promise out of the route handler, where Express's and Fastify's own error paths can no longer do
+  anything useful — the response is already ended and the socket hijacked.
+
+    Both now carry the `catch` arm their peers already had: `error.observe?.(err)` fires, and while
+    the connection is still live a named `event: error` frame is written — the generic
+    `DEFAULT_ERROR_DATA` token by default, or `error.data(toErrorEvent(err))` on opt-in — before the
+    existing `finally` ends the response. `@stitchapi/hono`, `@stitchapi/elysia`, `@stitchapi/nest`
+    and `@stitchapi/next` were already doing this; express and fastify were the two gaps, and the
+    frame they now write is byte-identical to the peers'.
+
+    The secure-by-default rule is preserved end to end: the raw message is still withheld from the
+    client unless `error.data` opts in, so a `getaddrinfo ENOTFOUND …` does not become a topology
+    disclosure, while `error.observe` sees the real failure server-side. `observe` fires even when
+    the client has already disconnected (only the frame write is gated on a live connection), so a
+    failure that races a disconnect is still logged.
+
+- **`@stitchapi/nest`: an anonymous request under `forFeatureScoped` falls back to the unbound base
+  seam instead of being bound to a made-up id.**
+  ([CONTRACT.md P16](docs/CONTRACT.md#p16--cross-surface--cross-package-parity))
+  `StitchScopedFeatureOptions.principal` was typed `(req: any) => string`, so there was no way to
+  say "this request has no principal" — the README's own example papered over it with
+  `req.user?.tenantId ?? 'anonymous'`, which does not describe an anonymous caller so much as bind
+  every anonymous caller to one shared synthetic tenant, pooling their sessions and tokens together.
+
+    `principal` is now `(req: any) => string | undefined` and the request-scoped factory branches:
+
+    ```ts
+    const id = opts.principal(req);
+    return id !== undefined ? base.as(id) : base;
+    ```
+
+    That is the fallback `@stitchapi/express`'s middleware and `@stitchapi/fastify`'s `onRequest`
+    hook already document, so the anonymous path now reads identically on every host. A widening of
+    a callback's return type, so an existing `(req) => string` resolver still typechecks and still
+    behaves exactly as before. The JSDoc on the member and on `forFeatureScoped`, the inline factory
+    comment, and the README example are rewritten to match, the last with a paragraph on the
+    fallback.
+
+- **`@stitchapi/redis`'s README no longer claims concurrency limits stay in-process.** It read
+  "**Concurrency limits stay in-process** (a shared store distributes the rate budget, not the
+  concurrency semaphore)", which
+  [ADR 0025](docs/adr/0025-fleet-wide-concurrency-by-lease.md) made false in this same cycle: all
+  three bundled adapters implement the driver's `lease` / `release` pair (a Lua-scripted sorted-set
+  semaphore) and `redisStore` forwards it, so `concurrency: 10` over a redis store means ten calls
+  in flight across the whole fleet rather than ten per worker. The sentence is corrected; the
+  sustained-overload caveat about window edges, which is about the rate budget and is still true, is
+  unchanged.
+
+- **`@stitchapi/download`'s aggregate ETA tracks recent throughput, not the batch's lifetime
+  average.** ([#456](https://github.com/rejifald/StitchAPI/issues/456)) `BatchProgress.ratePerSec`
+  was `loaded / (now - firstByte)` — one average over everything the batch had ever done — and
+  `eta` divided the remaining bytes by it. That answers "how fast has this batch gone overall?",
+  which is not the question an ETA asks. A dead first minute stayed in the denominator forever, so
+  the ETA kept reading minutes-too-long while every item was streaming at full speed; a fast first
+  second did the same in reverse, holding out a rosy ETA long after the transfer had stalled.
+
+    Each `snapshot()` now takes a reading — bytes delivered since the previous reading, over the
+    time between them — and folds it into an exponentially-decayed average with a two-second
+    half-life, so the rate forgets the distant past and `eta` becomes a projection of how the batch
+    is moving _now_. The decay is a function of elapsed time rather than of how many readings were
+    taken, which means an extra `snapshot()` call cannot skew the number and a burst of small
+    chunks weighs exactly what the interval it covers is worth. Dropping an item still discards its
+    partial bytes from `loaded`, and the rate baseline drops with them, so a cancelled sibling's
+    byte cliff is never mistaken for the healthy siblings going backwards.
+
+    No new option: the half-life is an internal constant. Time still comes from the injected
+    `clock`, so the whole thing is driven by `manualClock()` with zero wall-clock. The aggregate
+    `total` under-counting while items are still queued (sizes are unknown until an item starts) is
+    a separate matter, tracked in
+    [#461](https://github.com/rejifald/StitchAPI/issues/461).
+
+- **An aborted stream no longer risks delivering one buffered delta too many.** The only thing
+  that stopped `delta` delivery after a caller's `ctl.abort()` was the transport's own body read
+  throwing `AbortError` — and under load, the next chunk is often already decoded off the wire
+  before that abort reaches the transport, so a second `delta` event could still land after the
+  caller had already cancelled. `runStreaming`'s per-chunk loop now checks the caller's `signal` at
+  the very top, before the resume-token bookkeeping and before the chunk reaches either the
+  awaited result or `.stream()`, and throws the caller's own abort reason the instant it finds the
+  signal aborted — deterministically, instead of racing the transport for it. The throw flows
+  through the existing mid-stream-error handling unchanged, so the outcome is exactly what it
+  always was (`error` + `done: { ok: false }`); only the race is gone. A resumable stream
+  (`sse.reconnect`) that drops this way is no longer reconnected either — the reconnect predicate
+  now refuses an aborted signal outright, so cancelling a stream never reopens a connection the
+  caller just asked to stop.
+
+    The signal is checked **twice** per chunk, and the second check is not redundant: with an
+    `output` contract set, validation is an `await` sitting between the loop-entry check and the
+    point the chunk reaches `chunks`/`.stream()`, so an abort landing during that await would
+    otherwise still deliver it — the same defect displaced by one await, reachable by any streaming
+    stitch with an output schema. Review caught that after the first guard was written; both windows
+    are now closed and each has a regression test that fails without its own guard.
+
 - **A transport failure reaches the caller as a `StitchError` carrying the original on `.cause`.**
   ([#450](https://github.com/rejifald/StitchAPI/issues/450)) A socket reset, a DNS failure or an
   abort surfaced as whatever the transport happened to throw, so the awaited and `.safe()` paths
@@ -860,6 +2208,16 @@ npm release are grouped under the in-development version that introduced them.
   was `string`, which axios types as its narrower `ResponseType` union, so passing `axios` (or
   `axios.create()`) failed with `TS2345` under `exactOptionalPropertyTypes`. The type-level test
   missed it by casting a client through `AxiosLike`; it now asserts against real `axios` types.
+- **`axiosAdapter` now reports a response `url`.**
+  ([#708](https://github.com/rejifald/StitchAPI/issues/708)) The axios path returned only
+  `{ status, headers, body }` where `fetchAdapter` returns four keys, so `AdapterResult.url` was
+  always absent on this transport — and with it `StitchError.url`, which was permanently `undefined`
+  for every axios caller, and the `download` filename fallback (ADR 0005 Decision 8), which had
+  nothing to read. Both failed silently. It now reports the url axios dispatched (`response.config.url`,
+  falling back to the request url). Note the semantics differ from `fetch` by transport: axios hands
+  back no final url, so a followed redirect makes this the REQUEST url rather than the url the
+  response actually came from — documented on `AdapterResult.url`, and strictly better than
+  reporting nothing.
 - **A truncated LLM completion is no longer a silent success.** ([#699](https://github.com/rejifald/StitchAPI/issues/699))
   `finishReason` was lifted by both provider mappings and read by nothing, so a completion cut short
   at the token cap resolved `ok: true` with `findings: []`. It now sets a normalised `truncated` on
@@ -1425,7 +2783,209 @@ npm release are grouped under the in-development version that introduced them.
     objects have no migration concern — `[object Object]` was never usable. A space in a form
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
+- **`race`'s docstring claimed a job only `any` can do.**
+  ([#687](https://github.com/rejifald/StitchAPI/issues/687)) The `stitchapi/pipe` module header and
+  `race`'s own docstring both sold it as "hedging a latency-sensitive call against a faster mirror".
+  The mechanism sentence beside it was right and the purpose sentence was wrong: a hedge exists to
+  beat a slow **success**, and `race` settles on the first result of any kind — so a fast **failure**
+  wins, cancels the slower member that was about to answer, and destroys the very thing the hedge was
+  protecting. Against a slow `200`, a fast `500` returns the error under `race` and the answer under
+  `any`.
+
+    Hedging now belongs to `any`, which waits past failures for a success. `race` is described by
+    what it is actually for — a first-answer race, where a fast failure is itself a legitimate
+    answer. Both docstrings now carry the trade-off in the other direction too: `any`'s guarantee
+    costs latency and error detail, because every member failing means waiting for the **slowest**
+    and then rejecting with an `AggregateError` whose `status` is `undefined` (the per-member
+    statuses are one level down, in `.errors`), where `race` rejects with a `StitchError` carrying
+    `status` directly. The parallel-combinator blog post repeated the same claim and is corrected
+    with it.
+
+    **Documentation only — no behaviour change.** This is §1 of
+    [#687](https://github.com/rejifald/StitchAPI/issues/687); the issue's remaining sections are
+    untouched and it stays open.
+
 ### Security
+
+- **`stitchapi/postmessage` — the inbound origin gate no longer trusts the empty origin, and
+  `channel.window` accepts only genuine events from its own peer.** One root cause and the two
+  checks that finish the threat model it exposes. **Breaking** (`MessageTransport.subscribe`'s
+  signature widens, and a window channel stops delivering from windows other than its `target`);
+  rc channel, so a hard break with no alias.
+
+    **The bypass.** The demux gate read `origin === '' || allowedOrigins.includes(origin)`. That
+    `''` was the documented `MessagePort` exemption — but `''` is also
+    `MessageEvent.origin`'s **default value**, so any script sharing the page's realm could run
+    `window.dispatchEvent(new MessageEvent('message', { data: forgedEnvelope }))` and land a
+    forged envelope in reply-correlation, the responder registry and the event fan-out with the
+    `from` list **never consulted**. Reproduced end to end: a `respond('delete-account', …)`
+    handler ran with the attacker's payload and posted a reply, an `events()` subscription
+    delivered a forged delta, and a pending `request()` resolved with `{ pwned: true }`. The
+    realistic actors are a third-party analytics or tag-manager script and an extension content
+    script — both routinely on the page, neither supposed to be able to impersonate a trusted
+    iframe.
+
+    **Root cause: an in-band sentinel.** `''` was a fact about the _transport_ ("this one does not
+    attribute origins") asserted by a value carried in the _data_ channel. The transport knows;
+    the byte stream must not be the thing claiming it. The fix moves the assertion out of band:
+
+    - `MessageTransport.subscribe` is now
+      `(handler: (data: unknown, origin: string | null) => void) => () => void`. **`null`** means
+      _this transport does not attribute origins_ — unspellable from data, because
+      `MessageEvent.origin` is a `USVString` (`{ origin: null }` coerces to the _string_ `'null'`,
+      `{ origin: undefined }` to `''`; no realm delivers a JS `null`). Every string, `''`
+      included, is now an ordinary untrusted origin, and since `Origin` is
+      `` `https://${string}` | `http://${string}` `` no allow-list can contain `''`.
+    - The exemption is a decision about the **channel**, not about a message. `makeChannel`'s list
+      is `string[] | null`, and the gate is
+      `allowedOrigins === null ? true : origin !== null && allowedOrigins.includes(origin)`. So a
+      transport's `null` is honoured only by a builder that declares **no** origin policy, and on a
+      channel the caller gated it **fails closed**. This is deliberate: had `channel.over` honoured
+      a per-message `null`, any transport could have rendered the caller's `from` — including the
+      deliberately fail-closed `from: []` — incapable of changing one decision, which is verbatim
+      the inert-security-control defect [#795](https://github.com/rejifald/StitchAPI/pull/795)
+      removed from the port builder ([P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+      carve-out (b)). Strict `=== null`, never `== null` or `??` — if `undefined` also meant "no
+      origins", a transport that merely _forgot_ the second argument would reopen the hole.
+    - `channel.port` passes `null` and builds with no list at all.
+
+    **The origin change alone does not close the threat model, and `channel.window` needed two
+    more fixes.** `MessageEventInit.origin` is **author-settable** —
+    `new MessageEvent('message', { origin: 'https://app.example.com' }).origin` is exactly that —
+    so a same-realm script can spell any allow-listed origin and sail through a literal `includes`.
+    The `''` sentinel was only the laziest variant of the attack. `channel.window`'s listener now
+    drops any event whose `isTrusted` is **`false`**: the one bit a page script cannot forge
+    (`[LegacyUnforgeable]` in the DOM — own, non-configurable, survives prototype patching; `false`
+    on every constructed event, `true` only on user-agent delivery). It is written `=== false`, not
+    `!e.isTrusted`, so a polyfilled or non-DOM environment that omits the property is not silently
+    gated out of its own channel. A harness that must synthesise events uses `channel.over` with
+    its own transport.
+
+    **And `isTrusted` alone does not close it either, for a SAME-ORIGIN peer.** `isTrusted` stops
+    `dispatchEvent(new MessageEvent(…))`. It does not stop the real
+    `window.postMessage(forged, '*')`, which the user agent delivers as a genuinely trusted event
+    stamped with the **calling document's own origin**. Against a cross-origin peer that is
+    harmless — the attacker's origin is not on the list. Against a same-origin peer
+    (`origins: location.origin`, which is what the scalar shorthand means when parent and frame
+    share an origin) the forged origin **is** allow-listed and both checks pass. So the listener
+    also compares **`e.source`** to the channel's own target: a message must come from the peer
+    this channel talks to, not merely from an allow-listed origin. It holds in both directions
+    (parent→frame `iframe.contentWindow`, frame→parent `window.parent`), it is the standard
+    control (OWASP's postMessage guidance), and it is read in three states like the origin gate's
+    own `null` — a matching window passes, `null` (a dead browsing context, or a DOM that does not
+    attribute sources) **fails closed**, and an ABSENT property (a non-DOM global, an SSR pass, a
+    polyfill) is tolerated, exactly as `isTrusted === false` is. The actor this buys the most
+    against is the extension content script ADR 0009 names: it runs in an isolated world, so it
+    cannot call the page's handlers directly, but its `postMessage` arrives with the page's origin
+    and `isTrusted === true`. Against a same-realm script with arbitrary execution in that origin
+    it is defence in depth, not a boundary that was not already gone — but the guarantee this
+    surface publishes now matches what it enforces.
+
+    **A further behaviour change falls out of that:** a `channel.window` no longer delivers a
+    message from ANY window at an allow-listed origin — only from its own `target`. Two channels
+    on one page whose peers share an origin stop seeing each other's traffic. A caller who relied
+    on one window channel receiving from several frames should build one channel per frame (which
+    is what `target` always meant), or use `channel.over` with a transport of their own.
+
+    **The allow-list is now COPIED at construction.** `originList` returned the caller's own array
+    when one was passed, so the gate closed over live state: `allowed.push('https://evil.example.com')`
+    after the fact retargeted a running channel, and did it **past `assertOrigin`**, which only
+    ever sees the elements present at build time — the gate honoured strings the constructor
+    itself rejects (`allowed.length = 0` silently fail-closed a working channel the same way).
+    Not wire-reachable; it takes the app mutating its own config array, the realistic shape being
+    one `origins` array read from config and shared between channels. But this file's own header
+    and `PostMessageChannel`'s docblock both promise the policy is bound **once, at construction**,
+    and `[...list]` is what makes that true.
+
+- **`channel.private(transport)` — a fourth namespace member, for a transport with no origin
+  dimension.** Added _as part of_ the fix above, because `channel.over` is now always gated and
+  something has to carry the legitimate origin-less case: an Electron `ipcRenderer` bridge, a Web
+  Worker bridge, a native host bridge, a test fake. It takes **no origin policy at all**, exactly
+  as `channel.port` takes none, and that structural absence is the point — an option shaped like a
+  security control that cannot change a decision is worse than an asymmetry. `channel.port` is
+  this builder with the `MessagePort` wiring supplied. Bundle cost, re-measured in one pass with
+  the method the `#818` entry above states (the three figures previously quoted here were taken
+  against two different baselines and could not all be true): the namespace floor moves
+  24281 → 24363 B (+82) for the whole fix, of which `private` itself is +25 (24338 → 24363) and
+  the rest is the widened gate plus `channel.window`'s two listener checks.
+
+    **Migration — the sharp edge, stated plainly.** A hand-rolled `MessageTransport` that passes
+    `''` to mean "no origin dimension" — which is what `subscribe`'s **previous JSDoc explicitly
+    taught** — now has every inbound message **dropped** on a gated channel. It still typechecks,
+    so this is a _silent runtime_ break, and it is the one to look for. Pass `null`, or move the
+    channel to `channel.private`. The type widening itself is essentially non-breaking and is
+    pinned in `test-d`: `subscribe` is declared in method position, so parameter checking is
+    bivariant, and the inner handler is contravariant — an implementor annotating
+    `origin: string` still satisfies `MessageTransport`. The one residual _type_ break is a
+    consumer who reads `Parameters<MessageTransport['subscribe']>[0]` and dereferences `origin`,
+    now possibly `null`.
+
+    **Second behaviour change:** a **Worker realm using `channel.window`** receives parent messages
+    with `origin === ''` and will now **drop** them. Use `channel.port` or `channel.private`. The
+    case is narrower than it sounds and is stated here rather than buried: it is _inbound-only_,
+    because `DedicatedWorkerGlobalScope.postMessage` has no target-origin parameter, so
+    `channel.window`'s `post` throws there and no worker ever had a working round-trip — only an
+    `events()`-style inbound subscription with the target cast past its `Window` type was ever
+    live.
+
+    **Third, and the one most people will actually hit: a `jsdom` test environment.** jsdom's
+    `window.postMessage` delivers the message event with `isTrusted: true` but `origin: ''` (and
+    no `source`) — it does not attribute origins at all; its `Window.js` carries a literal
+    `// TODO: event.origin`. Verified on the `jsdom@30` this repo resolves. That event clears the
+    `isTrusted` guard and is then **dropped by the origin gate**, because no `Origin`-typed
+    allow-list can contain `''`. Before this change the in-band sentinel delivered it. So a
+    consumer running `environment: 'jsdom'` in vitest or jest, whose iframe-integration test was
+    green against `channel.window({ target, origins: 'https://app.example.com' })`, now sees
+    **nothing** arrive: no `respond` handler runs, no `events()` delta lands, and a `request()`
+    hangs until the engine's `timeout`. Nothing throws and nothing is logged, which is exactly why
+    it is called out here. The fix in a test is not `channel.over` — that builder is now **always**
+    gated, so it drops `''` too — it is **`channel.private`** with a transport of your own, which
+    is the seam that exists for a primitive with no origin dimension, and a jsdom window is
+    precisely that. The same applies to any DOM test double that does not attribute origins; check
+    yours rather than assume.
+
+    [ADR 0009](docs/adr/0009-postmessage-surface.md) carries the full argument (2026-09-15
+    amendment), and [CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)
+    carve-out (b) — whose applied instance quoted the old gate verbatim as its proof — is restated:
+    the port exemption stands, but as a structural absence rather than a short-circuit.
+
+- **`@stitchapi/swr` redacts caller-registered credential headers from the cache key.**
+  `swrKey` forks query-core's key derivation rather than importing it — swr is one of the three
+  stream-less adapters that deliberately carry no `@stitchapi/query-core` dependency
+  ([P9](docs/CONTRACT.md#p9--unique-by-shape-exported-types)) — and the fork had drifted: its
+  `isSecretHeader` checked the static header denylist and the `*-token` / `*-api-key` suffix rules,
+  but omitted query-core's closing `|| secrets.has(k)` clause. That clause is what pulls in core's
+  secret **stems** and, crucially, anything a host widened via `secrets.register`.
+
+    The effect was a redaction gap that only opened where a host had registered its own credential
+    name: `secrets.register('x-acme-cred')` redacted that header from the query key on
+    react/vue/svelte/solid/angular (all query-core-backed) while `@stitchapi/swr` wrote it into the
+    SWR key **in cleartext** — and SWR keys are persisted by cache providers and shown in devtools.
+    It contradicted `@stitchapi/query-core`'s documented guarantee ("plus core's `secrets.has`
+    names — including anything widened via `secrets.register`") and its own JSDoc claim that every
+    binding, "the swr key builder" included, derives from one implementation.
+
+    The clause is restored, so the two spellings agree again. `stitchapi` was already a peer
+    dependency and a tsup external; it is now imported for a value (`secrets`) rather than only a
+    type — exactly what query-core does — which adds no bundled runtime. Headers that were already
+    redacted are unaffected, since the clause only widens: a key changes only for a host that had
+    registered a name the static list missed, which is the leak being closed.
+
+    **Both parity tests now actually pin the behaviour.** query-core's fixture was
+    `x-querycore-spec-credential`, which contains the built-in `credential` stem — it passed via the
+    stem whether or not it was ever registered, so the test meant to guard `secrets.register` would
+    not have caught this drift in either package. Both suites now use a neutral `x-acme-cred`,
+    matched by no static entry, no suffix rule and no stem, so only the registration can redact it;
+    an unregistered `x-acme-region` asserts benign headers still vary the cache.
+
+    **The docs now state the reach.** `secrets.register`'s reference page listed only the trace
+    scrubbers it feeds (`start.url`, OTLP `url.full`, `input.query`, the traced body) and never
+    mentioned cache keys — true of query-core since it gained the clause, not just of swr. It now
+    names the query bindings, and the `secrets.has` anti-pattern callout ("headers are widened with
+    `redactHeaders`, not with `secrets.register`") is scoped to the trace-sink boundary, with the
+    query-key path called out as the place the two denylists meet. The
+    [swr integration page](https://stitchapi.dev/docs/integrations/swr) now documents what `swrKey`
+    drops and redacts, rather than describing it as just "the cache key".
 
 - **Five Dependabot alerts closed by `pnpm.overrides` — `fast-uri` and `ip-address`.** Both are
   transitive-only: no manifest in the workspace names either one, so Dependabot could not open a
@@ -1451,6 +3011,79 @@ npm release are grouped under the in-development version that introduced them.
     `pnpm audit` reports no known vulnerabilities after the bump.
 
 ### Notes
+
+- **CONTRACT.md no longer contradicts itself about `responseText`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
+  Carve-out (a)'s exemption list named the protected pair as "the XHR `responseType`/`responseText`
+  pair on `XhrLike` (and its React Native mirror)", while the migration record 25 lines below it
+  said "StitchAPI has no `responseText`". Both could not be true, and neither was quite right.
+
+    `responseText` belongs to `@stitchapi/react-native`'s `RnStreamingXhr`, which reads it
+    incrementally to stream; core's `XhrLike` declares `responseType`/`response` and reads a buffered
+    `arraybuffer`, exactly as its own JSDoc says. So the exemption list mis-assigned a member to the
+    wrong type, and the negative claim below it was false repo-wide. The lint allow-list had it right
+    all along — it carries `XhrLike.response` ("responseType/response") and `RnStreamingXhr.response`
+    ("responseType/responseText") as two separate entries that merely share a prefix group key, which
+    is precisely the distinction the prose collapsed.
+
+    The list now names the pair each duck-type actually declares, and the migration record's claim
+    is narrowed to the interface that paragraph is about: `AdapterRequest` declared neither sibling,
+    so the fold the carve-out prevents (`response: { type, text }`) was never live there. The
+    argument is preserved in force; only the over-broad supporting claim changed. Prose only — no
+    type, no runtime byte. The gate never parses CONTRACT.md prose, so it could not have caught this.
+
+- **P24 carve-out (b)'s obligation binds the authoring layer, not the transport contract below
+  it — recorded, with no guard added to `AdapterRequest`.**
+  ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
+  `AdapterRequest.body`/`bodyType` keeps being re-raised as an un-discharged (b) obligation: its
+  JSDoc says `multipart` is "only read when `bodyType: 'multipart'`", which is prose sitting where
+  a type guard appears to belong, and `{ bodyType: 'json', multipart: {…} }` does typecheck and sit
+  inert. The obligation does not reach it, and the reason is now written down in the rule itself
+  rather than rediscovered each time.
+
+    (b) is about **authored config** — its stated harm is a tag/option pairing that typechecks
+    while the option is inert, which needs a consumer who supplied the inert half. Nobody supplies it
+    here. `buildRequest` derives every member from the authored `wire` envelope, and the six surfaces
+    that shape a request patch the engine's `base` (`{ ...base, bodyType: 'json' }`) instead of
+    composing one from scratch. A consumer writing a custom adapter, surface or `AuthStrategy` reads
+    these fields; the one genuinely authored position — calling an `Adapter` directly with a literal,
+    which the published OAuth2 rotation scenario does — supplies a live combination, never a dead
+    one. That is the mirror image of the layering carve-out (a) already states.
+
+    Two facts made it a ruling rather than a preference. The pairing is **not symmetric**: `array`
+    carries the same "only read when `bodyType: 'form'`" prose but is SPENT config, not dead — the
+    query string is serialised with it before any body exists and it is then forwarded
+    unconditionally, so `{ bodyType: 'json', array: 'repeat' }` is the engine's own correct output
+    and a symmetric guard would outlaw it. And a guard is **not additive**, which both discharged
+    precedents (`MultipartOnlyOnMultipartBody`, `OneEndpointSpelling`) were: the narrowest
+    R8-recognised mutual-exclusion shape breaks `buildRequest` in the engine and in two surfaces,
+    because `{ ...base, bodyType: 'json' }` cannot prove `multipart` is absent from a spread. It
+    would tax the one consumer-authored position it exists to protect.
+
+    No type, no runtime byte and no JSDoc changes. The gate's `AdapterRequest.body` allow-list
+    entry previously said only "carve-out (b), the canonical case"; it now records that the
+    obligation is discharged one layer up, which is the omission that kept the question open.
+
+- **The core ↔ deno-kv backoff divergence is now declared on both sides.**
+  ([CONTRACT.md P8](docs/CONTRACT.md#p8--same-concept--same-default-across-packages))
+  `@stitchapi/deno-kv` resolves core's exported `BackoffOptions` envelope to **`base` 5ms / `max`
+  250ms** against core's **100ms / 10s**. That was a defensible divergence stated nowhere: core's
+  JSDoc gave its own two numbers as though they were the only ones, and deno-kv's mentioned its two
+  in passing without saying they differed.
+
+    Both halves now carry a DELIBERATE DIVERGENCE paragraph naming the other package, its numbers
+    and the reason. Core's defaults pace the retry of a failed **network** call, where the remote is
+    the thing that needs time to recover and the waiting is the point. A lost compare-and-set is the
+    opposite situation: nothing failed and nothing needs to recover — another isolate simply
+    committed first, so the value the loop must re-read is already in place, and the delay exists
+    only to de-phase racers. Its natural unit is one KV round trip, not one recovery window; core's
+    `base` would idle a caller three orders of magnitude longer than the read it is redoing, and
+    core's `max` would park one for longer than the whole `attempts` budget is meant to span.
+
+    The **envelope stays shared** rather than forking into a `DenoKvBackoffOptions`: one grammar,
+    one parser, one set of field names — only the resolved defaults differ, which is exactly what
+    P8 asks to be declared rather than discovered. deno-kv's README says so too, in place of burying
+    the two numbers in a parenthetical after "the same words as core's `retry`".
 
 - **The duration/size rule is now stated over the value rather than the slot, and gated.**
   [P17](docs/CONTRACT.md#p17--one-canonical-duration-form) and
@@ -2164,7 +3797,8 @@ causality push:
 - **Playground:** the browser Worker runner, handler registration, incremental
   streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.8...HEAD
+[1.0.0-rc.8]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...v1.0.0-rc.8
 [1.0.0-rc.7]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.4...v1.0.0-rc.5

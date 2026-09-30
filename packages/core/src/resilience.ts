@@ -3,7 +3,7 @@
 // pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
 import type {
     AcquireOptions,
-    AdapterResponse,
+    AdapterResult,
     BackoffOptions,
     CircuitOptions,
     Clock,
@@ -280,11 +280,11 @@ export class RateLimitError extends StitchError {
      * `useDefineForClassFields` a real field here would clobber it with `undefined`.
      */
     declare readonly status: number;
-    readonly response: AdapterResponse;
+    readonly response: AdapterResult;
     constructor(opts: {
         status: number;
         retryAfter?: number | undefined;
-        response: AdapterResponse;
+        response: AdapterResult;
         attempts?: number | undefined;
         message?: string;
         cause?: unknown;
@@ -325,6 +325,14 @@ interface CircuitRecord {
 }
 
 /**
+ * House defaults for the two {@link CircuitOptions} knobs. Kept as named constants because the
+ * same two numbers are quoted in `CircuitOptions`' JSDoc — the contract a consumer reads — so the
+ * doc and the resolution have one place to disagree rather than four.
+ */
+const DEFAULT_CIRCUIT_FAILURES = 5;
+const DEFAULT_CIRCUIT_COOLDOWN_MS = 30_000; // '30s'
+
+/**
  * A store-backed circuit breaker. After `failures` consecutive failures it OPENS:
  * calls fast-fail for `cooldown`, then it goes HALF-OPEN and lets a single trial through —
  * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
@@ -336,8 +344,12 @@ interface CircuitRecord {
  * like `open` (reject) or exactly like `closed` (admit freely), and a knob with no observable
  * effect is the bug, not the feature. (This is why `halfOpenAfter` was removed; CONTRACT.md P1.)
  *
- * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws when either is
- * missing.
+ * Both knobs have house defaults — `failures` {@link DEFAULT_CIRCUIT_FAILURES}, `cooldown`
+ * {@link DEFAULT_CIRCUIT_COOLDOWN_MS} — so `circuit: { key: 'x' }` builds a working breaker rather
+ * than throwing. What P15 forbids is a knob whose effective value nobody can find out; a default
+ * stated on `CircuitOptions` and in the docs is found out by reading, the same way
+ * `retry.backoff.base` (100ms) and `throttle.lease` are. `circuit` itself stays opt-in, so the
+ * declaration — not the threshold — is the decision a reviewer has to see.
  */
 export function createCircuit(
     opts: CircuitOptions,
@@ -349,12 +361,9 @@ export function createCircuit(
     onSuccess(): Promise<void>;
     onFailure(): Promise<boolean>;
 } {
-    const failureThreshold = opts.failures;
-    const cooldown = parseDuration(opts.cooldown);
-    if (failureThreshold == null || cooldown == null)
-        throw new Error(
-            'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }` or `circuit: [5, "30s"]`.',
-        );
+    const failureThreshold = opts.failures ?? DEFAULT_CIRCUIT_FAILURES;
+    const cooldown =
+        parseDuration(opts.cooldown) ?? DEFAULT_CIRCUIT_COOLDOWN_MS;
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
 
     // Normalize whatever the store hands back — including a record written before `tripped`

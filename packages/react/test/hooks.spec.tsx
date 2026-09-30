@@ -318,7 +318,7 @@ describe('stitchQueryOptions', () => {
 });
 
 // --- stitchQueryOptions: cache-key derivation regressions ------------------
-// The derivation now lives in `@stitchapi/query-core` (`deriveQueryKey`) and is
+// The derivation now lives in `@stitchapi/query-core` (`stitchKey.of`) and is
 // re-exported here; these regressions stay to guard the re-export wiring. Each
 // of these FAILED before the original fix (the local copy shared the same three
 // bugs as `@stitchapi/swr`'s `swrKey`).

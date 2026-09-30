@@ -4,6 +4,8 @@
 - **Date:** 2026-06-28
 - **Tags:** validation, drift, schema, observability, breaking-change
 
+> **Amendment — the drift option is `level`, not `severity`.** This ADR named the authoring half `severity` and the reported half `level`; the pre-GA hard-break sweep collapsed them onto the one word [CONTRACT.md P1](../CONTRACT.md#p1--one-word-one-concept-one-value-space) asks for, so it is **`DriftOptions.level`**, matching `DriftFinding.level`. The three shapes below (single level, bare list, per-kind map) and the per-kind defaults are unchanged — only the key is renamed, with no alias (P19). Read `severity` as `level` throughout the text below, including the "Leveling" heading; the concept the prose calls _severity_ is unaffected. See [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep) (P1, drift level) and [`packages/core/src/drift.ts`](../../packages/core/src/drift.ts).
+
 ## Context
 
 Drift detection originally compared a live response's _shape_ against a committed **snapshot** baseline (`DriftSpec.snapshotFile`, with `readonly` / `onMissing` and a `stitch drift generate` CLI). It carried a parallel severity system — `critical` / `watch` paths leveling each change to `error` / `warn`.

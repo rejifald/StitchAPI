@@ -10,7 +10,7 @@ It is a **thin** package: `StitchModule` wires StitchAPI's `seam` into Nest's DI
 graph, plus bridge helpers (a `Logger` sink, `ConfigService` secrets), an exception
 filter, and an SSE bridge. It adds **no capability** — every piece sits on a core
 extension point, and the `Logger` sink and `ConfigService` bridge **delegate** to core's
-`loggerSink` / `secretFrom` rather than reimplement them. So `stitchapi` stays a peer
+`loggerSink` / `credential.from` rather than reimplement them. So `stitchapi` stays a peer
 dependency and the package forks nothing (contract-not-dependency).
 
 ```sh
@@ -113,7 +113,7 @@ the request-scoped `seam.as(principal)` handle and the request-scoped stitches f
                 },
             },
             stitches: [GetUser],
-            principal: (req) => req.user?.tenantId ?? 'anonymous',
+            principal: (req) => req.user?.tenantId,
         }),
     ],
 })
@@ -122,6 +122,12 @@ export class UsersModule {}
 
 Each request resolves `GetUser` from `seam.as(tenantId)`. Note a request-scoped provider
 makes its consumers request-scoped too (a per-request instantiation cost).
+
+`principal` may return `undefined` — an anonymous request then falls back to the
+**unbound** base seam (the feature seam, or the root seam when no `seam.config` is given)
+rather than being bound to a made-up id like `'anonymous'`. That is the same fallback
+`@stitchapi/express`'s `stitch()` middleware and `@stitchapi/fastify`'s plugin take, so
+the anonymous path reads identically on every host.
 
 Outside HTTP (BullMQ, `@Cron`, microservices) there is no `REQUEST`: inject the singleton
 seam and bind explicitly — `seam.as(job.data.tenantId)`.
@@ -166,8 +172,13 @@ app.useGlobalFilters(new StitchExceptionFilter(app.getHttpAdapter()));
 
 The options envelope is `StitchErrorOptions` — the same `{ status?, body? }` shape as
 `@stitchapi/hono`'s and `@stitchapi/elysia`'s error helpers. `status` takes a fixed number
-or a `(err) => number` function. Outside a filter, use `toHttpException(err, { status })` /
-`isStitchError(err)` directly.
+or a `(err) => number` function. Outside a filter, use `stitchError.map(err, { status })` /
+`stitchError.is(err)` directly.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this one
+concept. It has no `.handler` member: Nest registers a filter **instance** through DI, so
+the handler stays the `StitchExceptionFilter` class above — the Nest idiom, and what
+ADR 0012 rule 1 blesses for a host adapter's primary surface.
 
 The client-facing **body** defaults to Nest's rendering of a fixed
 `'Upstream request failed'` — the raw `err.message` is withheld, because it can disclose an

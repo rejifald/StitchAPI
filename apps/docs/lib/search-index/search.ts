@@ -2,6 +2,7 @@
 // Orama dump built by scripts/build-search-index.ts (once, cached), embeds the
 // query with the SAME local model the index used, and runs Orama in hybrid mode.
 // Consumed by app/api/search-docs/route.ts (P2) and the MCP server (P3).
+import { appPath } from './app-path';
 import { INDEX_DIR, INDEX_FILE, MAX_QUERY_LEN, VECTOR_FIELD } from './config';
 import { embedOne } from './embed';
 import { type DocSearchHit } from './sorted-result';
@@ -9,8 +10,6 @@ import { type DocSearchHit } from './sorted-result';
 import { type AnyOrama, type SearchParams, search } from '@orama/orama';
 import { restore } from '@orama/plugin-data-persistence';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 // Hybrid retrieval knobs, kept as named exports so the search-eval harness can
 // sweep them and the CI ratchet pins the shipped values.
@@ -21,6 +20,10 @@ import { fileURLToPath } from 'node:url';
 // queries. Lowering BM25's share demotes that spurious literal match while
 // leaving the boosts (a page *about* a term beats a passing mention) intact.
 // Swept over the golden set: R@1 0.880→0.920, MRR 0.927→0.953, no regressions.
+// Those are the numbers that sweep measured, not today's — content edits have
+// since moved the absolute values (0.880 / 0.933 as of 2026-08-28, i.e. the
+// post-sweep figure drifted back down to the pre-sweep one). The *relative* win
+// is what pins these weights; see scripts/search-eval.mts for the live gate.
 export const HYBRID_WEIGHTS = { text: 0.2, vector: 0.8 };
 export const FIELD_BOOST = { pageTitle: 3, heading: 2 };
 
@@ -34,9 +37,10 @@ export interface SearchOptions {
 let cached: Promise<AnyOrama> | undefined;
 
 function indexPath(): string {
-    // this file: apps/docs/lib/search-index/search.ts → apps/docs/.search-index/<file>
-    const here = dirname(fileURLToPath(import.meta.url));
-    return resolve(here, '..', '..', INDEX_DIR, INDEX_FILE);
+    // apps/docs/<INDEX_DIR>/<INDEX_FILE>, found from the working directory by
+    // appPath — not from this file's URL, which webpack pins to the build
+    // machine's path. See app-path.ts.
+    return appPath(INDEX_DIR, INDEX_FILE);
 }
 
 /** Restore (once) the persisted Orama index. Throws if it hasn't been built. */

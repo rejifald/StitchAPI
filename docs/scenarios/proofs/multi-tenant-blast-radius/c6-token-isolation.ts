@@ -45,8 +45,7 @@ function fixture(opts: {
             opts.auth ??
             oauth2({
                 tokenUrl: TOKEN_URL,
-                clientId: 'saas-app',
-                clientSecret: 'shh',
+                client: { id: 'saas-app', secret: 'shh' },
                 adapter: idp.adapter(),
                 ...(opts.tenancy !== undefined
                     ? { tenancy: opts.tenancy }
@@ -120,8 +119,7 @@ async function main(): Promise<void> {
             clock,
             auth: oauth2({
                 tokenUrl: TOKEN_URL,
-                clientId: 'saas-app',
-                clientSecret: 'shh',
+                client: { id: 'saas-app', secret: 'shh' },
                 adapter: idp.adapter(),
                 tenancy: 'principal',
             }),
@@ -196,7 +194,7 @@ async function main(): Promise<void> {
         );
         note(
             '(e) → `Secret = string | (() => string)` (auth.ts:47)',
-            'no `AuthContext` parameter, so `clientId`/`clientSecret`/`scope` are fixed per strategy instance — per-customer credentials need one strategy (hence one seam or one stitch) per customer',
+            'no `AuthContext` parameter, so `client.id`/`client.secret`/`scope` are fixed per strategy instance — per-customer credentials need one strategy (hence one seam or one stitch) per customer',
         );
     }
 

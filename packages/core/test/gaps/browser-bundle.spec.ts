@@ -148,7 +148,7 @@ describe('browser bundle (GAP-AUDIT §1.5)', () => {
     // a vm context that has ONLY real browser primitives — no process, no Buffer, no require —
     // then execute a stitch with basic() auth (the §1.5 regression site, which used Buffer).
     // `basic` now lives on `stitchapi/auth` (ADR 0021), so the entry spans both modules — which
-    // also puts the auth module (the one that reaches `node:fs` for `secretsFile`) under this guard.
+    // also puts the auth module (the one that reaches `node:fs` for `credential.file`) under this guard.
     test('the browser bundle executes a stitch with zero Node globals', async () => {
         const { output } = await bundleForBrowser(
             'browser-entry.ts',

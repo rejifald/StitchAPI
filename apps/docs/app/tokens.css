@@ -167,3 +167,30 @@
     --syn-punct: var(--text-muted); /* punctuation */
     --syn-name: var(--text); /* identifiers */
 }
+
+/* ============================================================
+   STUDIO BAND — credit + cross-links after the home page's footer
+   (app/(home)/components/studio-band.tsx; docs/design/studio-band/
+   anatomy.md §5, "Token map"). The brand kit's own two colourings,
+   independent of the Signal brand above: Ink on White in light,
+   Paper on Ink in dark. Values are olekscrane's src/app/globals.css,
+   which holds the contrast targets they meet — copy them verbatim,
+   never re-derive.
+   ============================================================ */
+:root {
+    --band-bg: #ffffff; /* the band's background */
+    --band-ink: #0b0e0c; /* wordmark, item names, ask heading, links */
+    --band-muted: #474a47; /* title, taglines, ask body, All projects */
+    --band-subtle: #686a68; /* item arrows at rest */
+    --band-line: rgb(11 14 12 / 20%); /* top rule, the ask's rule */
+    --band-accent: #b4343b; /* arrows on hover, focus ring */
+}
+
+.dark {
+    --band-bg: #0b0e0c;
+    --band-ink: #f2f4f1;
+    --band-muted: #d1d3d1;
+    --band-subtle: #b7bab7;
+    --band-line: rgb(242 244 241 / 16%);
+    --band-accent: #e75655;
+}

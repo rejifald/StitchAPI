@@ -39,9 +39,18 @@ export interface BatchProgress {
     completed: number;
     /** Total items in the batch. */
     count: number;
-    /** Smoothed throughput in bytes/sec since the first byte; `undefined` before any bytes arrive. */
-    ratePerSec?: number;
-    /** Estimated time to completion, in ms; `undefined` when `total` is unknown or the rate is zero. */
+    /**
+     * **Recent** throughput in bytes/sec — an exponentially-decayed average of the batch's last few
+     * seconds, not its lifetime average. `undefined` before any bytes arrive. A stall pulls it down
+     * within a couple of seconds and a recovery pulls it back up just as fast, which is what makes
+     * {@link eta} a forecast rather than a report on how the batch has gone so far.
+     */
+    throughput?: number;
+    /**
+     * Estimated time to completion, in ms, at {@link throughput}; `undefined` when `total` is unknown
+     * or the rate has decayed to zero. It is a projection of the CURRENT rate, so it moves — a batch
+     * that stalls watches its ETA climb.
+     */
     eta?: number;
 }
 
@@ -52,15 +61,27 @@ export type ItemPhase = 'queued' | 'active' | 'settled';
 export type ItemStatus = 'fulfilled' | 'rejected' | 'cancelled';
 
 /**
- * A settled item. Shaped like `Promise.allSettled`, plus a `cancelled` arm, and — on a rejection —
- * a classification (`retryable` + a best-effort machine `code`) recovered from the transport error.
+ * A settled item. `Promise.allSettled`'s three-arm SHAPE — a `status` discriminator, plus a
+ * `cancelled` arm of our own — but this package's own house words for the payloads: the success
+ * payload is `data` and the failure payload is `error` (CONTRACT.md P5), as on every other StitchAPI
+ * runtime envelope. P5 carves out exactly one exception, the Standard-Schema `ValidationResult`; the
+ * `allSettled` spelling (`value`/`reason`) is not on that list, so a caller never has to remember
+ * which envelope this one is.
+ *
+ * A rejection also carries a classification — `retryable` plus a best-effort machine `code` —
+ * recovered from the transport error.
  */
 export type ItemResult<T = DownloadResult> =
-    | { id: DownloadId; status: 'fulfilled'; value: T }
+    | { id: DownloadId; status: 'fulfilled'; data: T }
     | {
           id: DownloadId;
           status: 'rejected';
-          reason: StitchError;
+          /**
+           * Why it failed. A {@link StitchError} — and, for a forward-progress stall, the
+           * `DownloadIdleTimeoutError` instance ITSELF (a `StitchError` subclass, P10), so
+           * `instanceof` and its `idle` window survive to here rather than hiding on `.cause`.
+           */
+          error: StitchError;
           /** Whether a retry might plausibly succeed: transport faults, 5xx/429/408, idle-timeout — vs terminal 4xx. */
           retryable: boolean;
           /** Best-effort code: an undici transport code (`UND_ERR_SOCKET`…), `HTTP_<status>`, `IDLE_TIMEOUT`, or `TIMEOUT`. */
@@ -88,10 +109,23 @@ export interface BatchOptions {
      */
     idle?: number | string;
     /**
-     * Reuse a single in-flight download for items that share a key (their `id`, else URL) instead of
+     * Reuse a single in-flight download for items that resolve to the same request instead of
      * fetching independently. Default `false` — every item is its own request (predictable, no
-     * cross-item coupling). With dedupe on, followers share the leader's result and progress; a
-     * follower cannot be cancelled independently of the shared fetch.
+     * cross-item coupling).
+     *
+     * The key is an item's own `id` when it has one — naming two items alike is a deliberate claim
+     * that they are one download — and otherwise the RESOLVED target: `defaults` merged under the
+     * item, then `baseUrl` + `path` (or a whole `url`), with the query string sorted. So two
+     * `{ path: '/x' }` items under one `baseUrl` are one fetch, and so are `?a=1&b=2` and `?b=2&a=1`.
+     * A thunked `baseUrl`/`url` is resolved to build that key, so it is read once more per item.
+     *
+     * Sharers are REF-COUNTED: each shares the one result and the leader's progress, cancels
+     * independently, and the request on the wire is aborted only when the LAST of them cancels —
+     * cancelling one sharer never fails the others.
+     *
+     * In-flight coalescing, not a cache: only items whose lifetimes OVERLAP collapse. An item
+     * admitted after the shared request settled starts a fresh one, so a finished blob — or a
+     * finished failure — is never replayed onto a later item.
      */
     dedupe?: boolean;
     /** Aggregate progress across all items (summed bytes + ETA). Fires on every per-item chunk. */

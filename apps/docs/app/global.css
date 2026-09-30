@@ -36,6 +36,24 @@
     --font-mono:
         var(--font-ibm-plex-mono), 'IBM Plex Mono', ui-monospace, 'SF Mono',
         monospace;
+
+    /* Studio band (app/(home)/components/studio-band.tsx) — Ink on White
+       (light) / Paper on Ink (dark); tokens.css. */
+    --color-band-bg: var(--band-bg);
+    --color-band-ink: var(--band-ink);
+    --color-band-muted: var(--band-muted);
+    --color-band-subtle: var(--band-subtle);
+    --color-band-line: var(--band-line);
+    --color-band-accent: var(--band-accent);
+
+    /* The band's self-hosted Fixel, scoped to it alone: the raw --font-fixel-*-raw
+       vars only get a value inside the band's own DOM subtree (next/font/local's
+       `.variable` className on its root section), so these utilities are inert
+       everywhere else in the app — the rest of the site keeps --font-display/-sans. */
+    --font-fixel-display:
+        var(--font-fixel-display-raw), 'Fixel Display', system-ui, sans-serif;
+    --font-fixel-text:
+        var(--font-fixel-text-raw), 'Fixel Text', system-ui, sans-serif;
 }
 
 /* Brand alias: point the site's brand handles at the Signal tokens. These

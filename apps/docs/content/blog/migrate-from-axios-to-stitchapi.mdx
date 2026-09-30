@@ -174,8 +174,7 @@ const api = seam({
     baseUrl: 'https://api.example.com',
     auth: oauth2({
         tokenUrl: 'https://api.example.com/oauth/token',
-        clientId: env('CLIENT_ID'),
-        clientSecret: env('CLIENT_SECRET'),
+        client: { id: env('CLIENT_ID'), secret: env('CLIENT_SECRET') },
     }),
     retry: { attempts: 4, on: [429, 502, 503, 504] },
 });

@@ -2,14 +2,13 @@
 // supertest we hand-build minimal mock `req`/`res` objects and call the middleware/handler/error
 // middleware directly. The seam is built with a FAKE `adapter` (no network). Asserts the three public
 // contracts: `stitch()` sets `req.stitch` (root + principal-bound), `streamStitchSse` writes the
-// right SSE frames for a fake stream (delta / error / disconnect teardown), and `stitchErrorHandler`
-// maps a StitchError to 502 (and `next(err)`s everything else).
-import {
-    currentStitch,
-    isStitchError,
-    stitch,
-    stitchErrorHandler,
-    streamStitchSse,
+// right SSE frames for a fake stream (delta / error / disconnect teardown), and
+// `stitchError.handler` maps a StitchError to 502 (and `next(err)`s everything else).
+import { currentStitch, stitch, stitchError, streamStitchSse } from '../src';
+import * as api from '../src';
+import type {
+    ExpressStreamStitchSseOptions,
+    StreamStitchSseOptions,
 } from '../src';
 
 import type { Request, Response } from 'express';
@@ -18,13 +17,13 @@ import { isSeam, seam } from 'stitchapi';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     StitchEvent,
 } from 'stitchapi';
 import { describe, expect, test } from 'vitest';
 
 // A fake adapter: return a canned response for any request, recording what it saw.
-function fakeAdapter(handler: (req: AdapterRequest) => AdapterResponse): {
+function fakeAdapter(handler: (req: AdapterRequest) => AdapterResult): {
     adapter: Adapter;
     seen: AdapterRequest[];
 } {
@@ -412,9 +411,74 @@ describe('streamStitchSse writes SSE frames to res', () => {
         expect(returned).toBe(true);
         expect(res.body()).toBe('data: one\n\n');
     });
+
+    // The throw path (not a surfaced `error` event): the upstream generator itself blows up —
+    // an adapter/transport failure, a schema-drift throw, a `JSON.parse` in a `delta` mapper.
+    // Without the catch arm the helper rejected out of the handler: no `event: error` frame, no
+    // `error.observe` call, and the response left hanging. Peers (hono/elysia/nest/next) catch it.
+    test('a throw mid-stream is caught: observe fires, a final generic event: error frame is written, and the response ends', async () => {
+        const observed: unknown[] = [];
+        async function* boom(): AsyncGenerator<StitchEvent> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
+        }
+        const res = mockRes();
+
+        // Resolves — the throw does not escape to the Express handler.
+        await streamStitchSse(res as unknown as Response, boom(), {
+            error: { observe: (err) => observed.push(err) },
+        });
+
+        expect(res.body()).toBe(
+            'data: partial\n\nevent: error\ndata: error\n\n',
+        );
+        // The thrown message is withheld by default, exactly like the `error`-event path.
+        expect(res.body()).not.toContain('payments.internal.corp');
+        expect(res.body()).not.toContain('ENOTFOUND');
+        // … but observe saw the real failure server-side.
+        expect(observed).toHaveLength(1);
+        expect((observed[0] as Error).message).toContain('ENOTFOUND');
+        // The response is closed, not left open until the socket times out.
+        expect(res.ended).toBe(true);
+    });
+
+    test('error opts in on the throw path too (the thrown error is normalised to an error event)', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            throw new Error('stream blew up');
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, boom(), {
+            error: { data: (e) => e.message, event: 'failure' },
+        });
+
+        expect(res.body()).toBe(
+            'data: partial\n\nevent: failure\ndata: stream blew up\n\n',
+        );
+        expect(res.ended).toBe(true);
+    });
+
+    test('a non-Error throw is normalised too (still a generic frame by default)', async () => {
+        const observed: unknown[] = [];
+        async function* boom(): AsyncGenerator<StitchEvent> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- the point of the test: a non-Error throw is exactly what `toErrorEvent` has to normalise
+            throw 'plain string failure';
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, boom(), {
+            error: { observe: (err) => observed.push(err) },
+        });
+
+        expect(res.body()).toBe(
+            'data: partial\n\nevent: error\ndata: error\n\n',
+        );
+        // observe gets the raw thrown value, unwrapped — it is the server-side hook.
+        expect(observed).toEqual(['plain string failure']);
+    });
 });
 
-describe('stitchErrorHandler maps a StitchError to HTTP', () => {
+describe('stitchError.handler maps a StitchError to HTTP', () => {
     test('maps a StitchError to 502 by default and does not leak the upstream status', () => {
         const err = Object.assign(new Error('down'), {
             name: 'StitchError',
@@ -422,7 +486,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         });
         const res = mockRes();
         let nextedWith: unknown = 'untouched';
-        stitchErrorHandler()(
+        stitchError.handler()(
             err,
             mockReq(),
             res as unknown as Response,
@@ -444,7 +508,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             { name: 'StitchError' },
         );
         const res = mockRes();
-        stitchErrorHandler()(
+        stitchError.handler()(
             err,
             mockReq(),
             res as unknown as Response,
@@ -465,7 +529,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             status: 401,
         });
         const res = mockRes();
-        stitchErrorHandler()(
+        stitchError.handler()(
             err,
             mockReq(),
             res as unknown as Response,
@@ -483,7 +547,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             { name: 'StitchError' },
         );
         const res = mockRes();
-        stitchErrorHandler({ body: (e) => ({ error: e.message }) })(
+        stitchError.handler({ body: (e) => ({ error: e.message }) })(
             err,
             mockReq(),
             res as unknown as Response,
@@ -502,7 +566,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
             status: 429,
         });
         const res = mockRes();
-        stitchErrorHandler({ status: (e) => e.status ?? 502 })(
+        stitchError.handler({ status: (e) => e.status ?? 502 })(
             err,
             mockReq(),
             res as unknown as Response,
@@ -515,7 +579,7 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         const plain = new Error('not a stitch error');
         const res = mockRes();
         let nextedWith: unknown;
-        stitchErrorHandler()(
+        stitchError.handler()(
             plain,
             mockReq(),
             res as unknown as Response,
@@ -527,13 +591,86 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         expect(res.jsonBody).toBeUndefined(); // not handled here
     });
 
-    test('isStitchError discriminates by name', () => {
+    test('stitchError.is discriminates by name', () => {
         expect(
-            isStitchError(
+            stitchError.is(
                 Object.assign(new Error('x'), { name: 'StitchError' }),
             ),
         ).toBe(true);
-        expect(isStitchError(new Error('plain'))).toBe(false);
-        expect(isStitchError('nope')).toBe(false);
+        expect(stitchError.is(new Error('plain'))).toBe(false);
+        expect(stitchError.is('nope')).toBe(false);
+    });
+});
+
+// --- public-surface pin: the error family is ONE namespace -------------------
+//
+// This package has no dedicated public-surface spec (only core does), so the pin lives here,
+// beside the behaviour it guards. It mirrors the intent of core's `REMOVED_SECRET_FUNCTIONS`
+// in `packages/core/test/public-api-surface.spec.ts`, in both directions:
+//
+//  - PRESENT, as a WHOLE: `stitchError` is an OBJECT whose members are exactly `is` and `handler` (no `map`: an Express error
+//    middleware writes onto the mutable `res` and returns no mapped value to hand back).
+//    The key set is pinned rather than each member independently, so adding or dropping one is
+//    a deliberate edit here — the same call core's `SECRET_NAMESPACE_MEMBERS` makes. Object-ness
+//    is asserted explicitly because `stitchError` was a FUNCTION in `@stitchapi/hono` before the
+//    fold, and a bare `typeof === 'function'` check would have passed for it.
+//  - ABSENT: every verb-prefixed spelling the namespace replaced, across all six adapters — not
+//    only the ones this package carried. Pre-GA `rc`, so they were removed outright rather than
+//    aliased (CONTRACT.md P19); re-adding one would put two spellings of one call back on the
+//    barrel, which is exactly the drift this fold closes.
+describe('public surface: the stitchError namespace', () => {
+    const MEMBERS = ['is', 'handler'] as const;
+
+    test('exports stitchError as a namespace object', () => {
+        expect(typeof api.stitchError).toBe('object');
+        expect(Object.keys(api.stitchError).sort()).toEqual(
+            [...MEMBERS].sort(),
+        );
+    });
+
+    test.each(MEMBERS)('exports stitchError.%s as a function', (member) => {
+        expect(
+            typeof (api.stitchError as Record<string, unknown>)[member],
+        ).toBe('function');
+    });
+
+    test.each([
+        'isStitchError',
+        'stitchErrorHandler',
+        'stitchOnError',
+        'stitchErrorResponse',
+        'toHttpException',
+    ] as const)('does NOT export %s — the namespace replaced it', (name) => {
+        expect(name in (api as Record<string, unknown>)).toBe(false);
+    });
+});
+
+// --- public-surface pin: the SSE option types are P9-clean -------------------
+//
+// `StreamStitchSseOptions` is what FOUR peer hosts (elysia/fastify/hono/nest) export as a bare
+// alias of core's `SseEmitOptions`. Express used to export that same name for a DIFFERENT shape —
+// it added an Express-typed `req` — so one exported identifier denoted two structural contracts
+// (P9). The divergent side is now framework-qualified, `ExpressStreamStitchSseOptions`, per ADR
+// 0012 rule 6 (the `SolidStitchStore`/`SvelteStitchStore` precedent).
+//
+// Types vanish at runtime, so this pin is a COMPILE-time one: `check:types` typechecks `test/**`
+// (tsconfig `include`), and the `@ts-expect-error` below turns into a build failure the moment
+// `req` creeps back onto the shared name.
+describe('public surface: the SSE option types are P9-clean', () => {
+    test('req lives on the Express-qualified type, never on the host-parity one', () => {
+        const shared: StreamStitchSseOptions = {
+            delta: (c) => String(c),
+            // @ts-expect-error — `req` is not part of the host-parity shape: it belongs to
+            // ExpressStreamStitchSseOptions. If this line stops erroring, the P9 clash is back.
+            req: mockReq(),
+        };
+        const expressOnly: ExpressStreamStitchSseOptions = {
+            delta: (c) => String(c),
+            req: mockReq(),
+        };
+
+        // The qualified type is a superset, so the shared shape is still a valid argument.
+        expect(typeof shared.delta).toBe('function');
+        expect(expressOnly.req).toBeDefined();
     });
 });

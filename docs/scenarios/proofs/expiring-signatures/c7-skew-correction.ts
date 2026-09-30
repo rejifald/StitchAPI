@@ -25,7 +25,7 @@
 import { stitch } from '../../../../packages/core/src/index';
 import { manualClock } from '../../../../packages/core/src/testing';
 import type {
-    AdapterResponse,
+    AdapterResult,
     AuthStrategy,
     Clock,
 } from '../../../../packages/core/src/types';
@@ -61,7 +61,7 @@ function selfCorrectingSigV4(
         clock: opts.clock,
         offset: opts.offset,
     });
-    let lastSkewResponse: AdapterResponse | undefined;
+    let lastSkewResponse: AdapterResult | undefined;
     return {
         name: 'selfCorrectingSigV4',
         apply: inner.apply,

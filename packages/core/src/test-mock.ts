@@ -8,7 +8,7 @@ import { streamOf } from './test-stream';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     AtLeastOne,
 } from './types';
 import { abortReason, parseDuration } from './util';
@@ -20,10 +20,10 @@ export interface MockResponse {
     /** Response headers (keys are lowercased before delivery, matching real adapters). */
     headers?: Record<string, string>;
     /** The already-decoded response body — an object/array is delivered as-is (the engine treats
-     *  `AdapterResponse.body` as parsed), a string/bytes verbatim. Ignored when `stream` is set. */
+     *  `AdapterResult.body` as parsed), a string/bytes verbatim. Ignored when `stream` is set. */
     body?: unknown;
     /** A live response body for the `stream`/`sse` surfaces — a `ReadableStream`, or chunks that
-     *  {@link streamOf} turns into one. Delivered as `AdapterResponse.body`. */
+     *  {@link streamOf} turns into one. Delivered as `AdapterResult.body`. */
     stream?: ReadableStream<Uint8Array> | (string | Uint8Array)[];
     /** Wait this long before responding — `100`, `'100ms'`, `'1s'`; abortable, so a stitch `timeout`
      *  cancels it like a real slow endpoint. Drives timeout / `Retry-After` pacing tests. */
@@ -147,7 +147,7 @@ export function mockAdapter(
     const counters = new Array<number>(list.length).fill(0);
     const log: AdapterRequest[] = [];
 
-    const build = (r: MockResponse): AdapterResponse => {
+    const build = (r: MockResponse): AdapterResult => {
         const headers: Record<string, string> = {};
         for (const [k, v] of Object.entries(r.headers ?? {}))
             headers[k.toLowerCase()] = v;
@@ -161,7 +161,7 @@ export function mockAdapter(
         return { status: r.status ?? 200, headers, body };
     };
 
-    const adapter = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const adapter = (async (req: AdapterRequest): Promise<AdapterResult> => {
         // The adapter contract's abort rule: a pre-aborted signal REJECTS. Checked here rather
         // than only in the `delay` branch below, so a delay-less route can't answer a cancelled
         // request — every real transport refuses it, and a cancellation test written against a

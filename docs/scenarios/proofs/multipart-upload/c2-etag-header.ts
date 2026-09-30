@@ -15,7 +15,7 @@ import { stitch, verdictOf } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/surface';
 import type {
     Adapter,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import { FakeS3 } from './fake-s3';
 import { check, checkSeq, finish, heading, note } from './harness';
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
         let fromHook = '(none)';
 
         const spyExecute: Adapter = async (req) => {
-            const res: AdapterResponse = await api.adapter()(req);
+            const res: AdapterResult = await api.adapter()(req);
             fromExecute = res.headers['etag'] ?? '(none)';
             return res;
         };

@@ -1,7 +1,12 @@
 // StitchError → Hono HTTPException (mirrors @stitchapi/nest's exception-filter). A failed stitch
 // rejects with a `StitchError` — a branded `Error` (`name === 'StitchError'`) carrying the upstream
 // `status`. This bridges it to Hono's HTTP layer so a handler calling a stitch needs no per-route
-// try/catch: register `stitchOnError` as the app's `onError`, or map by hand with `stitchError`.
+// try/catch: register `stitchError.handler` as the app's `onError`, or map by hand with
+// `stitchError.map`.
+//
+// The three functions below are the implementations; the barrel exports only the `stitchError`
+// namespace that faces them. They stay plain module functions so this package's own call sites
+// (and a bundler) reach one of them without pulling the other two in behind it.
 //
 // Edge-safe: imports only Hono's `HTTPException` (Fetch-based) — no `node:*`.
 import type { Context } from 'hono';
@@ -11,7 +16,12 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 /** The error a stitch rejects with on failure: a branded `Error` carrying the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
 
-/** True when `err` is the error a stitch rejects with on failure (`name === 'StitchError'`). */
+/**
+ * Guard half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
+ * True when `err` is the error a stitch rejects with on failure (`name === 'StitchError'`).
+ */
 export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
@@ -47,19 +57,14 @@ const STATUS_TEXT: Record<number, string> = {
 };
 
 /**
+ * Map half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
  * Map a thrown stitch failure to a Hono {@link HTTPException}, or `undefined` when `err` is not a
  * Stitch error (so a caller can rethrow it untouched). The status is `502` by default; override it
  * via {@link StitchErrorOptions.status}.
- *
- * ```ts
- * try {
- *   return c.json(await c.get('stitch').stitch('/users')());
- * } catch (err) {
- *   throw stitchError(err) ?? err; // map a Stitch failure, rethrow anything else
- * }
- * ```
  */
-export function stitchError(
+export function toHttpException(
     err: unknown,
     options: StitchErrorOptions = {},
 ): HTTPException | undefined {
@@ -80,24 +85,52 @@ export function stitchError(
 }
 
 /**
- * Build a Hono `onError` handler that converts a Stitch failure into an {@link HTTPException} (via
- * {@link stitchError} — `502` by default) and lets Hono render it; an already-thrown
- * `HTTPException` is honoured as-is, and every other error is re-thrown unchanged for Hono's
- * default handling. Register it once so handlers calling stitches need no try/catch:
+ * Handler half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
  *
- * ```ts
- * app.onError(stitchOnError());
- * // configure the status (e.g. propagate the upstream status instead of 502):
- * //   app.onError(stitchOnError({ status: (e) => e.status ?? 502 }))
- * ```
+ * Build a Hono `onError` handler that converts a Stitch failure into an {@link HTTPException} (via
+ * {@link toHttpException} — `502` by default) and lets Hono render it; an already-thrown
+ * `HTTPException` is honoured as-is, and every other error is re-thrown unchanged for Hono's
+ * default handling.
  */
 export function stitchOnError(
     options: StitchErrorOptions = {},
 ): (err: Error, c: Context) => Response | Promise<Response> {
     return (err: Error, _c: Context) => {
         if (err instanceof HTTPException) return err.getResponse();
-        const mapped = stitchError(err, options);
+        const mapped = toHttpException(err, options);
         if (mapped) return mapped.getResponse();
         throw err;
     };
 }
+
+/**
+ * The one name for "a stitch failed, turn it into HTTP" in this package — the guard, the
+ * mapper and the `onError` handler as one namespace, so the same concept reads the same way
+ * across every `@stitchapi/*` host adapter (ADR 0012; the export-surface analogue of the
+ * `secrets` / `duration` folds in core). The verb lives at the call site rather than in three
+ * verb-prefixed top-level names:
+ *
+ * - `stitchError.is(err)` narrows an unknown error to a {@link StitchErrorLike}.
+ * - `stitchError.map(err, options?)` returns a Hono {@link HTTPException}, or `undefined` when
+ *   `err` is not a stitch failure — so a caller can rethrow it untouched.
+ * - `stitchError.handler(options?)` builds the `onError` handler that does both for you.
+ *
+ * ```ts
+ * app.onError(stitchError.handler());
+ * // configure the status (e.g. propagate the upstream status instead of 502):
+ * //   app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }))
+ *
+ * // …or map one error by hand:
+ * //   throw stitchError.map(err) ?? err;
+ * ```
+ *
+ * A facade, not a re-implementation: each member points at the module function above, so this
+ * package's own `middleware`/plugin code keeps importing those directly and a bundler that
+ * reaches one member does not weld the other two onto the consumer's path.
+ */
+export const stitchError = {
+    is: isStitchError,
+    map: toHttpException,
+    handler: stitchOnError,
+} as const;

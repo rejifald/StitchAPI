@@ -28,8 +28,8 @@ describe('package public API (src/index.ts barrel)', () => {
             boost,
         };
         const hit: docsMcp.DocSearchHit = {
-            pageUrl: '/docs/guides/x',
-            pageTitle: 'X Guide',
+            path: '/docs/guides/x',
+            title: 'X Guide',
             heading: 'Retries',
             anchor: 'retries',
             text: 'body text',

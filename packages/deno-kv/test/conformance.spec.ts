@@ -1,5 +1,5 @@
 // Conformance proof for @stitchapi/deno-kv. `denoKvStore` must pass
-// `verifyStoreContract` from `stitchapi/testing`.
+// `conformance.store` from `stitchapi/testing`.
 //
 // The run is hermetic and offline: a faithful in-memory `Deno.Kv` (a Map with
 // expiry + a monotonic versionstamp + an atomic builder that fails the commit
@@ -18,7 +18,7 @@ import type {
     DenoKvLike,
 } from '../src';
 
-import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import { describe, test } from 'vitest';
 
 // --- a faithful in-memory Deno KV -----------------------------------------
@@ -143,14 +143,14 @@ class FakeAtomic implements DenoAtomicOperation {
 
 describe('@stitchapi/deno-kv store contract', () => {
     test('denoKvStore(...) passes the store contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() => denoKvStore(new FakeDenoKv())),
+        conformance.assert(
+            await conformance.store(() => denoKvStore(new FakeDenoKv())),
         );
     });
 
     test('denoKvStore(..., { keyPrefix }) passes the store contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() =>
+        conformance.assert(
+            await conformance.store(() =>
                 denoKvStore(new FakeDenoKv(), { keyPrefix: 'app:' }),
             ),
         );

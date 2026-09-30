@@ -56,20 +56,20 @@ describe('search_docs tool', () => {
         searchDocsMock.mockReset();
     });
 
-    it('maps hits to {title,url,excerpt,score}: dedups title when heading equals pageTitle, composes it otherwise, builds an absolute url with the anchor, truncates a long excerpt, and rounds score to 4 decimals', async () => {
+    it('maps hits to {title,url,excerpt,score}: dedups title when heading equals it, composes it otherwise, builds an absolute url from path + anchor, truncates a long excerpt, and rounds score to 4 decimals', async () => {
         const longText = 'word '.repeat(200); // > 300 chars, forces truncation
         searchDocsMock.mockResolvedValue([
             {
-                pageUrl: '/docs/guides/resilience/retry',
-                pageTitle: 'Retry & backoff',
+                path: '/docs/guides/resilience/retry',
+                title: 'Retry & backoff',
                 heading: 'Options',
                 anchor: 'options',
                 text: longText,
                 score: 0.123456789,
             },
             {
-                pageUrl: '/docs/guides/y',
-                pageTitle: 'Y',
+                path: '/docs/guides/y',
+                title: 'Y',
                 heading: 'Y',
                 anchor: '',
                 text: 'short body',
@@ -97,7 +97,7 @@ describe('search_docs tool', () => {
         expect(results[0].excerpt.endsWith('…')).toBe(true);
         expect(results[0].excerpt.length).toBeLessThan(longText.length);
 
-        // heading === pageTitle -> no " — heading" suffix; no anchor -> no trailing '#'.
+        // heading === title -> no " — heading" suffix; no anchor -> no trailing '#'.
         expect(results[1].title).toBe('Y');
         expect(results[1].url).toBe('https://stitchapi.dev/docs/guides/y');
     });

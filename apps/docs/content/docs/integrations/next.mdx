@@ -1,6 +1,6 @@
 ---
 title: Next.js
-description: Web-standard helpers for Next App Router route handlers — streamStitchSse streams a stitch as text/event-stream, and stitchErrorResponse maps a StitchError to a Response.
+description: Web-standard helpers for Next App Router route handlers — streamStitchSse streams a stitch as text/event-stream, and stitchError.map turns a StitchError into a Response.
 prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
@@ -31,7 +31,7 @@ A non-streaming endpoint is the stitch plus the error helper — no per-route
 // app/api/users/[id]/route.ts
 import { getUser } from '@/lib/api';
 
-import { stitchErrorResponse } from '@stitchapi/next';
+import { stitchError } from '@stitchapi/next';
 
 export async function GET(
     _req: Request,
@@ -41,18 +41,23 @@ export async function GET(
     try {
         return Response.json(await getUser({ params: { id } }));
     } catch (err) {
-        const mapped = stitchErrorResponse(err);
+        const mapped = stitchError.map(err);
         if (mapped) return mapped;
         throw err;
     }
 }
 ```
 
-`stitchErrorResponse` returns a `Response` for a `StitchError` and `undefined` for
+`stitchError.map` returns a `Response` for a `StitchError` and `undefined` for
 anything else — map the stitch failure, rethrow the rest, no `instanceof` dance.
 It maps to `502` by default — the safe choice that never leaks the
 upstream's `401`/`404` semantics. Pass `{ status: (e) => e.status ?? 502 }` to
-propagate the upstream status instead.
+propagate the upstream status instead. `stitchError.is(err)` is the guard on its own.
+
+`stitchError` is the same namespace every `@stitchapi` host adapter exports for this
+one concept. There is no `.handler` here: a route handler is its own
+`Request` → `Response` function, so Next has no central error hook to register one on
+— you map in the handler's own `catch`, as above.
 
 ## Streaming with SSE
 

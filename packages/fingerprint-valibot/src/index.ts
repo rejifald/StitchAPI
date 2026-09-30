@@ -232,9 +232,9 @@ function describe(schema: unknown): string {
  * Fingerprint strategy for Valibot schemas. Register it once at startup:
  *
  * ```ts
- * import { registerFingerprinter } from 'stitchapi/fingerprint';
+ * import { fingerprinters } from 'stitchapi/fingerprint';
  * import { valibotFingerprinter } from '@stitchapi/fingerprint-valibot';
- * registerFingerprinter(valibotFingerprinter);
+ * fingerprinters.register(valibotFingerprinter);
  * ```
  */
 export const valibotFingerprinter: SchemaFingerprinter = {

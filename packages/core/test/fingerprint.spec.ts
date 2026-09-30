@@ -1,19 +1,16 @@
 // Tests for the ADR 0004 fingerprint contract: the hash primitive, the registry,
-// the resolveFingerprint fallback ladder, and the verifyFingerprintContract
+// the resolveFingerprint fallback ladder, and the conformance.fingerprint
 // self-test (a sound strategy passes; broken ones yield NAMED violations, not
 // throws — mirroring conformance-kit.spec.ts).
 import {
     type FingerprintInput,
     type SchemaFingerprinter,
-    clearFingerprinters,
-    getFingerprinter,
+    fingerprinters,
     hash,
-    listFingerprinters,
-    registerFingerprinter,
     resolveFingerprint,
 } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
-import { assertConformance, verifyFingerprintContract } from '../src/testing';
+import { conformance } from '../src/testing';
 import type { FingerprintFixtures } from '../src/testing';
 
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -78,16 +75,16 @@ describe('hash', () => {
 
 describe('registry', () => {
     beforeEach(() => {
-        clearFingerprinters();
+        fingerprinters.clear();
     });
 
     it('registers, retrieves, lists, and clears', () => {
-        expect(getFingerprinter('test')).toBeUndefined();
-        registerFingerprinter(refFingerprinter);
-        expect(getFingerprinter('test')).toBe(refFingerprinter);
-        expect(listFingerprinters()).toContain(refFingerprinter);
-        clearFingerprinters();
-        expect(getFingerprinter('test')).toBeUndefined();
+        expect(fingerprinters.get('test')).toBeUndefined();
+        fingerprinters.register(refFingerprinter);
+        expect(fingerprinters.get('test')).toBe(refFingerprinter);
+        expect(fingerprinters.list()).toContain(refFingerprinter);
+        fingerprinters.clear();
+        expect(fingerprinters.get('test')).toBeUndefined();
     });
 
     it('last registration for a vendor wins', () => {
@@ -96,16 +93,16 @@ describe('registry', () => {
             range: '*',
             fingerprint: () => ({ token: 'x', strength: 'strong' }),
         };
-        registerFingerprinter(refFingerprinter);
-        registerFingerprinter(other);
-        expect(getFingerprinter('test')).toBe(other);
+        fingerprinters.register(refFingerprinter);
+        fingerprinters.register(other);
+        expect(fingerprinters.get('test')).toBe(other);
     });
 });
 
 describe('resolveFingerprint — the fallback ladder', () => {
     beforeEach(() => {
-        clearFingerprinters();
-        registerFingerprinter(refFingerprinter);
+        fingerprinters.clear();
+        fingerprinters.register(refFingerprinter);
     });
 
     const userSchema = () =>
@@ -177,14 +174,14 @@ describe('resolveFingerprint — the fallback ladder', () => {
     });
 
     it('rung 5: unknown/unregistered vendor → refuse by default', () => {
-        clearFingerprinters();
+        fingerprinters.clear();
         const r = resolveFingerprint({ output: userSchema() });
         expect(r.policy).toBe('refuse');
         expect(r.reason).toContain('no fingerprinter registered');
     });
 
     it('rung 5: opt-in fallback:revalidate', () => {
-        clearFingerprinters();
+        fingerprinters.clear();
         const r = resolveFingerprint({
             output: userSchema(),
             fallback: 'revalidate',
@@ -223,7 +220,7 @@ describe('resolveFingerprint — the fallback ladder', () => {
     });
 });
 
-describe('verifyFingerprintContract', () => {
+describe('conformance.fingerprint', () => {
     const goodFixtures: FingerprintFixtures = {
         stable: [
             {
@@ -279,14 +276,11 @@ describe('verifyFingerprintContract', () => {
     };
 
     it('a sound strategy passes every rule', () => {
-        const report = verifyFingerprintContract(
-            refFingerprinter,
-            goodFixtures,
-        );
+        const report = conformance.fingerprint(refFingerprinter, goodFixtures);
         expect(report.ok).toBe(true);
         expect(report.violations).toEqual([]);
         expect(() => {
-            assertConformance(report);
+            conformance.assert(report);
         }).not.toThrow();
     });
 
@@ -295,13 +289,13 @@ describe('verifyFingerprintContract', () => {
             refFingerprinter.fingerprint(
                 fakeSchema({ type: 'object', fields: { id: 'number' } }),
             ).token ?? '';
-        const ok = verifyFingerprintContract(refFingerprinter, {
+        const ok = conformance.fingerprint(refFingerprinter, {
             ...goodFixtures,
             snapshots: { base: baseValue },
         });
         expect(ok.ok).toBe(true);
 
-        const drifted = verifyFingerprintContract(refFingerprinter, {
+        const drifted = conformance.fingerprint(refFingerprinter, {
             ...goodFixtures,
             snapshots: { base: 'stale-token' },
         });
@@ -317,7 +311,7 @@ describe('verifyFingerprintContract', () => {
             range: '*',
             fingerprint: () => ({ token: 'CONST', strength: 'strong' }),
         };
-        const report = verifyFingerprintContract(broken, goodFixtures);
+        const report = conformance.fingerprint(broken, goodFixtures);
         expect(report.ok).toBe(false);
         const failed = report.violations.map((v) => v.rule);
         expect(failed).toContain(
@@ -327,7 +321,7 @@ describe('verifyFingerprintContract', () => {
             'abstain: opaque/unrepresentable schemas → null (soundness)',
         );
         expect(() => {
-            assertConformance(report);
+            conformance.assert(report);
         }).toThrow();
     });
 
@@ -339,12 +333,12 @@ describe('verifyFingerprintContract', () => {
             fingerprint: () =>
                 Promise.resolve({ token: 'x', strength: 'strong' }),
         } as unknown as SchemaFingerprinter;
-        const report = verifyFingerprintContract(asyncFp, goodFixtures);
+        const report = conformance.fingerprint(asyncFp, goodFixtures);
         expect(report.ok).toBe(false);
     });
 
     it('a vendor mismatch is caught', () => {
-        const report = verifyFingerprintContract(refFingerprinter, {
+        const report = conformance.fingerprint(refFingerprinter, {
             stable: [
                 {
                     label: 'wrong-vendor',

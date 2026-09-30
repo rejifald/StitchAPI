@@ -31,13 +31,13 @@ history so the reasoning survives the renames.
 
 Five forks were decided by the maintainer; the rules below assume them.
 
-| #   | Decision                   | Resolution                                                                                                                                                                                                                                                       | Drives                                                                    |
-| --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                  | [P5](#p5--one-success-field-one-failure-field)                            |
-| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                       | [P4](#p4--one-cap-vocabulary)                                             |
-| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `duration.parse`.                                | [P17](#p17--one-canonical-duration-form)                                  |
-| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                    | [§7](#7-enforcement)                                                      |
-| D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major. | [P19](#p19--breaking-changes-sanctioned-pre-ga-deprecation-cycle-from-ga) |
+| #   | Decision                   | Resolution                                                                                                                                                                                                                                                       | Drives                                                        |
+| --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                  | [P5](#p5--one-success-field-one-failure-field)                |
+| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                       | [P4](#p4--one-cap-vocabulary)                                 |
+| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `duration.parse`.                                | [P17](#p17--one-canonical-duration-form)                      |
+| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                    | [§7](#7-enforcement)                                          |
+| D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major. | [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) |
 
 ---
 
@@ -133,9 +133,13 @@ _Resolved (2026-07 sweep):_ `CacheConfig`→`CacheOptions`, `OAuth2Opts`→`OAut
 `LlmConfig`→`LlmOptions`, `SignV4Params`→`SignV4Options`,
 `AuthFailureInfo`→`AuthFailureResult`, `StitchQueryState`→`StitchQueryResult`,
 `UseStitchReturn`→`UseStitchResult`.
-_Carve-outs:_ `StitchConfig`/`SeamConfig`/`RedactedStitchConfig` keep `*Config` as the
-one well-known top-level authoring type family (the thing you literally call
-`stitch(config)` with) — the ban targets the **sibling capability bags**. `OpenApiInfo`
+_Carve-outs:_ `StitchConfig`/`ResolvedStitchConfig`/`RedactedStitchConfig`/`SeamConfig`
+keep `*Config` as the one well-known top-level authoring type family — the thing you
+literally call `stitch(config)` with, plus the **resolved** view the engine hands a seam and
+the **redacted** view a trace sink sees; the ban targets the **sibling capability bags**.
+(`ResolvedStitchConfig` was missing from this list until 2026-09, while its twin
+`RedactedStitchConfig` was named. The exemption was real and the lint held it all along; it
+was the citation here that was short one symbol.) `OpenApiInfo`
 mirrors the OpenAPI spec's `InfoObject` (P18). **`StitchQueryOptions`** keeps its name
 **and** its flat `queryKey`/`queryFn` fields as a deliberate
 [P22](#p22--a-standards-interop-contract-uses-the-standards-field-names)-style mirror
@@ -373,14 +377,51 @@ documented default). Where a field is **required by design** because a silent de
 is a footgun, it **MUST** stay required and the envelope **MUST** offer a scalar/
 positional shorthand naming the required value(s).
 
-- `CircuitOptions.failures`/`cooldown` **stay required** (a breaker with invisible
-  thresholds fails open/closed silently) — the positional shorthand is the tuple
-  `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.
+**The test — does a correct default exist?** A field is required-by-design only when
+**no** default can be correct for it. Where one value serves the common case, the field
+**SHOULD** take that value as a documented default and stay optional: assisting the caller
+who does not yet know what to set is the point of shipping a default, and a knob they must
+fill before anything runs is friction charged to everyone to serve the few who wanted to
+tune it. Where a default would be a **guess** — `paginate.next` (there is no universal way
+to fetch the next page), `shell(command)`, `CacheOptions.ttl` (too long is a staleness bug
+the consumer never sees) — the field stays required and gets its shorthand. Apply the test
+to the field, not to the capability: an opt-in capability's _declaration_ is the decision a
+reviewer must see, and the numbers tuning it usually are not. What P15 forbids throughout is
+the **invisible** default — a value nobody can look up — never a printed one.
+
 - `CacheOptions.ttl` **stays required** — its shorthand `cache: '1m'` already names it.
+- ~~`CircuitOptions.failures`/`cooldown` **stay required**~~ — **re-decided 2026-09**, see
+  below. Both are optional and carry documented house defaults; the positional shorthand
+  `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }` is unchanged.
 
 > This corrects the audit draft, which tried to defend `ttl`-required while attacking
 > `circuit`-required. Required-with-a-named-shorthand is the **one** acceptable form of
 > a non-`{}` envelope.
+
+_Resolved — `circuit`, re-decided 2026-09 (maintainer decision, last window before the
+stable tag)._ `createCircuit` used to throw when neither `failures` nor `cooldown` was set.
+It now resolves them to house defaults — `failures` `5`, `cooldown` `'30s'` — kept as named
+constants beside the resolution in `resilience.ts` and quoted in `CircuitOptions`' own JSDoc,
+so the doc and the code have one place to disagree rather than four. Both fields stay
+**optional**, the slot stays `Scalar | AtLeastOne<CircuitOptions>` (so `circuit: {}` is still
+a compile error, [P20](#p20--no-empty-object-config-enable-with-defaults-is-a-scalar)), and
+the tuple shorthand is untouched. **The general rule above is unchanged**; this is one slot
+re-decided against it, recorded here rather than folded silently into the rule:
+
+- What P15 actually forbids is the **invisible** default — a value nobody can find out.
+  `5` / `'30s'` are stated on the field, in the reference docs, and as constants in the
+  resolver. `retry.backoff.base` (100ms) has always been read the same way.
+- `circuit` is **opt-in**, so the decision a reviewer must see is the **declaration** of a
+  breaker, not the two numbers tuning it. The required-field mechanism was guarding the
+  wrong half.
+- Against that, the throw fired on a config that is complete and meaningful:
+  `circuit: { key: 'shared' }` names the namespace and asks for house behaviour, and blew up
+  at the **first call**, at runtime — on a resilience feature whose whole job is to not be
+  the thing that fails. A breaker with industry-typical printed defaults is safer than one
+  that throws before it can ever trip.
+- `ttl` keeps the required treatment on the same reasoning read the other way: a cache TTL
+  has **no** industry-typical value, and guessing too long is a staleness bug the consumer
+  never sees.
 
 ---
 
@@ -483,7 +524,7 @@ P24 envelope), `CircuitOptions.cooldown` (its `halfOpenAfter` sibling was widene
 too, then **removed** in the 2026-08-04 P1 fix below — the two named one instant),
 `ReconnectOptions.delay` (was `backoffMs`, de-suffixed to `backoff` and later renamed
 under P2), `OAuth2Options.refreshSkew` (now `refresh.skew`), `CookieSessionOptions.ttl`,
-and `verifyStoreContract`'s `ttl` knob — all `number | string` via the one shared
+and `conformance.store`'s `ttl` knob — all `number | string` via the one shared
 `duration.parse`.
 _Resolved (seam-authored, 2026-08):_ the two positions where a **`Surface`** supplies a
 duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return — take
@@ -493,19 +534,39 @@ duration — `SurfaceOutcome.after` (#609) and `Surface.resumeRetry`'s return �
 _Not widened, deliberately:_ `StitchStore.set`/`increment`'s `ttl` **parameter** stays a
 raw-ms `number` — **core** calls those verbs with an already-resolved value, so it is the
 complement case, not an oversight. The consumer-authored knob of the same name on
-`verifyStoreContract` is widened, which is the pair that shows the rule turns on who
+`conformance.store` is widened, which is the pair that shows the rule turns on who
 supplies the value.
 _Resolved (2026-07 sweep, emitted — de-suffixed):_ `StitchEvent` `waited`,
 `retryAfter`, the `done` event's `elapsed` (was `ms`), `MockResponse.delay`;
 `SseEvent.retry` stays (already bare; it mirrors the SSE `retry:` wire field).
 _Enforced by lint **R9** (§7)_ — see [P25](#p25--one-canonical-size-form), which the same
-rule and the same gate cover for the byte dimension.
+rule and the same gate cover for the byte dimension. The naming half is **R2** (the `Ms`
+suffix) and **R11** (every other unit welded onto a name), which is the pair that would
+have caught the `ratePerSec` recorded below without a census.
 _Unit hazard (the exception to "all JS time is ms"):_ a few fields are **seconds**
 because they mirror a wire format — the HTTP `Retry-After` header (delta-seconds),
 Cloudflare KV `expirationTtl`. Every StitchAPI-_authored_ duration stays ms; a field
 that must speak a foreign unit converts at the adapter edge and is named with its true
 unit (`MockResponse.retryAfterSeconds` — it sets the wire header) so the unit is never
 silent.
+
+_Resolved (2026-09-03, an emitted **rate** — de-suffixed):_
+`BatchProgress.ratePerSec` → **`throughput`** (`@stitchapi/download`). The unit hazard
+above licences a unit **in the name** only where a wire format imposes the unit; a
+house-authored readout carries no such mandate, so `PerSec` was the `Ms` suffix in
+another dimension — while its immediate sibling `eta` already states "in ms"
+in its JSDoc rather than its name. The de-suffixed spelling could **not** be `rate`
+([P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)):
+`throttle`'s `rate` is the `Rate` token grammar (`'2/s'`), a different value-space, so
+this is the rename-one remedy and not a shared word. The package was still unreleased,
+so it is not a [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) break.
+_What let it through, and what now guards it:_ R9 reads the duration and size dimensions,
+and a rate is neither, so no rule looked at the name — it surfaced in a by-hand census of
+multi-word field names. **R11** (§7) closes that gap the same day: R2 guarded the `Ms`
+spelling P17 names, and R11 guards every other unit welded onto a field name, so this
+class no longer needs a census to find. The class is at zero tree-wide — the only
+unit-suffixed names left are OTLP's `*Unix*` instants and the two wire-mandated seconds
+fields named above, each carved out by name.
 
 ### P18 · Adapter mirrors keep upstream spelling; house contracts use house vocabulary
 
@@ -535,9 +596,21 @@ not a [P16](#p16--cross-surface--cross-package-parity) parity break, and a sweep
 unifies them has removed information rather than added consistency. The _shape_ behind
 both stays identical (`boolean | AtLeastOne<StitchErrorOptions>`), which is where parity
 actually binds. Only these two hosts have the slot at all — express/hono/nest/next expose
-standalone helpers with no options object — and each of those helpers is likewise named
-for its own framework (`stitchErrorHandler` on express/fastify, `stitchOnError` on
-hono/elysia, `StitchExceptionFilter` on nest).
+standalone helpers with no options object.
+
+_The mirror clause binds the **slot**, not the **export**._ This paragraph once added that
+each of those helpers was "likewise named for its own framework" (`stitchErrorHandler` on
+express/fastify, `stitchOnError` on hono/elysia). That was a description of the surface as it
+stood, not a licence: the framework-hook argument covers a field a user authors _inside_ a
+config object, where the surrounding option bag supplies the framework context. A named
+import strips exactly that context (ADR 0012's whole premise), so it does not carry over —
+and the family had drifted past any mirror reading anyway, with **four** spellings of one
+mapper (`stitchError`, `stitchErrorResponse` twice, `toHttpException`), of which only
+`toHttpException` even named a framework type. The exports are now one namespace,
+**`stitchError`**, in all six adapters ([§6](#6-migration-record-2026-07-08-hard-break-sweep));
+the `errorHandler` / `onError` **option slots** are untouched, which is this clause still
+doing its job. `StitchExceptionFilter` stays a top-level class on nest — DI-registered, ADR
+0012 rule 1.
 
 ### P19 · The alias obligation is scoped to the GA channel
 
@@ -631,6 +704,16 @@ a field whose entire job is to carry that standard's value. Match the standard's
 translation seam. As with P18, follow the standard that governs **each** layer and convert
 at the edge — never blend two standards' vocabularies in one place.
 
+**The test — is the mapping already an identity?** A contract is pinned by this rule only where
+the export is field-for-field identical: rename the field and the boundary code would have to
+start translating. Where the boundary **already** translates — a re-casing into the wire's own
+`snake_case`, a value set that is ours rather than the standard's, members the standard does not
+define — the contract in front of that translation is house vocabulary under P18, and spelling
+its fields after the standard buys a resemblance no reader can rely on. `OAuth2Options` failed
+this test ([P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) carve-out
+(a)): `clientId`/`clientSecret` were RFC 6749's names re-cased at the form-body builder, so there
+was never an identity mapping there to protect.
+
 _Why:_ a private alias on an interop field is paid for twice — a translation step at the
 boundary where it meets the standard, and a lookup for every reader who knows the standard
 but not our word for it. P18 keeps duck-type mirrors **structurally** matching; P22 keeps
@@ -687,10 +770,12 @@ _Carve-outs:_
 
 - **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
   nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
-  pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
-  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
-  its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
-  and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
+  pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, the XHR
+  `response*` pair on each duck-type that meets it (`responseType`/`response` on `XhrLike`,
+  `responseType`/`responseText` on React Native's `RnStreamingXhr`), RTK Query's lifecycle names
+  (`cacheDataLoaded`/`cacheEntryRemoved`), and Orama's own index-document schema
+  (`IndexedDoc.pageUrl`/`pageTitle`, plus the `boost` and `properties` keys that address it) —
+  all exempt.
 
     **The exemption binds the layer that meets the standard, not every layer above it**
     ([P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): follow the standard
@@ -699,13 +784,110 @@ _Carve-outs:_
     vocabulary and **MAY** fold, provided the engine converts before the value reaches the
     boundary.
 
-    _Applied (2026-08-03):_ `AdapterRequest.responseType` is the XHR/fetch-facing contract and
-    keeps the XHR spelling permanently — an `xhr` adapter assigns it straight through. The
-    authoring slot folded into the `wire` envelope as **`wire.response`**, and the engine maps it
-    onto `AdapterRequest.responseType` when it builds the request. Note the protected **pair** is
-    XHR's `responseType`/`responseText`: StitchAPI has no `responseText`, so the fold this
-    carve-out guards against (`response: { type, text }`) was never live here. What the carve-out
-    still forbids is renaming the **transport** field, which this change does not do.
+    _Applied (2026-08-03), then **reversed** (2026-09-04):_ `AdapterRequest.responseType` was read
+    as "the XHR/fetch-facing contract", to keep the XHR spelling permanently. That was wrong about
+    which layer meets the standard, and the interface itself said so: `AdapterRequest` is
+    StitchAPI's **own normalized** transport contract, the same category P18 names beside
+    `StitchStore` and `RedisDriver`. The tell is in the values — `ResponseType` is
+    `'json' | 'text' | 'arrayBuffer' | 'blob'`: camelCase `arrayBuffer` where XHR spells it
+    `'arraybuffer'`, and no `'document'` arm. A genuine mirror would carry XHR's values. Every
+    adapter already **converts at its own edge** (`xhr.responseType = 'arraybuffer'`, axios's
+    `responseType: 'arraybuffer'`), which is exactly what the paragraph above asks for. So the
+    field was normalized in its values, its member set and its authoring spelling — everything but
+    its name. Renamed to **`AdapterRequest.response`**, matching `wire.response` (P1/P16). The
+    XHR spelling survives where it belongs: on `XhrLike`/`RnStreamingXhr`, the duck-types that
+    structurally meet XHR, and on `AxiosLikeConfig` for axios. The protected **pair** is whichever
+    `response*` pair the duck-type actually declares — `responseType`/`response` on `XhrLike`,
+    `responseType`/`responseText` on `RnStreamingXhr`. `AdapterRequest` declared neither sibling,
+    so the fold the carve-out exists to prevent (`response: { type, text }`) was never live here
+    either.
+
+    _Corrected the same day — the exemption is per-field, not per-interface:_
+    `AdapterRequest.arrayFormat` sat beside `responseType` and was read as sharing its shelter, on
+    the strength of resemblance alone. Nothing takes an `arrayFormat`: the walker is ours
+    (`util.ts`), and the values `'indices' | 'brackets' | 'repeat'` being `qs`'s vocabulary pins
+    the **values**, never the field. With the authoring slot already renamed to `wire.array` by
+    #591, one capability was spelled two ways across one edge for no reason a standard could
+    supply → **`AdapterRequest.array`**. Chasing that one down is what exposed `responseType`
+    above: the argument used to shelter `array` turned out not to hold for the field it borrowed
+    it from. The lesson generalises twice over — a neighbour's carve-out is not contagious, and
+    "an adapter assigns it straight through" describes a **conversion at the edge**, which is the
+    thing this rule asks for, not evidence that the contract before the edge is a mirror.
+
+    _Reversed (2026-09-14), the fourth instance of the same error — a mirror is an
+    **identity mapping**, and this one was a translation:_
+    `OAuth2Options.clientId`/`clientSecret`/`clientAuth` was exempted as "RFC 6749". Two things
+    were wrong with that. `clientAuth` is not an RFC 6749 parameter at all — §2.3.1 describes the
+    client authentication **methods** (`client_secret_post`/`client_secret_basic`) and defines no
+    such request field; the nearest standardized one is RFC 7591's `token_endpoint_auth_method`.
+    So the rationale covered two of the three members it claimed. More decisively, `OAuth2Options`
+    is not a mirror in this document's sense: its sibling `OAuth2ClientCredentialsFlow` states the
+    test in its own JSDoc — spelled "exactly as the spec spells it … so `stitch export --openapi`
+    emits it as an identity mapping" — and `OAuth2Options` has none **for the members this
+    carve-out covered**: `auth.ts` re-cases `clientId`/`clientSecret` into
+    `client_id`/`client_secret` where it builds the token-request form body, and under
+    `client.via: 'basic'` lifts them out of the body into an `Authorization` header entirely. The
+    claim to check is about the **exempted group**, not the whole interface — `scope` and
+    `audience` do reach the body under their own names, and
+    `tokenUrl`/`headers`/`refresh`/`key`/`tenancy`/`adapter`/`params` never become body keys at
+    all, but neither set was ever in front of this exemption. A
+    contract that already re-cases the standard's own names is the translated house contract of
+    [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary)'s
+    second half, so the group was real. Folded to **`client: OAuth2ClientOptions`**
+    (`{ id, secret, via }`); `tokenUrl` stays flat beside it — the endpoint is a different
+    subject from the identity calling it (P1). No shorthand: `id` and `secret` are co-equal, so
+    no field dominates (P12/P14), and the envelope is plain-required rather than `AtLeastOne<…>`
+    because two required members already make `client: {}` a compile error — the
+    [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults)
+    reading `CacheOptions.ttl` gets. The third member landed as **`via`**, not `auth`: inside the
+    envelope the obvious short spelling would have collided with `StitchConfig.auth`, which holds
+    an `AuthStrategy` object — one token, two concepts, two value-spaces, and the two visibly
+    nested in one call expression (`auth: oauth2({ client: { auth: 'basic' } })`).
+    [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one) forbids that
+    regardless of how defensible each side is on its own, so the fold and the rename
+    ship together rather than one repairing the other later.
+
+    _Reversed (2026-09-14), the fifth instance of the same error — an IDL **parameter** name
+    is not a wire contract:_
+    `WindowChannelOptions.target`/`targetOrigin` was exempted on the grounds that `targetOrigin` is
+    `window.postMessage()`'s own parameter name. It is — and that is not what this carve-out
+    protects. The value is passed **positionally**:
+    `resolveTarget().postMessage(message, opts.targetOrigin, transfer ?? [])`. No DOM code ever
+    reads a property of that name off our object, so renaming the field puts a different expression
+    in the same argument slot and adds **no** translation — there was never an identity mapping
+    here to preserve. That is the P22 test above, failed. `XhrLike.responseType` is exempt because
+    it is literally `xhr.responseType = …` **on a foreign object**; a parameter's spelling in an IDL
+    is documentation, not a seam. The binding clause settles the rest: the exemption binds the layer
+    that meets the standard, and `windowChannel` is the authoring surface above it, converting
+    before the value reaches `postMessage`.
+
+    The entry was also wrong about **where the group was**. It grouped by the shared prefix —
+    which is what R8 mechanically detects — where this rule treats a shared prefix as a **signal**
+    of an envelope, never as the envelope's boundary. The dimension is the channel's **origin
+    policy**, and the entry's own rationale said so: "`targetOrigin` is also the default for
+    `allowedOrigins`". One field being another's default is proof they are one decision; `target`,
+    the transport handle, is a different kind of thing and stays flat. Folded to
+    **`origins: Origin | OriginOptions`** (`{ to, from? }`, `from` defaulting to `[to]`), with the
+    bare origin as the [P12](#p12--envelope--scalar-shorthand) shorthand for `{ to: X, from: [X] }`
+    — the parent↔iframe case, where the frame you post to is the only frame you accept from.
+    `ChannelOptions.allowedOrigins` became **`from`** — not `origins` — in lockstep
+    ([P1](#p1--one-word-one-concept-one-value-space)/[P16](#p16--cross-surface--cross-package-parity)).
+    Reusing
+    `origins` for the raw-transport builder was the first cut and was wrong: it would put one token
+    over two **incomparable** value-spaces (`Origin | Origin[]` against `Origin | OriginOptions`),
+    so neither union contains the other, `origins: ['https://a', 'https://b']` would be valid on one
+    builder and a compile error on the other, and the P12 scalar shorthand `origins: X` would mean
+    `{ to: X, from: [X] }` here and `[X]` there. That is the collision an envelope exists to avoid,
+    not to create — the same reasoning the **endpoint slot** under carve-out (b) below used to
+    decline a `url` shorthand that "would mean two different things on the two surfaces". Named
+    `from`, the inbound half has one meaning and one value-space everywhere it appears
+    (`ChannelOptions.from` is identical in name and type to `OriginOptions.from`), and `origins`
+    names only the surface where a second dimension exists. That the two sit at different **nesting
+    levels** is not a P16 breach: the endpoint slot is precedent for members that "do not share a
+    level". Recorded for honesty — the collision had **no silent failure mode**, since every
+    divergence between the builders is a compile error; it is surface hygiene taken before the
+    stable tag freezes the names, not a defect fixed. Both halves narrowed from `string` to
+    `Origin`, which turns the silently-inert `allowedOrigins: '*'` into a compile error.
 
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an
@@ -715,6 +897,31 @@ _Carve-outs:_
   (`X?: never`, or a `ConfigError<…>` brand where a bare `never` would collapse the whole config
   and report every unrelated field). Staying flat is a licence to skip the envelope, never a
   licence to let a tag/option pairing typecheck when the option is inert.
+
+    _Applied to a whole option (2026-09-04):_ the inertness clause is not only about pairs.
+    `portChannel(port, { allowedOrigins })` carried the same option its two sibling builders
+    take, "for symmetry" — but a `MessagePort` carries no origin at all, so the list could never
+    change one decision. An option that cannot alter behaviour is worse than an asymmetry when it
+    is **shaped like a security control**: a caller who writes `allowedOrigins: ['https://trusted']`
+    has gated nothing. Not one test ever passed it. The parameter is **removed** rather than
+    renamed or documented — a port is gated by who you hand it to. The builders whose transport
+    does carry an origin keep it: `channel.over` takes `from` and `channel.window` takes the
+    `origins` envelope, per the 2026-09-14 folds above. (All are reached through the one
+    `channel` namespace since the same release — the port builder is `channel.port`.)
+
+    _Its proof was restated (2026-09-15), and the conclusion widened._ This passage used to cite
+    the gate's own source — "the origin gate reads `origin === '' || allowed.includes(origin)` and
+    a `MessagePort` always delivers `''`" — as the reason the list was inert. That code is gone:
+    `''` was an **in-band sentinel**, the byte stream asserting a property only the transport can
+    know, and since `''` is `MessageEvent.origin`'s default it let a same-realm forged event past
+    the allow-list entirely. A port now reports `origin: null` from code and is built with **no**
+    allow-list rather than an empty one. The removal stands and is stronger for it: the exemption
+    is now a **structural absence** at the builder, not a short-circuit inside the gate. That is
+    also why the generic origin-less transport got its own builder, `channel.private(transport)`,
+    instead of letting a `channel.over` transport exempt itself per-message — the latter would have
+    relocated exactly this defect from the port builder to `from`, whose `[]` value is a
+    deliberately fail-closed list a caller must be able to trust.
+
 - **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
   family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
   capability.
@@ -736,6 +943,36 @@ mean two different things on the two surfaces, a P2 collision. `OneEndpointSpell
 (b) obligation the slot was missing: `baseUrl`/`path` beside a `url` in the SAME literal is a
 compile error, while across `extends` fragments the spellings stay a legal last-writer-wins
 override. See the migration record for the silent case that motivated it.
+
+_Scope of the (b) obligation — it binds the AUTHORING layer, not the transport contract below it
+(2026-09-15):_ `AdapterRequest.body`/`bodyType` keeps being re-raised as an un-discharged (b)
+obligation, because its JSDoc says `multipart` is "only read when `bodyType: 'multipart'`" — prose
+sitting where a guard appears to belong. It is not one, and the rule is worth stating once so the
+question stops re-opening. The obligation is about **authored config**: its stated harm is a
+tag/option pairing that typechecks while the option is inert, and that harm needs a consumer who
+supplied the inert half. On `AdapterRequest` nobody does. The engine DERIVES every member from the
+authored `wire` envelope in `buildRequest`, and the surfaces that shape a request patch the `base`
+the engine handed them (`{ ...base, bodyType: 'json' }`) rather than composing one from scratch —
+so a consumer writing a custom adapter, surface or `AuthStrategy` READS these fields; the one
+genuinely authored position, calling an `Adapter` directly with a literal, supplies a live
+combination, never a dead one. This is the mirror image of the layering carve-out (a) already
+states: there, the exemption binds the layer that meets the foreign standard and not every layer
+above it; here, the obligation binds the layer a consumer authors and not every layer below it.
+`MultipartOnlyOnMultipartBody` and `OneEndpointSpelling` discharge it where it lands — on `wire`
+and on the endpoint slot — which is why nothing is missing underneath them.
+
+Two facts make this a ruling rather than a preference. First, the pairing on `AdapterRequest` is
+**not symmetric**: `array` carries the same "only read when `bodyType: 'form'`" prose but is not
+dead config at all — it is SPENT config. The engine serialises the query string with it before the
+body is built and then forwards it unconditionally, so `{ bodyType: 'json', array: 'repeat' }` is
+the engine's own correct output for any stitch that sets `wire.array` with a JSON body, and the
+authoring layer pins that as legal. A symmetric guard would outlaw the engine's own output.
+Second, a guard here is **not additive**, which both discharged precedents were: the narrowest
+R8-recognised mutual-exclusion shape over `bodyType`/`multipart` breaks `buildRequest` in the
+engine and in two surfaces, because `{ ...base, bodyType: 'json' }` cannot prove `multipart` is
+absent from a spread. It would tax the one consumer-authored position it exists to protect, and
+force every surface author to write `multipart: undefined`. The prose stays; it documents a
+transport READ, which is what it has always been.
 
 Applied on every surface that authors a stitch (`stitch`, `graphql`, `Seam.stitch`,
 `Seam.graphql` — both the inferring and the fallback overload, or a rejected config falls through
@@ -761,9 +998,24 @@ hard breaks, no aliases (P19).
 
 _Named exemptions verified against this rule_ (carve-out (a); named explicitly because each is the
 literal shape this rule would otherwise flag): **`StitchQueryOptions.queryKey`/`queryFn`** (the
-TanStack mirror, P3 — note this rule's own motivating example is itself exempt);
-**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`DocSearchHit.pageUrl`/
-`pageTitle`** (mirrors the persisted Orama index document schema; maintainer-exempted 2026-07-08).
+TanStack mirror, P3 — note this rule's own motivating example is itself exempt); **`IndexedDoc.pageUrl`/
+`pageTitle`** in `@stitchapi/docs-mcp` (the persisted Orama index document schema — Orama boosts
+and searches BY field name, so `FieldBoost.pageTitle` and the `properties` list key on them too).
+(`OAuth2Options`' client credentials and `WindowChannelOptions.target`/`targetOrigin` were named
+here too, until the 2026-09-14 reversals above.)
+
+_Re-pointed (2026-09-09), the third instance of the same error:_ this exemption was written
+against **`DocSearchHit`**, the type `searchDocs` RETURNS — one layer above the boundary, exactly
+like `AdapterRequest.responseType` before it. The stored document is what meets Orama; the search
+result is a house-owned produced shape, and the MCP server was already converting it to `title` /
+`url` at its own edge, so nothing downstream ever wanted the index's spelling. `DocSearchHit` is
+now `path` / `title` (`path`, not `url`: the value is site-relative and composes with `anchor`),
+converted field-by-field at the one point the index is read. That conversion also retired an
+`as unknown as Omit<DocSearchHit, 'score'>` cast which asserted the stored document and the
+published hit were the same object — the coupling that let the names leak upward in the first
+place, and one that would have kept typechecking after a schema change. **The pattern to watch
+for: a mirror exemption is suspicious wherever a conversion to house vocabulary already exists
+somewhere above it.** That conversion is the edge; everything above it is house.
 
 Enforced by lint **R8** (§7); its allow-list carries the one-line rationale for every verified
 exemption beyond this rule's named list — a discriminated-union pair (mutually exclusive by
@@ -1002,6 +1254,110 @@ against both — the findings sit at the end of the list:
   `parsers-properties.spec.ts`, not a table of pretty cases, and verified non-vacuous by
   reintroducing `ms`-style rounding and watching all three properties fail.
 
+- **P16/P18 (the error family folds, 2026-08-28)** — the export-surface analogue of
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope): where P24 says a
+  shared field-name prefix inside one house contract is an envelope, a shared symbol prefix
+  across one package's exports is a **namespace**. Six host adapters each carried two or three
+  `stitch*Error*`-prefixed top-level names for a single dimension — "a stitch failed, turn it
+  into HTTP" — and the mapper alone had **four spellings** (`stitchError` on hono,
+  `stitchErrorResponse` on elysia _and_ next, `toHttpException` on nest). hono and elysia were
+  otherwise perfectly parallel, down to an identically named `stitchOnError`, and diverged on
+  exactly this. It is the same defect ADR 0012's own Context section opens with — one concept,
+  four spellings — which that sweep fixed for the logger-sink family and did not come back for.
+  **Fixed** — one `stitchError` namespace per package, identical in all six: `.is(err)` narrows,
+  `.map(err, options?)` returns the host's mapped artifact, `.handler(options?)` builds the
+  host's error hook. Hard break, no alias ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel),
+  `rc` channel); every old spelling is pinned **absent** in each package's own spec — in all six,
+  not just where it lived, so "one dimension, one name" is a property of the family.
+  `toHttpException` was additionally a live [ADR 0012 rule 6](../adr/0012-integration-symbol-naming.md)
+  violation: a bare, non-branded export on an adapter package, which the 2026-06-20 sweep missed
+  because it read the logger-sink family only.
+  _Why a namespace and not a sixth uniform verb-prefixed name:_ the same argument the `secrets`
+  and `duration`/`size`/`rate` folds made in core one release earlier — one name per dimension,
+  the verb at the call site — reused rather than re-argued. The `parseDuration`→`duration` bullet
+  above is this entry's direct precedent; this is the same fold applied across packages instead of
+  within one barrel.
+  _Half the family was never adjudicated._ ADR 0012's conformance table swept ten published
+  packages on 2026-06-20. **`@stitchapi/express` (#207), `@stitchapi/elysia` (#208) and
+  `@stitchapi/next` (#222) all landed 2026-06-19 — one day earlier — and appear nowhere in it**,
+  neither as a ✅ row nor in the migration table. Those three contributed `stitchErrorResponse`
+  twice and half of both handler spellings, so the drift is not a coincidence: it is what an
+  un-adjudicated package looks like. This is the same one-day gap a parallel audit found for
+  `@stitchapi/react-native` / `@stitchapi/expo` (#224, also 2026-06-19); both are recorded as
+  dated addenda on ADR 0012 rather than by rewriting its 2026-06-20 table, which stands as the
+  record of what was actually examined that day.
+  _But full adjudication would not have caught it either, and that is the sharper half._ Every
+  one of these names is `Stitch`-branded, so all six pass rule 6 the moment they are read one
+  symbol at a time — which is the only way ADR 0012's rules read. The rule that was missing is
+  "one concept, one spelling **across** packages", and `toHttpException` proves the point from
+  the other side: nest **was** in the table, marked ⚠️→fixed for five other exports, and its one
+  genuinely bare adapter export was still missed.
+  _The ragged edges are the interesting part._ Not every host supports all three, and the fix is
+  to let a member be **absent**, never to redefine it locally: a member that means something
+  different per package is the drift the fold exists to end. express/fastify have no `.map`
+  (their handler writes onto a mutable `res`/`reply` and returns no artifact to hand back); next
+  has no `.handler` (a route handler is its own `Request → Response`, so there is no central hook
+  to register on); nest has no `.handler` either, because its handler is a DI-registered
+  **class** — `StitchExceptionFilter` stays top-level per ADR 0012 rule 1, and is pinned present
+  as a class so a later tidy-up cannot sweep it in.
+  _No gate could have found this, on any axis — worth writing down like R10's own blind spot._
+  **R8/P24 is the closest rule and it misses on two counts at once**: it groups by leading word
+  across the flat members of **one exported `interface`**, so it never looks at a barrel's
+  exported _symbols_, and it never looks past one package. **R5 is the only cross-package rule
+  in the repo, and it runs the opposite direction** — it flags a watch-listed identifier for
+  being the **same** in ≥2 packages, where this finding is one concept being **different** in
+  six. Nothing in the repo compares spellings across packages at all, and a rule that did would
+  need the concept-level knowledge ("these five names mean one thing") that no source-text
+  signal carries. So this class is found by **reading**, exactly like R8's trailing-word gap
+  above, and the per-package pins are the guard. R5 will not fire on the new `stitchError`
+  either: it is deliberately identical across all six, the same same-name-same-shape-by-design
+  case `StitchErrorLike` and `StitchErrorOptions` are already de-listed for.
+  _Facade discipline, measured._ A namespace object does not tree-shake, so the implementations
+  stay plain module functions and each namespace is a thin facade over them; the packages' own
+  call sites (fastify's and elysia's `plugin.ts`, nest's filter) keep importing the functions
+  directly. Verified with esbuild from source: a consumer importing only `stitch` /
+  `streamStitchSse` bundles **none** of the error module, and a guard-only consumer pays
+  +174–219 B gzip on express/fastify/hono/elysia (+13 B nest, +0 next) for now shipping the
+  siblings. None of the six has a size gate and all are server-side, so the trade is accepted
+  rather than budgeted — recorded here so it is a decision, not an accident.
+- **Export-surface fold, no rule cited (the fingerprinter registry, 2026-08-28)** — the third
+  verb-prefixed export group to fold, and the one where the repetition was most literal:
+  `registerFingerprinter` / `getFingerprinter` / `listFingerprinters` / `clearFingerprinters` were
+  four names over one `Map`, each spelling out a subject **`stitchapi/fingerprint` already names in
+  the import path**. **Fixed** — one `fingerprinters` namespace (`.register` / `.get` / `.list` /
+  `.clear`), following `secrets` and the `duration`/`size`/`rate` pairs. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the four old
+  spellings are pinned **absent** in `public-api-surface.spec.ts` beside `REMOVED_PARSERS` and
+  `REMOVED_SECRET_FUNCTIONS`.
+  _No numbered principle covers this, and none is claimed._ It resembles a
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) fold, but P24 is about
+  a shared prefix across **flat members of an exported interface** in a house contract, and **R8**
+  enforces it exactly there — neither reaches a module's list of exports. The resemblance is an
+  analogy, not a licence. What this fold actually answers to is precedent plus a stated house shape:
+  the `duration`/`size`/`rate` pairs (#753), `secrets` (#764), and the sentence above the token
+  grammars in `packages/core/src/index.ts` — "one name per dimension, the direction named at the
+  call site, rather than a barrel of six verb-prefixed functions". Whether that sentence should
+  become a numbered rule with a ratchet behind it is a live question this entry does not settle.
+  _And R8 could not have caught it even if it read exports_ — this group names its subject in the
+  **trailing** position, so its leading words are the four verbs and it buckets as
+  "register"/"get"/"list"/"clear", never grouping. That is the known leading-word gap recorded in
+  [§7](#7-enforcement), the same one that hid `transformVersion`+`trustTransform` and
+  `total`/`perAttempt`; per that entry, this class is found by **reading**, and this is one more
+  §6 bullet saying so.
+  _Why the pin is sharper here than for its two siblings:_ both of those fold names off a **barrel**
+  that re-exports from an implementation module, so an old spelling surviving as a module export is
+  invisible to consumers. `src/fingerprint.ts` **is** the subpath entry — there is no barrel in
+  between — so the four implementations had to stop being `export`ed, not merely stop being
+  re-exported, and the absent-pin is the only thing standing between a stray `export` keyword and a
+  second published spelling.
+  _The facade rule, restated with its cost measured:_ a namespace object does not tree-shake —
+  esbuild will not split an object literal to drop a dead property — so the four implementations
+  stay plain module functions and `resolveFingerprint` keeps calling the lookup directly. That
+  keeps the whole fold **free on the budgeted gate** (all three scenarios byte-identical;
+  `import { resolveFingerprint }` unchanged at 1.29 KB gzip) and confines the cost to the one place
+  it is unavoidable: a consumer that wanted `register` alone now carries all four, ~70 B gzip. The
+  same trade the token grammars recorded as "`format` ships wherever `parse` is live" — worth
+  naming as the standing price of this shape rather than rediscovering it per fold.
 - **No numbered principle (the OTLP pipeline on the barrel, 2026-08-28)** — `otlpSink`,
   `otlpHttpExporter` and `toOtlpJson` were three names on the ROOT barrel for one export path.
   All three carried the subject (`otlp`/`Otlp`) and varied only the role word: `…Sink`,
@@ -1117,6 +1473,9 @@ shape, not as today's surface: nothing on the surface carries an alias.
   `createCircuit` throws if neither spelling is set (required-by-design, P15). The
   `StitchConfig.circuit` slot is `AtLeastOne<CircuitOptions>`, so the empty object is rejected (P20)
   while the breaker stays required-by-design.
+  **Superseded 2026-09** on the required-by-design half only: `createCircuit` now resolves both to
+  house defaults (`5` / `'30s'`) instead of throwing — see the P15 re-decision above and the
+  2026-09 record below. The slot type and the tuple shorthand are unchanged.
 - **P17 (emitted: waited/elapsed)** `StitchEvent` `progress.waitedMs`→`waited` and `done.ms`→`elapsed`;
   `Throttle.acquire` now returns `{ waited }`. The engine **co-emits** the `@deprecated` aliases for
   back-compat (the type carries both): `done.ms` as a plain literal, `progress.waitedMs` by assignment
@@ -1160,7 +1519,8 @@ shape, not as today's surface: nothing on the surface carries an alias.
   (express/fastify/nest/next) mis-named their error **duck-type** `StitchError`, shadowing core's real
   `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
   so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
-  structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
+  structural contract across all six host adapters (de-listed from R5, the guard stays — it is
+  `stitchError.is` since the 2026-08-28 fold above).
 - **P9/P16 (per-request seam)** — third R5 pair. The per-request seam handle is ecosystem-qualified
   per ADR 0012 (extending hono's `HonoRequestSeam`): express `RequestSeam`→`ExpressRequestSeam`, elysia
   →`ElysiaRequestSeam`, fastify `StitchHost`→`FastifyRequestSeam`, nest `StitchHost`→`NestRequestSeam`.
@@ -1290,6 +1650,104 @@ shape, not as today's surface: nothing on the surface carries an alias.
   `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
   only ever see the object form. **R6 clears** — the baseline is now **0**.
 
+- **Export-surface fold (conformance kit, 2026-08-28)** — the third application of the fold the
+  token grammars started (`parse*` → `duration`/`size`/`rate`, recorded above) and `secrets`
+  continued. **No numbered principle governs this one, and none is claimed.**
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) is written about
+  **fields** in a house contract and **R8** enforces it there; neither reaches the names on a
+  barrel. The argument is P24's read one level out — a shared prefix across sibling names means the
+  prefix is the subject and the suffixes are its members — but it is applied here by judgement, as
+  the two folds before it were, not by a rule that covers it.
+  `stitchapi/testing` had the clearest instance left: four identical `verify<Seam>Contract`
+  functions of one shape (`(impl) => ContractReport`), plus `assertConformance` and
+  `adapterContractFixture` — six names a vendor reads to make **one** decision, "does my seam
+  comply". Note that this family is **not** an instance of R8's leading-word gap recorded above for
+  `total`/`perAttempt`, the cache-transform pair and the endpoint slot: these names share a leading
+  word, `verify`, so a hypothetical R8 pointed at exports would have bucketed all four. It would
+  have bucketed them **under the verb** — the one dimension that is identical across the group and
+  therefore carries no information — and proposed folding on it. The tell that the seam is the real
+  dimension came from elsewhere: the module's own docblock named the group by wildcard (_"the
+  relevant `verify*Contract` function"_), and a name you can only write with a glob is a dimension
+  the export names are refusing to carry.
+  **Fixed** — one `conformance` namespace with `store` / `adapter` / `sink` / `fingerprint` /
+  `assert` / `fixture`. The dimension is the **seam**, and it was already discriminated in the
+  return value: `ContractReport.seam` carries exactly those four values, so the fold only makes the
+  export surface agree with the report every one of them already produced. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the six old names
+  are pinned **absent** in `public-api-surface.spec.ts` beside the parsers and the secret functions,
+  and the namespace is pinned as a whole rather than member-by-member.
+  _Why `fixture` is inside:_ it is the one member that is not a verifier, and the test applied was
+  whether the name is **exhaustive over its contents** — not whether the members share a signature
+  (`secrets` already holds a registrar, a predicate and a transform).
+  `adapterContractFixture` is the SERVER half of the adapter contract, the pure function
+  `conformance.adapter` verifies a transport against, and it has no use apart from it — the same
+  pairing that put `format` beside `parse`. Left standalone it would have been one loose
+  `*Contract*`-spelled name beside the namespace that absorbed the other five, which is the state
+  the fold exists to end.
+  _Cost, and why this seam first:_ genuinely zero. `stitchapi/testing` is imported by `*.spec.ts`
+  and never reaches a production bundle, and the subpath is not size-gated — measured both sides,
+  and all three scenarios the gate does cover are byte-identical (whole entry 24.60 KB,
+  `import { stitch }` 21.82 KB, `stitchapi/auth` 5.22 KB). The implementations stay plain module
+  functions in `testing.ts`, so the namespace is a thin facade rather than an object welding six
+  functions onto a consumer's path.
+  _The one hazard worth recording:_ the churn was ~50 files and all but three were mechanical. A
+  namespace-valued export is **invisible to a flat `Object.keys` scan**, and three scenario proofs
+  enumerate the runtime export surface to prove an ABSENCE — that nothing verifies an inbound
+  signature, that nothing names a fixture's recording date, that no verifier faces a vendor. Two
+  read the live module and now descend one level into namespace exports; the third grepped the
+  source for `export function verify…` and now reads the facade instead. Left alone, all three
+  would have kept passing while measuring less, which is the failure mode a fold like this
+  introduces anywhere an absence is proved by enumeration — in this repo or in a consumer's.
+- **No numbered rule — an export-surface fold (the query key, 2026-08-28)** — this entry cites no
+  principle, because none reaches it.
+  [P24](#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope) is the closest in
+  spirit — members sharing one subject fold into one envelope — but it governs **config fields**,
+  and R8 enforces it by reading a package's option _types_. A **barrel** is outside both its
+  wording and its lint, so nothing flagged this and nothing would have. What the fold follows is
+  precedent, not a rule: the **P17/P25 encode-direction** entry above
+  (`parseDuration`/`parseBytes`/`parseRate` → `duration`/`size`/`rate`) and core's redaction hatch
+  (`registerSecretKey`/`isSecretKey`/`redactSecretsDeep` → `secrets`). Recorded here so the third
+  instance of a pattern with no rule behind it is at least written down; whether it earns a
+  numbered principle is a separate call.
+
+    `@stitchapi/query-core`'s `deriveQueryKey`/`nameOf`/`keyInputFor` were three verb-prefixed
+    names for one two-segment tuple, and their own JSDoc said as much — "the first segment of a
+    derived query key", "the second segment" — while `deriveQueryKey` wore the exact
+    `parseDuration` shape the grammars had already moved away from. **Fixed** — one `stitchKey`
+    namespace (`of`/`name`/`input`), the segment named at the call site. Hard break, no alias
+    ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel); the three old
+    names are pinned **absent** in `packages/query-core/test/query.spec.ts`, which is where a
+    fold's pins live for a package with no `public-api-surface.spec.ts` of its own.
+
+    _The re-export surface is the whole point:_ this fold differs from its two predecessors in
+    that the trio did not sit on one barrel. `@stitchapi/react`, `/vue`, `/svelte` and `/angular`
+    each re-exported all three wholesale, so one derivation carried **fifteen** public names, and
+    a rename that reads as a three-name change is a five-package change. Nothing measures that —
+    R8 reads one package's config types, and no gate reads a re-export chain — which is the
+    argument for recording it here. The pin sits in query-core alone and still covers all five:
+    the four bindings re-export **from** this package, so a name absent here cannot reappear on
+    theirs. `@stitchapi/solid` is the fifth binding and re-exports only the adapter; that
+    divergence predates the fold and is left standing.
+    _Why `stitchKey` and not `queryKey`:_
+    [P22](#p22--a-standards-interop-contract-uses-the-standards-field-names) keeps TanStack's own
+    field names verbatim **inside** the options object — `queryKey` and `queryFn` are theirs — which
+    is precisely why the export beside it may not take that word. A bare `queryKey` export sitting
+    next to a `queryKey` field that means something narrower is the
+    [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one) collision that made
+    the adapter `stitchQueryOptions` rather than `queryOptions`
+    ([ADR 0012](adr/0012-integration-symbol-naming.md)). P22's carve-out is scoped to the interop
+    _payload_, not to the vocabulary around it; the absence of a bare `queryKey` is pinned with the
+    fold so the shorter spelling cannot arrive later for symmetry.
+    _The facade obligation, and its measured price:_ a namespace object does not tree-shake, so the
+    three implementations stay plain module functions and the namespace is a thin `as const` facade
+    over them, with query-core's own call sites on the functions. Measured both sides: query-core's
+    entry does not move (1598 → 1597 B gzip) and its `createStitchQuery`-only and
+    `stitchQueryOptions`-only scenarios are byte-identical, but the React and Vue **hook-only**
+    scenarios grow **+43 B gzip each**, because those two bindings sanitise their dep key through
+    the grammar across a package boundary and so retain the whole namespace. Cross-package, a
+    consumer gets the namespace or nothing — the same trade `secrets` made when query-core moved to
+    `secrets.has`. Recorded here rather than rounded to "free".
+
 - **The export-surface analogue of P24 (secret redaction, 2026-08-28)** — P24 folds a shared
   field-name prefix in a house **contract** into an envelope. The barrel states the same rule for
   **exports** in prose rather than as a numbered principle — "one name per dimension, the direction
@@ -1328,6 +1786,160 @@ shape, not as today's surface: nothing on the surface carries an alias.
     now sits once on the namespace's JSDoc and once in the reference page, the same relocation
     `size` made when it stopped being `parseBytes`.
 
+- **P16 (the seam-only config slot, 2026-09-03)** — the rule's projection clause says a config
+  field is added to `StitchConfig` and **projected** (`SeamConfig = Omit<StitchConfig, …>`),
+  never re-declared per surface. One field was: `secretStore`, the hardened backend for the auth
+  vault, declared on `SeamOptions = SeamConfig & { secretStore?: StitchStore }`. The cost was not
+  aesthetic. Three surfaces type their config slot as `SeamConfig` and therefore could not reach
+  the capability at all: a standalone `stitch()` (the engine built `vaultView(store)` with no
+  hook, so an RN app wanting SecureStore for its session cookie had to adopt a seam), fastify's
+  `seamConfig`, and a nest **feature** seam's `config` — while nest's `forRoot` had it only
+  because `StitchModuleOptions extends SeamOptions`. **Fixed** — `vault?: StitchStore` on
+  `StitchConfig`, and `SeamOptions` **deleted** (with nothing left to add, the second type was
+  itself the defect). Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel).
+  _The name came from the codebase._ ADR 0002 §4, `SharedRuntime.vault`, `AuthContext.vault`, the
+  redaction drop-list and the docs all called this the **vault**; only the option that configured
+  it said `secretStore`, so its JSDoc had to translate — "Backend for the vault" — which is the
+  tell ([P1](#p1--one-word-one-concept-one-value-space): one concept, one word). The config slot
+  names the **backend**, the runtime the namespaced **view** over it — the same two layers `store`
+  already spans, not a [P2](#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)
+  collision.
+  **No ratchet could have found it, on two counts** — the same pair the `total`/`perAttempt` entry
+  records. `SeamOptions` is a `type X = A & { … }` **intersection literal**, which no member rule
+  scans (the limitation is written into `check-contract.mjs` itself); and even scanned, **R8** needs
+  a shared _leading_ word, while `store`/`secretStore` share a trailing one. The gate is now a
+  type-level assert instead of a lint: `Exclude<keyof Parameters<typeof seam>[0], keyof StitchConfig>`
+  must be `never` (`extends-inference.test-d.ts` §8b), so the next seam-only slot fails to compile
+  rather than shipping a capability three surfaces cannot name.
+  _Redaction came for free, by construction:_ adding the slot to `StitchConfigAnatomy` as
+  `dropped: 'redact'` broke `contract-p0.spec.ts` until the fixture sampled a live `vault` — the
+  anatomy doing exactly the job [§7](#7-enforcement)'s note describes, a new must-not-appear slot
+  caught at compile time rather than by review.
+
+### 2026-09 pre-release audit (the last window before the stable tag)
+
+An exhaustive pass over the published surface, run against a gate that had itself gone stale.
+Everything below is **landed**; recorded here so the next audit does not re-derive it. All
+breaks are hard breaks, no aliases
+([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) — still pre-stable).
+
+- **P15 (circuit defaults)** `createCircuit` resolves `failures`/`cooldown` to `5` / `'30s'`
+  instead of throwing; both stay optional, the slot type and the `[failures, cooldown]`
+  shorthand are unchanged. The rule is not amended — the slot is re-decided against it, with
+  the reasoning under [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults).
+- **P20 (`{}` at the remaining slots)** `StitchConfig.extends` narrows
+  `Partial<StitchConfig>` → `AtLeastOne<StitchConfig>` in both the single and list forms (the
+  `Fragment` alias in `stitch.ts` follows); `SecurityScheme`'s oauth2 arm makes
+  `flows.clientCredentials` **required**, so `flows: {}` is a type error; and the `bind` helper
+  on the **sse / stream / graphql / llm** surfaces takes `Seam | AtLeastOne<SeamConfig>`, so
+  `bind({})` no longer type-checks and silently constructs a second runtime — the all-defaults
+  spelling is `bind(seam())`.
+- **P20 + P13 (fastify, one seam slot)** `seamConfig` is **gone**: `seam` is the single field,
+  taking either a prebuilt `Seam` or `AtLeastOne<SeamConfig>`, discriminated at runtime by
+  core's `isSeam()`. `FastifyStitchPluginSeamOptions`/`…ConfigOptions` become
+  `FastifyStitchPluginBorrowOptions`/`…BuildOptions` (`FastifyStitchPluginOptions` keeps its
+  name as their union). `logger` moves off the shared base onto the **build** arm only, with
+  `logger?: never` on the borrow arm — `stitchPlugin({ seam: prebuilt, logger: true })` is now a
+  compile error rather than a silent no-op (P13: a toggle must enable something), and its JSDoc
+  states the real rule instead of the old "ignored when the prebuilt seam has its own trace".
+- **P1 (one word for the concurrency budget)** `StitchStore.lease`'s third parameter is
+  `concurrency`, not `limit`, matching the `throttle.concurrency` authoring slot — through
+  `memoryStore.lease`, the `vaultView` forwarder, `createStoreThrottle`'s local, `RedisDriver.lease`
+  and all three bundled redis adapters (`fromIoredis`/`fromNodeRedis`/`fromUpstash`), and
+  `denoKvStore`'s implementation.
+- **P1 (the time seam)** `AsyncStorageStoreOptions.now?: () => number` → `clock?: Clock`
+  (defaulting to `systemClock`); `ExpoSecureStoreOptions` is an alias of it and inherits the
+  change with no re-declaration, pinned by test.
+- **P1 (drift level)** `DriftOptions.severity` → `level`, matching `DriftFinding.level`. The
+  narrow type is derived — `Exclude<DriftLevel, 'error'>` — and the re-declared `DriftSeverity`
+  alias is deleted, so there is one spelling and one value-space.
+- **P18 (redis lease pair)** `RedisDriver.releaseLease` → `release`, the word
+  `StitchStore.release` already uses for the same operation; the JSDoc that defended the
+  divergence is replaced by the reasoning for the rename.
+- **P3 (conformance fixture)** `FixtureResponse` → `FixtureResult`. It is house-coined (it
+  carries the house-only `delay`), so the banned `*Response` suffix applies and the
+  produced-shape suffix is `*Result`. `delay` deliberately stays a raw-ms `number`: core
+  **produces** it, which is P17's emitted complement, not its widening clause.
+- **P5 (item payload words)** `@stitchapi/download`'s `ItemResult` uses the house pair —
+  `value` → **`data`** on the fulfilled arm, `reason` → **`error`** on the rejected arm
+  (`classifyFailure`'s first parameter is renamed to match; the positional signature is
+  unchanged).
+- **P6 / P24 (derivation-function convention)** `CookieSessionOptions.loginInput` →
+  **`credentialsOf`** — the `Of` suffix says it is a function, the stem says what it returns.
+  This also **dissolves the `login`-prefix P24 group**, which had been carrying a lint
+  carve-out to stay flat; `login` itself is unchanged.
+- **P8 (deliberate divergence, declared on both sides)** `BackoffOptions.base`/`.max` now carry
+  a DELIBERATE DIVERGENCE paragraph naming `@stitchapi/deno-kv`'s 5ms / 250ms resolution of the
+  same exported envelope, and deno-kv's `DenoKvRetryOptions.backoff` carries the reciprocal
+  cross-link (its own bounds against core's 100ms / 10s). The reason is one sentence in both
+  places: a compare-and-set re-read of a local KV cell wants a de-phasing tick, not a network
+  recovery window. deno-kv keeps core's shared `BackoffOptions` rather than declaring its own.
+- **P10 (download error taxonomy)** `DownloadCancelledError` and `DownloadIdleTimeoutError`
+  extend `StitchError` (the `RateLimitError` precedent), inheriting
+  `status?`/`attempts`/`body?`/`url?` and keeping `name` as the discriminator. **An
+  `instanceof` chain testing both must test the subclass first.** And on P10's second half — no
+  field reachable only through `.cause` — a stalled item now settles with the
+  `DownloadIdleTimeoutError` **instance** the batch raised, so `ItemResult.error instanceof
+DownloadIdleTimeoutError` and `.idle` read directly off the settled item. `toStitchError`'s
+  `instanceof StitchError` pass-through is load-bearing for this and says so.
+  `DownloadCancelledError` was checked for inertness and is **not** inert — the `cancelled` arm
+  deliberately carries no `error`, but the instance is the abort reason on the item's signal and
+  reaches a caller's `hooks.onError` as `ctx.error` — so no de-export is owed.
+- **P11 (async/sync parity)** `serveStdio(...)`'s `close` is `() => Promise<void>` like every
+  other `close()` on the surface, and its anonymous return shape is promoted to an exported
+  **`StdioHandle`** (the `ServeHandle` precedent).
+- **P14 / P16 (auth option-type parity)** `ApiKeyOptions` is exported, like every sibling auth
+  builder's option type; the JSDoc sentence claiming none of them were exported is replaced with
+  the parity argument, which now runs the other way.
+- **P17 (test-kit durations)** `ManualClock.advance` takes `number | string` and parses the
+  token **before** the arithmetic, so `clock.advance('30s')` moves virtual time 30000ms instead
+  of string-concatenating. `SseFixtureEvent.retry` takes `number | string`, parsed at the single
+  write site in `frameSse`, so a fixture `retry: '3s'` reaches the wire as `retry: 3000` rather
+  than the `retry: 3s` the SSE grammar silently ignores; an unreadable token now emits **no**
+  `retry:` line rather than a dead one.
+- **P24 (inertness, carve-out (b))** the three postMessage verb option types
+  (`RequestOptions`/`EmitOptions`/`EventsOptions`) no longer inherit `StitchConfig.adapter` —
+  which the engine can never call here, since `cfg.kind.execute ?? rt.adapter` always resolves to
+  the surface's `execute` — and they share one base alias `PostMessageVerbConfig` so they cannot
+  drift apart. Same rule, same release: `@stitchapi/shell`'s `ShellOptions` omit widens to
+  `Omit<StitchConfig, 'kind' | 'wire' | 'adapter'>`, so a transport can no longer be passed to a
+  surface whose `execute` replaces it.
+- **P16 (SSE consume loop must survive a throw)** express's `streamStitchSse` gained the peers'
+  `catch` arm before the `finally`: `error.observe?.(err)` fires, a named `event: error` frame is
+  written while the connection is live (generic token by default, `error.data(toErrorEvent(err))`
+  on opt-in), and the response is **ended** instead of the promise rejecting out of the Express
+  handler.
+- **P9 / P16 (one capability, one name; the divergent side is qualified)** three moves that read
+  as one rule. `@stitchapi/next` renames `SseResponseOptions` → **`StreamStitchSseOptions`**, the
+  spelling the other five SSE-capable hosts already ship. `@stitchapi/express` splits the name it
+  had overloaded: `StreamStitchSseOptions` is now the bare `SseEmitOptions` alias the peers ship,
+  and the Express-only `req` fallback moves to a new exported
+  `ExpressStreamStitchSseOptions = SseEmitOptions & { req?: Request }`, which is what
+  `streamStitchSse` accepts. `@stitchapi/vue` renames `UseStitchOptions<T>` →
+  **`VueUseStitchOptions<T>`** (declaration + all 7 uses), following its own
+  `VueUseStitchResult` precedent — react keeps the bare name as the reference declaration,
+  because it carries the react-only `deps` and react-native/expo republish it through
+  `export *`. The interface's JSDoc, which had asserted nothing about its own name, now records
+  the qualification rationale, and vue's README gained the Options section it never had.
+- **P16 (principal resolver parity)** nest's `StitchScopedFeatureOptions.principal` widens to
+  `(req: any) => string | undefined` and the request-scoped factory branches —
+  `const id = opts.principal(req); return id !== undefined ? base.as(id) : base;` — so an
+  anonymous request falls back to the unbound base seam, the behaviour express and fastify
+  already document. Member JSDoc, `forFeatureScoped`'s JSDoc, the inline factory comment and the
+  README example (`req.user?.tenantId ?? 'anonymous'` → `req.user?.tenantId`) all follow.
+- **Stale doc, flagged rather than swept** the redis README claimed "**Concurrency limits stay
+  in-process** (a shared store distributes the rate budget, not the concurrency semaphore)",
+  which [ADR 0025](adr/0025-fleet-wide-concurrency-by-lease.md) made false — all three bundled
+  adapters implement the lease pair and `redisStore` forwards it. Corrected to say `concurrency`
+  is fleet-wide.
+
+**And the gate itself.** The same audit re-derived all 77 allow-list entries in
+`check-contract.mjs` and found that a third of the recorded rationales described a tree that no
+longer existed, plus four defects in the gate's own mechanics — the reason those entries could
+rot unnoticed. Both halves are recorded in [§7](#7-enforcement) under _The 2026-09 gate
+reconciliation_.
+
 ## 7. Enforcement
 
 [`scripts/check-contract.mjs`](../scripts/check-contract.mjs) is a **ratchet**, run as
@@ -1345,7 +1957,11 @@ shape, not as today's surface: nothing on the surface carries an alias.
   violation. Two of the first three rule additions turned up a pre-existing match, which is
   the argument for writing the gate with the rule rather than after it; the third,
   **R10** (2026-08-06), landed **green** — the P4 sweep it gates had already been done by
-  hand, so it is a regression guard, not a fix. The ratchet mechanics
+  hand, so it is a regression guard, not a fix. **R11** (2026-09-04) makes it three of four:
+  its one match, `BatchProgress.ratePerSec`, was found by a by-hand census days earlier and
+  fixed in the very commit that adds the rule, so R11 too enters at **zero** — but as the
+  guard for a defect the surface had actually shipped, not a hypothetical one. The ratchet
+  mechanics
   stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
   guarantee: the surface can only get more consistent, never less.
 - Rules implemented (high-precision, source-text level): **R1** banned type-name
@@ -1354,7 +1970,11 @@ shape, not as today's surface: nothing on the surface carries an alias.
   (P17); **R3** function-typed `key` (P6); **R4** a `scope: 'stitch'|'host'` pool
   overload (P2); **R5** the same identifier exported by ≥2 published packages
   (P9/P16), against an allow-list of the blessed one-declaration-site re-exports and
-  identical-by-design host envelopes; **R6** a consumer-input slot — top-level, nested,
+  identical-by-design host envelopes. It reads **every entry point** in each package's
+  `exports` map (all 17 of core's, not just the root barrel) and expands a
+  **relative** `export * from` — both fixed 2026-09, see the reconciliation note below;
+  a **cross-package** `export *` is deliberately not expanded, since a blanket
+  republication of a sibling cannot introduce a divergent shape; **R6** a consumer-input slot — top-level, nested,
   or **inherited** — with an all-optional bag in **any arm** of its union, so `{}`
   type-checks (P20); the bag is resolved across files within a package and against
   core's, through `extends` including a non-exported base, and through **one level** of
@@ -1378,8 +1998,8 @@ shape, not as today's surface: nothing on the surface carries an alias.
   **R9** a consumer-authored duration or byte size typed `number` with no `string` arm
   (P17/P25), plus the reverse — a `chars` code-unit cap that grew one. Type info is not
   needed because two source-text signals carry it: a **closed, curated member
-  vocabulary** (`ttl`, `timeout`, `total`, `each`, `delay`, `cooldown`, `skew`,
-  `after`, `base`, `max`, `since`, `interval`, `resumeRetry`)
+  vocabulary** (`ttl`, `timeout`, `total`, `each`, `delay`, `idle`, `cooldown`, `skew`,
+  `after`, `base`, `max`, `lease`, `resumeRetry`)
   and P3's own `*Options` = consumer-input signal, which excludes every produced shape
   **by name** so the emitted complement can never be flagged. A vocabulary rather than a
   name pattern because the one thing that must not be caught is a **count**, and P4
@@ -1401,6 +2021,18 @@ shape, not as today's surface: nothing on the surface carries an alias.
   (`CacheOptions.maxEntries`, `ReconnectOptions.maxAttempts`, `CircuitOptions.failureThreshold`,
   `DenoKvStoreOptions.maxIncrRetries`, `RetryOptions.maxMs`/`maxDelay`) on the trees that
   carried them, and finds nothing on today's surface.
+  **R11** a number-typed field or parameter whose trailing camel word is a **unit**
+  (`Sec`, `Seconds`, `Bytes`, `Kb`, `Nanos`, …) — P17's rule for every unit except the `Ms`
+  that **R2** owns, so one defect is reported once. It is R2's file-level scan, not an
+  interface walk, because P17 binds a parameter of an exported function as well as a field.
+  Precision comes from a **numeric type gate** instead of a container filter: a unit only ever
+  qualifies a number, which separates `payloadBytes: number` (a count) from
+  `magicBytes: Uint8Array` (a payload) with no type info, and an aggregate type is skipped
+  rather than guessed at. Only a **compound** name matches — a bare lowercase `chars`/`bytes`
+  is P25's blessed inner-cap spelling, where the envelope names the subject and the field names
+  the dimension. `Min`/`Mins` are deliberately left out (`poolMin` is a minimum, not minutes);
+  OTLP's `*UnixNano`/`*UnixSeconds` instants take R2's carve-out. One allow-list entry today:
+  `retryAfterSeconds`, the `Retry-After` delta-seconds P17's unit-hazard clause already names.
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
   same-name-different-**shape** detection, default-value inversion (P8), and the
   **parse half** of P17/P25 — R9 pins the type, but whether the widened value actually
@@ -1428,6 +2060,114 @@ shape, not as today's surface: nothing on the surface carries an alias.
   collapse unrelated members (`clientId`/`stitchId`, every `*Options` field) and is exactly the
   guess this ratchet refuses, so the rule stays leading-word and this class is found by **reading**,
   not by lint. When you find one, the fix is the same fold and a §6 entry saying R8 could not see it.
+
+### The 2026-09 gate reconciliation
+
+An allow-list is only worth what its rationales are worth. The pre-release audit re-derived
+all **77** entries in `check-contract.mjs` against the tree and found two classes of rot —
+entries naming symbols that no longer exist, and entries whose recorded reason was factually
+wrong about today's source — plus four defects in the gate's own mechanics, which are why the
+first two classes could accumulate unseen. All are fixed; the gate still reports **zero**, and
+`scripts/contract-violations.baseline.json` is still empty.
+
+**Mechanics (the reason the rot went unnoticed).**
+
+- **R5 read one file per package.** It scanned `src/index.ts` only, which is the whole
+  published surface for 33 of the 34 published packages — and a fraction of core's, which
+  publishes **17** entry points — the root barrel plus sixteen subpaths (`stitchapi/serve`, `/mcp`, `/registry`, `/testing`,
+  `/fingerprint`, `/cache`, `/auth`, `/graphql`, `/sse`, `/sse-emit`, `/stream`, `/download`,
+  `/postmessage`, `/llm`, `/pipe`, `/xhr`). The entire serve/mcp/auth/llm/pipe vocabulary was
+  outside the uniqueness map. It now resolves every entry point from the package's `exports`
+  map back to its source file.
+- **R5 did not expand `export *`.** Core declares **both** `StitchStore` and `StitchError` in
+  `types.ts` and publishes them via `export * from './types'`, so neither name ever entered the
+  map and `dirs.size > 1` was **unreachable** for two of R5's three active watch entries. The
+  script's own comment claimed the curated watch list covered this gap; it could not — the gap
+  was in the map the list is checked against. Relative `export *` is now expanded recursively.
+  A **cross-package** `export *` (react-native republishing react, expo republishing
+  react-native) is deliberately **not**: TypeScript forbids re-declaring a name the star already
+  exports, so a blanket republication carries one declaration onto more surfaces and answers
+  R5's question — "do two packages **declare** this differently?" — with "no" by construction.
+  Expanding it would report react/react-native/expo for `UseStitchResult` and `UseStitchOptions`
+  purely for republishing them.
+- **The `@deprecated` skip was wider than the rule it defers to.** `deprecatedTagIndex()` —
+  **R7**, whose whole job is to report a marker — required the marker at **tag position**.
+  `deprecatedBefore()` — the skip consulted by **R1, R2, R3, R4, R6, R8, R9, R10 and R11** —
+  matched the text **anywhere** in the preceding JSDoc block. So a doc comment that merely
+  mentioned the word in prose switched **nine** rules off over that declaration while R7 stayed
+  silent: an exemption with no compensating finding anywhere. Both predicates now share one
+  `DEPRECATED_TAG` definition.
+- **`tsFiles()` exempted `*.generated.*`.** No such file exists under any `packages/*/src`, so
+  it exempted nothing; its only reachable future effect would be to blind the gate to a
+  generated published surface — precisely the surface no human reviews by hand. Removed.
+
+**Rationale rot (the entries themselves).** Nine were deleted as dead — `deriveQueryKey` /
+`nameOf` / `keyInputFor` (folded into query-core's `stitchKey` namespace; `nameOf` survives
+only as a core-internal local), `DocSearchHit.page` (the exempted members moved to the
+**unexported** `IndexedDoc`), the `WIDENED_MEMBER` names `interval` and `since` (on no
+published surface at all), and the three P24 carve-outs this release dissolved at the source:
+`FastifyStitchPluginSeamOptions.seam` + `FastifyStitchPluginConfigOptions.seam` (the
+`seam`/`seamConfig` XOR pair is now one `seam` field) and `CookieSessionOptions.login`
+(`loginInput` is now `credentialsOf`). `WIDENED_MEMBER.perAttempt` was repointed to **`each`**
+(renamed in #627) and **`idle`** added — `BatchOptions.idle` in `@stitchapi/download` is a
+compliant authored duration the closed list had simply never heard of, which is not the same
+thing as passing.
+
+Three entries were **kept but rewritten**, because a wrong reason is worse than no reason —
+**two of them still stand.** The third did not survive its own correction: the honest
+rationale is what exposed the error it still carried, and `WindowChannelOptions.target` was
+**deleted** on 2026-09-14 rather than rewritten twice. Its bullet stays below for the record:
+
+- `StreamStitchSseOptions`'s de-listing said six packages where there were five, counted five
+  `extends` and one alias where the source had one `extends` and four aliases, and called the
+  set "identical by construction" — which express falsified by carrying a `req` member. All
+  three facts moved this release: it is now six packages (next's rename), **five** of them the
+  bare alias `type StreamStitchSseOptions = SseEmitOptions` and **one** (next) an `extends`
+  adding two optional `Response`-construction members, and express is on the bare alias with
+  its divergence framework-qualified onto `ExpressStreamStitchSseOptions`. The de-listing holds
+  on the honest version: five identical by sharing core's one declaration, and next a strict
+  optional-only superset.
+- `WindowChannelOptions.target` claimed a "coincidental collision" between unrelated members.
+  They are not unrelated: `target` (the receiving `Window`, or a thunk for one) and
+  `targetOrigin` are the **receiver and the address of one call** —
+  `resolveTarget().postMessage(msg, opts.targetOrigin, …)` — and `targetOrigin` is also the
+  default for `allowedOrigins`. It is a real P24 group that stays flat on
+  [P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): `targetOrigin` is
+  `window.postMessage()`'s own parameter name for exactly this value, and `target: { window,
+origin }` would rename the half the DOM owns. **(Deleted 2026-09-14 — the rewrite got the group
+  right and the exemption wrong.** The `postMessage` call is **positional**, so no identity
+  mapping existed to protect, and the rewrite's own clinching sentence — one field is the other's
+  default — names a dimension that does not include `target`. Folded to `origins: { to, from? }`;
+  see the reversal under P24 carve-out (a).**)**
+- The R1 note on `AppState` was wrong twice over. There are **two** byte-identical ambient
+  mirrors (`packages/react-native/src/native-modules.d.ts` **and**
+  `packages/expo/src/native-modules.d.ts`), and what keeps them out of R1 is **not** the
+  `.d.ts` exclusion in `tsFiles()` — it is the **declaration-kind filter**: `AppState` is an
+  `export const`, and R1 scans `interface`/`type`/`class` only.
+
+Two more were recorded honestly rather than left reading as coverage. `WIDENED_MEMBER.after` is
+live and correctly typed but **unreachable**: `SurfaceOutcome` is a `type`-alias union no member
+rule scans, and it fails the authoring-surface filter besides — it is a forward guard and now
+says so. `AUTHORED_SEAM`'s `Adapter` is **inert**: it is declared
+`export type Adapter = ((req) => Promise<AdapterResult>) & { … }`, an intersection with a type
+literal, and R9 walks `export interface` blocks only, so the name can never match whatever it
+grows. Marking it inert was chosen over making it scannable — teaching the member rules to walk
+type literals is the `MockRoute`/`LlmOptions` blind spot deferred to the type-aware phase, and
+widening it for one seam would rewrite R8/R9/R10's precision story wholesale.
+
+Two smaller repairs close it out. `CONVENTIONAL_MEMBER`'s percentile half was **fixed rather
+than dropped**: the comment above it states the policy (a percentile family is structurally
+exempt) and the regex failed to implement it. `^[Pp]\d+$` matched only a **bare** `p50`/`p95`/
+`p99`, and a bare percentile can never be in a group — `splitCamel()` makes each its own
+leading word — so that half was unreachable, while the spelling that **can** group
+(`latencyP50`/`latencyP95`, sharing `latency`) was exactly what it could not match. The added
+`[a-z0-9]P\d+$` requires the `P` to start a camel word, so `http2` is not a percentile. And
+`UseStitchOptions` joined `UNIQUE_WATCH` beside its `UseStitchResult` twin, since after vue's
+rename nothing else holds the react/vue pair apart. Finally, the blanket phrase "(and the rest
+of the query family)" — which de-listed an unbounded, unnamed set two lines under a standard
+demanding "one line of rationale each" — is replaced by the ten query-core canonicals that are
+actually exported by ≥2 packages, so a new one is a deliberate addition rather than something
+already covered.
 
 ### The unknown-key ratchet
 
@@ -1481,11 +2221,21 @@ and the second rule keeps its table honest.
   rule 1 found** — `StitchConfig` plus the four that intersect it (`LlmOptions`,
   `RequestOptions`, `EmitOptions`, `EventsOptions`, each of which adds its own fields) — and
   every interface the table already covers, then fails on any field naming a `…Options` /
-  `…Schemas` bag (plus `Hooks`) that has no entry, at **any** depth. It currently covers 17
-  slots: 13 envelopes plus `wire.multipart`, `retry.backoff`, `stream.buffer`,
-  `sse.reconnect`. That second level is not hypothetical: `retry.backoff`'s `baseMs`→`base`
-  / `maxMs`→`max` renames in [§6](#6-migration-record-2026-07-08-hard-break-sweep) happened
-  there.
+  `…Schemas` bag (plus `Hooks`) that has no entry, at **any** depth. It currently covers **19**
+  slots — the number `pnpm check:unknown-keys` prints — over **three** levels: 13 top-level
+  envelopes; 5 at the second level (`wire.multipart`, `stream.buffer`, `sse.reconnect`,
+  `retry.backoff`, `cache.fingerprint`); and one at the **third**,
+  `cache.fingerprint.transform`. Neither level below the root is hypothetical:
+  `retry.backoff`'s `baseMs`→`base` / `maxMs`→`max` renames in
+  [§6](#6-migration-record-2026-07-08-hard-break-sweep) happened at the second, and the third
+  is where `cache.fingerprint.transform`'s `version` / `trust` pair lives — the fold of
+  `CacheOptions.transformVersion` + `trustTransform` (§6, P24).
+  _(Corrected 2026-09: this sentence read "17 slots … 13 envelopes plus `wire.multipart`,
+  `retry.backoff`, `stream.buffer`, `sse.reconnect`" and called that "that second level".
+  It was written in `b44636a2` (#612), which shipped the guard; the two `cache` slots landed
+  afterwards in `a24414ad` (#626) and neither the count nor the depth claim followed them.
+  The table itself — `NestedEnvelopes` in [`types.ts`](../packages/core/src/types.ts) — has
+  been right the whole time.)_
 - **The class is confined to those root bags, and that was swept rather than assumed.** Every
   other envelope-consuming surface in the repo takes its bag as a _direct annotation_, which
   keeps ordinary excess-property checking at every depth. Verified by probe with a valid

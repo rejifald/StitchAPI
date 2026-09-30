@@ -126,7 +126,7 @@ describe('cookieSession content-aware refresh (soft wall)', () => {
                         typeof res.body === 'string' &&
                         /log in/i.test(res.body),
                 },
-                loginInput: () => ({
+                credentialsOf: () => ({
                     body: { u: env('SOFT_USER')(), p: env('SOFT_PASS')() },
                 }),
             }),

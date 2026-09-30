@@ -384,8 +384,7 @@ test('a stitch built from shorthand exposes the normalized objects on __config',
 const oauth2Fragment = {
     auth: oauth2({
         tokenUrl: 'https://auth.example.com/token',
-        clientId: 'id',
-        clientSecret: 'sec',
+        client: { id: 'id', secret: 'sec' },
     }),
 };
 

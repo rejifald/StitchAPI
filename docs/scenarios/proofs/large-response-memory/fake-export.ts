@@ -16,7 +16,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 const enc = new TextEncoder();
@@ -282,7 +282,7 @@ export function noNewlines(rows: number): Wire {
 
 /** An adapter that hands back the live body. Mirrors `fetchAdapter` when `req.stream` is set. */
 export function streamingAdapter(wire: Wire, status = 200): Adapter {
-    return (req: AdapterRequest): Promise<AdapterResponse> => {
+    return (req: AdapterRequest): Promise<AdapterResult> => {
         if (!req.stream)
             return Promise.reject(new Error('expected req.stream to be set'));
         return Promise.resolve({ status, headers: {}, body: wire.body });
@@ -310,7 +310,7 @@ export interface BufferHooks {
  * path's true high-water mark, and by the time `await stitch()` resolves it has already passed.
  */
 export function bufferingAdapter(wire: Wire, hooks: BufferHooks = {}): Adapter {
-    return async (req: AdapterRequest): Promise<AdapterResponse> => {
+    return async (req: AdapterRequest): Promise<AdapterResult> => {
         if (req.stream)
             return Promise.reject(new Error('did not expect req.stream'));
         const reader = wire.body.getReader();

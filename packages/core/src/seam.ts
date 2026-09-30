@@ -4,8 +4,8 @@
 // job is the trusted principal boundary: `seam.as(req.user.id)` binds identity in the closure, so
 // a caller can never name another principal (the principal is never in `StitchInput`). Auth is
 // principal-scoped (separate sessions, no bleed); throttle stays shared (one bucket).
-import { compact } from './compact';
 import {
+    type Fragment,
     type SharedRuntime,
     compose,
     makeStitch,
@@ -25,7 +25,7 @@ import type {
     PrincipalSeam,
     RedactedStitchConfig,
     Seam,
-    SeamOptions,
+    SeamConfig,
     Stitch,
     StitchConfig,
     StitchStore,
@@ -72,8 +72,7 @@ function seamBucket(
 interface SharedSeam {
     fragment: Partial<StitchConfig>;
     store: StitchStore;
-    secretStore?: StitchStore; // raw backend behind the vault, when separate from `store`
-    vault: StitchStore;
+    vault: StitchStore; // the namespaced view; its backend is `fragment.vault ?? store`
     trace: TraceSink;
     throttle: Throttle;
     clock: Clock;
@@ -114,7 +113,12 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
                   : [own.extends];
         const cfg: Partial<StitchConfig> = {
             ...own,
-            extends: [shared.fragment, ...ownExtends],
+            // `extends` is `AtLeastOne<StitchConfig>`-based because P20 bans an empty object in a
+            // slot a CONSUMER writes down. `shared.fragment` is not written down by anyone: it is
+            // the layer this seam assembled from its own `SeamConfig`, and `seam()` with no options
+            // legitimately assembles an empty one. The cast asserts that provenance — it is the one
+            // site that puts an internally built partial into the authored-layer slot.
+            extends: [shared.fragment as Fragment, ...ownExtends],
         };
         if (isGql) {
             cfg.kind = graphqlSurface;
@@ -201,8 +205,10 @@ function rootHandle(shared: SharedSeam): Seam {
         async close() {
             await shared.trace.flush?.();
             await shared.store.close?.();
-            if (shared.secretStore && shared.secretStore !== shared.store)
-                await shared.secretStore.close?.();
+            // A separate vault backend is a second connection the seam opened, so it closes too;
+            // the default vault is a lens over `store`, already closed above.
+            const backend = shared.fragment.vault;
+            if (backend && backend !== shared.store) await backend.close?.();
             shared.stitches.length = 0;
         },
         get __config() {
@@ -215,7 +221,7 @@ function rootHandle(shared: SharedSeam): Seam {
 /**
  * Create a seam — the primitive for any **shared surface** (a third-party API, an internal
  * service). Pass the shared defaults its stitches inherit (baseUrl, headers, throttle, retry,
- * auth, sink) and, optionally, a hardened `secretStore` for the vault. Members are created with
+ * auth, sink, and a `vault` backend when the secrets want hardening). Members are created with
  * `.stitch()` / `.graphql()`; bind a principal with `.as(id)`; flush/close via the lifecycle.
  */
 // NOTE: deliberately NOT generic. `MultipartOnlyOnMultipartBody` needs to capture the argument
@@ -223,15 +229,17 @@ function rootHandle(shared: SharedSeam): Seam {
 // is the ONLY thing enforcing that a seam fragment cannot declare `input`/`output` (`SeamConfig`
 // Omits both; see `extends-inference.test-d.ts` §8). That structural guarantee is worth more than
 // catching a dead `multipart` on the seam fragment, which every member surface still catches.
-export function seam(options: SeamOptions = {}): Seam {
-    const { secretStore, ...rest } = options;
-    const fragment = rest as Partial<StitchConfig>;
+export function seam(options: SeamConfig = {}): Seam {
+    const fragment = options as Partial<StitchConfig>;
     const store = fragment.store ?? memoryStore();
     const clock = fragment.clock ?? systemClock;
-    const vault = vaultView(secretStore ?? store);
+    // ONE vault view for the whole seam, so every member's sessions land in the same namespace
+    // over the same backend — the engine's per-stitch fallback (`cfg.vault ?? store`) never runs
+    // for a member, because the seam injects this on the shared runtime.
+    const vault = vaultView(fragment.vault ?? store);
     const trace = resolveTrace(fragment.trace);
     const seamId = `s${(seamCounter += 1)}`;
-    const shared: SharedSeam = compact({
+    const shared: SharedSeam = {
         fragment,
         store,
         clock,
@@ -243,10 +251,7 @@ export function seam(options: SeamOptions = {}): Seam {
             seamId,
             clock,
         ),
-        // `compact`'s `const` generic would freeze `[]` to `readonly []`; SharedSeam.stitches
-        // is mutable, so pin the element type.
-        stitches: [] as Stitch[],
-        secretStore,
-    });
+        stitches: [],
+    };
     return rootHandle(shared);
 }

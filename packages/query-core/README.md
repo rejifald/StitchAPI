@@ -66,19 +66,19 @@ Snapshots are **identity-stable** between real changes — the store only hands 
 `@stitchapi/query-core` also owns the one shared implementation behind every framework binding's TanStack adapter — the key format cannot drift between frameworks:
 
 ```ts
-import { deriveQueryKey, stitchQueryOptions } from '@stitchapi/query-core';
+import { stitchKey, stitchQueryOptions } from '@stitchapi/query-core';
 import type { StitchQueryOptions } from '@stitchapi/query-core';
 
 // [name, sanitised input] — signal/onProgress dropped, secret header values redacted
-const key = deriveQueryKey(getUser, { params: { id: '1' } });
+const key = stitchKey.of(getUser, { params: { id: '1' } });
 
 // A TanStack-compatible `{ queryKey, queryFn }` POJO — no @tanstack/* dependency
 const options = stitchQueryOptions(getUser, { params: { id: '1' } });
 ```
 
 - **`stitchQueryOptions(stitch, input)`** returns a `StitchQueryOptions<T>` (`{ queryKey, queryFn }` — TanStack's own field names, kept verbatim as a standards-interop carve-out). Pass it straight to `useQuery` / `createQuery` / `injectQuery`.
-- **`deriveQueryKey(stitch, input)`** builds the canonical cache key: a stable stitch name plus a sanitised input.
-- **`nameOf(stitch)`** and **`keyInputFor(input)`** expose the two key segments for bindings that compose keys themselves. `keyInputFor` never puts the raw input in a key: it drops runtime-only `signal`/`onProgress` and redacts the values of secret-bearing headers (`authorization`, `cookie`, `*-token`, `*-api-key`, plus core's `secrets.has` names — including anything widened via `secrets.register`).
+- **`stitchKey.of(stitch, input)`** builds the canonical cache key: a stable stitch name plus a sanitised input.
+- **`stitchKey.name(stitch)`** and **`stitchKey.input(input)`** expose the two key segments for bindings that compose keys themselves. `stitchKey.input` never puts the raw input in a key: it drops runtime-only `signal`/`onProgress` and redacts the values of secret-bearing headers (`authorization`, `cookie`, `*-token`, `*-api-key`, plus core's `secrets.has` names — including anything widened via `secrets.register`).
 
 ## Example
 

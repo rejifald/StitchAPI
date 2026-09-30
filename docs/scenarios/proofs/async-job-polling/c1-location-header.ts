@@ -9,7 +9,7 @@
 import { stitch } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/surface';
 import { manualClock } from '../../../../packages/core/src/testing';
-import type { AdapterResponse } from '../../../../packages/core/src/types';
+import type { AdapterResult } from '../../../../packages/core/src/types';
 import { FakeJobApi, stateOf } from './fake-jobs';
 import { check, finish, heading, note } from './harness';
 
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
             paginate: {
                 // @ts-expect-error — `next` takes (prevBody, pagesFetched); there is no response
                 // (and so no headers) argument.
-                next: (_prev: unknown, _pages: number, _res: AdapterResponse) =>
+                next: (_prev: unknown, _pages: number, _res: AdapterResult) =>
                     undefined,
             },
         });
@@ -85,7 +85,7 @@ async function main(): Promise<void> {
             adapter: api.adapter(),
             clock,
             // @ts-expect-error — `transform` takes (body); there is no response argument.
-            transform: (body: unknown, _res: AdapterResponse) => body,
+            transform: (body: unknown, _res: AdapterResult) => body,
         });
         note('(c) `StitchConfig.transform`', '(body) => unknown');
     }
@@ -295,7 +295,7 @@ async function main(): Promise<void> {
 
     finish(
         'C1',
-        'the `Location` header IS reachable — `Surface.interpret` and `hooks.onResponse` both receive the full `AdapterResponse`, and assigning `ctx.req.url`/`ctx.req.method` in `hooks.onRequest` makes the 202→poll hop happen inside ONE stitch (measured: POST /jobs → 3× GET /jobs/job-1, 1 submit). Nothing built-in follows it: `paginate.next` and `transform` are handed the BODY only, and no public result surface (`data`, `.inspect().raw`, `.report()`) exposes response headers. The hook seam costs concurrency safety — two calls through one stitch orphaned job-1 (0 polls) and both polled job-2',
+        'the `Location` header IS reachable — `Surface.interpret` and `hooks.onResponse` both receive the full `AdapterResult`, and assigning `ctx.req.url`/`ctx.req.method` in `hooks.onRequest` makes the 202→poll hop happen inside ONE stitch (measured: POST /jobs → 3× GET /jobs/job-1, 1 submit). Nothing built-in follows it: `paginate.next` and `transform` are handed the BODY only, and no public result surface (`data`, `.inspect().raw`, `.report()`) exposes response headers. The hook seam costs concurrency safety — two calls through one stitch orphaned job-1 (0 polls) and both polled job-2',
     );
 }
 

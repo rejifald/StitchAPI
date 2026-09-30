@@ -70,6 +70,22 @@ const { data } = useSWR(id ? swrKey(getUser, { params: { id } }) : null, () =>
 );
 ```
 
+The key is `[name, input]`, but never your raw input. `name` is the stitch's
+`name ?? path ?? url ?? 'stitch'` (so two nameless stitches on different paths
+can't collide on one entry), and the input is sanitised: the runtime-only `signal` and
+`onProgress` are dropped — `onProgress` changes identity every render, which would
+refetch forever — and the **values** of secret-bearing headers are replaced with
+`[redacted]`. The header itself stays, so a call that legitimately varies by
+`accept-language` still gets its own entry.
+
+Secret headers are the fixed denylist (`authorization`, `proxy-authorization`,
+`cookie`, `set-cookie`, `x-api-key`, `x-auth-token`), any `*-token` / `*-api-key`
+spelling, and anything [`secrets.register`](/docs/reference/helpers) has widened —
+the same rule `@stitchapi/query-core` applies to every other binding's query key,
+so a credential redacted in a React app is redacted here too. This matters because
+SWR keys are persisted by cache providers and shown in devtools: a token in one
+outlives the request.
+
 <Callout type="info">
     `useStitchSWR` is for when SWR already owns your view state and you want a
     stitch as the fetcher. For StitchAPI to own the lifecycle — and for

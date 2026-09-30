@@ -17,7 +17,7 @@ import { sse, sseSurface } from '../../../../packages/core/src/sse';
 import type { Surface } from '../../../../packages/core/src/surface';
 import { manualClock } from '../../../../packages/core/src/testing';
 import type {
-    AdapterResponse,
+    AdapterResult,
     ResolvedStitchConfig,
 } from '../../../../packages/core/src/types';
 import { FakeStreamProvider, isDone } from './fake-llm-stream';
@@ -35,7 +35,7 @@ const decodeSse = sseSurface.stream as NonNullable<Surface['stream']>;
 const sseRequiringDone: Surface = {
     ...sseSurface,
     id: 'sse-done',
-    stream: async function* (res: AdapterResponse, cfg: ResolvedStitchConfig) {
+    stream: async function* (res: AdapterResult, cfg: ResolvedStitchConfig) {
         let sawDone = false;
         for await (const chunk of decodeSse(res, cfg)) {
             sawDone ||= isDone((chunk as SseEvent).data);

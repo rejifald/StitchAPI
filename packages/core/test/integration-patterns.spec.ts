@@ -134,7 +134,7 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
                 cookie: 'SID',
                 tenancy: 'app',
                 refresh: [403], // this integration uses 403, not 401
-                loginInput: () => ({
+                credentialsOf: () => ({
                     body: {
                         username: env('CLIENT_USER')(),
                         password: env('CLIENT_PASS')(),
@@ -190,7 +190,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
                 login,
                 cookie: 'session_id',
                 tenancy: 'app',
-                loginInput: () => ({
+                credentialsOf: () => ({
                     body: {
                         username: env('SCRAPE_USER')(),
                         password: env('SCRAPE_PASS')(),

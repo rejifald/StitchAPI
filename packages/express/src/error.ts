@@ -2,7 +2,11 @@
 // `name === 'StitchError'` carrying the upstream `status` (packages/core/src/stitch.ts). This adapts
 // the Fastify error handler to Express's four-arg error middleware `(err, req, res, next)`, so a
 // route handler calling a stitch needs no per-handler try/catch — register it last with
-// `app.use(stitchErrorHandler())`.
+// `app.use(stitchError.handler())`.
+//
+// The two functions below are the implementations; the barrel exports only the `stitchError`
+// namespace that faces them. They stay plain module functions so a bundler reaches one of them
+// without pulling the other in behind it.
 import type {
     ErrorRequestHandler,
     NextFunction,
@@ -13,7 +17,12 @@ import type {
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
 
-/** True when `err` is the error a stitch throws on failure (`name === 'StitchError'`). */
+/**
+ * Guard half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
+ * True when `err` is the error a stitch throws on failure (`name === 'StitchError'`).
+ */
 export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
@@ -57,16 +66,13 @@ function resolveStatus(
 }
 
 /**
+ * Handler half of {@link stitchError}; the namespace carries the contract. Internal — the
+ * barrel exports the namespace, not this.
+ *
  * Build an Express error-handling middleware that maps a {@link StitchErrorLike} to a JSON response
  * (status `502` by default; override via {@link StitchErrorOptions.status}) and **passes every
  * other error to `next(err)`** so Express's default handler — and any error middleware registered
- * after it — stays in charge. Register it after your routes:
- *
- * ```ts
- * app.use(stitchErrorHandler());
- * // configure the status (e.g. propagate the upstream status instead of 502):
- * //   app.use(stitchErrorHandler({ status: (e) => e.status ?? 502 }))
- * ```
+ * after it — stays in charge.
  *
  * Note: an Express error middleware is matched by its 4-arg arity — keep all four parameters even
  * though `req` is unused here, or Express treats it as a normal middleware.
@@ -95,3 +101,35 @@ export function stitchErrorHandler(
         res.status(status).json(body);
     };
 }
+
+/**
+ * The one name for "a stitch failed, turn it into HTTP" in this package — the guard and the
+ * error middleware as one namespace, so the same concept reads the same way across every
+ * `@stitchapi/*` host adapter (ADR 0012; the export-surface analogue of the `secrets` /
+ * `duration` folds in core). The verb lives at the call site rather than in two verb-prefixed
+ * top-level names:
+ *
+ * - `stitchError.is(err)` narrows an unknown error to a {@link StitchErrorLike}.
+ * - `stitchError.handler(options?)` builds the Express error middleware. Register it **after
+ *   your routes** — an Express error middleware is matched by its 4-arg arity.
+ *
+ * ```ts
+ * app.use(stitchError.handler());
+ * // configure the status (e.g. propagate the upstream status instead of 502):
+ * //   app.use(stitchError.handler({ status: (e) => e.status ?? 502 }))
+ * ```
+ *
+ * **No `.map` here, deliberately.** On the hosts that have one (hono, elysia, next, nest),
+ * `stitchError.map(err)` returns the mapped artifact as a *value* — an `HTTPException`, a
+ * `Response`. Express has no such value: its error middleware writes a status and a body onto
+ * the mutable `res` and returns nothing, so there is nothing to hand back. A `map` here would
+ * be invented surface, not the same member under the same name — and a member that means
+ * something different per package is the drift this namespace exists to end.
+ *
+ * A facade, not a re-implementation: each member points at the module function above, so a
+ * bundler that reaches one member does not weld the other onto the consumer's path.
+ */
+export const stitchError = {
+    is: isStitchError,
+    handler: stitchErrorHandler,
+} as const;

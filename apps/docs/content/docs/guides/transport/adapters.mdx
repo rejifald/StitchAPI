@@ -36,7 +36,7 @@ const createUser = stitch({
 
 ## Options
 
-`adapter` takes an `Adapter`: one function, `(req) => Promise<AdapterResponse>`.
+`adapter` takes an `Adapter`: one function, `(req) => Promise<AdapterResult>`.
 Leave the field off and the engine wires `fetchAdapter()`, so a stitch runs on
 `fetch` without ever naming it.
 

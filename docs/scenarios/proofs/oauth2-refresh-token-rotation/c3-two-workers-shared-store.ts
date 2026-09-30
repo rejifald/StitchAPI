@@ -24,8 +24,7 @@ const VAULT_KEY = `vault:oauth2:${KEY}`; // vaultView() prefix + oauth2 baseKey 
 const newStrategy = (provider: FakeRotatingProvider): AuthStrategy =>
     oauth2({
         tokenUrl: 'https://auth.example.com/token',
-        clientId: 'cid',
-        clientSecret: 'csecret',
+        client: { id: 'cid', secret: 'csecret' },
         key: KEY,
         adapter: provider.tokenAdapter({ delayMs: 15 }),
     });

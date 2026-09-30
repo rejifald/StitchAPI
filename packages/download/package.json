@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/download",
-    "version": "1.0.0-rc.7",
+    "version": "1.0.0-rc.8",
     "type": "commonjs",
     "description": "Batch downloader / manager for StitchAPI — FIFO concurrency, per-item settling, cancel, aggregate progress + ETA, idle-timeout, and same-URL dedupe on top of the resilient `download()` surface. Zero runtime deps, browser-first.",
     "main": "lib/index.js",
@@ -66,7 +66,7 @@
         "stitchapi": "^1.0.0-rc.1"
     },
     "devDependencies": {
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.4.1",
         "esbuild": "^0.28.2",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",

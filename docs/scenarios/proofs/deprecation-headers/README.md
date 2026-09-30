@@ -87,7 +87,7 @@ the whole table with `pnpm exec tsx docs/scenarios/proofs/deprecation-headers/c1
 | `transform(body)`       | **no**   | one argument, and it is the body                                        | —                                            |
 | `pick` / `output`       | **no**   | operate on the value, downstream of the body                            | —                                            |
 | **`adapter`**           | **YES**  | it _built_ the response — but knows no stitch `name`                    | no                                           |
-| **`hooks.onResponse`**  | **YES**  | `ctx.res.headers` (full `AdapterResponse`) + `ctx.name`                 | **observe** (mutation works — see footgun 1) |
+| **`hooks.onResponse`**  | **YES**  | `ctx.res.headers` (full `AdapterResult`) + `ctx.name`                   | **observe** (mutation works — see footgun 1) |
 | **`Surface.interpret`** | **YES**  | `res.headers` + `cfg.name` + `cfg.clock`                                | **decides the value, and can fail the call** |
 
 Read the two positive rows together: `onResponse` is the **observation** seat and `interpret` is the
@@ -172,6 +172,6 @@ HOOK"`. A hook and a surface reading the same header will disagree, and the hook
    falsy and every naive guard treats it as absent.
 6. **`.report()` and `.inspect()` are fresh runs** that each add a request _and_ a tick to anything
    the sink is counting (the same trap scenario 12 measured for drift rates).
-7. **Re-levelling a header-derived finding is per-KIND, not per-path.** `severity: { undeclared:
+7. **Re-levelling a header-derived finding is per-KIND, not per-path.** `level: { undeclared:
 'warn' }` raised the deprecation notice to `warn` and raised an unrelated new vendor field with
    it, in the same run.

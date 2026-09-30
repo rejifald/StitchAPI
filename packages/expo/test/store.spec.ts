@@ -4,7 +4,7 @@
 import { expoSecureStore } from '../src/store';
 import type { SecureStoreLike } from '../src/store';
 
-import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
+import { conformance, manualClock } from 'stitchapi/testing';
 import { describe, expect, test } from 'vitest';
 
 function fakeSecureStore(): SecureStoreLike {
@@ -25,8 +25,8 @@ function fakeSecureStore(): SecureStoreLike {
 
 describe('expoSecureStore', () => {
     test('satisfies the StitchStore contract', async () => {
-        assertConformance(
-            await verifyStoreContract(() => expoSecureStore(fakeSecureStore())),
+        conformance.assert(
+            await conformance.store(() => expoSecureStore(fakeSecureStore())),
         );
     });
 
@@ -46,6 +46,19 @@ describe('expoSecureStore', () => {
         expect(seen).toHaveLength(1);
         expect(seen[0]).toMatch(/^[A-Za-z0-9._-]+$/);
         expect(seen[0]).toMatch(/^[0-9a-f]+$/);
+    });
+
+    // `ExpoSecureStoreOptions` is an alias of the AsyncStorage store's options, so the
+    // time seam is inherited rather than re-declared — which is exactly the kind of
+    // pass-through that breaks silently. Pin it: a `clock` handed to THIS factory has to
+    // reach the envelope's expiry check downstream.
+    test('the inherited `clock` seam drives TTL expiry', async () => {
+        const clock = manualClock(1000);
+        const store = expoSecureStore(fakeSecureStore(), { clock });
+        await store.set('token', 'abc', 100);
+        expect(await store.get('token')).toBe('abc');
+        await clock.advance(101);
+        expect(await store.get('token')).toBeUndefined();
     });
 
     test('pads each code unit to 4 hex digits so distinct keys never collide', async () => {

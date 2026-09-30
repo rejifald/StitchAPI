@@ -1,11 +1,11 @@
-// secretsFile() fallback-ladder branches (src/auth.ts) that gaps/secrets-file-rename.spec.ts leaves
-// open. That suite covers "file has the key → from file" and "file absent → env". The remaining
-// rungs go untested:
+// `credential.file()` fallback-ladder branches (src/auth.ts) that gaps/secrets-file-rename.spec.ts
+// leaves open. That suite covers "file has the key → from file" and "file absent → env". The
+// remaining rungs go untested:
 //   - the file EXISTS but lacks the requested key → fall back to the env var;
 //   - neither the file nor the env has it → throw "missing secret";
 //   - a non-string value in the file is coerced via String();
 //   - malformed JSON is swallowed (try/catch) and the env var is used.
-import { secretsFile } from '../src/auth';
+import { credential } from '../src/auth';
 
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,13 +44,13 @@ afterEach(() => {
     }
 });
 
-describe('secretsFile() fallback ladder', () => {
+describe('credential.file() fallback ladder', () => {
     test('a file that lacks the key falls back to the env var', () => {
         const [home, cleanup] = tempHome(JSON.stringify({ OTHER: 'x' }));
         process.env['HOME'] = home;
         process.env['MY_SECRET'] = 'from-env';
         try {
-            expect(secretsFile('MY_SECRET')()).toBe('from-env');
+            expect(credential.file('MY_SECRET')()).toBe('from-env');
         } finally {
             cleanup();
         }
@@ -61,7 +61,7 @@ describe('secretsFile() fallback ladder', () => {
         process.env['HOME'] = home;
         Reflect.deleteProperty(process.env, 'MY_SECRET');
         try {
-            expect(() => secretsFile('MY_SECRET')()).toThrow(
+            expect(() => credential.file('MY_SECRET')()).toThrow(
                 /missing secret MY_SECRET/,
             );
         } finally {
@@ -74,7 +74,7 @@ describe('secretsFile() fallback ladder', () => {
         process.env['HOME'] = home;
         Reflect.deleteProperty(process.env, 'PORT');
         try {
-            expect(secretsFile('PORT')()).toBe('8080');
+            expect(credential.file('PORT')()).toBe('8080');
         } finally {
             cleanup();
         }
@@ -85,7 +85,7 @@ describe('secretsFile() fallback ladder', () => {
         process.env['HOME'] = home;
         process.env['MY_FALLBACK'] = 'from-env';
         try {
-            expect(secretsFile('MY_FALLBACK')()).toBe('from-env');
+            expect(credential.file('MY_FALLBACK')()).toBe('from-env');
         } finally {
             cleanup();
         }

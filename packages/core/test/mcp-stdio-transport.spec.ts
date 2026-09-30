@@ -4,9 +4,10 @@
 //   - several messages in one chunk are answered in order;
 //   - a message split across chunks is buffered until its newline;
 //   - blank / whitespace-only lines are skipped;
-//   - close() detaches the listener (no further messages are processed).
+//   - close() detaches the listener (no further messages are processed), and is `async` — it
+//     returns a promise, like every other `close()` on the surface (CONTRACT.md P11).
 import { serveStdio } from '../src/mcp';
-import type { JsonRpcMessage } from '../src/mcp';
+import type { JsonRpcMessage, StdioHandle } from '../src/mcp';
 
 import { PassThrough } from 'node:stream';
 
@@ -17,16 +18,12 @@ const req = (method: string): JsonRpcMessage => ({
     method,
 });
 
-function setup(): {
-    input: PassThrough;
-    output: PassThrough;
-    close: () => void;
-} {
+function setup(): StdioHandle & { input: PassThrough; output: PassThrough } {
     const input = new PassThrough();
     const output = new PassThrough();
     output.setEncoding('utf8');
-    const { close } = serveStdio({}, { stdin: input, stdout: output });
-    return { input, output, close };
+    const handle = serveStdio({}, { stdin: input, stdout: output });
+    return { ...handle, input, output };
 }
 
 // Resolve once `n` newline-delimited JSON messages have been written to `output`.
@@ -67,7 +64,7 @@ describe('serveStdio transport framing', () => {
             expect(res.id).toBeNull();
             expect(res.error?.code).toBe(-32700);
         } finally {
-            close();
+            await close();
         }
     });
 
@@ -82,7 +79,7 @@ describe('serveStdio transport framing', () => {
             expect(a?.id).toBe(r1.id);
             expect(b?.id).toBe(r2.id);
         } finally {
-            close();
+            await close();
         }
     });
 
@@ -99,7 +96,7 @@ describe('serveStdio transport framing', () => {
             expect(res.id).toBe(r.id);
             expect(res.result).toBeDefined();
         } finally {
-            close();
+            await close();
         }
     });
 
@@ -113,13 +110,30 @@ describe('serveStdio transport framing', () => {
             const res = await p; // the first (and only) response is the real request's
             expect(res.id).toBe(r.id);
         } finally {
-            close();
+            await close();
         }
+    });
+
+    // P11 (async/sync signature parity): `close()` is `() => Promise<void>` everywhere on the
+    // surface — `ServeHandle.close`, `StitchStore.close`, `Seam.close`, `PostMessageChannel.close`.
+    // This one was the lone sync spelling, so a host awaiting a set of handles hit one that was not
+    // a promise. The `StdioHandle` return type is exported for the same reason `ServeHandle` is.
+    test('close() returns a promise, like every other close() on the surface (P11)', async () => {
+        const { close } = setup();
+        const closing: Promise<void> = close();
+        expect(closing).toBeInstanceOf(Promise);
+        await expect(closing).resolves.toBeUndefined();
+    });
+
+    test('the handle is the exported StdioHandle interface', () => {
+        const handle: StdioHandle = setup();
+        expect(typeof handle.server.handle).toBe('function');
+        return handle.close();
     });
 
     test('close() detaches the listener — no further messages are processed', async () => {
         const { input, output, close } = setup();
-        close();
+        await close();
         let got = false;
         output.on('data', () => {
             got = true;

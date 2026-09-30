@@ -39,7 +39,7 @@ try {
 - **`retryAfter`** — the wait the server asked for, parsed from `Retry-After`
   (delta-seconds **or** an HTTP-date) into milliseconds; `undefined` when the
   header is absent or unparseable.
-- **`response`** — the raw `AdapterResponse`, so you can read other rate
+- **`response`** — the raw `AdapterResult`, so you can read other rate
   headers the API sent (`X-RateLimit-Remaining`, a reset timestamp, and so on).
 
 Its `status` is the rate-limit status (e.g. `429`, or whatever you listed in

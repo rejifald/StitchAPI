@@ -59,7 +59,7 @@ an SSE helper, and an error bridge.
     <Card
         title="Next.js"
         href="/docs/integrations/next"
-        description="Web-standard route-handler helpers — streamStitchSse (text/event-stream) and stitchErrorResponse (StitchError → Response)."
+        description="Web-standard route-handler helpers — streamStitchSse (text/event-stream) and stitchError.map (StitchError → Response)."
     />
 </Cards>
 
@@ -130,6 +130,19 @@ stitch is the fetcher; the library owns caching, dedup, and invalidation.
         title="TanStack Query"
         href="/docs/integrations/tanstack-query"
         description="Use a stitch as a queryFn with the framework-agnostic stitchQueryOptions(stitch, input) helper — no hard dependency."
+    />
+</Cards>
+
+## File transfers
+
+Sequence a list of downloads over core's `download` surface — every item still an
+ordinary stitch, with the batch adding what a single call can't express.
+
+<Cards>
+    <Card
+        title="Batch downloads"
+        href="/docs/integrations/download"
+        description="downloadAll / DownloadManager — FIFO admission under a concurrency ceiling, per-item settling, cancel, aggregate progress + ETA, and an idle timeout for stalled transfers."
     />
 </Cards>
 

@@ -88,7 +88,7 @@ function Inbox() {
 
 ## The persistent store
 
-`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `increment` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace (default `'stitch:'` — AsyncStorage is the app's one shared bucket, so the store namespaces by default), `now` to inject a clock in tests.
+`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `increment` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace (default `'stitch:'` — AsyncStorage is the app's one shared bucket, so the store namespaces by default), and `clock` to drive TTL expiry from a test: it takes the same `Clock` a stitch does, so a `manualClock()` from `stitchapi/testing` expires an entry with `advance(ms)` and no real waiting.
 
 ## License
 

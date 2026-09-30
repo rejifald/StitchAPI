@@ -136,7 +136,7 @@ bookkeeping.
 
 - **Two findings were library bugs rather than design trade-offs, and both are fixed.** Found in
   passing, filed as #650, fixed by #664. `mockAdapter` violated the library's own
-  `verifyAdapterContract` rule `abort: a pre-aborted signal rejects` — it consulted `req.signal`
+  `conformance.adapter` rule `abort: a pre-aborted signal rejects` — it consulted `req.signal`
   only inside its `delay` branch; the signal is now checked before any route logic
   (`test-mock.ts:165-170`), so C3 pins 9/9 rules and no spy entry for a cancelled request. And
   `stubStitch(...).safe()` **threw** when the impl threw synchronously; `resolve()` is now an

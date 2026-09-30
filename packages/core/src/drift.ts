@@ -11,13 +11,17 @@
 //   - `create` (a `.default()` fired, field was absent) -> `defaulted`
 //
 // Soft drift is always non-fatal (`warn` / `info` / `verbose`) — fatality is the schema's job. Levels
-// are per-kind (defaults below), overridable/filterable via `DriftOptions.severity`, and any path can
+// are per-kind (defaults below), overridable/filterable via `DriftOptions.level`, and any path can
 // be acknowledged-and-silenced with `DriftOptions.ignore` without touching the typed schema.
+//
+// One word for the concept, everywhere (CONTRACT.md P1): it is `level` on the option, on the
+// finding, and in every helper below. `severity` used to name the authoring half and `level` the
+// read-back half, which made one knob read as two.
 import { type Diff, diff } from './diff';
 import type {
     DriftFinding,
+    DriftLevel,
     DriftOptions,
-    DriftSeverity,
     SoftDriftChange,
 } from './types';
 import { matchAny } from './util';
@@ -62,7 +66,10 @@ const OP_CHANGE: Record<Diff['op'], SoftDriftChange> = {
     create: 'defaulted',
 };
 
-const DEFAULT_LEVEL: Record<SoftDriftChange, DriftSeverity> = {
+/** The non-fatal half of {@link DriftLevel} — derived, never re-listed. */
+type SoftDriftLevel = Exclude<DriftLevel, 'error'>;
+
+const DEFAULT_LEVEL: Record<SoftDriftChange, SoftDriftLevel> = {
     undeclared: 'info',
     coerced: 'warn',
     defaulted: 'verbose',
@@ -83,27 +90,27 @@ function detailFor(change: SoftDriftChange, d: Diff): string {
 }
 
 /**
- * Resolve {@link DriftOptions.severity} into the level each soft kind gets, plus an optional allowlist
+ * Resolve {@link DriftOptions.level} into the level each soft kind gets, plus an optional allowlist
  * of levels to surface. A single value / bare list is an allowlist over the per-kind defaults; a map
- * re-levels each kind (and surfaces all). See {@link DriftOptions.severity}.
+ * re-levels each kind (and surfaces all).
  */
-function resolveSeverity(severity: DriftOptions['severity']): {
-    levelOf: (c: SoftDriftChange) => DriftSeverity;
-    allow: Set<DriftSeverity> | null;
+function resolveLevel(level: DriftOptions['level']): {
+    levelOf: (c: SoftDriftChange) => SoftDriftLevel;
+    allow: Set<SoftDriftLevel> | null;
 } {
-    const byDefault = (c: SoftDriftChange): DriftSeverity => DEFAULT_LEVEL[c];
-    if (severity === undefined) return { levelOf: byDefault, allow: null };
-    if (typeof severity === 'string')
-        return { levelOf: byDefault, allow: new Set([severity]) };
-    if (Array.isArray(severity))
-        return { levelOf: byDefault, allow: new Set(severity) };
-    return { levelOf: (c) => severity[c] ?? DEFAULT_LEVEL[c], allow: null };
+    const byDefault = (c: SoftDriftChange): SoftDriftLevel => DEFAULT_LEVEL[c];
+    if (level === undefined) return { levelOf: byDefault, allow: null };
+    if (typeof level === 'string')
+        return { levelOf: byDefault, allow: new Set([level]) };
+    if (Array.isArray(level))
+        return { levelOf: byDefault, allow: new Set(level) };
+    return { levelOf: (c) => level[c] ?? DEFAULT_LEVEL[c], allow: null };
 }
 
 /**
  * Soft drift: classify the difference between the raw body and the validated value into leveled
  * findings. Array-element paths collapse to the `[]` grammar and dedupe (a stripped field on every
- * element is one finding), `ignore` suppresses acknowledged paths, and `severity` levels/filters.
+ * element is one finding), `ignore` suppresses acknowledged paths, and `level` levels/filters.
  *
  * ADR 0017: uses group-then-summarize instead of first-wins dedup. Diffs are grouped by
  * `change|path`; array groups branch on detail homogeneity: homogeneous → one summary finding with
@@ -115,9 +122,9 @@ export function classifyDiff(
     validated: unknown,
     opts: DriftOptions = {},
 ): DriftFinding[] {
-    const { levelOf, allow } = resolveSeverity(opts.severity);
+    const { levelOf, allow } = resolveLevel(opts.level);
     // P7: a bare `ignore` string is shorthand for a one-element list — normalize to the array the
-    // `matchAny` matcher wants (mirrors how `severity` already widens `'warn' ≡ ['warn']`).
+    // `matchAny` matcher wants (mirrors how `level` already widens `'warn' ≡ ['warn']`).
     const ignore =
         typeof opts.ignore === 'string' ? [opts.ignore] : opts.ignore;
 

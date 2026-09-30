@@ -34,7 +34,7 @@ not the credential — see
 [Capability, not credential](/docs/concepts/capability-not-credential).
 
 Use [`env('API_TOKEN')`](/docs/guides/auth/secret-resolvers) for an environment
-variable or `secretsFile('API_TOKEN')` for `~/.stitch/secrets.json`; both return a thunk
+variable or `credential.file('API_TOKEN')` for `~/.stitch/secrets.json`; both return a thunk
 resolved at call time. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for the full auth
 table.
@@ -48,25 +48,25 @@ table.
     credential](/docs/concepts/capability-not-credential).
 </Callout>
 
-## Optional credentials with `optionalEnv`
+## Optional credentials with `env.optional`
 
 When you're scripting against an API whose token already sits in your
 environment — a local dev run, a notebook, an agent loop — wrap the variable in
-`optionalEnv('NAME')` and hand it to `bearer`. It resolves the variable's value,
+`env.optional('NAME')` and hand it to `bearer`. It resolves the variable's value,
 or _absent_ when the variable is unset. Unlike `bearer(env('NAME'))`, which
-**throws** on a missing variable, `bearer(optionalEnv('NAME'))` attaches the
+**throws** on a missing variable, `bearer(env.optional('NAME'))` attaches the
 header only when the token is present — otherwise the request goes out with no
 credential.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
-import { bearer, optionalEnv } from 'stitchapi/auth';
+import { bearer, env } from 'stitchapi/auth';
 
 // Attaches `Authorization: Bearer $GITHUB_TOKEN` when that var is set;
 // otherwise sends the request with no credential.
 const repos = stitch({
     url: 'https://api.github.com/user/repos',
-    auth: bearer(optionalEnv('GITHUB_TOKEN')),
+    auth: bearer(env.optional('GITHUB_TOKEN')),
 });
 ```
 
@@ -78,7 +78,7 @@ absent and nothing is attached.
 
 <Callout type="warn">
     **Optional, not required.** If the variable is unset,
-    `bearer(optionalEnv(…))` sends **no** credential rather than failing — the
+    `bearer(env.optional(…))` sends **no** credential rather than failing — the
     request goes out unauthenticated. When the call must be authenticated, use
     `bearer(env('GITHUB_TOKEN'))`, which throws on a missing variable.
 </Callout>

@@ -1,11 +1,12 @@
 // P20 (No empty-object config): every `StitchConfig` slot that used to be a bare all-optional
-// `*Options` bag — `hooks`, `input`, `multipart`, `sse`, `stream`, and now `retry`, `throttle`,
-// `timeout`, `circuit` and the nested `sse.reconnect` — rejects the opaque `{}` at the slot. The
-// all-defaults case is the scalar (`sse: true`, `stream: 'ndjson'`, `multipart: 'dot'`, `retry: 3`,
-// `timeout: '5s'`, `throttle: '2/s'`) or a real ≥1-field object; the empty object is a COMPILE
-// error. These `@ts-expect-error` assertions are enforced by `check:types` (an unused directive
-// would itself fail), not at runtime — the closures are never invoked.
+// `*Options` bag — `hooks`, `input`, `multipart`, `sse`, `stream`, `retry`, `throttle`,
+// `timeout`, `circuit`, `extends` and the nested `sse.reconnect` — rejects the opaque `{}` at the
+// slot. The all-defaults case is the scalar (`sse: true`, `stream: 'ndjson'`, `multipart: 'dot'`,
+// `retry: 3`, `timeout: '5s'`, `throttle: '2/s'`) or a real ≥1-field object; the empty object is a
+// COMPILE error. These `@ts-expect-error` assertions are enforced by `check:types` (an unused
+// directive would itself fail), not at runtime — the closures are never invoked.
 import { stitch } from '../src';
+import type { SecurityScheme } from '../src/types';
 
 test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
     const rejected = () => [
@@ -81,8 +82,28 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
         stitch({
             baseUrl: 'https://x',
             path: '/y',
-            // @ts-expect-error — `circuit: {}` is rejected; both fields are required (P15).
+            // @ts-expect-error — `circuit: {}` is rejected: an opaque envelope says nothing that
+            // `circuit: [5, '30s']` does not say better. Both fields DEFAULT (5 / 30s), so either
+            // one alone is a valid object form — see the accepted list below.
             circuit: {},
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — `extends: {}` is rejected; an empty layer merges nothing.
+            extends: {},
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — and inside the list form too, at every element.
+            extends: [{}],
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — a non-empty sibling does not launder an empty one.
+            extends: [{ headers: { a: 'b' } }, {}],
         }),
         stitch({
             baseUrl: 'https://x',
@@ -161,6 +182,48 @@ test('the scalar / ≥1-field forms are accepted at each slot (P12/P13/P20)', ()
             path: '/y',
             cache: { ttl: '60s', fingerprint: { fallback: 'revalidate' } },
         }),
+        // P15/P20: `circuit`'s two knobs both DEFAULT (5 / 30s), so either alone is a complete
+        // object form. Only the empty envelope is rejected.
+        stitch({ baseUrl: 'https://x', path: '/y', circuit: { failures: 3 } }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            circuit: { cooldown: '1m' },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            circuit: { key: 'shared' },
+        }),
+        // P7/P20: `extends` takes a string, one ≥1-field partial, a stitch, or a list of those.
+        stitch({ baseUrl: 'https://x', extends: '/y' }),
+        stitch({ path: '/y', extends: { baseUrl: 'https://x' } }),
+        stitch({
+            path: '/y',
+            extends: [{ baseUrl: 'https://x' }, { headers: { a: 'b' } }],
+        }),
     ];
     expect(typeof accepted).toBe('function');
+});
+
+// P20 reaches past `StitchConfig`: `SecurityScheme`'s oauth2 arm carries exactly one flow, so
+// `flows: {}` would be a scheme that declares oauth2 and then describes nothing. The member is
+// required, which is what makes the empty literal a compile error rather than a silent export of
+// `{ type: 'oauth2', flows: {} }` into `components.securitySchemes`.
+test("`SecurityScheme`'s oauth2 arm requires its one flow (P20)", () => {
+    const flow = {
+        tokenUrl: 'https://id.example.com/token',
+        scopes: { read: 'Read' },
+    };
+    const accepted: SecurityScheme = {
+        type: 'oauth2',
+        flows: { clientCredentials: flow },
+    };
+    const rejected = (): SecurityScheme => ({
+        type: 'oauth2',
+        // @ts-expect-error — `flows: {}` is rejected; `clientCredentials` is required.
+        flows: {},
+    });
+    expect(accepted.type).toBe('oauth2');
+    expect(typeof rejected).toBe('function');
 });

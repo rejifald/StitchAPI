@@ -1,7 +1,8 @@
 // redisStore-level behaviour the per-driver conformance proofs don't pin down:
 // the keyPrefix mapping (no conformance run uses a prefix), the cache-delete
-// (`set(k, undefined)` → DEL), the non-JSON raw-string fallback on get, and
-// close() delegation. Driven by a recording RedisDriver that captures every call.
+// (`set(k, undefined)` → DEL), the non-JSON raw-string fallback on get, the
+// forwarding of the optional semaphore pair, and close() delegation. Driven by a
+// recording RedisDriver that captures every call.
 import { redisStore } from '../src';
 import type { RedisDriver } from '../src';
 
@@ -34,6 +35,20 @@ function recordingDriver(over: { close?: () => Promise<void> } = {}): {
         ...(over.close ? { close: over.close } : {}),
     };
     return { driver, calls, data };
+}
+
+/** The same recording driver plus the optional semaphore pair, recorded the same way. */
+function leasing(driver: RedisDriver, calls: unknown[][]): RedisDriver {
+    return {
+        ...driver,
+        async lease(key, token, concurrency, ttl, at) {
+            calls.push(['lease', key, token, concurrency, ttl, at]);
+            return true;
+        },
+        async release(key, token) {
+            calls.push(['release', key, token]);
+        },
+    };
 }
 
 describe('redisStore — key mapping', () => {
@@ -88,6 +103,50 @@ describe('redisStore — values & delete', () => {
     });
 });
 
+describe('redisStore — the semaphore pair', () => {
+    // The driver spells this pair `lease` / `release` — the SAME words
+    // `StitchStore` uses, per contract P18 (a house contract speaks house
+    // vocabulary). It was `lease` / `releaseLease`; a driver written against the
+    // house spelling would have been silently ignored below, taking `store.lease`
+    // down with it, since the pair is forwarded only when BOTH halves are present.
+    test('forwards lease / release, prefixing the key on both', async () => {
+        const { driver, calls } = recordingDriver();
+        const store = redisStore(leasing(driver, calls), {
+            keyPrefix: 'app:',
+        });
+
+        expect(await store.lease?.('sem', 'tok', 3, 60_000, 1_000)).toBe(true);
+        await store.release?.('sem', 'tok');
+
+        expect(calls).toEqual([
+            ['lease', 'app:sem', 'tok', 3, 60_000, 1_000],
+            ['release', 'app:sem', 'tok'],
+        ]);
+    });
+
+    test('half a pair is forwarded as neither (a slot could never be given back)', () => {
+        const { driver, calls } = recordingDriver();
+        const leaseOnly: RedisDriver = {
+            ...driver,
+            async lease(key, token, concurrency, ttl, at) {
+                calls.push(['lease', key, token, concurrency, ttl, at]);
+                return true;
+            },
+        };
+        const store = redisStore(leaseOnly);
+
+        expect(typeof store.lease).toBe('undefined');
+        expect(typeof store.release).toBe('undefined');
+    });
+
+    test('omits the pair when the driver has neither', () => {
+        const { driver } = recordingDriver();
+        const store = redisStore(driver);
+        expect(typeof store.lease).toBe('undefined');
+        expect(typeof store.release).toBe('undefined');
+    });
+});
+
 describe('redisStore — lifecycle', () => {
     test('close() delegates to the driver', async () => {
         let closed = false;
@@ -105,6 +164,6 @@ describe('redisStore — lifecycle', () => {
 
     test('omits close when the driver has none (e.g. Upstash)', () => {
         const { driver } = recordingDriver();
-        expect(redisStore(driver).close).toBeUndefined();
+        expect(typeof redisStore(driver).close).toBe('undefined');
     });
 });

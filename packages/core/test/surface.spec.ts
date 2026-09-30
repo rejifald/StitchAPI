@@ -10,7 +10,7 @@ import type { Surface, SurfaceOutcome } from '../src/surface';
 // directly here, the way the engine does.
 import { graphqlSurface, httpInterpret, interpretOf } from '../src/surface';
 import type {
-    AdapterResponse,
+    AdapterResult,
     ResolvedStitchConfig,
     StatusMatch,
 } from '../src/types';
@@ -68,7 +68,7 @@ describe('the status verdict (ADR 0022 Decision 2)', () => {
     const resOf = (
         status: number,
         body: unknown = { v: 1 },
-    ): AdapterResponse => ({
+    ): AdapterResult => ({
         status,
         headers: {},
         body,
@@ -130,7 +130,7 @@ describe('the status verdict (ADR 0022 Decision 2)', () => {
 
             const ownValue = { blob: 'BLOB', filename: 'a.txt' };
             const interpret = (
-                res: AdapterResponse,
+                res: AdapterResult,
             ): SurfaceOutcome<typeof ownValue> =>
                 verdictOf(res, cfg) ?? { ok: true, data: ownValue };
 

@@ -34,7 +34,7 @@ describe('anthropic.parse', () => {
             content: [{ text: 'x' }],
             usage: { input_tokens: 3 },
         });
-        expect(r.usage).toEqual({ inputTokens: 3 });
+        expect(r.usage).toEqual({ input: 3 });
     });
 });
 
@@ -53,7 +53,7 @@ describe('openai.parse', () => {
             usage: { completion_tokens: 4 },
         });
         expect(r.text).toBe('x');
-        expect(r.usage).toEqual({ outputTokens: 4 });
+        expect(r.usage).toEqual({ output: 4 });
     });
 });
 

@@ -30,7 +30,7 @@ beforeEach(() => {
     process.env['CJ_PASS'] = 'p';
 });
 
-const loginInput = () => ({
+const credentialsOf = () => ({
     body: { u: env('CJ_USER')(), p: env('CJ_PASS')() },
 });
 
@@ -61,7 +61,7 @@ test('cookie: "*" captures and replays every cookie the login set', async () => 
         auth: cookieSession({
             login: loginStitch(),
             cookie: '*',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
         }),
     });
@@ -99,7 +99,7 @@ test('jar: true is equivalent to cookie: "*"', async () => {
             login: loginStitch(),
             cookie: 'session', // only seeds the store key in jar mode
             jar: true,
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
         }),
     });
@@ -129,7 +129,7 @@ test('a single named cookie still replays only that one (regression)', async () 
         auth: cookieSession({
             login: loginStitch(),
             cookie: 'sid',
-            loginInput,
+            credentialsOf,
             tenancy: 'app',
         }),
     });

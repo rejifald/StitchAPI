@@ -10,7 +10,7 @@
 import { stitch } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/surface';
 import type {
-    AdapterResponse,
+    AdapterResult,
     StitchEvent,
 } from '../../../../packages/core/src/types';
 import type { Validator } from '../../../../packages/core/src/validator';
@@ -290,7 +290,7 @@ async function main(): Promise<void> {
 
     // ── (g) `hooks.onResponse` — it SEES every page, and can change nothing ───────────────────
     // The hook is `(ctx) => void | Promise<void>` (types.ts:1285-1290) with the raw
-    // `AdapterResponse`. It is the most complete view in the library and it is read-only.
+    // `AdapterResult`. It is the most complete view in the library and it is read-only.
     {
         const server = driftedServer();
         const seenPages: string[][] = [];
@@ -300,7 +300,7 @@ async function main(): Promise<void> {
             hooks: {
                 onResponse: (ctx) => {
                     seenPages.push(
-                        rowsOf((ctx.res as AdapterResponse).body).map(
+                        rowsOf((ctx.res as AdapterResult).body).map(
                             (row) => row.id,
                         ),
                     );

@@ -140,9 +140,9 @@ function describeAst(ast: AnyAst): string {
  * startup:
  *
  * ```ts
- * import { registerFingerprinter } from 'stitchapi/fingerprint';
+ * import { fingerprinters } from 'stitchapi/fingerprint';
  * import { effectFingerprinter } from '@stitchapi/fingerprint-effect';
- * registerFingerprinter(effectFingerprinter);
+ * fingerprinters.register(effectFingerprinter);
  * ```
  */
 export const effectFingerprinter: SchemaFingerprinter = {

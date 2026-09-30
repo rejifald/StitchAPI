@@ -63,7 +63,7 @@ const simFetch = createFetchShim(allHandlers, () => currentKnobs);
 // identically on either tier (a snippet's `bearer('…')` is the case that broke).
 //
 // The rest of that entry stays OUT on purpose: `env` reads the host environment
-// and `secretsFile` reads the host disk, which would defeat the clean `process`
+// and `credential.file` reads the host disk, which would defeat the clean `process`
 // shadow below. The browser tier only has them because they are shimmed there.
 const authBuild = { bearer, apiKey, basic, oauth2 };
 

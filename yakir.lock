@@ -2,147 +2,151 @@
   "version": 1,
   "tethers": {
     "release-version": {
-      "baseline": "1.0.0-rc.7",
+      "baseline": "1.0.0-rc.8",
       "sites": {
         "packages/angular/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/aws-sigv4/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/cloudflare-kv/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/core/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/deno-kv/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/docs-mcp/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
+        },
+        "packages/download/package.json#/version": {
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/elysia/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/expo/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/express/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fastify/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-arktype/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-effect/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-typebox/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-valibot/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-zod/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/hono/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/json-schema/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/nest/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/next/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/openapi/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/pino/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/query-core/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/react-native/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/react/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/redis/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/rtk-query/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/sentry/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/shell/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/solid/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/svelte/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/swr/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/vercel-ai/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/vue/package.json#/version": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "README.md#pattern:StitchAPI is at `([^`]+)`": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/core/README.md#pattern:StitchAPI is at `([^`]+)`": {
-          "value": "1.0.0-rc.7",
-          "fp": "sha256:14274e3152e2e8ccf2cc4eed051eace97f51c83ba018d5d5c44f61fa78e2b9ce"
+          "value": "1.0.0-rc.8",
+          "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         }
       },
       "accepted": null
@@ -205,6 +209,10 @@
           "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
         },
         "packages/docs-mcp/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/download/package.json#/engines/node": {
           "value": ">=18.18.0",
           "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
         },
@@ -343,6 +351,10 @@
           "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
         },
         "packages/docs-mcp/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/download/package.json#/license": {
           "value": "Apache-2.0",
           "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
         },

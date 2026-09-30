@@ -25,7 +25,7 @@ import { stream } from '../../../../packages/core/src/stream';
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 import {
     check,
@@ -43,7 +43,7 @@ function streamingAdapter(
     text: string,
     contentType = 'application/json',
 ): Adapter {
-    const fn = (async (req: AdapterRequest): Promise<AdapterResponse> => {
+    const fn = (async (req: AdapterRequest): Promise<AdapterResult> => {
         const bytes = new TextEncoder().encode(text);
         if (req.stream) {
             return {
@@ -57,8 +57,8 @@ function streamingAdapter(
                 }),
             };
         }
-        // The buffered arm — `download` asks for a blob, so honour `responseType`.
-        if (req.responseType === 'blob') {
+        // The buffered arm — `download` asks for a blob, so honour `response`.
+        if (req.response === 'blob') {
             return {
                 status: 200,
                 headers: { 'content-type': contentType },

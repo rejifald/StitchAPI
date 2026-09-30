@@ -54,7 +54,7 @@ export interface ElysiaStitchPluginOptions {
     principal?: (ctx: PrincipalContext) => string | undefined;
     /**
      * Options for the StitchError → HTTP mapping the plugin's `.onError` applies (see
-     * {@link stitchOnError}). `false` registers **no** handler (you wire your own); `true`
+     * `stitchError.handler`). `false` registers **no** handler (you wire your own); `true`
      * (the default) registers the `502`-by-default mapping. The object form must set at least one
      * field — enable-with-defaults is spelled `true`, never `{}` (CONTRACT.md P13/P20).
      *

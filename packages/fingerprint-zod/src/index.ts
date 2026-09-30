@@ -285,9 +285,9 @@ function describe(schema: unknown): string {
  * Fingerprint strategy for Zod schemas. Register it once at startup:
  *
  * ```ts
- * import { registerFingerprinter } from 'stitchapi/fingerprint';
+ * import { fingerprinters } from 'stitchapi/fingerprint';
  * import { zodFingerprinter } from '@stitchapi/fingerprint-zod';
- * registerFingerprinter(zodFingerprinter);
+ * fingerprinters.register(zodFingerprinter);
  * ```
  */
 export const zodFingerprinter: SchemaFingerprinter = {

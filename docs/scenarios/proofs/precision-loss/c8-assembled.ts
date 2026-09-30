@@ -238,7 +238,7 @@ async function main(): Promise<void> {
         // (1b) The TYPE side of the same gap, and it is a compile-time cost rather than a runtime
         //      one — so it is checked by `tsc`, not by an assertion here. `StitchConfig.transform`
         //      is `(body: unknown) => unknown`, because it sits downstream of an
-        //      `AdapterResponse.body` that is `unknown`. `wire.response: 'text'` guarantees a string
+        //      `AdapterResult.body` that is `unknown`. `wire.response: 'text'` guarantees a string
         //      at RUNTIME and changes nothing at the TYPE level, so a parser written as
         //      `(text: string) => unknown` does not typecheck in the slot: the narrowing has to
         //      happen inside the function. `wire.ts:parseBigIntsAsStrings` takes `unknown` and calls

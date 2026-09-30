@@ -2,7 +2,8 @@
 // bodies a {@link mockAdapter} hands back for the `stream`/`sse` surfaces, built without a socket.
 // Pair with {@link collectStitchEvents} to assert the streaming path deterministically, with full
 // control over chunk boundaries. No `node:*` — runs in any test runner, a browser, or a Worker.
-import type { Adapter, AdapterRequest, AdapterResponse } from './types';
+import type { Adapter, AdapterRequest, AdapterResult } from './types';
+import { parseDuration } from './util';
 
 const enc = new TextEncoder();
 
@@ -79,8 +80,10 @@ export interface SseFixtureEvent {
     event?: string;
     /** The `id:` — replayed as `Last-Event-ID` on a resumable-SSE reconnect. */
     id?: string;
-    /** The `retry:` reconnection time in ms. */
-    retry?: number;
+    /** The `retry:` reconnection time — raw milliseconds or a P17 duration token (`'3s'`);
+     *  written to the wire as milliseconds. A value the duration grammar cannot read lands on
+     *  its default: no `retry:` line at all. */
+    retry?: number | string;
     /** A `:`-prefixed comment line (e.g. a keep-alive heartbeat). */
     comment?: string;
 }
@@ -102,7 +105,13 @@ function frameSse(ev: SseFixtureEvent | string): string {
     if (ev.comment !== undefined) lines.push(`: ${ev.comment}`);
     if (ev.event !== undefined) lines.push(`event: ${ev.event}`);
     if (ev.id !== undefined) lines.push(`id: ${ev.id}`);
-    if (ev.retry !== undefined) lines.push(`retry: ${ev.retry}`);
+    if (ev.retry !== undefined) {
+        // P17: parse BEFORE the wire write. The SSE grammar IGNORES a non-numeric `retry:` value
+        // (see `applyFieldLine` in sse.ts), so an unparsed `'3s'` would be dropped silently on the
+        // wire rather than rejected — exactly the collapse P17's parse clause exists to stop.
+        const retry = parseDuration(ev.retry);
+        if (retry !== undefined) lines.push(`retry: ${retry}`);
+    }
     const data =
         typeof ev.data === 'string' ? ev.data : JSON.stringify(ev.data);
     for (const dl of data.split('\n')) lines.push(`data: ${dl}`);
@@ -126,7 +135,7 @@ export function streamAdapter(
     body: ReadableStream<Uint8Array>,
     opts: StreamAdapterOptions = {},
 ): Adapter {
-    return (req: AdapterRequest): Promise<AdapterResponse> => {
+    return (req: AdapterRequest): Promise<AdapterResult> => {
         if (!req.stream)
             return Promise.reject(new Error('expected req.stream to be set'));
         return Promise.resolve({

@@ -85,7 +85,7 @@ spelling is `import { z } from 'zod'`.
   `ctx.spanId`, evicts on an injected clock for a rolling window, and joins each finding to its
   run's `result` event so it can report that a coercion landed on `0`. 84 counted lines.
 - `canary-watch.ts` — the declarative half of the assembled answer, in its own file so C8 can count
-  it. A strict schema plus one `severity` override. 9 counted lines.
+  it. A strict schema plus one `level` override. 9 counted lines.
 - `hand-rolled.ts` — the same feature set with no library at all: classify against a declared shape
   into the four industry classes, keep the value only where it is unambiguous, maintain a windowed
   per-field rate. 92 counted lines. The baseline C8 prices against.
@@ -134,17 +134,18 @@ currency|Invalid input: expected string, received undefined` against C1's `info|
   `.nullish()` → **nothing at all** (declared variance, raw === validated); `.catch("")` → `warn`
   and a fabricated `""`. "Warning-level, value intact" is not one of the options, and `.nullable()`
   — the correct schema for a sometimes-null field — makes a 5% rollout completely invisible.
-- **C5: the vocabulary is keyed on the wrong axis.** `severity` maps `undeclared`/`coerced`/
+- **C5: the vocabulary is keyed on the wrong axis.** `level` maps `undeclared`/`coerced`/
   `defaulted` (types.ts:72) — what your _schema_ did — not addition/removal/type-change/nullable —
   what the _vendor_ did. Only addition maps 1:1. The three soft kinds re-level fully in one literal,
-  and `severity: 'warn'` is an emission-time allowlist (drift.ts:147) — **a finding you filtered out
+  and `level: 'warn'` is an emission-time allowlist (drift.ts:147) — **a finding you filtered out
   never reaches a trace sink either**, so you cannot filter and count the same kind.
-- **There is no per-path severity.** `resolveSeverity` (drift.ts:90-101) never sees the path.
+- **There is no per-path severity.** `resolveLevel` (drift.ts:90-101) never sees the path.
   `ignore` is path-aware and it is on/off. "A coercion on `transaction_id` pages, a coercion on
   `description` does not" has no spelling.
-- **`error` is type-blocked and runtime-live.** `DriftSeverity` excludes `'error'` (types.ts:74) and
+- **`error` is type-blocked and runtime-live.** `Exclude<DriftLevel, 'error'>` excludes `'error'`
+  (types.ts:74) and
   the docs say fatality is the schema's job — c5(e) asserts the rejection with `@ts-expect-error`.
-  Cast past the type and the runtime honours it: `severity: { coerced: 'error' }` produced
+  Cast past the type and the runtime honours it: `level: { coerced: 'error' }` produced
   `error|coerced|transaction_id` and **failed the call** (`levelOf` at drift.ts:100 →
   `finding.level === 'error'` at engine.ts:1256). Off-contract; the documented route is a strict
   schema, which also gives a better message.
@@ -204,12 +205,12 @@ string -> number` is identical for `12345` and for `0`. If you alert on findings
   validated, no diff, no finding, `ok: true`. Audit your optionals — each one is a removal you have
   pre-approved.
 - **`.default()` on a removed field fabricates a value and logs it at `verbose`.** The quietest
-  level in the vocabulary, and dropped entirely by `severity: 'warn'`.
+  level in the vocabulary, and dropped entirely by `level: 'warn'`.
 - **A plain `output` schema without `drift()` coerces in complete silence.** Same coercion, same
   stripping, zero findings. `drift()` is the diagnostic wrapper, not the validator.
 - **Caching silently divides your drift rate.** A hit emits `start`/`result` but never a drift
   finding. Your measured rate is the true rate × miss ratio, and nothing warns you.
-- **Filtering with `severity` also deletes the data.** The allowlist runs at emission (drift.ts:147),
+- **Filtering with `level` also deletes the data.** The allowlist runs at emission (drift.ts:147),
   so a filtered kind is invisible to the trace sink too. Re-level with the map form if you want it
   quiet _and_ counted.
 - **`findings / calls` is not a drift rate.** One response with two drifted fields is two findings.

@@ -89,8 +89,9 @@ already does.
   through a cast — but the no-op spelling is the shorter and more natural one.
 - **ADR 0018 §1's `defaultInspect` was never implemented**, so there is no stitch-level or
   process-level way to make every `.inspect()` call redact.
-- **`severity: { undeclared: 'error' }` is a compile error and a working runtime kill-switch.**
-  `DriftSeverity` excludes `error` and the JSDoc says soft drift is always non-fatal, but through
+- **`level: { undeclared: 'error' }` is a compile error and a working runtime kill-switch.**
+  `Exclude<DriftLevel, 'error'>` excludes `error` and the JSDoc says soft drift is always
+  non-fatal, but through
   a cast it re-levels the finding and fails the call. There is no runtime guard behind the type.
 - **`sensitive: true` survives onto the public `__config`**, so `.report()` prints
   `"sensitive":true` beside a record it did not protect — it gates the cache and nothing else

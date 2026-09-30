@@ -7,7 +7,7 @@
 //     no-schema fast path (rung 4);
 //   - `transformTrust` clears the transform gate but does NOT rescue an un-fingerprintable schema:
 //     it still refuses (rung 5), and only `fallback: 'revalidate'` caches it.
-import { clearFingerprinters, resolveFingerprint } from '../src/fingerprint';
+import { fingerprinters, resolveFingerprint } from '../src/fingerprint';
 import type { StandardSchemaV1 } from '../src/standard-schema';
 
 // A Standard Schema for a vendor with NO registered fingerprinter → un-fingerprintable.
@@ -20,7 +20,7 @@ const unregisteredSchema = (): StandardSchemaV1 => ({
 });
 
 beforeEach(() => {
-    clearFingerprinters();
+    fingerprinters.clear();
 });
 
 describe('resolveFingerprint: no-output (rung 4) folds pick + transform', () => {

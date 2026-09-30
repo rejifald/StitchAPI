@@ -25,8 +25,7 @@ async function main(): Promise<void> {
         adapter: provider.resourceAdapter({ delayMs: 10 }),
         auth: oauth2({
             tokenUrl: 'https://auth.example.com/token',
-            clientId: 'cid',
-            clientSecret: 'csecret',
+            client: { id: 'cid', secret: 'csecret' },
             adapter: provider.tokenAdapter({ delayMs: 10 }),
         }),
     });

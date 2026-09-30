@@ -145,12 +145,12 @@ export default tseslint.config(
     {
         files: ['**/test/**/*.ts', '**/src/**/*.test.ts'],
         rules: {
-            // The store/adapter suites assert through `assertConformance(...)`, the
+            // The store/adapter suites assert through `conformance.assert(...)`, the
             // shared contract-runner helper — a real assertion the rule can't see
             // through, so name it rather than let those specs read as assertion-free.
             'vitest/expect-expect': [
                 'error',
-                { assertFunctionNames: ['expect', 'assertConformance'] },
+                { assertFunctionNames: ['expect', 'conformance.assert'] },
             ],
             '@typescript-eslint/no-non-null-assertion': 'off',
             '@typescript-eslint/no-unsafe-assignment': 'off',

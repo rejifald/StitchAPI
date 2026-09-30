@@ -1,6 +1,6 @@
 ---
 title: 'seam()'
-description: 'SeamOptions — every prop a seam takes, the eight per-endpoint keys it refuses — plus the Seam handle and the lifecycle-free PrincipalSeam that seam.as() returns.'
+description: 'SeamConfig — every prop a seam takes, the eight per-endpoint keys it refuses — plus the Seam handle and the lifecycle-free PrincipalSeam that seam.as() returns.'
 prerequisites: ['/docs/concepts/the-seam']
 ---
 
@@ -10,7 +10,7 @@ once in [Reference → Config types](/docs/reference/config-types).
 
 ## seam()
 
-`seam(options?)` takes a [`SeamOptions`](#seamoptions) fragment and returns a
+`seam(options?)` takes a [`SeamConfig`](#seamconfig) fragment and returns a
 [`Seam`](#seam): the long-lived entity its members belong to, owning one store,
 one auth vault, one throttle bucket, and one trace sink. Members come from
 `.stitch()` and `.graphql()`, and inherit the seam's props as the base they
@@ -29,13 +29,13 @@ const api = seam({
 const getUser = api.stitch({ path: '/users/{id}', pick: 'data' });
 ```
 
-## SeamOptions
+## SeamConfig
 
-<AutoTypeTable path="../../packages/core/src/types.ts" name="SeamOptions" />
+<AutoTypeTable path="../../packages/core/src/types.ts" name="SeamConfig" />
 
 ### The eight keys a seam refuses
 
-`SeamConfig` — the shared fragment inside `SeamOptions` — is `StitchConfig` minus
+`SeamConfig` is `StitchConfig` minus
 the keys that are intrinsically per-endpoint: the address (`path`, `url`,
 `method`, `document`) and the request and response shape (`name`, `input`,
 `output`, `kind`). A member sets those. Naming one on the seam is a type error
@@ -66,9 +66,12 @@ entries, throttle counters, and sessions. It defaults to an in-memory store.
 **`trace` is one sink for the whole surface.** Every member's events land in it,
 and `flush()` drains it.
 
-**`secretStore` splits the vault off by visibility, not by backend.** Auth state
-lives in the vault, which defaults to a reserved, redacted namespace over `store`;
-pass a KMS- or Vault-backed store here to harden it. Either may be distributed.
+**`vault` splits the secrets off by visibility, not by backend.** Auth tokens and
+sessions live in the vault, which defaults to a reserved, redacted namespace over
+`store`; point `vault` at a KMS-, Vault- or keychain-backed store to harden those
+alone. Either may be distributed. It is an ordinary `StitchConfig` prop, so a
+standalone `stitch()` takes it too — the seam shares one vault across its members
+rather than being the only way to have one.
 
 ## Seam
 

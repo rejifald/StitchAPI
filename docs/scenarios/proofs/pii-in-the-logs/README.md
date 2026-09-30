@@ -23,8 +23,9 @@ Two ADR claims were refuted by measurement:
   embed the input — a custom `refine`/`check` message here, Zod 3's enum wording at the time this
   was first measured — reaches `consoleSink` and `loggerSink`, the two sinks C1 measured as
   carrying nothing (C7(h)).
-- **`DriftOptions.severity`** — "soft drift is always non-fatal". At the type level yes
-  (`DriftSeverity` excludes `error`); at runtime `severity: { undeclared: 'error' }` re-levels the
+- **`DriftOptions.level`** — "soft drift is always non-fatal". At the type level yes
+  (`Exclude<DriftLevel, 'error'>` excludes `error`); at runtime `level: { undeclared: 'error' }`
+  re-levels the
   finding and fails the call (C7(f)).
 
 And a third thing that is not in the claims at all: **`console.error(err)` is safe and

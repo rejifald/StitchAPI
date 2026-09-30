@@ -20,10 +20,34 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** A single section hit from the hybrid search engine. */
-export interface DocSearchHit {
+/**
+ * One document as the BUNDLED INDEX stores it — Orama's spelling, because these are the schema
+ * fields the index was built with: the dump itself, the `properties` search list and `boost`
+ * ({@link FieldBoost}) all key on them. This is the layer that MEETS Orama (CONTRACT P18/P22),
+ * so it is the layer the mirror rule pins — and it is deliberately NOT exported, because a
+ * consumer of this package never handles one. {@link searchDocs} converts it at the edge.
+ */
+interface IndexedDoc {
     pageUrl: string;
     pageTitle: string;
+    heading: string;
+    anchor: string;
+    text: string;
+}
+
+/**
+ * A single section hit from the hybrid search engine — house vocabulary, converted from
+ * {@link IndexedDoc} at the one point the index is read.
+ *
+ * `path`, not `url`: the value is site-relative (`/docs/…`), and `anchor` addresses the section
+ * within it — the two compose into an absolute URL at the MCP boundary. Naming it `url` beside
+ * an `anchor` would promise a whole address and hand back half of one.
+ */
+export interface DocSearchHit {
+    /** Site-relative path of the page (`/docs/…`); `anchor` addresses the section within it. */
+    path: string;
+    /** The page's own title; `heading` is the section within it, when there is one. */
+    title: string;
     heading: string;
     anchor: string;
     text: string;
@@ -141,8 +165,22 @@ export async function searchDocs(
               };
     const results = await search(db, params);
 
+    // The ONE conversion point between the index's vocabulary and the house one (P18/P22:
+    // convert at the edge). This used to be a `{ ...doc, score }` spread behind an
+    // `as unknown as Omit<DocSearchHit, 'score'>` cast, which asserted the stored document and
+    // the published hit were the same object — that is what let the index's field names leak
+    // onto the published type, and it would have gone on typechecking the day the schema
+    // changed. Naming the stored shape and mapping field by field makes both layers typed and
+    // the boundary visible.
     return results.hits.map((hit) => {
-        const doc = hit.document as unknown as Omit<DocSearchHit, 'score'>;
-        return { ...doc, score: hit.score };
+        const doc = hit.document as unknown as IndexedDoc;
+        return {
+            path: doc.pageUrl,
+            title: doc.pageTitle,
+            heading: doc.heading,
+            anchor: doc.anchor,
+            text: doc.text,
+            score: hit.score,
+        };
     });
 }

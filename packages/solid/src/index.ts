@@ -253,10 +253,19 @@ export function createStitchStream<T>(
 // peer of this package): `stitchQueryOptions(stitch, input)` returns the plain
 // `{ queryKey, queryFn }` POJO that `@tanstack/solid-query`'s
 // `createQuery(options)` consumes — no import of TanStack itself. The key is
-// `deriveQueryKey`'s stable, secret-redacted derivation, shared verbatim across
+// `stitchKey.of`'s stable, secret-redacted derivation, shared verbatim across
 // every framework binding (CONTRACT.md P9). Named `stitchQueryOptions` (not a
 // bare `queryOptions`) because TanStack Query exports its own `queryOptions` —
-// see ADR 0012.
-// Need the key alone (e.g. for TanStack invalidation)? Import `deriveQueryKey`
-// from `@stitchapi/query-core` — it is already an installed peer.
+// see ADR 0012, which is also why the key grammar is `stitchKey` and not a bare
+// `queryKey`.
+// Need the key alone (e.g. for TanStack invalidation)? Import `stitchKey` from
+// `@stitchapi/query-core` — it is already an installed peer.
+//
+// This barrel deliberately stops at the adapter where React / Vue / Svelte /
+// Angular also re-export `stitchKey`. That divergence PREDATES the key fold and
+// is left standing here: those four say "import everything from the binding",
+// this one says "the peer is already installed, import from it", and both are
+// written as if principled. Picking one is an additive change to a public
+// surface and a separate call from folding three names into one — see the
+// CHANGELOG entry for the fold.
 export { stitchQueryOptions } from '@stitchapi/query-core';

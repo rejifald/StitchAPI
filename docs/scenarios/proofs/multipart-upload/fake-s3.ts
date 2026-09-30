@@ -26,7 +26,7 @@
 import type {
     Adapter,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
 } from '../../../../packages/core/src/types';
 
 const HOST = 'https://s3.example';
@@ -227,7 +227,7 @@ export class FakeS3 {
 
     /** A StitchAPI {@link Adapter} bound to this bucket. */
     adapter(): Adapter {
-        return (req: AdapterRequest): Promise<AdapterResponse> =>
+        return (req: AdapterRequest): Promise<AdapterResult> =>
             this.handle(req);
     }
 
@@ -265,7 +265,7 @@ export class FakeS3 {
     }
 
     /** The one request handler both entry points share. */
-    private async handle(req: AdapterRequest): Promise<AdapterResponse> {
+    private async handle(req: AdapterRequest): Promise<AdapterResult> {
         const url = new URL(req.url);
         const key = url.pathname.replace(`/${BUCKET}/`, '');
         const method = req.method.toUpperCase();
@@ -295,7 +295,7 @@ export class FakeS3 {
         };
     }
 
-    private initiate(key: string): AdapterResponse {
+    private initiate(key: string): AdapterResult {
         const uploadId = `upl-${(this.nextUploadId += 1)}`;
         this.uploads.set(uploadId, {
             uploadId,
@@ -323,7 +323,7 @@ export class FakeS3 {
         uploadId: string,
         partNumber: number,
         signal: AbortSignal | undefined,
-    ): Promise<AdapterResponse> {
+    ): Promise<AdapterResult> {
         this.inFlight += 1;
         this.peakInFlight = Math.max(this.peakInFlight, this.inFlight);
         try {
@@ -424,7 +424,7 @@ export class FakeS3 {
         key: string,
         uploadId: string,
         body: unknown,
-    ): AdapterResponse {
+    ): AdapterResult {
         const upload = this.uploads.get(uploadId);
         const record = (status: number): void => {
             this.hits.push({
@@ -509,7 +509,7 @@ export class FakeS3 {
         return { status: 200, headers: {}, body: object };
     }
 
-    private abort(key: string, uploadId: string): AdapterResponse {
+    private abort(key: string, uploadId: string): AdapterResult {
         const upload = this.uploads.get(uploadId);
         if (!upload || upload.status !== 'open') {
             this.hits.push({

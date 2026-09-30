@@ -31,7 +31,7 @@ import { stitch } from '../../../../packages/core/src/index';
 import type { Surface } from '../../../../packages/core/src/index';
 import type {
     Adapter,
-    AdapterResponse,
+    AdapterResult,
     HookContext,
     StitchEvent,
     TraceContext,
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
         let adapterSaw: unknown;
         let adapterKnewName = 'no';
         const base = serving(USERS);
-        const wrapped: Adapter = async (req): Promise<AdapterResponse> => {
+        const wrapped: Adapter = async (req): Promise<AdapterResult> => {
             const res = await base(req);
             adapterSaw = res.headers['sunset'];
             adapterKnewName = 'name' in req ? 'yes' : 'no';
@@ -284,7 +284,7 @@ async function main(): Promise<void> {
         ]);
         check('(i) and it knows the endpoint', hookName, 'users');
         note(
-            '(i) → THE POSITIVE RESULT. `ctx.res` is the full `AdapterResponse` — `{ status, headers, body, url? }` — and `ctx.name` says which stitch. Scenarios 6, 7 and 15 each concluded "no headers" from an accessor that genuinely has none; this seam was never asked',
+            '(i) → THE POSITIVE RESULT. `ctx.res` is the full `AdapterResult` — `{ status, headers, body, url? }` — and `ctx.name` says which stitch. Scenarios 6, 7 and 15 each concluded "no headers" from an accessor that genuinely has none; this seam was never asked',
         );
     }
     {
@@ -322,7 +322,7 @@ async function main(): Promise<void> {
         const r = await stitch({
             name: 'users',
             url: 'https://api.vendor.test/v1/users',
-            adapter: async (): Promise<AdapterResponse> => ({
+            adapter: async (): Promise<AdapterResult> => ({
                 status: 503,
                 headers: headersFor(USERS),
                 body: { error: 'unavailable' },
@@ -343,7 +343,7 @@ async function main(): Promise<void> {
 
     finish(
         'C1',
-        "DEFINITIVE, AND IT IS NOT THE ABSENCE THREE EARLIER SCENARIOS RECORDED. Response headers ARE reachable on a successful call, in exactly THREE places: the `adapter` (it built the response, but knows no stitch name and cannot change the result), `hooks.onResponse` (`ctx.res.headers` — the whole `AdapterResponse`, plus `ctx.name`), and a Surface's `interpret(res, cfg)` (`res.headers`, plus it RETURNS the value the call resolves to). Everything a caller normally reaches for carries nothing: `await`, `.unwrap()`, `.safe()`, `.inspect()` (5 keys, `status` but no headers), `.report()` (9 keys, same), `StitchError` (5 keys — scenario 15 re-confirmed), `transform` (one parameter, and it is the body), and the ENTIRE event spine — 4 events, 15 distinct keys between them, not one a header, which is why a `TraceSink` inherits the same hole. So the three earlier findings were each correct about their own accessor and each generalised one step too far: the header was never in `Inspection` or `StitchError`, and it was always in `interpret` and `onResponse`",
+        "DEFINITIVE, AND IT IS NOT THE ABSENCE THREE EARLIER SCENARIOS RECORDED. Response headers ARE reachable on a successful call, in exactly THREE places: the `adapter` (it built the response, but knows no stitch name and cannot change the result), `hooks.onResponse` (`ctx.res.headers` — the whole `AdapterResult`, plus `ctx.name`), and a Surface's `interpret(res, cfg)` (`res.headers`, plus it RETURNS the value the call resolves to). Everything a caller normally reaches for carries nothing: `await`, `.unwrap()`, `.safe()`, `.inspect()` (5 keys, `status` but no headers), `.report()` (9 keys, same), `StitchError` (5 keys — scenario 15 re-confirmed), `transform` (one parameter, and it is the body), and the ENTIRE event spine — 4 events, 15 distinct keys between them, not one a header, which is why a `TraceSink` inherits the same hole. So the three earlier findings were each correct about their own accessor and each generalised one step too far: the header was never in `Inspection` or `StitchError`, and it was always in `interpret` and `onResponse`",
     );
 }
 

@@ -6,8 +6,14 @@ import { shell } from '../src/index';
 
 import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import type { Adapter } from 'stitchapi';
 
 const NODE = process.execPath; // an absolute path — no PATH needed to resolve it
+
+// A perfectly valid transport, used only to prove the `adapter` KEY is rejected — the value is
+// never the problem, and it is never called, because this surface replaces the transport.
+const unusedAdapter: Adapter = () =>
+    Promise.reject(new Error('the shell surface must never reach an adapter'));
 
 test('runs a static command; stdout is the result (text mode)', async () => {
     const echo = shell(NODE);
@@ -191,6 +197,14 @@ test('old spellings are DELETED and the empty bags are rejected (compile-time)',
     void shell(NODE, { wire: { response: 'json' } });
     // @ts-expect-error — a subprocess yields text or JSON, nothing else
     void shell(NODE, { decode: 'blob' });
+    // The surface carries `execute`, and the engine runs `cfg.kind.execute ?? adapter` — so a
+    // transport passed here is NEVER called, not even as a fallback. It used to type-check and
+    // sit silently unused (CONTRACT.md P24: inert config must not type-check). `unusedAdapter` is
+    // a well-formed `Adapter`, so these are rejected for being the wrong KEY, not a bad value.
+    // @ts-expect-error — `adapter` is off this surface; `execute` replaces the transport
+    void shell(NODE, { adapter: unusedAdapter });
+    // @ts-expect-error — and through the envelope form too, not just the positional bag
+    void shell({ command: NODE, adapter: unusedAdapter });
     // @ts-expect-error — the buffer envelope must set a field (P20): pass a scalar or omit it
     void shell(NODE, { buffer: {} });
     // @ts-expect-error — `{}` is not a valid options bag (CONTRACT.md P20): omit it instead

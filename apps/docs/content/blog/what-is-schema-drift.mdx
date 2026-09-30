@@ -94,7 +94,7 @@ const getOrder = async (id: number) => {
 
 Two tiers run on every call. Validation comes first: a required field that's missing or incompatible fails the call with [STITCH_DRIFT](/docs/errors/stitch-drift) (`change: 'invalid'`, `level: 'error'`), and on success the call returns the validated value — coerced, defaulted, unknown keys stripped. Then drift diffs the raw body against that validated value and emits each soft difference as a non-fatal finding on the [event stream](/docs/concepts/event-stream): `coerced` at `warn`, `undeclared` at `info`, `defaulted` at `verbose`.
 
-Because the schema _declares_ what may vary, normal variance never reads as drift — `z.string().optional()`, `z.string().nullable()`, and `z.array(...)` all validate clean, so the snapshot problem doesn't arise. A field you know about but don't consume goes in `ignore: ['meta', '_links']` to keep the typed contract tight, and `severity` re-levels or filters the soft kinds. The full grammar is in the [drift detection guide](/docs/guides/validation/drift).
+Because the schema _declares_ what may vary, normal variance never reads as drift — `z.string().optional()`, `z.string().nullable()`, and `z.array(...)` all validate clean, so the snapshot problem doesn't arise. A field you know about but don't consume goes in `ignore: ['meta', '_links']` to keep the typed contract tight, and `level` re-levels or filters the soft kinds. The full grammar is in the [drift detection guide](/docs/guides/validation/drift).
 
 ## When plain `output` is the floor — and when you reach for `drift()`
 

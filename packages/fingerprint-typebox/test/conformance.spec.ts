@@ -13,10 +13,7 @@ import { typeboxFingerprinter } from '../src';
 
 import { Type } from '@sinclair/typebox';
 import type { TSchema } from '@sinclair/typebox';
-import {
-    assertConformance,
-    verifyFingerprintContract,
-} from 'stitchapi/testing';
+import { conformance } from 'stitchapi/testing';
 import type { FingerprintFixtures } from 'stitchapi/testing';
 import { describe, expect, it } from 'vitest';
 
@@ -206,11 +203,11 @@ const fixtures: FingerprintFixtures = {
 
 describe('@stitchapi/fingerprint-typebox', () => {
     it('passes the conformance contract', () => {
-        const r = verifyFingerprintContract(typeboxFingerprinter, fixtures);
+        const r = conformance.fingerprint(typeboxFingerprinter, fixtures);
         expect(r.violations).toEqual([]);
         expect(r.ok).toBe(true);
         expect(() => {
-            assertConformance(r);
+            conformance.assert(r);
         }).not.toThrow();
     });
 

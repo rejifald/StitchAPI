@@ -55,9 +55,11 @@ export interface StitchInput {
 
 // ---- Drift ----------------------------------------------------------------
 /**
- * Severity of a finding. `error` is reserved for a hard validation failure (`change: 'invalid'`),
- * which fails the call; soft drift is non-fatal — `warn` / `info` / `verbose` (quietest), see
- * {@link DriftSeverity}.
+ * Level of a finding — the ONE word for this concept, on both sides (CONTRACT.md P1): it is what
+ * {@link DriftOptions.level} authors and what {@link DriftFinding.level} reports. `error` is
+ * reserved for a hard validation failure (`change: 'invalid'`), which fails the call; soft drift is
+ * non-fatal — `warn` / `info` / `verbose` (quietest), i.e. `Exclude<DriftLevel, 'error'>`, which is
+ * exactly what {@link DriftOptions.level} accepts.
  */
 export type DriftLevel = 'error' | 'warn' | 'info' | 'verbose';
 /**
@@ -68,10 +70,8 @@ export type DriftLevel = 'error' | 'warn' | 'info' | 'verbose';
  * throws.
  */
 export type DriftChange = 'undeclared' | 'coerced' | 'defaulted' | 'invalid';
-/** The soft (diff-derived) drift kinds — the ones whose severity is configurable. */
+/** The soft (diff-derived) drift kinds — the ones whose level is configurable. */
 export type SoftDriftChange = Exclude<DriftChange, 'invalid'>;
-/** Non-fatal severities a soft drift finding can carry. (Fatality is the schema's job — make the field required.) */
-export type DriftSeverity = 'warn' | 'info' | 'verbose';
 export interface DriftFinding {
     level: DriftLevel;
     path: string;
@@ -96,23 +96,27 @@ export interface DriftOptions {
      */
     ignore?: string | string[];
     /**
-     * How soft drift is leveled / filtered. Three shapes (ADR 0015):
-     * - a **single level** or a **bare list** of levels — an _allowlist_ of which severities to
+     * How soft drift is leveled / filtered. Named for what it sets — the finding's
+     * {@link DriftFinding.level} — so one concept keeps one word on both the authoring and the
+     * reading side (CONTRACT.md P1). Three shapes (ADR 0015):
+     * - a **single level** or a **bare list** of levels — an _allowlist_ of which levels to
      *   surface (others are dropped), keeping the per-kind defaults below. `'warn'` ≡ `['warn']`.
-     * - a **map** of soft-change kind → severity — _re-levels_ a kind (all kinds still surface).
+     * - a **map** of soft-change kind → level — _re-levels_ a kind (all kinds still surface).
      *
-     * Per-kind defaults: `undeclared` → `info`, `coerced` → `warn`, `defaulted` → `verbose`.
-     * Omitted ⇒ every soft drift surfaces at its default level. Soft drift is always non-fatal;
-     * to fail on a change, make the field required/strict in the schema (it becomes `invalid`).
+     * The accepted levels are {@link DriftLevel} minus `error`, derived rather than re-listed:
+     * `error` belongs to a hard validation failure, and soft drift is always non-fatal. Per-kind
+     * defaults: `undeclared` → `info`, `coerced` → `warn`, `defaulted` → `verbose`. Omitted ⇒
+     * every soft drift surfaces at its default level. To fail on a change, make the field
+     * required/strict in the schema (it becomes `invalid`).
      *
-     * @example severity: 'warn'                         // surface only warn-level drift
-     * @example severity: ['info', 'warn']               // surface info and warn (drop verbose)
-     * @example severity: { coerced: 'info', defaulted: 'info' } // re-level two kinds
+     * @example level: 'warn'                         // surface only warn-level drift
+     * @example level: ['info', 'warn']               // surface info and warn (drop verbose)
+     * @example level: { coerced: 'info', defaulted: 'info' } // re-level two kinds
      */
-    severity?:
-        | DriftSeverity
-        | DriftSeverity[]
-        | Partial<Record<SoftDriftChange, DriftSeverity>>;
+    level?:
+        | Exclude<DriftLevel, 'error'>
+        | Exclude<DriftLevel, 'error'>[]
+        | Partial<Record<SoftDriftChange, Exclude<DriftLevel, 'error'>>>;
 }
 export interface DriftSpec<T = unknown> {
     __kind: 'drift';
@@ -229,9 +233,10 @@ export interface WireOptions {
      */
     body?: BodyEncoding;
     /**
-     * How the response body is read. Maps onto `AdapterRequest.responseType`, which keeps the
-     * XHR/fetch spelling at the transport boundary (P22 — follow the standard that governs each
-     * layer, and convert at the edge).
+     * How the response body is read. Maps 1:1 onto {@link AdapterRequest.response} — same word on
+     * both sides of the edge. XHR's `responseType` spelling lives on the duck-type that meets XHR
+     * ({@link XhrLike}), and each adapter converts there (P18/P22 — the standard binds the layer
+     * that meets it, and this contract is not that layer).
      */
     response?: ResponseType;
     /**
@@ -732,8 +737,8 @@ export type WireBodyFixedByGraphql<C> =
  * `Content-Disposition` filename parsing. Relaxing `method` later is non-breaking.
  *
  * Only the AUTHORING slot moves under `wire`. `downloadSurface.buildRequest` still returns a flat
- * `responseType: 'blob'` on its `AdapterRequest`, which is the transport contract and is unchanged
- * (P22 — the XHR spelling belongs to the layer that meets XHR).
+ * `response: 'blob'` on its `AdapterRequest`, which is the transport contract — flat there, nested
+ * here, one word either way.
  *
  * Reads the COMPOSED config via {@link Layers}, so a `method` or `wire.response` inherited through
  * `extends` is seen. {@link AnyLayer} takes each depth's shape as-is, which is why the flat and
@@ -985,12 +990,24 @@ export interface AdapterRequest {
      * string is already serialised into `url` by the time a request reaches the transport).
      * Defaults to `'indices'` — the same default the query string uses, so one authored
      * {@link WireOptions.array} means one thing on both urlencoded surfaces.
+     *
+     * Spelled `array`, matching {@link WireOptions.array}: no transport API takes an array format
+     * — the walker is ours — so nothing pins a foreign spelling here, and CONTRACT.md P24 (a)
+     * shelters only the layer that MEETS a standard. One capability, one word, both sides of the
+     * edge (P1/P16).
      */
-    arrayFormat?: ArrayFormat;
-    responseType?: ResponseType;
+    array?: ArrayFormat;
+    /**
+     * How the response body is read, from {@link WireOptions.response}. House vocabulary, not
+     * XHR's `responseType`: the VALUES are already normalised (`'arrayBuffer'` camelCase where XHR
+     * spells it `'arraybuffer'`, and no `'document'` arm), and every adapter converts at its own
+     * edge — `xhr.responseType = 'arraybuffer'`, axios's `responseType: 'arraybuffer'`. A contract
+     * whose values are normalised has no claim on a foreign name (P18/P24 (a)).
+     */
+    response?: ResponseType;
     /**
      * Ask the transport NOT to buffer/parse the response — hand back the live body instead
-     * (ADR 0005 Decision 9 / Q1). When set, {@link AdapterResponse.body} is a
+     * (ADR 0005 Decision 9 / Q1). When set, {@link AdapterResult.body} is a
      * `ReadableStream<Uint8Array>`. Only `fetch` honours it; buffered-only adapters (axios, xhr)
      * reject the request.
      */
@@ -1003,15 +1020,28 @@ export interface AdapterRequest {
     onProgress?: (progress: AdapterProgress) => void;
     signal?: AbortSignal;
 }
-export interface AdapterResponse {
+/**
+ * What a transport hands back: the house-normalised shape every adapter converts its client's
+ * native reply INTO, not a mirror of the platform `Response` (P3). `headers` is lower-cased and
+ * flattened to a plain record, `body` is already read — parsed JSON when possible, else text —
+ * and `url` is present only where the transport exposes one. Nothing here is the platform type,
+ * which is why the name carries the produced-shape suffix `*Result` rather than `*Response`: a
+ * `*Response` name in this codebase means "the platform object, or a faithful mirror of it".
+ */
+export interface AdapterResult {
     status: number;
     headers: Record<string, string>;
     // Parsed JSON when possible, else text — OR a `ReadableStream<Uint8Array>` when `stream` was set.
     body: unknown;
     /**
-     * The final response URL (after redirects), when the transport exposes it (`fetchAdapter` sets
-     * it from `response.url`). The `download` surface uses it for the filename fallback (ADR 0005
-     * Decision 8); other readers may ignore it.
+     * The response URL, when the transport exposes one. The `download` surface uses it for the
+     * filename fallback (ADR 0005 Decision 8) and it is carried onto {@link StitchError.url}; other
+     * readers may ignore it.
+     *
+     * How exact it is depends on the transport, because not every client exposes the same thing:
+     * `fetchAdapter` follows redirects itself, so it reports the FINAL url after the last hop;
+     * `axiosAdapter` gets no final url back from axios and so reports the REQUEST url, which a
+     * followed 3xx makes differ from where the response actually came from.
      */
     url?: string;
 }
@@ -1050,7 +1080,7 @@ export interface AdapterCapabilities {
  * {@link AdapterCapabilities} is hung off the function so a plain `(req) => Promise<res>` still
  * satisfies the type — declaring capabilities is opt-in.
  */
-export type Adapter = ((req: AdapterRequest) => Promise<AdapterResponse>) & {
+export type Adapter = ((req: AdapterRequest) => Promise<AdapterResult>) & {
     capabilities?: AdapterCapabilities;
 };
 
@@ -1073,9 +1103,23 @@ export type BackoffCurve = 'expo' | 'expo-jitter' | 'fixed';
 export interface BackoffOptions {
     /** Delay curve. Default `'expo-jitter'`. */
     curve?: BackoffCurve;
-    /** Delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms. */
+    /**
+     * Delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms **in core**.
+     *
+     * DELIBERATE DIVERGENCE: `@stitchapi/deno-kv` resolves this same exported envelope to **5ms**.
+     * Its retries are compare-and-set re-reads of a local KV cell, which take microseconds, not a
+     * network round trip — a 100ms first wait would spend three orders of magnitude longer idling
+     * than the operation it is pacing. The envelope is shared on purpose (one grammar, one parser);
+     * only the resolved default differs, and it is stated in both places rather than discovered.
+     */
     base?: number | string;
-    /** Ceiling the computed delay is clamped to — `10_000`, `'10s'`. Default 10s. */
+    /**
+     * Ceiling the computed delay is clamped to — `10_000`, `'10s'`. Default 10s **in core**.
+     *
+     * DELIBERATE DIVERGENCE: `@stitchapi/deno-kv` resolves this same exported envelope to **250ms**,
+     * for the reason on `base` — a lost compare-and-set race is retried against a local cell, so a
+     * 10s ceiling would turn a contended write into an apparent hang instead of a fast loser.
+     */
     max?: number | string;
 }
 export interface RetryOptions {
@@ -1214,17 +1258,20 @@ export interface TimeoutOptions {
 }
 export interface CircuitOptions {
     /**
-     * Consecutive failures that trip the breaker OPEN. Required by design — a breaker with an
-     * invisible threshold fails silently (CONTRACT.md P15); `createCircuit` throws when `failures`
-     * or `cooldown` is missing. Optional at the type level only so the object form can be built up
-     * incrementally; the positional `[failures, cooldown]` shorthand supplies both.
+     * Consecutive failures that trip the breaker OPEN. Default `5`.
+     *
+     * Optional, and a default rather than a throw: `circuit` is opt-in, so DECLARING it is the
+     * decision a reviewer has to see — the threshold is a tuning knob, and a documented default is
+     * not the invisible one CONTRACT.md P15 rules out (the same reading that leaves
+     * `retry.backoff.base` at 100ms). The positional `[failures, cooldown]` shorthand supplies both
+     * at once; `circuit: { cooldown: '1m' }` sets one and takes the default for the other.
      */
     failures?: number;
     /**
-     * Fast-fail window after opening — `30_000`, `'30s'`. When it elapses the breaker goes
-     * half-open and admits one trial call, so this is the **single** open→half-open boundary:
-     * fast-fail and probe cannot run on different clocks, because a call is either rejected or
-     * admitted (CONTRACT.md P1). Required by design (P15); `createCircuit` throws when missing.
+     * Fast-fail window after opening — `30_000`, `'30s'`. Default `'30s'`. When it elapses the
+     * breaker goes half-open and admits one trial call, so this is the **single** open→half-open
+     * boundary: fast-fail and probe cannot run on different clocks, because a call is either
+     * rejected or admitted (CONTRACT.md P1). Optional on the same grounds as `failures`.
      */
     cooldown?: number | string;
     /** Store namespace to share a breaker across stitches (default: stitch/host key). */
@@ -1400,8 +1447,8 @@ export interface AuthContext {
     store: StitchStore; // throttle/session state — in-memory by default, shareable when configured
     /**
      * Secret namespace for auth tokens/sessions: off `__config`, redacted from traces, read
-     * only by auth strategies (ADR 0002 §4). Defaults to a reserved prefix over `store`; a
-     * seam may back it with a hardened `secretStore`. Sessions are keyed by scope here.
+     * only by auth strategies (ADR 0002 §4). Defaults to a reserved prefix over `store`; the
+     * `vault` config slot backs it with a hardened store instead. Keyed by scope here.
      */
     vault: StitchStore;
     /**
@@ -1427,7 +1474,7 @@ export interface AuthContext {
     clock?: Clock;
     /**
      * Announce an `info` StitchEvent onto the run's event stream — a strategy reporting a
-     * decision it made (e.g. which env var a `bearer` token resolved from via `optionalEnv`, or
+     * decision it made (e.g. which env var a `bearer` token resolved from via `env.optional`, or
      * that `oauth2` fetched a token). NEVER carries the secret itself. The engine buffers these
      * during `apply`/`refresh` and yields them; outside a run it is a no-op.
      */
@@ -1447,14 +1494,15 @@ export type SecurityScheme =
     | { type: 'apiKey'; in: 'header' | 'query' | 'cookie'; name: string }
     | {
           type: 'oauth2';
-          flows: { clientCredentials?: OAuth2ClientCredentialsFlow };
+          flows: { clientCredentials: OAuth2ClientCredentialsFlow };
       };
 /**
  * The client-credentials arm of a {@link SecurityScheme}'s `flows` — OpenAPI 3.1's "OAuth Flow
  * Object", spelled exactly as the spec spells it (`tokenUrl`/`scopes`/`refreshUrl`, CONTRACT.md
  * P22) so `stitch export --openapi` emits it as an identity mapping. Named and exported per P14 —
- * the shape mirrors the standard, the name is ours. (`flows` itself stays inline: a single
- * optional member is not a multi-field sub-object.)
+ * the shape mirrors the standard, the name is ours. (`flows` itself stays inline: a single member
+ * is not a multi-field sub-object. That member is REQUIRED, so the opaque `flows: {}` — a scheme
+ * that declares oauth2 and then describes no flow at all — is a type error, CONTRACT.md P20.)
  */
 export interface OAuth2ClientCredentialsFlow {
     tokenUrl: string;
@@ -1472,7 +1520,7 @@ export interface AuthStrategy {
      */
     scheme?: SecurityScheme;
     apply: (req: AdapterRequest, ctx: AuthContext) => void | Promise<void>;
-    shouldRefresh?: (res: AdapterResponse) => boolean;
+    shouldRefresh?: (res: AdapterResult) => boolean;
     refresh?: (ctx: AuthContext) => void | Promise<void>;
 }
 
@@ -1486,7 +1534,7 @@ export interface HookContext {
      * see {@link Hooks.onRequest}: by the time a hook sees it, auth has already signed it.
      */
     req?: AdapterRequest;
-    res?: AdapterResponse;
+    res?: AdapterResult;
     error?: unknown;
 }
 /**
@@ -1791,10 +1839,11 @@ export interface StitchConfig {
      */
     timeout?: number | string | AtLeastOne<TimeoutOptions>;
     /**
-     * Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are
-     * required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`). The
-     * positional form names both at once — `circuit: [5, '30s']` ≡
-     * `circuit: { failures: 5, cooldown: '30s' }`.
+     * Circuit breaker that fast-fails a repeatedly failing dependency. Both knobs have defaults
+     * (`failures` `5`, `cooldown` `'30s'`), so the object form may set either alone — but the
+     * opaque `circuit: {}` is still rejected (P20 — `AtLeastOne`): an empty envelope says nothing
+     * `circuit: [5, '30s']` does not say better. The positional form names both at once —
+     * `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.
      */
     circuit?:
         | [failures: number, cooldown: number | string]
@@ -1825,13 +1874,15 @@ export interface StitchConfig {
     hooks?: AtLeastOne<Hooks>;
     /**
      * Fragment(s) to deep-merge under this config — strings, partials, or other stitches. A single
-     * fragment is shorthand for a one-element list (CONTRACT.md P7).
+     * fragment is shorthand for a one-element list (CONTRACT.md P7). A partial must declare at
+     * least one slot: the opaque `extends: {}` contributes nothing to the merge and is rejected
+     * (CONTRACT.md P20 — `AtLeastOne`).
      */
     extends?:
-        | Partial<StitchConfig>
+        | AtLeastOne<StitchConfig>
         | Stitch
         | string
-        | (Partial<StitchConfig> | Stitch | string)[];
+        | (AtLeastOne<StitchConfig> | Stitch | string)[];
     /** Test seam / custom transport. */
     adapter?: Adapter;
     /**
@@ -1842,6 +1893,14 @@ export interface StitchConfig {
     clock?: Clock;
     /** Pluggable state store for throttle + session. Default in-memory. */
     store?: StitchStore;
+    /**
+     * Backend for the **vault** — the reserved, redacted namespace auth tokens and sessions live
+     * in (ADR 0002 §4). Defaults to a namespace over `store`, so secrets and throttle counters
+     * share one backend; point this at a KMS/Vault/keychain store (`expoSecureStore`) to harden
+     * the secrets alone. The split is by **visibility**, not backend — either may be distributed.
+     * Live object — stripped from `__config`.
+     */
+    vault?: StitchStore;
     /**
      * Observability sink — **off by default**, because a stitch's only effect on
      * the world is its call. Opt in with `'console'` (the colored stderr stream),
@@ -2289,16 +2348,20 @@ export interface StitchStore {
         ttl?: number,
     ): Promise<number>;
     /**
-     * Atomically take (or renew) one slot of a **counting semaphore** with `limit` slots, expiring
-     * `ttl` ms from `now`. Resolves `true` when this caller holds a slot, `false` when all `limit`
-     * are taken by live holders. The fleet-wide half of `throttle.concurrency` (ADR 0025).
+     * Atomically take (or renew) one slot of a **counting semaphore** with `concurrency` slots,
+     * expiring `ttl` ms from `now`. Resolves `true` when this caller holds a slot, `false` when all
+     * `concurrency` are taken by live holders. The fleet-wide half of `throttle.concurrency`
+     * (ADR 0025) — and named for it, so the store verb and the authoring slot are one word
+     * (CONTRACT.md P1). It was spelled `limit` here while the config slot it backs was
+     * `concurrency`, which made one cap read as two.
      *
      * Semantics, atomically as one step — drop every lease whose expiry is at or before `now`,
      * then:
      *
      * - `token` already held ⇒ **renew** it to `now + ttl` and resolve `true`. Idempotent by
      *   design: a caller that re-leases is extending, never taking a second slot.
-     * - otherwise, fewer than `limit` live ⇒ **take** a slot for `token` until `now + ttl`, `true`.
+     * - otherwise, fewer than `concurrency` live ⇒ **take** a slot for `token` until `now + ttl`,
+     *   `true`.
      * - otherwise ⇒ take nothing, `false`. The pruning still persists; a failed attempt must not
      *   leave expired holders in place for the next caller to trip over.
      *
@@ -2312,7 +2375,7 @@ export interface StitchStore {
      * why the limiter can treat `release` as fire-and-forget: a dropped release costs the fleet one
      * slot for at most `ttl`, rather than forever. The cost of that design is the converse — a
      * caller still working past `ttl` has already lost its slot, so the fleet can briefly exceed
-     * `limit`. Size `throttle.lease` above your slowest call.
+     * `concurrency`. Size `throttle.lease` above your slowest call.
      *
      * **Optional, and paired** with {@link StitchStore.release} — a store MUST implement both or
      * neither. Without them `concurrency` stays per-process, exactly as it was before ADR 0025.
@@ -2323,7 +2386,7 @@ export interface StitchStore {
     lease?(
         key: string,
         token: string,
-        limit: number,
+        concurrency: number,
         ttl: number,
         now: number,
     ): Promise<boolean>;
@@ -2346,7 +2409,7 @@ export interface StitchStore {
  * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `document`)
  * and the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting
  * — `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
- * `paginate`, `pick`, `transform`, `wire`, `hooks`, `trace`, `store`, `cache`, `adapter`
+ * `paginate`, `pick`, `transform`, `wire`, `hooks`, `trace`, `store`, `vault`, `cache`, `adapter`
  * — belongs here, so the type itself answers "what belongs at the seam". Members set the endpoint
  * keys.
  */
@@ -2361,19 +2424,6 @@ export type SeamConfig = Omit<
     | 'output'
     | 'kind'
 >;
-
-/**
- * Options for {@link Seam} — the shared {@link SeamConfig} plus an optional hardened `secretStore`
- * backing the vault.
- */
-export type SeamOptions = SeamConfig & {
-    /**
-     * Backend for the vault (auth tokens/sessions). Defaults to a reserved, redacted namespace
-     * over the seam's `store`; supply a KMS/Vault-backed store here for a hardened vault. Split
-     * is by **visibility**, not backend — both store and vault may be distributed (ADR 0002 §4).
-     */
-    secretStore?: StitchStore;
-};
 
 /**
  * A principal-bound seam handle — what `seam.as(id)` returns, and the object trusted code hands to

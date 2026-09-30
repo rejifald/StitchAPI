@@ -44,7 +44,7 @@ tools:
 | **B. Test code that _calls_ a stitch** — my handler calls `getUser()`; a unit test that never touches the runtime                           | Consumer of a stitch | the **stitch itself** (canned return)        | replace with a fake `Stitch` |
 
 Both are unserved today. The architecture makes A easy (the `Adapter` contract is
-`(req: AdapterRequest) => Promise<AdapterResponse>`, `types.ts:225`) and B
+`(req: AdapterRequest) => Promise<AdapterResult>`, `types.ts:225`) and B
 fiddly-but-high-value (a conformant fake `Stitch` is hard to hand-roll — it must
 be callable returning a `StitchResult` _and_ carry
 `.safe()/.unwrap()/.stream()/.with()/.cache/.invalidate()/__config/__stitch`,

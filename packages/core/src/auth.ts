@@ -14,7 +14,7 @@ import { fetchAdapter } from './http-adapter';
 import { acceptsStatus, parseRetryAfter } from './resilience';
 import type {
     Adapter,
-    AdapterResponse,
+    AdapterResult,
     AtLeastOne,
     AuthContext,
     AuthStrategy,
@@ -40,7 +40,7 @@ export type { AuthContext, AuthStrategy, SecurityScheme } from './types';
 
 /**
  * A credential: a literal string, or a getter resolved at CALL time (what {@link env},
- * {@link secretsFile} and {@link secretFrom} return) so the declaration carries a capability
+ * `credential.file` and `credential.from` return) so the declaration carries a capability
  * rather than a value. Public so a peer package that accepts a consumer-authored credential —
  * `@stitchapi/aws-sigv4`'s `accessKeyId`, say — names core's type instead of mirroring it.
  */
@@ -50,7 +50,7 @@ const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
 /**
  * A resolver that may yield no value: `bearer` attaches the header only when it resolves to a
  * value, and otherwise skips it (announcing the miss) instead of failing. Produced by
- * {@link optionalEnv}, and branded so `bearer` can tell it apart from a required {@link Secret} —
+ * `env.optional`, and branded so `bearer` can tell it apart from a required {@link Secret} —
  * which also keeps it, at the type level, out of the strategies that demand a credential
  * (`apiKey`, `basic`, `oauth2`).
  */
@@ -77,57 +77,44 @@ function base64(s: string): string {
 }
 
 /**
- * Resolve a REQUIRED secret from an environment variable at call time. An exported-but-empty var
- * (`MY_TOKEN=`) counts as missing and throws — mirroring {@link optionalEnv}, which treats `''` as
- * absent — so a blank credential can never silently ride along. For the may-or-may-not-be-set case,
- * use {@link optionalEnv}.
+ * The shape of {@link env} — callable for the required case, with `optional` hanging off it.
+ * Declared explicitly rather than left to `Object.assign` inference so BOTH halves keep their own
+ * documentation in the emitted `.d.ts`: an inferred intersection types the call correctly but
+ * drops the prose, and the caveats below are the whole reason these two are one name.
  */
-export function env(name: string): () => string {
+export interface EnvResolver {
+    /**
+     * Resolve a REQUIRED secret from an environment variable at call time. An exported-but-empty
+     * var (`MY_TOKEN=`) counts as missing and throws — mirroring `env.optional`, which treats `''`
+     * as absent — so a blank credential can never silently ride along. For the
+     * may-or-may-not-be-set case, use `env.optional`.
+     */
+    (name: string): () => string;
+    /**
+     * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when
+     * it is unset or empty — it never throws. An exported-but-empty var (`MY_TOKEN=`) counts as
+     * absent, so `bearer` never sends `Bearer ` with no token. Pass it to {@link bearer} to attach
+     * the credential only when present, otherwise send the request unauthenticated (announced in
+     * the trace): `bearer(env.optional('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent
+     * loops where a token may or may not be exported; when the call must be authenticated, use the
+     * throwing `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it
+     * resolves absent, so `bearer` simply attaches nothing.
+     */
+    optional(name: string): OptionalSecret;
+}
+
+function envRequired(name: string): () => string {
     return () => {
         const v = readEnv(name);
         if (v == null || v === '')
             throw new Error(
-                `missing env var ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
+                `missing env var ${name}. Fix: set it in the environment, use env.optional() if it's optional, or credential.from() to read it from injected config.`,
             );
         return v;
     };
 }
 
-/** A source `secretFrom` pulls a named value from: an object with a `get(name)` method
- *  (e.g. a NestJS ConfigService or a secrets-manager client) or a plain `(name) => value` fn. */
-export type SecretSource =
-    | { get(name: string): string | undefined }
-    | ((name: string) => string | undefined);
-
-/**
- * Resolve a REQUIRED secret from an arbitrary injected `source` at call time — for DI'd apps that
- * supply config WITHOUT touching `process.env` (a ConfigService, a secrets-manager client, a
- * validated config object). Throws if the source yields no value (unset or empty), mirroring
- * {@link env}. Compose with `bearer`/`apiKey`/`basic`/`oauth2` exactly like `env()`:
- * `bearer(secretFrom(configService, 'GITHUB_TOKEN'))`.
- */
-export function secretFrom(source: SecretSource, name: string): () => string {
-    return () => {
-        const v =
-            typeof source === 'function' ? source(name) : source.get(name);
-        if (v == null || v === '')
-            throw new Error(
-                `missing secret ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
-            );
-        return v;
-    };
-}
-
-/**
- * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when it
- * is unset or empty — it never throws. Pass it to {@link bearer} to attach the credential only when
- * present, otherwise send the request unauthenticated (announced in the trace):
- * `bearer(optionalEnv('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent loops where a
- * token may or may not be exported; when the call must be authenticated, use the throwing
- * `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it resolves absent,
- * so `bearer` simply attaches nothing.
- */
-export function optionalEnv(name: string): OptionalSecret {
+function envOptional(name: string): OptionalSecret {
     // An exported-but-empty var (`MY_TOKEN=`) counts as absent — never send `Bearer ` with no token.
     const read = (): string | undefined => {
         const v = readEnv(name);
@@ -140,14 +127,58 @@ export function optionalEnv(name: string): OptionalSecret {
 }
 
 /**
- * Read a named secret from `~/.stitch/secrets.json` (plaintext JSON — keep
- * the file private); falls back to the env var of the same name if the file
- * is absent or does not contain the key; throws if neither is available.
+ * The environment-variable secret resolver. One SOURCE, so one name — and because requiredness is
+ * a modifier on that source rather than a second source, `env` is itself the required resolver and
+ * `optional` hangs off it: `env('NAME')` throws when the variable is unset, `env.optional('NAME')`
+ * resolves to *absent* instead. The same shape as the token grammars and `secrets` (one name per
+ * dimension, the distinction named at the call site) applied to a dimension that happens to have a
+ * dominant case, which is why this one stays callable instead of growing an `env.required`.
  *
- * WARNING: the secrets file is unencrypted plaintext JSON. Restrict its
- * permissions (`chmod 600 ~/.stitch/secrets.json`) and never commit it.
+ * Both halves treat an exported-but-empty var (`MY_TOKEN=`) as ABSENT, so a blank credential can
+ * never silently ride along — `env` throws on it, `env.optional` reports it missing and `bearer`
+ * sends the request unauthenticated.
+ *
+ * **Only the process environment.** For a secret that comes from anywhere else — the on-disk
+ * secrets file, or a config object a DI container injected — see {@link credential}.
  */
-export function secretsFile(name: string): () => string {
+// A NOTE ON COST, since the house rule is that a facade must not weld anything onto a consumer's
+// path. `credential` below honours that literally: it is a bare object literal, so a bundler drops
+// it whole and a `bearer`-only import pulls neither resolver. `env` CANNOT: making one name both
+// callable and property-bearing requires mutating a function at module scope, and no bundler will
+// elide that — `Object.assign` is an opaque call, and a plain `env.optional = …` assignment is a
+// side effect neither esbuild nor rollup will prove away. A `/* @__PURE__ */` annotation does not
+// rescue it either: tsup minifies this module on the way to `lib/`, and the annotation is stripped
+// from the published artifact, so it would be decoration that reads as a guarantee.
+//
+// Measured: an import of `bearer` ALONE grows 434 -> 871 B raw, 267 -> 472 B gzip (+205 B), and
+// because the call is top-level that ~205 B is paid by EVERY importer of this module, not just one
+// that touches `env`. That is the price of `env` staying callable — the dominant case by far —
+// instead of becoming an `env.required`/`env.optional` pair, and it is paid only on the
+// `stitchapi/auth` subpath, which a consumer has already opted into by importing a strategy. The
+// three budgeted scenarios do not move. Revisit if `bearer`-only imports turn out to dominate.
+export const env: EnvResolver = Object.assign(envRequired, {
+    optional: envOptional,
+});
+
+/** A source `credential.from` pulls a named value from: an object with a `get(name)` method
+ *  (e.g. a NestJS ConfigService or a secrets-manager client) or a plain `(name) => value` fn. */
+export type SecretSource =
+    | { get(name: string): string | undefined }
+    | ((name: string) => string | undefined);
+
+function credentialFrom(source: SecretSource, name: string): () => string {
+    return () => {
+        const v =
+            typeof source === 'function' ? source(name) : source.get(name);
+        if (v == null || v === '')
+            throw new Error(
+                `missing secret ${name}. Fix: make the source yield a non-empty value, or use env.optional() if it's optional.`,
+            );
+        return v;
+    };
+}
+
+function credentialFile(name: string): () => string {
     return () => {
         try {
             // No node:fs (browser): skip the file, fall through to the env var.
@@ -169,12 +200,44 @@ export function secretsFile(name: string): () => string {
     };
 }
 
+/**
+ * Secret resolvers for credentials that do NOT come from the process environment — one name per
+ * SOURCE, with the source named at the call site rather than prefixed onto two barrel exports.
+ * Both members are REQUIRED resolvers: they throw rather than yield a blank credential, mirroring
+ * {@link env}, and both return the same `() => string` thunk every strategy accepts, so they
+ * compose with `bearer`/`apiKey`/`basic`/`oauth2` exactly like `env()` does.
+ *
+ * - `credential.file(name)` reads the named key from `~/.stitch/secrets.json`, falling back to the
+ *   env var of the same name when the file is absent or lacks the key, and throwing when neither
+ *   is available. **WARNING: that file is unencrypted plaintext JSON.** Restrict its permissions
+ *   (`chmod 600 ~/.stitch/secrets.json`) and never commit it. In a browser bundle there is no
+ *   `node:fs`, so it skips the file and resolves from the environment alone.
+ * - `credential.from(source, name)` resolves from an arbitrary injected `source` — for DI'd apps
+ *   that supply config WITHOUT touching `process.env` (a ConfigService, a secrets-manager client,
+ *   a validated config object). The source is an object with `get(name)` or a `(name) => value`
+ *   function; it throws if the source yields no value (unset or empty), mirroring `env()`.
+ *   `bearer(credential.from(configService, 'GITHUB_TOKEN'))`.
+ *
+ * **The environment variable case is not here.** It is the dominant source and has its own
+ * callable namespace, {@link env}; `credential.file` falls back to an env var, but reading one
+ * directly is `env(name)`.
+ *
+ * The noun is the one {@link Secret} already describes. It is deliberately NOT `secrets` — that
+ * word is the ROOT barrel's trace-redaction namespace (`secrets.register`/`has`/`redact`), and two
+ * different objects behind one name on two entry points is the P1 "one word, one concept"
+ * violation that no amount of subpath separation makes readable.
+ */
+export const credential = {
+    file: credentialFile,
+    from: credentialFrom,
+} as const;
+
 export function bearer(token: Secret | OptionalSecret): AuthStrategy {
     return {
         name: 'bearer',
         scheme: { type: 'http', scheme: 'bearer' },
         apply(req, ctx) {
-            // An optional secret (e.g. optionalEnv): attach the header only when it resolves to a
+            // An optional secret (e.g. env.optional): attach the header only when it resolves to a
             // value; otherwise skip it and announce the miss — never a silent no-op. A required
             // Secret keeps the original behavior exactly (resolve, attach; env() throws if unset).
             if (isOptional(token)) {
@@ -203,11 +266,13 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
  * overload that renamed `SchemaFingerprint.value` to `token`); OpenAPI's scheme carries no
  * credential material, so there is no upstream spelling to mirror for it.
  *
- * Local (non-exported) — like {@link OAuth2Options}/{@link CookieSessionOptions}, the builder's
- * param type is not part of the package's public export surface (P16: none of the auth option
- * types are). It is inlined into `apiKey`'s emitted `.d.ts`.
+ * Exported, like every sibling auth builder's option type ({@link BasicOptions},
+ * {@link OAuth2Options}, {@link CookieSessionOptions}) — CONTRACT.md P14/P16: a multi-field
+ * envelope is a named, exported interface, and the parity argument runs that way, not the other.
+ * Left un-exported it inlined into `apiKey`'s emitted `.d.ts` as an anonymous shape, so a consumer
+ * could neither import nor extend it while its three siblings imported fine.
  */
-interface ApiKeyOptions {
+export interface ApiKeyOptions {
     /** Where the key is sent. Default `'header'`. */
     in?: 'header' | 'query' | 'cookie';
     /**
@@ -365,23 +430,80 @@ export interface OAuth2RefreshOptions {
     skew?: number | string;
 }
 
-export interface OAuth2Options {
-    /** The `client_credentials` token endpoint (POST, form-encoded). */
-    tokenUrl: string;
-    /** OAuth2 client id; resolved at call time (env/secretsFile), never committed. */
-    clientId: Secret;
-    /** OAuth2 client secret; resolved at call time. */
-    clientSecret: Secret;
-    /** Optional space-delimited scopes. */
-    scope?: string;
+/**
+ * Envelope for {@link OAuth2Options.client} — WHO the client is at the token endpoint, and how it
+ * proves it (CONTRACT.md P24: `clientId`/`clientSecret`/`clientAuth` shared the `client` prefix,
+ * so they fold into one envelope). Named and exported per P14.
+ *
+ * No scalar shorthand: P12/P14 offer one only for an **unambiguously dominant** field, and `id`
+ * and `secret` are co-equal — both required, neither usable without the other — so no single
+ * scalar could name the pair. A positional `[id, secret]` tuple (the `circuit` form) is rejected
+ * for the same reason it would be unsafe: both members are {@link Secret}, so a transposed tuple
+ * type-checks and fails at the provider. `tokenUrl` stays FLAT beside this envelope — the endpoint
+ * is the address, a different subject from the identity calling it (P1).
+ *
+ * Not `AtLeastOne<OAuth2ClientOptions>`: that wrapper exists to make `{}` a compile error on an
+ * ALL-OPTIONAL bag (P20), and here `id`/`secret` are already required, so `client: {}` is a type
+ * error without it — the `CacheOptions.ttl` reading of P15. Applied to this envelope
+ * `AtLeastOne` would be actively wrong: each of its arms re-optionalises the members it did not
+ * pick, so `client: { id }` — a client with no secret — would start type-checking.
+ */
+export interface OAuth2ClientOptions {
+    /**
+     * OAuth2 client id (`client_id` on the wire); resolved at call time (env/credential.file), never
+     * committed.
+     */
+    id: Secret;
+    /** OAuth2 client secret (`client_secret` on the wire); resolved at call time. */
+    secret: Secret;
     /**
      * How the client authenticates to the token endpoint (RFC 6749 §2.3.1). Default `'post'`
      * (`client_secret_post`) puts `client_id`/`client_secret` in the form body. `'basic'`
      * (`client_secret_basic`) sends them as an HTTP Basic `Authorization` header and keeps only
      * `grant_type` (plus `scope`/`audience`/`params`) in the body — what providers like Kyivstar
      * SMS require. The header is Base64 of `id:secret`, encoded browser-safe (no `Buffer`).
+     *
+     * Spelled `via` — "the client authenticates VIA basic" — and NOT `auth`, because that token is
+     * already spent: `StitchConfig.auth` holds an {@link AuthStrategy}, a behaviour object with a
+     * required `apply` closure. One token would then denote two concepts over two value-spaces (an
+     * object vs a closed string union), which CONTRACT.md P2 forbids outright — two fields that
+     * legitimately mean different things MUST NOT share a name even if each is individually
+     * defensible; rename one. Locality is not a defence: P2 is what forecloses it, and here the two
+     * would nest visibly inside ONE call expression —
+     * `auth: oauth2({ client: { auth: 'basic' } })`.
+     *
+     * Not RFC 7591's `tokenEndpointAuthMethod` either: this envelope is house vocabulary, not a
+     * mirror (see {@link OAuth2Options}). RFC 6749 §2.3.1 names the METHODS, not a request
+     * parameter, so there is no wire spelling to keep faith with here — the two VALUES are the
+     * house short forms of `client_secret_post` / `client_secret_basic`, and they are unchanged by
+     * this spelling.
      */
-    clientAuth?: 'post' | 'basic';
+    via?: 'post' | 'basic';
+}
+
+/**
+ * Options for {@link oauth2}. House vocabulary, NOT an RFC 6749 mirror: the client credentials
+ * are translated, not exported — re-cased into `client_id`/`client_secret` where the token-request
+ * form body is built, and moved out of that body into a Basic `Authorization` header under
+ * `client.via: 'basic'` — so there is no identity mapping to protect where RFC 6749's names were
+ * being claimed. (`scope`/`audience` do go out under their own names, and most of this interface
+ * never reaches the body at all; neither was ever the field group under discussion.)
+ * `OAuth2ClientCredentialsFlow` states the test the contracts that ARE mirrors have to meet —
+ * "spelled exactly as the spec spells it … so
+ * `stitch export --openapi` emits it as an identity mapping" — and this one does not meet it, so
+ * CONTRACT.md P18's second half governs: a house contract uses house vocabulary. That is why the
+ * client credentials fold into {@link OAuth2ClientOptions} (P24) instead of staying flat.
+ */
+export interface OAuth2Options {
+    /** The `client_credentials` token endpoint (POST, form-encoded). */
+    tokenUrl: string;
+    /**
+     * The client's identity at that endpoint — `{ id, secret }`, plus `via` to pick
+     * `client_secret_post` (default) or `client_secret_basic` (CONTRACT.md P24 envelope).
+     */
+    client: OAuth2ClientOptions;
+    /** Optional space-delimited scopes. */
+    scope?: string;
     /** OAuth2 `audience` (Auth0 / RFC 8693); added to the token-request body when set. */
     audience?: string;
     /**
@@ -393,7 +515,7 @@ export interface OAuth2Options {
     params?: Record<string, string>;
     /**
      * Extra headers on the token request (e.g. a provider-required header). Keys are lower-cased;
-     * cannot override the `Authorization` header that `clientAuth: 'basic'` sets.
+     * cannot override the `Authorization` header that `client.via: 'basic'` sets.
      */
     headers?: Record<string, string>;
     /**
@@ -412,7 +534,7 @@ export interface OAuth2Options {
      * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
      * principal is bound**, mirroring {@link CookieSessionOptions.tenancy}); each tenant then caches its
      * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
-     * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
+     * per-tenant `client.id`/`client.secret`/`scope` for full multi-tenant separation.
      */
     tenancy?: 'principal' | 'app';
     /** Test seam / custom transport for the token request (default `fetchAdapter()`). */
@@ -482,7 +604,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
-    const clientAuth = opts.clientAuth ?? 'post';
+    const authMethod = opts.client.via ?? 'post';
     const flight = singleFlight<string>();
 
     // The vault key for THIS call. Default 'app' shares one token across all callers (correct for
@@ -528,17 +650,17 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         for (const [k, v] of Object.entries(opts.headers ?? {}))
             headers[k.toLowerCase()] = v;
 
-        if (clientAuth === 'basic') {
+        if (authMethod === 'basic') {
             // client_secret_basic: credentials ride in an HTTP Basic header (set last, so a
             // caller-supplied header can't clobber it) and stay OUT of the body.
             const creds = base64(
-                `${resolve(opts.clientId)}:${resolve(opts.clientSecret)}`,
+                `${resolve(opts.client.id)}:${resolve(opts.client.secret)}`,
             );
             headers['authorization'] = `Basic ${creds}`;
         } else {
             // client_secret_post: credentials in the form body, applied last so `params` can't shadow them.
-            body['client_id'] = resolve(opts.clientId);
-            body['client_secret'] = resolve(opts.clientSecret);
+            body['client_id'] = resolve(opts.client.id);
+            body['client_secret'] = resolve(opts.client.secret);
         }
 
         const res = await adapter({
@@ -550,7 +672,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         });
         if (res.status >= 400)
             throw new Error(
-                `oauth2 token request failed: HTTP ${res.status}. Fix: check tokenUrl, clientId/clientSecret, and scope.`,
+                `oauth2 token request failed: HTTP ${res.status}. Fix: check tokenUrl, client.id/client.secret, and scope.`,
             );
 
         const payload = (res.body ?? {}) as {
@@ -559,7 +681,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
         };
         if (!payload.access_token)
             throw new Error(
-                'oauth2 token response missing access_token. Fix: check tokenUrl, clientId/clientSecret, and scope.',
+                'oauth2 token response missing access_token. Fix: check tokenUrl, client.id/client.secret, and scope.',
             );
 
         const ttlMs =
@@ -616,7 +738,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
  * Why an `apply`/`refresh` login attempt failed, categorised so the HOST can drive its OWN
  * durable state machine (wrong-creds vs rate-limited vs network) — StitchAPI keeps doing the
  * mechanical cookie capture/replay, but it can't model a host's external recovery loop, so it
- * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOptions.onAuthFailure}.
+ * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOptions.onFailure}.
  */
 export interface AuthFailureResult {
     /** Which half of the auth attempt failed: `'apply'` = cold session had no stored cookie;
@@ -660,7 +782,7 @@ export interface CookieSessionRefreshOptions {
      */
     on?: StatusMatch;
     /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
-    when?: (res: AdapterResponse) => boolean;
+    when?: (res: AdapterResult) => boolean;
 }
 
 export interface CookieSessionOptions {
@@ -674,11 +796,18 @@ export interface CookieSessionOptions {
     /** Capture/replay the full Set-Cookie set — equivalent to `cookie: '*'` (in jar mode `cookie` only seeds the store key). */
     jar?: boolean;
     /**
-     * Inputs (credentials) for the login call, resolved at call time. Receives the bound
+     * Derives the credentials for the login call, resolved at call time. Receives the bound
      * `principal` (from `seam.as(id)`, `undefined` when none) so trusted code can map the
      * identity to that user's credentials — credentials still never originate from the caller.
+     * The returned {@link StitchInput} is what the `login` stitch is called with.
+     *
+     * Named `credentialsOf`, not `loginInput`, on CONTRACT.md P6's derivation-function convention
+     * (`key` is a value, `keyOf` is a function that produces one): the `Of` suffix says this is a
+     * function and the stem says what it returns. It also dissolves the `login`-prefix P24 group —
+     * `login` (the required Stitch) and `loginInput` (a callback) shared a leading word while
+     * being different value-kinds, which needed a lint carve-out to stay flat.
      */
-    loginInput?: (principal?: string) => StitchInput;
+    credentialsOf?: (principal?: string) => StitchInput;
     /**
      * When to trigger a re-login (CONTRACT.md P24 envelope). A bare function is the P12
      * dominant-field shorthand for `{ on: <fn> }` — a {@link StatusMatch} predicate over the
@@ -711,11 +840,11 @@ export interface CookieSessionOptions {
      * and owns the external recovery loop that StitchAPI's per-call single-flight can't model. A
      * throwing hook never crashes the call (it is caught and announced on the `auth` trace topic).
      */
-    onAuthFailure?: (info: AuthFailureResult) => void | Promise<void>;
+    onFailure?: (info: AuthFailureResult) => void | Promise<void>;
     /**
      * Host-owned hook fired once after EVERY (re)login attempt — success or failure — with its
      * {@link RefreshResult}, so the host can persist durable session state and clear/extend its
-     * cooldown. Like {@link onAuthFailure}, it runs once per actual attempt (inside the
+     * cooldown. Like {@link onFailure}, it runs once per actual attempt (inside the
      * single-flight-guarded `doRefresh`), and a throw is caught so it can't crash the call.
      */
     onRefresh?: (result: RefreshResult) => void | Promise<void>;
@@ -759,7 +888,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     // slow async hook still completes before the login attempt is considered done.
     const runHook = async (
         ctx: AuthContext,
-        name: 'onAuthFailure' | 'onRefresh',
+        name: 'onFailure' | 'onRefresh',
         invoke: () => void | Promise<void>,
     ): Promise<void> => {
         try {
@@ -796,7 +925,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     };
 
     // Announce one login attempt's outcome to the host. `onRefresh` fires for EVERY attempt; on a
-    // failure (no cookie captured) `onAuthFailure` fires too with the categorised `info`.
+    // failure (no cookie captured) `onFailure` fires too with the categorised `info`.
     const report = async (
         ctx: AuthContext,
         ok: boolean,
@@ -810,16 +939,16 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
                 // `status` only appears on the result object when the login actually responded.
                 onRefresh(status === undefined ? { ok } : { ok, status }),
             );
-        const onAuthFailure = opts.onAuthFailure;
-        if (!ok && failure && onAuthFailure)
-            await runHook(ctx, 'onAuthFailure', () => onAuthFailure(failure));
+        const onFailure = opts.onFailure;
+        if (!ok && failure && onFailure)
+            await runHook(ctx, 'onFailure', () => onFailure(failure));
     };
 
     // ONE actual login attempt (single-flight-guarded by the callers below, so the hooks fire once
     // per real attempt, never per coalesced waiter). `__raw` RESOLVES only for a 2xx login and
     // THROWS otherwise — an error with a numeric `status` (+ a `response` for its headers) is a
     // response-derived failure (401/429/…); an error without a `status` is a transport failure. Each
-    // path fires `onRefresh` always and `onAuthFailure` on failure, then re-throws so callers see the
+    // path fires `onRefresh` always and `onFailure` on failure, then re-throws so callers see the
     // original error exactly as before these hooks existed.
     const doRefresh = async (
         ctx: AuthContext,
@@ -828,31 +957,31 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         step: 'apply' | 'refresh',
     ) => {
         ctx.emit('auth', 'login');
-        // `__raw` runs the login once and returns its raw AdapterResponse (headers and all);
+        // `__raw` runs the login once and returns its raw AdapterResult (headers and all);
         // `__rawTraced` does the same but TEES the login's events as a CHILD run (ADR 0007) of the
         // call that triggered it. Neither is on the public Stitch type, so reach them through a cast.
         const login = opts.login as unknown as {
-            __raw: (input?: StitchInput) => Promise<AdapterResponse>;
+            __raw: (input?: StitchInput) => Promise<AdapterResult>;
             __rawTraced?: (
                 input: StitchInput | undefined,
                 parent: RunContext,
-            ) => Promise<AdapterResponse>;
+            ) => Promise<AdapterResult>;
         };
-        const loginInput = opts.loginInput?.(principal);
-        let res: AdapterResponse;
+        const credentials = opts.credentialsOf?.(principal);
+        let res: AdapterResult;
         try {
             // Trace the login as a child of the caller's run when one is bound and the login
             // supports it; otherwise the original silent raw call (back-compat / standalone).
             res =
                 ctx.run && login.__rawTraced
-                    ? await login.__rawTraced(loginInput, ctx.run)
-                    : await login.__raw(loginInput);
+                    ? await login.__rawTraced(credentials, ctx.run)
+                    : await login.__raw(credentials);
         } catch (error) {
             // A failed login: an HTTP error carries a numeric `status` (+ the `response` for its
             // headers); a transport error carries neither → `network`.
             const e = error as {
                 status?: number;
-                response?: AdapterResponse;
+                response?: AdapterResult;
             };
             const status = typeof e.status === 'number' ? e.status : undefined;
             const failure: AuthFailureResult =

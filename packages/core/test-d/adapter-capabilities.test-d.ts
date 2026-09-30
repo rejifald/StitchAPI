@@ -8,15 +8,26 @@ import type {
     AdapterCapabilities,
     AdapterCapability,
     AdapterRequest,
-    AdapterResponse,
+    AdapterResult,
     AxiosLike,
 } from '../src';
 
 import axios from 'axios';
 import { expectAssignable, expectError, expectType } from 'tsd';
 
+// The produced shape is `AdapterResult`, not `AdapterResponse` (P3). It is StitchAPI's own
+// house-normalised shape — `{ status, headers, body, url? }`, with the body already parsed — and
+// not a mirror of the platform `Response`, so the banned `*Response` suffix applies and the
+// produced-shape suffix is `*Result`. The rename is a clean break: no `@deprecated` alias sits
+// behind it, because P19 makes a shim on the published surface a violation in its own right.
+// Pinned here rather than left to the gate, because R1 deliberately skips the `*Response` suffix
+// ("too many legitimate mirrors of the platform Response family") — which is how the old spelling
+// survived to GA in the first place. This line stops compiling the day the name comes back.
+// @ts-expect-error — `AdapterResponse` was renamed to `AdapterResult`; no alias may restore it.
+export type _AdapterResponseIsGone = import('../src').AdapterResponse;
+
 // A plain transport function — no `capabilities` — still satisfies Adapter (backward compatible).
-const plain = async (_req: AdapterRequest): Promise<AdapterResponse> => ({
+const plain = async (_req: AdapterRequest): Promise<AdapterResult> => ({
     status: 200,
     headers: {},
     body: null,

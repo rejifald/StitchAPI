@@ -359,7 +359,7 @@ describe('stitchQueryOptions', () => {
 // --- stitchQueryOptions: cache-key derivation regressions ------------------
 // The `queryKey` derivation shared the same three bugs as `@stitchapi/react`'s
 // (fixed there in #406). Each of these FAILED before the port. The derivation
-// now lives once in `@stitchapi/query-core` (`deriveQueryKey`); these stay as
+// now lives once in `@stitchapi/query-core` (`stitchKey.of`); these stay as
 // re-export-level regression coverage of the behaviours this binding promises.
 
 describe('stitchQueryOptions — no cache collision between nameless stitches', () => {

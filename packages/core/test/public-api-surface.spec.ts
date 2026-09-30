@@ -1,10 +1,24 @@
-// The public API surface of the package (src/index.ts). smoke.spec.ts exercises `stitch` end-to-end
-// but nothing pins the EXPORT surface itself, so an accidental removal/rename of a public symbol
-// would slip past the test suite (only attw/build catches it, late). This guards the contract: the
-// documented value exports are present and of the expected kind.
+// The public API surface of the package. smoke.spec.ts exercises `stitch` end-to-end but nothing
+// pins the EXPORT surface itself, so an accidental removal/rename of a public symbol would slip
+// past the test suite (only attw/build catches it, late). This guards the contract: the documented
+// value exports are present and of the expected kind.
+//
+// Scope is the root barrel (src/index.ts) plus the subpaths whose surface is a DECISION rather
+// than an implementation detail — `stitchapi/auth`, split off deliberately (ADR 0021),
+// `stitchapi/fingerprint`, whose registry folded into one namespace, and `stitchapi/postmessage`,
+// whose three builders did (ADR 0009). Both directions of each fold live here on purpose: the
+// members that must be present, and the spellings they replaced pinned ABSENT beside
+// `REMOVED_PARSERS` and `REMOVED_SECRET_FUNCTIONS`, so "did an old name drift back as an alias?"
+// is one file to read rather than three.
 import * as api from '../src';
+import { memoryStore } from '../src';
 import * as authApi from '../src/auth';
-import type { AdapterResponse, StitchEvent } from '../src/types';
+import { credential, env } from '../src/auth';
+import * as fingerprintApi from '../src/fingerprint';
+import type { SchemaFingerprinter } from '../src/fingerprint';
+import * as postmessageApi from '../src/postmessage';
+import * as testingApi from '../src/testing';
+import type { AdapterResult, StitchEvent } from '../src/types';
 
 // Every documented function/guard export (systemClock is an object; the error classes are below).
 const FUNCTIONS = [
@@ -90,6 +104,27 @@ const REMOVED_OTLP_FUNCTIONS = [
     'toOtlpJson',
 ] as const;
 
+// The postmessage builders (ADR 0009), one namespace over one subject — `stitchapi/postmessage`.
+//
+// Pinned as a WHOLE, like `secrets` and `otlp` above, but for the opposite reason: these are not
+// layers of one pipeline, they are mutually exclusive PEERS chosen by the transport you hold. A
+// namespace that kept `window` and lost `over` would still cover every documented example while
+// removing the only seam a host has for a primitive core does not ship — and `over` is the member
+// with no doc example to notice it missing.
+const CHANNEL_NAMESPACE_MEMBERS = [
+    'over',
+    'window',
+    'port',
+    'private',
+] as const;
+
+// The three names `channel` REPLACED, pinned absent for the same reason as the parsers, the secret
+// functions and the OTLP names above: they repeated the subject noun and varied only the role word
+// (`channel`/`windowChannel`/`portChannel`), which is the shape the surface moved away from. Note
+// `channel` itself is NOT here — the token survives as the namespace, with the role at the call
+// site.
+const REMOVED_CHANNEL_FUNCTIONS = ['windowChannel', 'portChannel'] as const;
+
 // The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the
 // status alone) answers the engine's transport-health question and has no surface-author use;
 // `httpInterpret` is the http surface's own hook, reachable as `httpSurface.interpret`. Three names
@@ -97,9 +132,73 @@ const REMOVED_OTLP_FUNCTIONS = [
 // that put a flag-failed `200` through the circuit's transport-failure path.
 const INTERNAL_VERDICT_SCOPES = ['classifyStatus', 'httpInterpret'] as const;
 
+// The per-vendor fingerprint-strategy registry on `stitchapi/fingerprint` (ADR 0004), one
+// namespace over one process-local `Map`.
+//
+// Pinned as a WHOLE, like `secrets` above: `register` without `get` leaves a host unable to check
+// what it just registered or to see why a stitch it expected to cache is refusing, and `clear` is
+// the one member with no in-app caller at all — every conformance suite in the five
+// `@stitchapi/fingerprint-*` packages resets through it, and nothing inside core would notice it
+// missing.
+const FINGERPRINTER_NAMESPACE_MEMBERS = [
+    'register',
+    'get',
+    'list',
+    'clear',
+] as const;
+
+// The four verb-prefixed functions `fingerprinters` REPLACED, pinned absent for the same reason as
+// the parsers and the secret trio — one dimension, one name, the verb at the call site. This
+// subpath makes the pin sharper than either: `src/fingerprint.ts` IS the entry, so re-exporting one
+// of these puts it straight back on the published surface with no barrel in between to stop it.
+const REMOVED_FINGERPRINTER_FUNCTIONS = [
+    'registerFingerprinter',
+    'getFingerprinter',
+    'listFingerprinters',
+    'clearFingerprinters',
+] as const;
+
+// The vendor-facing conformance kit on `stitchapi/testing`, one namespace over the four pluggable
+// seams. `ContractReport.seam` was already the discriminator; the exports refused to be, so a
+// third-party seam author read four `verify<Seam>Contract` names off one entry to make one
+// decision. This is the export-surface reading of the same rule the token grammars and `secrets`
+// applied on the root: one name per dimension, the dimension named at the call site.
+//
+// Pinned as a WHOLE, not as six members. The seams are load-bearing for real out-of-repo
+// consumers — every `@stitchapi/fingerprint-*`, `@stitchapi/redis`, `deno-kv`, `cloudflare-kv`,
+// `react-native` and `expo` package proves compliance through them in its own CI — and `assert` is
+// the only one core's own suites would notice missing, since a verifier that returns a report
+// nobody throws on is a spec that always passes.
+const CONFORMANCE_MEMBERS = [
+    'assert',
+    'store',
+    'adapter',
+    'sink',
+    'fingerprint',
+    'fixture',
+] as const;
+
+// The six names `conformance` REPLACED, pinned absent for the same reason as the parsers and the
+// secret functions on the root. `adapterContractFixture` is in this list deliberately: it is not a
+// verifier, but it is not an independent capability either — it is the server half of the adapter
+// contract, unusable apart from `conformance.adapter`, so leaving it standalone would have kept one
+// loose `*Contract*` name beside the namespace that replaced the other five.
+const REMOVED_CONFORMANCE_FUNCTIONS = [
+    'assertConformance',
+    'verifyStoreContract',
+    'verifyAdapterContract',
+    'verifySinkContract',
+    'verifyFingerprintContract',
+    'adapterContractFixture',
+] as const;
+
 // The auth surface moved to its own subpath (ADR 0021). Pinned in BOTH directions: present on
 // `stitchapi/auth`, and ABSENT from the root — a re-export there would quietly put oauth2 and
 // cookieSession back on every consumer's `import { stitch }` path, which is the point of the split.
+//
+// `env` is here rather than with the namespaces below because it is still a FUNCTION: the
+// requiredness modifier hangs off the callable (`env.optional`), so `typeof env === 'function'`
+// stays the right check. Its member is pinned separately by ENV_RESOLVER_MEMBERS.
 const AUTH_FUNCTIONS = [
     'bearer',
     'apiKey',
@@ -107,6 +206,34 @@ const AUTH_FUNCTIONS = [
     'cookieSession',
     'oauth2',
     'env',
+] as const;
+
+// The two secret-resolver namespaces on `stitchapi/auth`. These were four verb-prefixed functions
+// until the fold; they are two CLUSTERS, not one, and the split is the point — `env`/`env.optional`
+// vary by REQUIREDNESS (one source, a modifier on it), `credential.file`/`credential.from` vary by
+// SOURCE. One name per dimension, the distinction named at the call site, which is the shape the
+// token grammars, `secrets` and `otlp` already moved to.
+//
+// `env` is pinned as a CALLABLE-PLUS-MEMBER pair, not as two independent things. An `env` that
+// lost `optional` would still pass the `typeof === 'function'` check in AUTH_FUNCTIONS while
+// silently dropping the entire never-throwing path — and that path is the half with no caller
+// inside core to notice it missing, since core only ever emits `env('NAME')` from `from-curl`.
+const ENV_RESOLVER_MEMBERS = ['optional'] as const;
+
+// `credential` is pinned as a WHOLE, like `secrets` and `otlp` on the root. Its two members are
+// inseparable for the same reason: they are the two NON-environment sources, so a namespace that
+// kept `file` and lost `from` would still serve the local-dev path while removing the only reason
+// `from` exists — the DI'd app that supplies config without ever touching `process.env`, which is
+// the member with no caller inside core at all (`@stitchapi/nest`'s `fromNestConfig` is the one
+// real consumer, and nothing in this package would go red if it vanished).
+const CREDENTIAL_NAMESPACE_MEMBERS = ['file', 'from'] as const;
+
+// The four verb-prefixed functions the two namespaces above REPLACED, pinned absent so an alias
+// cannot drift back and leave two spellings of one call on the subpath. `env` itself is the one
+// name that survived the fold unchanged, so only three names are removed here. Same reasoning as
+// REMOVED_PARSERS / REMOVED_SECRET_FUNCTIONS / REMOVED_OTLP_FUNCTIONS above — one dimension, one
+// name, the verb at the call site.
+const REMOVED_SECRET_RESOLVERS = [
     'optionalEnv',
     'secretsFile',
     'secretFrom',
@@ -257,9 +384,12 @@ describe('public API surface (src/index.ts)', () => {
         expect(typeof api.httpSurface.interpret).toBe('function');
     });
 
-    test.each(AUTH_FUNCTIONS)('does NOT re-export %s from the root', (name) => {
-        expect(name in (api as Record<string, unknown>)).toBe(false);
-    });
+    test.each([...AUTH_FUNCTIONS, 'credential'])(
+        'does NOT re-export %s from the root',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
 
     test('exports the built-in surfaces with their stable ids', () => {
         expect(api.httpSurface.id).toBe('http');
@@ -274,7 +404,7 @@ describe('public API surface (src/index.ts)', () => {
     });
 
     test('exports the error classes (RateLimitError extends StitchError extends Error)', () => {
-        const response: AdapterResponse = {
+        const response: AdapterResult = {
             status: 429,
             headers: {},
             body: {},
@@ -298,9 +428,329 @@ describe('public API surface (src/auth.ts → stitchapi/auth)', () => {
         );
     });
 
+    test.each(ENV_RESOLVER_MEMBERS)(
+        'exports env.%s as a function on the callable resolver',
+        (member) => {
+            expect(
+                typeof (env as unknown as Record<string, unknown>)[member],
+            ).toBe('function');
+        },
+    );
+
+    // The pin is behavioural, not just structural: the two halves must be the same RESOLVER,
+    // reading the same variable and disagreeing only about absence. A pair wired to two unrelated
+    // readers — or an `optional` that throws like the required half — passes the typeof checks
+    // above and fails here. The empty-string case is the one both halves must agree is ABSENT, and
+    // it is the reason a blank credential never silently rides along.
+    test('env and env.optional read the same variable, differing only on absence', () => {
+        const name = 'X_PUBLIC_API_SURFACE_SPEC_TOKEN';
+        const saved = process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'];
+        try {
+            process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'] = 'live-value';
+            expect(env(name)()).toBe('live-value');
+            expect(env.optional(name)()).toBe('live-value');
+
+            process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'] = '';
+            expect(() => env(name)()).toThrow(/missing env var/);
+            expect(env.optional(name)()).toBeUndefined();
+
+            delete process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'];
+            expect(() => env(name)()).toThrow(/missing env var/);
+            expect(env.optional(name)()).toBeUndefined();
+        } finally {
+            if (saved === undefined)
+                delete process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'];
+            else process.env['X_PUBLIC_API_SURFACE_SPEC_TOKEN'] = saved;
+        }
+    });
+
+    test.each(CREDENTIAL_NAMESPACE_MEMBERS)(
+        'exports credential.%s as a function',
+        (member) => {
+            expect(typeof (credential as Record<string, unknown>)[member]).toBe(
+                'function',
+            );
+        },
+    );
+
+    // Behavioural, like the `secrets` pin on the root: both members must be REQUIRED resolvers
+    // returning the `() => string` thunk every strategy accepts, throwing rather than handing back
+    // a blank credential. `file` falls back to the env var of the same name when there is no
+    // secrets file, which is the branch reachable without touching the disk.
+    test('both credential members are throwing, call-time thunks', () => {
+        const name = 'X_PUBLIC_API_SURFACE_SPEC_CRED';
+        const saved = process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'];
+        try {
+            process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'] = 'from-env';
+            expect(credential.file(name)()).toBe('from-env');
+        } finally {
+            if (saved === undefined)
+                delete process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'];
+            else process.env['X_PUBLIC_API_SURFACE_SPEC_CRED'] = saved;
+        }
+        expect(credential.from(() => 'injected', name)()).toBe('injected');
+        expect(() => credential.from(() => undefined, name)()).toThrow(
+            /missing secret/,
+        );
+        expect(() => credential.from(() => '', name)()).toThrow(
+            /missing secret/,
+        );
+    });
+
+    test.each(REMOVED_SECRET_RESOLVERS)(
+        'does NOT export %s — the two namespaces replaced it',
+        (name) => {
+            expect(name in (authApi as Record<string, unknown>)).toBe(false);
+        },
+    );
+
     // The subpath carries the auth surface and nothing else — no accidental re-export of the
     // engine, which would defeat the split from the other direction.
     test('exports exactly the auth surface, nothing more', () => {
-        expect(Object.keys(authApi).sort()).toEqual([...AUTH_FUNCTIONS].sort());
+        expect(Object.keys(authApi).sort()).toEqual(
+            [...AUTH_FUNCTIONS, 'credential'].sort(),
+        );
     });
+});
+
+describe('public API surface (src/fingerprint.ts → stitchapi/fingerprint)', () => {
+    // The registry is process-local and this spec registers into it, so leave it as found.
+    beforeEach(() => {
+        fingerprintApi.fingerprinters.clear();
+    });
+    afterEach(() => {
+        fingerprintApi.fingerprinters.clear();
+    });
+
+    test.each(FINGERPRINTER_NAMESPACE_MEMBERS)(
+        'exports fingerprinters.%s as a function',
+        (member) => {
+            expect(
+                typeof (
+                    fingerprintApi.fingerprinters as Record<string, unknown>
+                )[member],
+            ).toBe('function');
+        },
+    );
+
+    // The pin is behavioural, not just structural, and it pins the FACADE specifically. The four
+    // implementations stay plain module functions — `resolveFingerprint` calls the lookup directly
+    // rather than through the namespace, so that a consumer importing `fingerprinters` is the only
+    // one who pays for all four (esbuild will not split an object literal to drop a dead member).
+    // That split is only safe while both halves read one `Map`: a namespace built over its own
+    // registry passes every typeof check above, and fails here, because the strategy it accepted
+    // never reaches the resolver that is supposed to use it.
+    test('the exported namespace is the one the resolver reads', () => {
+        const schema = {
+            '~standard': {
+                version: 1,
+                vendor: 'x-public-api-surface-spec',
+                validate: (value: unknown) => ({ value }),
+            },
+        } as const;
+        const strategy: SchemaFingerprinter = {
+            vendor: 'x-public-api-surface-spec',
+            range: '*',
+            fingerprint: () => ({ token: 'pinned', strength: 'strong' }),
+        };
+
+        // Unregistered → the resolver refuses, and the namespace agrees nothing is there.
+        expect(
+            fingerprintApi.fingerprinters.get(strategy.vendor),
+        ).toBeUndefined();
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }).policy,
+        ).toBe('refuse');
+
+        fingerprintApi.fingerprinters.register(strategy);
+        expect(fingerprintApi.fingerprinters.get(strategy.vendor)).toBe(
+            strategy,
+        );
+        expect(fingerprintApi.fingerprinters.list()).toContain(strategy);
+        // The registration the FACADE took is the one the resolver's own call site sees.
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }),
+        ).toMatchObject({
+            policy: 'fast',
+            reason: 'sound structural fingerprint',
+        });
+
+        fingerprintApi.fingerprinters.clear();
+        expect(
+            fingerprintApi.fingerprinters.get(strategy.vendor),
+        ).toBeUndefined();
+        expect(
+            fingerprintApi.resolveFingerprint({ output: schema }).policy,
+        ).toBe('refuse');
+    });
+
+    test.each(REMOVED_FINGERPRINTER_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (fingerprintApi as Record<string, unknown>)).toBe(
+                false,
+            );
+        },
+    );
+});
+
+// The third entry this spec guards. `stitchapi/testing` is not size-gated and never reaches a
+// production bundle, so nothing else in the build would notice a member going missing — and its
+// consumers are the packages LEAST able to absorb a silent break, since a vendor's CI is the whole
+// point of the kit. The pins live here rather than in conformance-kit.spec.ts (which exercises what
+// the verifiers DO) so that all three entries' export surfaces are pinned in one file, and a fourth
+// entry has an obvious place to land.
+describe('public API surface (src/testing.ts → stitchapi/testing)', () => {
+    test.each(CONFORMANCE_MEMBERS)(
+        'exports conformance.%s as a function',
+        (member) => {
+            expect(
+                typeof (testingApi.conformance as Record<string, unknown>)[
+                    member
+                ],
+            ).toBe('function');
+        },
+    );
+
+    // The namespace carries the kit and nothing beyond it: an extra member here is a capability
+    // that skipped the "is this a seam?" question the four names answer.
+    test('the namespace is exactly the kit, nothing more', () => {
+        expect(Object.keys(testingApi.conformance).sort()).toEqual(
+            [...CONFORMANCE_MEMBERS].sort(),
+        );
+    });
+
+    // Behavioural, not just structural: a namespace wired to some other function — or to a `store`
+    // that reports on a seam it did not run — passes the typeof checks above and fails here. The
+    // report's `seam` is the discriminator the namespace is keyed by, so this is the pin that says
+    // the key and the report agree.
+    test('each member reports the seam its name claims', async () => {
+        const store = await testingApi.conformance.store(memoryStore, {
+            ttl: '80ms',
+        });
+        expect(store.seam).toBe('store');
+        expect(store.ok).toBe(true);
+
+        const seen: string[] = [];
+        const sink = await testingApi.conformance.sink(() => ({
+            handle: (event) => {
+                seen.push(event.type);
+            },
+        }));
+        expect(sink.seam).toBe('sink');
+        expect(sink.ok).toBe(true);
+        expect(seen.length).toBeGreaterThan(0);
+
+        // `assert` is a no-op on a clean report and throws a listing on a dirty one.
+        expect(() => {
+            testingApi.conformance.assert(store);
+        }).not.toThrow();
+        expect(() => {
+            testingApi.conformance.assert({
+                seam: 'store',
+                ok: false,
+                passed: [],
+                violations: [{ rule: 'r', detail: 'd' }],
+            });
+        }).toThrow(/store contract: 1 violation/);
+
+        // The fixture is the adapter contract's server half — the one member that is not a
+        // verifier, pinned as the echo function it is.
+        expect(
+            testingApi.conformance.fixture({
+                method: 'GET',
+                path: '/text',
+                headers: {},
+            }).body,
+        ).toBe('stitch-conformance-text');
+    });
+
+    test.each(REMOVED_CONFORMANCE_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (testingApi as Record<string, unknown>)).toBe(false);
+        },
+    );
+});
+
+describe('public API surface (src/postmessage.ts → stitchapi/postmessage)', () => {
+    test.each(CHANNEL_NAMESPACE_MEMBERS)(
+        'exports channel.%s as a function',
+        (member) => {
+            expect(
+                typeof (postmessageApi.channel as Record<string, unknown>)[
+                    member
+                ],
+            ).toBe('function');
+        },
+    );
+
+    // Structural, and the point of the fold: `channel` is a NAMESPACE, not a callable with
+    // properties hung off it. CONTRACT.md P12 reserves a bare call for the dominant case, and the
+    // generic transport builder is the rare one (every doc example reaches for `channel.window`),
+    // so an `Object.assign` that made `channel(...)` work would invert that hierarchy — and would
+    // pass the typeof checks above.
+    test('the namespace is not itself callable — no bare call for the rare builder', () => {
+        expect(typeof postmessageApi.channel).toBe('object');
+    });
+
+    // Behavioural, not just structural: all four must build a REAL channel over their own
+    // transport kind. A namespace assembled from four lookalikes passes the typeof checks and
+    // fails here. `over` gets the in-memory fake the surface's own specs use; `port` gets a real
+    // MessageChannel end; `window` gets a minimal postMessage-bearing stub; `private` gets the
+    // same fake as `over` but with NO origin policy — the structural absence that makes it the
+    // documented home for an origin-less custom transport (an IPC/worker bridge).
+    test('the exported members build channels over their own transport kinds', async () => {
+        const over = postmessageApi.channel.over(
+            { post: () => undefined, subscribe: () => () => undefined },
+            { from: ['https://a.test'] },
+        );
+        expect(typeof over.request).toBe('function');
+        await over.close();
+
+        const port = postmessageApi.channel.port(new MessageChannel().port1);
+        expect(typeof port.respond).toBe('function');
+        await port.close();
+
+        const win = postmessageApi.channel.window({
+            target: { postMessage: () => undefined } as unknown as Window,
+            origins: 'https://app.example.com',
+        });
+        expect(typeof win.events).toBe('function');
+        await win.close();
+
+        const priv = postmessageApi.channel.private({
+            post: () => undefined,
+            subscribe: () => () => undefined,
+        });
+        expect(typeof priv.request).toBe('function');
+        await priv.close();
+    });
+
+    // The origin policy is still STRUCTURAL through the namespace — the fold moved the name, not
+    // the gate. A wildcard is rejected at construction on both builders that take a policy, each
+    // naming the slot the caller actually wrote.
+    test('the origin guards survive the fold, naming each builder’s own slot', () => {
+        expect(() =>
+            postmessageApi.channel.over(
+                { post: () => undefined, subscribe: () => () => undefined },
+                { from: '*' as unknown as `https://${string}` },
+            ),
+        ).toThrow(/forbidden in `from`/);
+        expect(() =>
+            postmessageApi.channel.window({
+                target: { postMessage: () => undefined } as unknown as Window,
+                origins: '*' as unknown as `https://${string}`,
+            }),
+        ).toThrow(/forbidden in `origins`/);
+    });
+
+    test.each(REMOVED_CHANNEL_FUNCTIONS)(
+        'does NOT export %s — the namespace replaced it',
+        (name) => {
+            expect(name in (postmessageApi as Record<string, unknown>)).toBe(
+                false,
+            );
+        },
+    );
 });

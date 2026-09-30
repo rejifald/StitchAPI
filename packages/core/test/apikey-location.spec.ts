@@ -4,6 +4,7 @@
 // so an OpenAPI `apiKey` cookie scheme maps to a real strategy instead of a not-auto-mapped warning.
 import { stitch } from '../src';
 import { apiKey } from '../src/auth';
+import type { ApiKeyOptions } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -115,5 +116,34 @@ describe('apiKey — location model (header / query / cookie)', () => {
         // exactly one `sid` — replaced in place, not appended — and the other cookie preserved
         expect(call?.headers['cookie']).toBe('sid=fresh; theme=dark');
         expect(call?.cookies['sid']).toBe('fresh');
+    });
+});
+
+// P14/P16 — `ApiKeyOptions` is EXPORTED, like every sibling auth builder's option type
+// (`BasicOptions`, `OAuth2Options`, `CookieSessionOptions`). Declared without `export` it inlined
+// into `apiKey`'s emitted `.d.ts` as an anonymous shape, so a consumer could neither import nor
+// extend it while its three siblings imported fine. This import IS the assertion — it does not
+// compile without the export — and the composition below is the thing a consumer wanted it for.
+describe('ApiKeyOptions is importable (P14/P16)', () => {
+    test('a consumer can name, extend, and hand back the option type', async () => {
+        server.route('GET', '/thing', { body: { ok: true } });
+        // Name it: a factory that takes the published envelope and fills in a house default.
+        const vendorKey = (opts: ApiKeyOptions): ApiKeyOptions => ({
+            in: 'header',
+            name: 'X-Vendor-Key',
+            ...opts,
+        });
+        // Extend it: the shape composes into a wider consumer-owned envelope.
+        interface VendorAuthOptions extends ApiKeyOptions {
+            label: string;
+        }
+        const authored: VendorAuthOptions = { secret: 'tok', label: 'prod' };
+        const s = stitch({
+            baseUrl: server.url,
+            path: '/thing',
+            auth: apiKey(vendorKey({ secret: authored.secret })),
+        });
+        await s();
+        expect(server.calls('/thing')[0]?.headers['x-vendor-key']).toBe('tok');
     });
 });

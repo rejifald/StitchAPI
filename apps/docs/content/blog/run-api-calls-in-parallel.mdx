@@ -13,11 +13,11 @@ A [stitch](/docs/concepts/the-stitch) is one endpoint as a typed, validated, res
 
 The whole family answers two questions any set of calls can have: _do I need all of them, or just one?_ and _does "done" mean a success, or any result at all?_
 
-| Combinator | Resolves when                         | Result               | For                            |
-| ---------- | ------------------------------------- | -------------------- | ------------------------------ |
-| `all`      | **all** succeed (fail-fast)           | named object / tuple | independent **fan-out**        |
-| `any`      | the **first success** (else all fail) | one output           | **failover** across redundancy |
-| `race`     | the **first to settle** (win or lose) | one output           | **hedging** / fastest-wins     |
+| Combinator | Resolves when                         | Result               | For                           |
+| ---------- | ------------------------------------- | -------------------- | ----------------------------- |
+| `all`      | **all** succeed (fail-fast)           | named object / tuple | independent **fan-out**       |
+| `any`      | the **first success** (else all fail) | one output           | **hedging** across redundancy |
+| `race`     | the **first to settle** (win or lose) | one output           | **first answer**, win or lose |
 
 ## `all` — independent, all of them
 
@@ -85,7 +85,7 @@ Named object, array, or bare arguments — the same combinator; pick whichever r
 
 ## `any` — the first one that works
 
-`any` runs its members concurrently and resolves with the **first to succeed**, ignoring failures until none are left — then it rejects with an `AggregateError` of every failure. The moment one wins, the **losers are aborted**. That's failover across interchangeable sources:
+`any` runs its members concurrently and resolves with the **first to succeed**, ignoring failures until none are left — then it rejects with an `AggregateError` of every failure. The moment one wins, the **losers are aborted**. That's failover across interchangeable sources — and, because every member starts at once and a failure never decides the group, it is the combinator to reach for when you want to **hedge** a latency-sensitive call:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -114,7 +114,7 @@ This is distinct from a stitch's built-in `retry`, which re-hits the **same** en
 
 ## `race` — the first one to finish, win or lose
 
-`race` resolves or rejects with the first member to **settle** — success _or_ failure — and **cancels the rest**. Use it to hedge a latency-sensitive call against a second source and take whichever returns first:
+`race` resolves or rejects with the first member to **settle** — success _or_ failure — and **cancels the rest**. Use it when the first answer is _the_ answer and a fast failure is a legitimate one — not as a hedge: under `race` a fast failure wins and cancels the member that was about to succeed, which is exactly what a hedge exists to prevent. That job is `any`:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
