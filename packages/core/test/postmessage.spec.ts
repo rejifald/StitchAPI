@@ -1331,11 +1331,15 @@ describe('channel.window guards', () => {
         });
     });
 
+    // `from` widens the ORIGINS one window may answer from, never the set of windows: a window
+    // channel is bound to its `target` (see the peer-binding block below). So every delivery here
+    // comes from that one window — a frame that moves between the app and widget origins.
     test('`from` widens the inbound gate without widening the outbound address', async () => {
         await withMessageListeners(async (deliver) => {
             const posts: { msg: unknown; origin: string }[] = [];
+            const frame = fakeWindow(posts);
             const ch = channel.window({
-                target: fakeWindow(posts),
+                target: frame,
                 origins: {
                     to: 'https://app.example.com',
                     from: [
@@ -1358,27 +1362,28 @@ describe('channel.window guards', () => {
             // Inbound: BOTH listed origins reach the responder. This is the half the envelope
             // exists to add, and the ONLY assertion that can see it — `posts[0].origin` comes
             // from `policy.to` alone, so a gate that silently narrowed back to `[to]` (turning a
-            // working parent/app/widget channel into one that drops every widget message, with
-            // no error) would leave a post-shape assertion green.
-            deliver('https://app.example.com', {
-                type: 'probe',
-                id: 'a',
-                payload: { via: 'app' },
-            });
-            deliver('https://widget.example.com', {
-                type: 'probe',
-                id: 'b',
-                payload: { via: 'widget' },
-            });
+            // working app→widget channel into one that drops every widget message, with no
+            // error) would leave a post-shape assertion green.
+            deliver(
+                'https://app.example.com',
+                { type: 'probe', id: 'a', payload: { via: 'app' } },
+                frame,
+            );
+            deliver(
+                'https://widget.example.com',
+                { type: 'probe', id: 'b', payload: { via: 'widget' } },
+                frame,
+            );
             await settle();
             expect(seen).toEqual([{ via: 'app' }, { via: 'widget' }]);
 
-            // …and an origin outside `from` is still dropped before dispatch.
-            deliver('https://evil.example.com', {
-                type: 'probe',
-                id: 'c',
-                payload: { via: 'evil' },
-            });
+            // …and an origin outside `from` is still dropped before dispatch — from the SAME
+            // window, so it is the origin gate doing it, not the peer check.
+            deliver(
+                'https://evil.example.com',
+                { type: 'probe', id: 'c', payload: { via: 'evil' } },
+                frame,
+            );
             await settle();
             expect(seen).toEqual([{ via: 'app' }, { via: 'widget' }]);
 
@@ -1416,6 +1421,264 @@ describe('channel.window guards', () => {
             await settle();
             expect(seen).toEqual([{ via: 'widget' }]);
             await ch.close();
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// channel.window is bound to its PEER — several frames on one page
+// ---------------------------------------------------------------------------
+// The shape that surfaced this: a design gallery rendering many preview tiles, each an iframe of
+// the SAME origin (a `blob:` document inherits its creator's origin; a CDN serves every tile from
+// one host), each with its own host channel. Every `channel.window` listens on the page's ONE
+// global `'message'` event, so an origin-only gate handed every tile's `ready` and
+// `content-height` to every channel: tiles resized and went ready on each other's messages. The
+// origin cannot tell the tiles apart; the posting window can. These pin the binding at the level
+// a consumer sees it — `events` and `respond` across channels — plus the thunk and navigation
+// semantics it rests on. The real-browser proof, with true `WindowProxy` identity across reload,
+// re-mint and remount, is `test/browser/postmessage-window-peer.browser.ts`.
+describe('channel.window is bound to its peer (several frames on one page)', () => {
+    const HOST = 'https://host.example.com';
+
+    // Drain `events(type)` into `into`; the returned drain settles once the channel closes.
+    const hear = (
+        ch: PostMessageChannel,
+        type: string,
+        into: unknown[],
+    ): Promise<void> =>
+        (async () => {
+            for await (const e of ch.events(type).stream()) {
+                if (e.type === 'delta') into.push(e.chunk);
+            }
+        })().catch(() => undefined);
+
+    test("two same-origin frames, two channels: each hears only its own frame's events", async () => {
+        await withMessageListeners(async (deliver) => {
+            const frameA = fakeWindow([]);
+            const frameB = fakeWindow([]);
+            // The gallery's own spelling: a thunk over each tile's frame, one origin for all.
+            const tileA = channel.window({
+                target: () => frameA,
+                origins: HOST,
+            });
+            const tileB = channel.window({
+                target: () => frameB,
+                origins: HOST,
+            });
+            const heardA: unknown[] = [];
+            const heardB: unknown[] = [];
+            const drains = [
+                hear(tileA, 'template/ready', heardA),
+                hear(tileA, 'template/content-height', heardA),
+                hear(tileB, 'template/ready', heardB),
+                hear(tileB, 'template/content-height', heardB),
+            ];
+            await settle();
+
+            deliver(HOST, { type: 'template/ready', payload: 'A' }, frameA);
+            deliver(
+                HOST,
+                { type: 'template/content-height', payload: 111 },
+                frameA,
+            );
+            deliver(HOST, { type: 'template/ready', payload: 'B' }, frameB);
+            deliver(
+                HOST,
+                { type: 'template/content-height', payload: 222 },
+                frameB,
+            );
+            await settle();
+
+            expect(heardA).toEqual(['A', 111]);
+            expect(heardB).toEqual(['B', 222]);
+
+            await tileA.close();
+            await tileB.close();
+            await Promise.all(drains);
+        });
+    });
+
+    test('a request from one frame runs only its own channel responder, and the answer goes back to that frame', async () => {
+        await withMessageListeners(async (deliver) => {
+            const postsA: { msg: unknown; origin: string }[] = [];
+            const postsB: { msg: unknown; origin: string }[] = [];
+            const frameA = fakeWindow(postsA);
+            const frameB = fakeWindow(postsB);
+            const tileA = channel.window({
+                target: () => frameA,
+                origins: HOST,
+            });
+            const tileB = channel.window({
+                target: () => frameB,
+                origins: HOST,
+            });
+            const ranA: unknown[] = [];
+            const ranB: unknown[] = [];
+            tileA.respond('focus', (p) => {
+                ranA.push(p);
+                return { tile: 'A' };
+            });
+            tileB.respond('focus', (p) => {
+                ranB.push(p);
+                return { tile: 'B' };
+            });
+
+            deliver(
+                HOST,
+                { type: 'focus', id: 'q1', payload: { selector: '#hero' } },
+                frameB,
+            );
+            await settle();
+
+            // Before the binding, tile A ALSO ran — and answered frame A, which never asked.
+            expect(ranA).toEqual([]);
+            expect(postsA).toEqual([]);
+            expect(ranB).toEqual([{ selector: '#hero' }]);
+            expect(postsB).toEqual([
+                {
+                    msg: {
+                        type: 'focus-result',
+                        id: 'q1',
+                        payload: { tile: 'B' },
+                    },
+                    origin: HOST,
+                },
+            ]);
+
+            await tileA.close();
+            await tileB.close();
+        });
+    });
+
+    // Navigation and reload keep a frame's `WindowProxy` — `iframe.contentWindow` is the same
+    // object before and after (the browser test asserts it) — so the binding survives both with
+    // no re-subscription. That is also why the origin gate is NOT redundant beside it: the same
+    // window can navigate to a foreign origin, and only the origin tells those documents apart.
+    test('the same window across navigation: the peer check keeps matching, the origin gate still decides', async () => {
+        await withMessageListeners(async (deliver) => {
+            const frame = fakeWindow([]);
+            const ch = channel.window({ target: frame, origins: HOST });
+            const heard: unknown[] = [];
+            const drain = hear(ch, 'template/ready', heard);
+            await settle();
+
+            deliver(HOST, { type: 'template/ready', payload: 1 }, frame);
+            // The frame navigates cross-origin: the same window, a foreign document.
+            deliver(
+                'https://elsewhere.example.com',
+                { type: 'template/ready', payload: 2 },
+                frame,
+            );
+            // …then reloads back at the allowed origin: still the same window.
+            deliver(HOST, { type: 'template/ready', payload: 3 }, frame);
+            await settle();
+
+            expect(heard).toEqual([1, 3]);
+            await ch.close();
+            await drain;
+        });
+    });
+
+    // A REMOUNT is different: a new `<iframe>` element is a new browsing context with a new
+    // `WindowProxy`. A thunk target is resolved on every inbound message, so it follows the
+    // remount, and the old window stops matching the moment the thunk stops returning it. (A
+    // `Window` passed directly stays bound to the old context — the thunk is the form to use
+    // when the element can be replaced.)
+    test('a thunk target is resolved per inbound message, so it follows a remount', async () => {
+        await withMessageListeners(async (deliver) => {
+            const first = fakeWindow([]);
+            let mounted = first;
+            const ch = channel.window({
+                target: () => mounted,
+                origins: HOST,
+            });
+            const heard: unknown[] = [];
+            const drain = hear(ch, 'template/ready', heard);
+            await settle();
+
+            deliver(HOST, { type: 'template/ready', payload: 'first' }, first);
+            await settle();
+            mounted = fakeWindow([]); // the tile re-renders with a new <iframe>
+            deliver(HOST, { type: 'template/ready', payload: 'stale' }, first);
+            deliver(
+                HOST,
+                { type: 'template/ready', payload: 'second' },
+                mounted,
+            );
+            await settle();
+
+            expect(heard).toEqual(['first', 'second']);
+            await ch.close();
+            await drain;
+        });
+    });
+
+    // A thunk over a ref resolves to NOTHING while its frame is not mounted: `ref.current?.
+    // contentWindow` is `undefined` before mount, and a detached `<iframe>`'s `contentWindow` is
+    // `null`. That channel has no peer, so no source may match it. `null` is the case a bare
+    // `source !== peer` got wrong: a `null` source — a DOM that does not attribute sources, or a
+    // context already gone — EQUALS a `null` peer, and the message was delivered.
+    test.each([
+        ['`null` (a detached iframe)', null],
+        ['`undefined` (an unmounted ref)', undefined],
+    ])(
+        'a thunk resolving to %s has no peer: no source matches it, `null` included',
+        async (_label, nothing) => {
+            await withMessageListeners(async (deliver) => {
+                const ch = channel.window({
+                    target: () => nothing as unknown as Window,
+                    origins: HOST,
+                });
+                const heard: unknown[] = [];
+                const drain = hear(ch, 'template/content-height', heard);
+                await settle();
+
+                deliver(
+                    HOST,
+                    { type: 'template/content-height', payload: 1 },
+                    null,
+                );
+                deliver(
+                    HOST,
+                    { type: 'template/content-height', payload: 2 },
+                    fakeWindow([]),
+                );
+                await settle();
+
+                expect(heard).toEqual([]);
+                await ch.close();
+                await drain;
+            });
+        },
+    );
+
+    test('a thunk that throws drops the message and never throws out of the global listener', async () => {
+        await withMessageListeners(async (deliver) => {
+            const ch = channel.window({
+                // `ref.current!.contentWindow!` before the frame mounts.
+                target: () => {
+                    throw new TypeError(
+                        "Cannot read properties of null (reading 'contentWindow')",
+                    );
+                },
+                origins: HOST,
+            });
+            const heard: unknown[] = [];
+            const drain = hear(ch, 'template/ready', heard);
+            await settle();
+
+            expect(() => {
+                deliver(
+                    HOST,
+                    { type: 'template/ready', payload: 'x' },
+                    fakeWindow([]),
+                );
+            }).not.toThrow();
+            await settle();
+
+            expect(heard).toEqual([]);
+            await ch.close();
+            await drain;
         });
     });
 });

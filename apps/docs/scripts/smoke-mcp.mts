@@ -54,15 +54,16 @@ const baseUrl = (
 ).replace(/\/$/, '');
 const endpoint = `${baseUrl}/api/mcp`;
 
-// Preview deployments are SSO-protected (the project runs Vercel Authentication
+// Deployment protection is SSO-based (the project runs Vercel Authentication
 // with deploymentType `all_except_custom_domains`, so stitchapi.dev is open and
-// every *.vercel.app URL is gated). A protected deployment answers 401 with
+// every *.vercel.app URL is gated — including a production deployment's own
+// generated URL). A protected deployment answers 401 with
 // `{"error":{"code":"401","message":"Protected deployment"}}` — a real response,
 // not a redirect, so it has to be recognised rather than followed.
 //
 // Vercel's "Protection Bypass for Automation" secret lifts that for a single
-// request via this header. Set VERCEL_AUTOMATION_BYPASS_SECRET to probe a preview;
-// production needs nothing, since the custom domain is not protected.
+// request via this header. Set VERCEL_AUTOMATION_BYPASS_SECRET to probe any
+// *.vercel.app URL; the custom domain alone needs nothing.
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 let sessionId: string | undefined;
@@ -122,7 +123,7 @@ async function rpc(
                     'deployment is SSO-protected and the bypass secret was not accepted. ' +
                     (bypassSecret
                         ? 'VERCEL_AUTOMATION_BYPASS_SECRET is set but rejected — regenerate it in Vercel → Project → Settings → Deployment Protection → Protection Bypass for Automation.'
-                        : 'Set VERCEL_AUTOMATION_BYPASS_SECRET to probe a preview URL (production needs no secret — its custom domain is not protected).'),
+                        : 'Set VERCEL_AUTOMATION_BYPASS_SECRET to probe this URL (only the custom domain needs no secret).'),
                 ms,
             };
         }

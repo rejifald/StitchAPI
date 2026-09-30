@@ -569,11 +569,14 @@ const PREFIX_GROUP_ALLOW = new Map([
     //  And more decisively, OAuth2Options is not a MIRROR in the sense this list means: its
     //  sibling OAuth2ClientCredentialsFlow states the real test in its own JSDoc — spelled
     //  "exactly as the spec spells it … so `stitch export --openapi` emits it as an identity
-    //  mapping" — and OAuth2Options has no identity mapping, because auth.ts TRANSLATES every
-    //  member into a snake_case wire key when it builds the token-request form body. A contract
-    //  that already re-cases the RFC's own names is governed by P18's second half: house
-    //  contracts use house vocabulary. So the group was real, and it folded into the exported
-    //  OAuth2ClientOptions envelope — `client: { id, secret, auth }` — which dissolves the
+    //  mapping" — and OAuth2Options has no identity mapping for the three members THIS entry
+    //  covered: auth.ts re-cases clientId/clientSecret into client_id/client_secret when it
+    //  builds the token-request form body, and under client.via: 'basic' keeps them out of that
+    //  body altogether. (scope/audience do reach the body under their own names, but they were
+    //  never in this group, and most of OAuth2Options never becomes a body key at all.)
+    //  A contract that already re-cases the RFC's own names is governed by P18's second half:
+    //  house contracts use house vocabulary. So the group was real, and it folded into the exported
+    //  OAuth2ClientOptions envelope — `client: { id, secret, via }` — which dissolves the
     //  prefix rather than exempting it.)
     [
         'StitchQueryOptions.query',
@@ -613,7 +616,7 @@ const PREFIX_GROUP_ALLOW = new Map([
     // dominant field, not an independent option:
     [
         'AdapterRequest.body',
-        'bodyType is a discriminator tag for the dominant body payload, not a second option — carve-out (b), the canonical case',
+        "bodyType is a discriminator tag for the dominant body payload, not a second option — carve-out (b), the canonical case. The (b) mutual-exclusion obligation is DISCHARGED ONE LAYER UP, on the authored `wire` envelope (MultipartOnlyOnMultipartBody), not here: AdapterRequest is the engine-derived transport contract a consumer READS, and its sibling `array` is spent-not-dead config (the query string is serialised with it before any body exists), so `{ bodyType: 'json', array: 'repeat' }` is the engine's own correct output. See CONTRACT.md P24 carve-out (b), 'Scope of the (b) obligation'",
     ],
     // ('WindowChannelOptions.target' was here — DELETED, not reworded. Its P22 defense was false
     //  on the same test the OAuth2Options.client entry above failed: there was no identity mapping

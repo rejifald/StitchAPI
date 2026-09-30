@@ -70,7 +70,7 @@ jobs:
                   tar -xzf actionlint.tar.gz actionlint
                   ./actionlint -color
                   rm -f actionlint actionlint.tar.gz
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -126,7 +126,7 @@ jobs:
         timeout-minutes: 15
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -163,7 +163,7 @@ jobs:
         timeout-minutes: 15
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -192,7 +192,39 @@ jobs:
             # broken AutoTypeTable path/name, an unregistered MDX component, or a
             # generator throw all pass type-check and only fail at build. Building the
             # docs app runs generateStaticParams over every page and surfaces those.
-            - run: pnpm --filter @stitchapi/docs build
+            #
+            # Deploy-envelope gate (#829): the build runs the size of Vercel's build
+            # machine — 2 CPUs, 8 GB, no swap — not this runner's 4 CPUs / 16 GB. From
+            # 2026-09-19 every production deploy was OOM-killed in `next build` while
+            # this step built the same commits green, because nothing here was that
+            # small. A transient systemd scope makes it that small: MemoryMax=8G with
+            # swap off, so the kernel OOM-kills past the ceiling the way Vercel's does,
+            # and two CPUs. check-build-memory.mjs runs the app's `build` script inside
+            # it and fails on an OOM kill, a failed build, or a peak above 6 GiB of
+            # memory the kernel cannot reclaim: a quarter of the machine stays free for
+            # the Vercel CLI, the build's page cache, and growth. The number and its
+            # derivation live in the script. As before, the search-index prebuild skips
+            # here (it needs the vendored model); search-relevance builds the index.
+            #
+            # pnpm by absolute path: the scope's command is looked up on sudo's PATH,
+            # not the runner's. --uid/--gid run the build as the runner user, so it
+            # writes nothing root-owned into the workspace.
+            - name: Build the docs in Vercel's build envelope (2 CPUs, 8 GB, no swap)
+              run: >-
+                  sudo --preserve-env systemd-run --scope --quiet --collect
+                  --property=MemoryMax=8G --property=MemorySwapMax=0
+                  --property=CPUQuota=200% --property=AllowedCPUs=0-1
+                  --uid="$(id -u)" --gid="$(id -g)" --setenv=PATH="$PATH"
+                  "$(command -v pnpm)" --filter @stitchapi/docs check:build-memory
+            # Function-trace gate (#829): the build above compiles but never packages
+            # functions, so it went green while Vercel's deploy failed at "Deploying
+            # outputs" with `ENOENT: lstat .next/lock`. The webpack trace of /api/mcp
+            # and /api/search-docs had swept in the whole app directory (content, tests,
+            # .next/cache, and .next/lock, which `next build` deletes when it exits).
+            # This step reads the *.nft.json traces the build above just wrote and fails
+            # if one reaches into .next outside server/, or into test/, e2e/ or scripts/.
+            - name: Fail if a function trace reaches build scratch or the app's tests
+              run: pnpm --filter @stitchapi/docs check:traces
 
     verify:
         # This job's ONLY purpose is to keep the required-check name `verify`
@@ -254,7 +286,7 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -274,7 +306,7 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -294,7 +326,7 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -321,7 +353,7 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
@@ -334,18 +366,24 @@ jobs:
     # Worker egress blocking and that a real RunResult.trace reaches the playground DAG. It
     # builds the docs app and drives a headless Chromium, so it runs as its own job rather
     # than inside the `verify` gate. Already a required check on `main`.
+    #
+    # Core's own real-browser suite (packages/core/test/browser) rides the same job and the same
+    # Chromium, and runs first because it needs no build and fails in seconds. It proves what a
+    # node fake can only assume: `stitchapi/postmessage`'s window channel is bound to its peer by
+    # `WindowProxy` identity, which survives a reload or navigation and not a remount.
     e2e:
         runs-on: ubuntu-latest
         timeout-minutes: 15
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter @stitchapi/docs test:e2e:install
+            - run: pnpm --filter stitchapi test:browser
             - run: pnpm --filter @stitchapi/docs test:e2e
 
     # Docs search-relevance ratchet (apps/docs/scripts/search-eval.mts --assert): builds the
@@ -362,7 +400,7 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc

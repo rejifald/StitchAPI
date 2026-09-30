@@ -1,6 +1,6 @@
 {
     "name": "stitchapi",
-    "version": "1.0.0-rc.7",
+    "version": "1.0.0-rc.8",
     "type": "commonjs",
     "description": "Turn any API into a typed, resilient function. A declarative stitch takes one endpoint — HTTP, GraphQL, SSE, LLM, even a shell command — and hands back a callable with auth, retries, validation, and drift built in. No server, no codegen, no config files. Callable from code, the CLI, or an AI agent over MCP — agents get a capability, not your credentials. Zero deps.",
     "main": "lib/index.js",
@@ -247,6 +247,8 @@
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
         "test:mcp-e2e": "vitest run test/mcp-e2e.spec.ts",
+        "test:browser": "playwright test",
+        "test:browser:install": "playwright install chromium",
         "check:types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
         "check:types-d": "tsup --silent && tsd",
         "check:lint": "eslint src test",
@@ -325,6 +327,7 @@
     "devDependencies": {
         "@arethetypeswrong/cli": "^0.18.5",
         "@eslint/js": "^9.39.5",
+        "@playwright/test": "^1.63.0",
         "@types/node": "^26.4.1",
         "@vitest/coverage-v8": "^4.1.11",
         "@vitest/eslint-plugin": "^1.6.27",

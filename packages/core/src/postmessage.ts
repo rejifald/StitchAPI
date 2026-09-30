@@ -94,6 +94,11 @@ export interface MessageTransport {
     /**
      * Subscribe to inbound messages; returns an unsubscribe fn.
      *
+     * Deliver only the PEER's messages. A transport listening on a shared bus — a `Window`'s
+     * global `'message'` event, which every frame on the page posts into — must check that the
+     * event's `source` IS the window it posts to, as `channel.window` does. The channel's origin
+     * gate runs after this and cannot do that job: two same-origin frames carry the same origin.
+     *
      * `origin` is `null` when THIS TRANSPORT DOES NOT ATTRIBUTE ORIGINS — a `MessagePort`, an
      * Electron IPC bridge, a worker bridge, a test fake. That is a claim only CODE can make: it
      * is produced by the transport, never carried in the data channel, so nothing a peer can put
@@ -529,12 +534,26 @@ function channelOver(
  * the patterns the type cannot express.
  */
 export interface WindowChannelOptions {
-    /** The window to post to — or a thunk resolving it lazily (a frame that mounts late). */
+    /**
+     * The window this channel talks to — or a thunk resolving it lazily (a frame that mounts
+     * late). The channel is BOUND to it in both directions: it posts to it, and it accepts an
+     * inbound message only when that message's `source` IS it, on top of the `origins` gate. So
+     * build one channel per peer window — the frame's `contentWindow` on the host side,
+     * `window.parent` on the frame side — and several channels on one page never hear each
+     * other's frames, even when every frame shares one origin.
+     *
+     * The binding survives the frame navigating or reloading: that keeps the same `WindowProxy`.
+     * A REMOUNT does not — a new `<iframe>` element is a new window — so pass a thunk over the
+     * element (`() => frame.contentWindow!`) when it can be replaced. A thunk is resolved on
+     * every post and every inbound message; while it resolves to nothing, nothing is accepted.
+     */
     target: Window | (() => Window);
     /**
      * The channel's origin policy — where messages go and whom they may come from. A bare
      * {@link Origin} is the P12 shorthand for `{ to: X, from: [X] }`; the {@link OriginOptions}
-     * form is for the asymmetric case (posting to one frame while accepting from several).
+     * form is for the asymmetric case — ONE peer window that may answer from more origins than
+     * you address it at (a popup that finishes a sign-in hop on another origin). It widens the
+     * origins accepted from `target`, never the set of windows: see `target`.
      *
      * An inbound origin outside `from` is dropped BEFORE dispatch or validation. A sandboxed frame
      * posts with the literal origin `'null'`, which is not an {@link Origin} and cannot be
@@ -636,9 +655,17 @@ function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
                 //     FAILS CLOSED.
                 //   • a window — it must be the peer.
                 // The thunk is resolved per inbound message, because the whole point of a thunk is
-                // a frame that mounts late. One that throws (or hands back nothing) has no peer to
-                // match, so the message is dropped — never turned into an exception thrown from a
-                // global listener that sees every message on the page.
+                // a frame that mounts late — or is REPLACED: a remounted `<iframe>` is a new
+                // browsing context with a new `WindowProxy`, which a thunk over the element follows
+                // and a `Window` passed directly does not. Navigation and reload are NOT that case:
+                // they keep the same `WindowProxy`, so either form stays bound across them, and it
+                // is the origin gate, not this check, that drops a frame navigated somewhere
+                // foreign. A thunk that throws or hands back nothing (`ref.current?.contentWindow`
+                // is `undefined` before mount; a detached iframe's `contentWindow` is `null`) has
+                // no peer, so the message is dropped — never turned into an exception thrown from a
+                // global listener that sees every message on the page. "Nothing" is checked on its
+                // own because `source !== peer` alone lets a `null` source EQUAL a `null` peer and
+                // deliver, which is the `null` state above failing open.
                 const { source } = e as { source?: unknown };
                 if (source !== undefined) {
                     let peer: unknown;
@@ -647,7 +674,8 @@ function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
                     } catch {
                         return;
                     }
-                    if (source !== peer) return;
+                    if (peer === null || peer === undefined || source !== peer)
+                        return;
                 }
                 handler(e.data, e.origin);
             };
