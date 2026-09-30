@@ -27,6 +27,7 @@ Open http://localhost:3000 with your browser.
 | `check:types`        | Generate Fumadocs/Next types, then `tsc --noEmit`.                                                                               |
 | `check:lint`         | Lint with `eslint-config-next`.                                                                                                  |
 | `check:build-memory` | Run `build` inside a memory-limited cgroup and fail if it would not fit Vercel's 2-CPU / 8 GB build machine (CI: `verify-docs`). |
+| `check:traces`       | Fail if a function trace written by `build` reaches build scratch or the app's `test/`, `e2e/`, `scripts/` (CI: `verify-docs`).  |
 
 `check:types` and `check:lint` participate in the workspace verify gate
 (`pnpm -r ...`, CI, and the lefthook hooks).
