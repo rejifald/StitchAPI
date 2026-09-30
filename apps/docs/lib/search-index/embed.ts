@@ -17,11 +17,10 @@
 // import to first call scopes a load failure to the one search_docs call that
 // needed it — get_doc and initialize keep working, and the failed call just
 // surfaces a rejected promise, same as any other runtime error here.
+import { appPath } from './app-path';
 import { EMBED_DTYPE, EMBED_MODEL, MODEL_DIR } from './config';
 
 import type { FeatureExtractionPipeline } from '@huggingface/transformers';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 // Embed in modest batches: one call per chunk is slow, but one call for the
 // whole corpus builds a single enormous tensor that thrashes memory. 32 balances
@@ -32,9 +31,9 @@ const BATCH_SIZE = 32;
  * populates at build time (see next.config.mjs's outputFileTracingIncludes for
  * how it reaches the deployed function). */
 function modelDirPath(): string {
-    // this file: apps/docs/lib/search-index/embed.ts → apps/docs/<MODEL_DIR>
-    const here = dirname(fileURLToPath(import.meta.url));
-    return resolve(here, '..', '..', MODEL_DIR);
+    // Found from the working directory by appPath, not from this file's URL,
+    // which webpack pins to the build machine's path. See app-path.ts.
+    return appPath(MODEL_DIR);
 }
 
 let extractor: Promise<FeatureExtractionPipeline> | undefined;
