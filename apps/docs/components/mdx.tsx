@@ -17,13 +17,14 @@ const generator = createGenerator();
 const MAX_WRITTEN_TYPE = 120;
 
 /**
- * The shape we need off a ts-morph declaration. Declared structurally because
- * `ts-morph` is a transitive dep of fumadocs-typescript and isn't resolvable from
- * this app — and two method signatures aren't worth a direct dependency on it.
+ * The shape we need off a TypeScript AST node (fumadocs-typescript drives the
+ * native `typescript/unstable` API). Declared structurally because that package
+ * is a transitive dep of fumadocs-typescript and isn't resolvable from this app.
+ * Method signatures carry `parameters`; property signatures don't.
  */
 interface DeclarationLike {
-    getKindName?: () => string;
-    getTypeNode?: () => { getText: () => string } | undefined;
+    parameters?: unknown;
+    type?: { getText: () => string };
 }
 
 /**
@@ -40,11 +41,11 @@ interface DeclarationLike {
  * Falls back to the simplified form for method signatures (no type node — their
  * `function` is already right) and for anything too long to read in a column.
  */
-const preferWrittenType: GenerateOptions['transform'] = (
+const preferWrittenType: GenerateOptions['transform'] = function (
     entry,
     _type,
     symbol,
-) => {
+) {
     // `@remarks` / `@fumadocsType` are deliberate author overrides — leave them be.
     if (
         entry.tags.some(
@@ -53,11 +54,11 @@ const preferWrittenType: GenerateOptions['transform'] = (
     )
         return;
 
-    const declaration: DeclarationLike | undefined =
-        symbol.getDeclarations()[0];
-    if (declaration?.getKindName?.() !== 'PropertySignature') return;
+    const declaration = symbol.declarations[0]?.resolve(this.program) as
+        DeclarationLike | undefined;
+    if (!declaration || 'parameters' in declaration) return;
 
-    const written = declaration.getTypeNode?.()?.getText();
+    const written = declaration.type?.getText();
     if (!written) return;
 
     // Prettier breaks a long union across lines with a leading `|`.

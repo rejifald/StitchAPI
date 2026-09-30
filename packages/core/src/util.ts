@@ -529,11 +529,19 @@ export function envelope<T>(value: T, key: string): EnvelopeOf<T> | undefined {
         : ({ [key]: value } as EnvelopeOf<T>);
 }
 
+// Only literal objects merge key-by-key. A class instance (a Zod 4.6+ schema keeps its methods on
+// the prototype) would lose them to `{ ...a }` and stop being a schema, so it wins whole instead.
+const isPlain = (x: unknown): x is Record<string, unknown> => {
+    if (!isObj(x)) return false;
+    const proto: unknown = Object.getPrototypeOf(x);
+    return proto === Object.prototype || proto === null;
+};
+
 export function deepMerge<T>(a: T, b: T): T {
     if (b === undefined) return a;
     if (a === undefined) return b;
     if (Array.isArray(a) && Array.isArray(b)) return b;
-    if (isObj(a) && isObj(b)) {
+    if (isPlain(a) && isPlain(b)) {
         const out: Record<string, unknown> = { ...a };
         for (const k of Object.keys(b)) {
             out[k] =
