@@ -65,7 +65,9 @@ test('a call stamps OTLP-aligned run identity on `start` and shares it across th
         trace: sink,
     });
 
-    for await (const _ev of thing.stream()) void _ev; // drain
+    for await (const _ev of thing.stream()) {
+        // drain
+    }
 
     const start = seen.find((s) => s.ev.type === 'start')!.ev as StartEvent;
     expect(start.spanId).toMatch(/^[0-9a-f]{16}$/); // = OTel spanId

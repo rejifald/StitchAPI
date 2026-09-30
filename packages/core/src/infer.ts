@@ -205,6 +205,7 @@ type HasOutput<Ls extends readonly unknown[]> = Ls extends readonly [
  */
 type MergeInputSlots<
     Ls extends readonly unknown[],
+    // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
     Acc = Record<never, never>,
 > = Ls extends readonly [infer H, ...infer T]
     ? MergeInputSlots<
@@ -315,13 +316,16 @@ type CallInput<I> = Prettify<
     } & { [K in ExtraSlots]?: StitchInput[K] } & (I extends {
             variables: unknown;
         }
-            ? Record<never, never>
+            ? // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
+              Record<never, never>
             : { variables?: Record<string, unknown> }) &
         (I extends { params: unknown }
-            ? Record<never, never>
+            ? // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
+              Record<never, never>
             : { params?: Record<string, unknown> }) &
         (I extends { query: unknown }
-            ? Record<never, never>
+            ? // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
+              Record<never, never>
             : { query?: Record<string, unknown> })
 >;
 
@@ -389,7 +393,8 @@ type PathVarsOf<C> = C extends { path: infer P extends string }
 type SchemaParams<C> =
     MergedInput<C> extends { params: infer P }
         ? NonNullable<InferInput<P>>
-        : Record<never, never>;
+        : // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
+          Record<never, never>;
 /**
  * The folded `params` slot: the schema-declared shape ({@link SchemaParams}) intersected with the
  * path-only var names typed `string | number | bigint` (what `expandPath` ultimately stringifies).
@@ -424,10 +429,12 @@ type MergedInput<C> = [C] extends [
 ]
     ? HasInput<Layers<C>> extends true
         ? MergeInputSlots<Layers<C>>
-        : Record<never, never>
+        : // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
+          Record<never, never>
     : C extends { input: infer I }
       ? I
-      : Record<never, never>;
+      : // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
+        Record<never, never>;
 
 /**
  * Fold the RFC 6570 path-template vars onto an already-computed call-argument `Base`. No path vars
@@ -485,6 +492,7 @@ export type InputOf<C> = [C] extends [
 /** The required (non-optional) keys of `T`. (`Record<never, never>` is the empty object `{}` — the
  * standard "is this key optional?" probe — spelled to avoid a bare `{}` type.) */
 type RequiredKeys<T> = {
+    // eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type -- `{}` is the intentional identity of the intersection here
     [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? never : K;
 }[keyof T];
 /** Whether `T` has any required key. Degenerate `unknown`/`any` → `false` (fails open to optional). */

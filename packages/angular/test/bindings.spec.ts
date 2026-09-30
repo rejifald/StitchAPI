@@ -306,13 +306,13 @@ describe('InjectStitchOptions', () => {
         // Never executed — compile-time assertions only: each injector hard-sets
         // `streaming`, so passing it must be a TYPE ERROR rather than being
         // silently ignored.
-        void function TypeOnly(): void {
+        const _typeOnly = (): void => {
             // @ts-expect-error — 'streaming' is omitted from InjectStitchOptions
             injectStitch(stitch, {}, { streaming: true });
             // @ts-expect-error — 'streaming' is omitted from InjectStitchOptions
             injectStitchStream(stitch, {}, { streaming: false });
         };
-        expect(true).toBe(true);
+        expect(_typeOnly).toBeDefined();
     });
 });
 

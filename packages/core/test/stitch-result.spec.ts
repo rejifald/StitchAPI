@@ -78,7 +78,9 @@ test('stream() is a separate consumption path from the awaited result', async ()
     const { adapter, calls } = countingAdapter();
     const ping = stitch({ url: 'https://api.example.com/ping', adapter });
     await ping();
-    for await (const _ of ping.stream()) void _;
+    for await (const _ of ping.stream()) {
+        // drain
+    }
     // An awaited call plus an independent stream() are two executions, as expected.
     expect(calls()).toBe(2);
 });

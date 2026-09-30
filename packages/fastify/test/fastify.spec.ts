@@ -500,13 +500,13 @@ describe('stitchPlugin', () => {
     });
 
     test('the empty errorHandler bag is rejected (compile-time, P20)', () => {
-        void (() =>
+        const _compileOnly = () =>
             Fastify().register(stitchPlugin, {
                 seam: { baseUrl: 'https://api.test' },
                 // @ts-expect-error — `{}` is not a valid bag: enable-with-defaults is `true`
                 errorHandler: {},
-            }));
-        expect(true).toBe(true);
+            });
+        expect(_compileOnly).toBeDefined();
     });
 
     // --- the `seam` field: ONE slot, two things it accepts -------------------
@@ -520,32 +520,32 @@ describe('stitchPlugin', () => {
     const prebuilt = null as unknown as Seam;
 
     test('the opaque `seam: {}` is rejected (compile-time, P20)', () => {
-        void (() =>
+        const _compileOnly = () =>
             // @ts-expect-error — `{}` is neither a prebuilt Seam nor a >=1-field SeamConfig.
             // Build an all-defaults seam yourself (`seam: seam()`) and pass it prebuilt.
-            Fastify().register(stitchPlugin, { seam: {} }));
-        expect(true).toBe(true);
+            Fastify().register(stitchPlugin, { seam: {} });
+        expect(_compileOnly).toBeDefined();
     });
 
     test('both a prebuilt seam and a >=1-field config compile', () => {
-        void (() => [
+        const _compileOnly = () => [
             Fastify().register(stitchPlugin, { seam: prebuilt }),
             Fastify().register(stitchPlugin, { seam: { retry: 3 } }),
-        ]);
-        expect(true).toBe(true);
+        ];
+        expect(_compileOnly).toBeDefined();
     });
 
     test('`logger` on a BORROWED seam is rejected (compile-time, P13)', () => {
-        void (() =>
+        const _compileOnly = () =>
             // @ts-expect-error — `logger` is honoured only when the plugin BUILDS the seam. On a
             // borrowed one the bridge has nothing to inject, so `logger: true` (the documented
             // default!) was a silent no-op; it is unrepresentable here instead.
-            Fastify().register(stitchPlugin, { seam: prebuilt, logger: true }));
-        expect(true).toBe(true);
+            Fastify().register(stitchPlugin, { seam: prebuilt, logger: true });
+        expect(_compileOnly).toBeDefined();
     });
 
     test('`logger` on a BUILT seam still compiles', () => {
-        void (() => [
+        const _compileOnly = () => [
             Fastify().register(stitchPlugin, {
                 seam: { baseUrl: 'https://api.test' },
                 logger: true,
@@ -554,8 +554,8 @@ describe('stitchPlugin', () => {
                 seam: { baseUrl: 'https://api.test' },
                 logger: { lifecycle: false },
             }),
-        ]);
-        expect(true).toBe(true);
+        ];
+        expect(_compileOnly).toBeDefined();
     });
 
     test('non-stitch errors are rethrown for Fastify default handling', async () => {
