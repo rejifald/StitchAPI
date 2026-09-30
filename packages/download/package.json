@@ -66,11 +66,11 @@
         "stitchapi": "^1.0.0-rc.1"
     },
     "devDependencies": {
-        "@types/node": "^26.4.1",
+        "@types/node": "^26.6.3",
         "esbuild": "^0.28.2",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.11"
+        "vitest": "^5.0.2"
     }
 }

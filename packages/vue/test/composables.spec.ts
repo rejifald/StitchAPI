@@ -304,8 +304,7 @@ describe('P9 — the result type is framework-qualified', () => {
         // Pinned as a compile error so the bare name cannot quietly return here.
         // @ts-expect-error — vue's is `VueUseStitchResult`; the bare name is react's
         const _check: import('../src').UseStitchResult<number> = undefined;
-        void _check;
-        expect(true).toBe(true);
+        expect(_check).toBeUndefined();
     });
 });
 
@@ -318,8 +317,7 @@ describe('P9 — the options type is framework-qualified', () => {
         // result type did. Pinned as a compile error so the bare name cannot quietly return.
         // @ts-expect-error — vue's is `VueUseStitchOptions`; the bare name is react's
         const _check: import('../src').UseStitchOptions<number> = undefined;
-        void _check;
-        expect(true).toBe(true);
+        expect(_check).toBeUndefined();
     });
 
     test('vue rejects react-only `deps` — the divergence the prefix records', () => {
@@ -331,7 +329,6 @@ describe('P9 — the options type is framework-qualified', () => {
             // @ts-expect-error — `deps` is react's; vue re-triggers via a ref or getter
             deps: [1],
         };
-        void _opts;
-        expect(true).toBe(true);
+        expect(_opts).toBeDefined();
     });
 });

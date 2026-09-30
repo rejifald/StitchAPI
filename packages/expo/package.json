@@ -82,12 +82,12 @@
         "@stitchapi/query-core": "workspace:*",
         "@stitchapi/react": "workspace:*",
         "@stitchapi/react-native": "workspace:*",
-        "@types/node": "^26.4.1",
-        "@types/react": "^19.2.18",
-        "react": "^19.2.8",
+        "@types/node": "^26.6.3",
+        "@types/react": "^19.3.0",
+        "react": "^19.3.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.11"
+        "vitest": "^5.0.2"
     }
 }

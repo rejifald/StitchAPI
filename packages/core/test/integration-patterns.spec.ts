@@ -267,8 +267,9 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
                 secret: env('MEDIA_B_TOKEN'),
             }),
             hooks: {
-                onRequest: ({ req }) =>
-                    void (req && (req.headers['x-client-id'] = 'app')),
+                onRequest: ({ req }) => {
+                    if (req) req.headers['x-client-id'] = 'app';
+                },
             },
         });
 

@@ -56,10 +56,10 @@
     },
     "devDependencies": {
         "@sinclair/typebox": "^0.34.52",
-        "@types/node": "^26.4.1",
+        "@types/node": "^26.6.3",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.11"
+        "vitest": "^5.0.2"
     }
 }
