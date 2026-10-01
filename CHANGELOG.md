@@ -23,8 +23,10 @@ npm release are grouped under the in-development version that introduced them.
   obligation at once — including seven surfaces whose shape is not settled. Those seven now ship in
   the lockstep version with a narrower promise: a **minor** release may change their shape or
   behaviour, each such change is listed in this file with a one-line migration, and no `@deprecated`
-  alias is owed. A **patch** release never changes one of them, so a `~1.0.0` pin stays on what you
-  built against. Every other contract rule still applies to them. Apart from the one type moved
+  alias is owed. A **patch** release does not change one of them, so a `~1.0.0` pin stays on what
+  you built against, except to fix a security vulnerability: such a fix is the minimal change that
+  closes it and is listed under the release's `### Security` heading with a one-line migration.
+  Every other contract rule still applies to them. Apart from the one type moved
   under Changed, no symbol, field or behaviour moves.
 
     The tier is marked in three places. Each of the 53 symbols the seven surfaces export carries an

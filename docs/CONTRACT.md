@@ -1156,7 +1156,10 @@ Holding two of the three leaves a surface experimental in one place and promised
 - **Patch releases.** A **patch** release MUST NOT change an experimental surface's shape or
   behaviour. A change to either — a bug fix that alters what a documented call returns
   included — ships in a minor. That is what makes a patch range (`~1.0.0`) a safe pin for a
-  consumer who builds on a member.
+  consumer who builds on a member. **One exception: a security fix.** A patch MAY change an
+  experimental surface's behaviour to fix a security vulnerability; such a fix MUST be the
+  minimal change that closes it, and is recorded under the release's `### Security`
+  `CHANGELOG.md` heading with a one-line migration.
 - **A member's CLI.** The CLI a member package ships (`stitch-openapi`: its flags, exit codes
   and output) is part of that package's experimental surface and changes under the same rules.
   R12 cannot tag a flag, so the package README's banner names the CLI.
