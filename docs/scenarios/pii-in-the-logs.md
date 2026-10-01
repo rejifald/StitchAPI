@@ -120,25 +120,29 @@ key does anything about it.
 **All 8 claims verified**, 206 checks across 8 scripts, re-run by me before writing up and again
 on the 2026-08-15 re-measure.
 
-| Claim                             | Verdict                                                                                              |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| C1 — where does the body go?      | **CONFIRMED, and binary** — 13 destinations carry all 7 sentinels, 11 carry 0, nothing between       |
-| C2 — does `sensitive: true` help? | **CONFIRMED** — 1 of 11 destinations (the cache); exactly **one** read in all of `packages/core/src` |
-| C3 — `.inspect({ redact })`       | Opt-in, name-based denylist over `raw` only; `redact: true` removes **0 of 7**                       |
-| C4 — credentials safe?            | **PARTIALLY REFUTED** — see below                                                                    |
-| C5 — boundary                     | `hooks.onResponse` is the earliest seam, and the **only** one covering the failure path              |
-| C6 — allowlist                    | **CONFIRMED** — `output` filters 7 → 0 without naming a single PII field                             |
-| C7 — drift as a signal            | **CONFIRMED**; the ADR 0018 §4 leak is conditional on the validator's wording (see below)            |
-| C8 — assembled                    | 42 lines, 2 seams, 0 of 9 on both paths                                                              |
+| Claim                             | Verdict                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| C1 — where does the body go?      | **CONFIRMED, and binary** — 12 destinations carry all 7 sentinels, 12 carry 0, nothing between (13 / 11 until #873) |
+| C2 — does `sensitive: true` help? | **CONFIRMED** — 1 of 11 destinations (the cache); exactly **one** read in all of `packages/core/src`                |
+| C3 — `.inspect({ redact })`       | Opt-in, name-based denylist over `raw` only; `redact: true` removes **0 of 7**                                      |
+| C4 — credentials safe?            | **PARTIALLY REFUTED, mostly closed by #873** — see below                                                            |
+| C5 — boundary                     | `hooks.onResponse` is the earliest seam, and the **only** one covering the failure path                             |
+| C6 — allowlist                    | **CONFIRMED** — `output` filters 7 → 0 without naming a single PII field                                            |
+| C7 — drift as a signal            | **CONFIRMED**; the ADR 0018 §4 leak is conditional on the validator's wording (see below)                           |
+| C8 — assembled                    | 42 lines, 2 seams, 0 of 9 on both paths                                                                             |
 
 ### Hypotheses that were wrong
 
 **My clean split was too clean.** I predicted "credentials are protected by default; customer PII
 is not." The real line is **credentials the library _places_ vs credentials that ride the
 payload**. A declarative `bearer`/`apiKey` never enters the event stream at all — 0 of 3 even for
-a naive custom sink — but an `access_token` in a **response body** goes 3 of 3 into the JSONL,
-because that sink's redactor is a header denylist rather than the deep scrubber sitting in the
-same file.
+a naive custom sink — but an `access_token` in a **response body** went 3 of 3 into the JSONL,
+because that sink's redactor was a header denylist rather than the deep scrubber sitting in the
+same file. [#873](https://github.com/rejifald/StitchAPI/issues/873) closed that: the file sink now
+walks every payload with the secret-name rule, so a credential whose key names it (`access_token`,
+`client_secret`, `password`) reaches disk as `[REDACTED]`. What is left is a credential under a
+name no rule catches — C4's `session_cookie` still goes 1 of 3 — until the host names it with
+`secrets.register`.
 
 **And the measurements refuted a shipped ADR — a refutation the Zod 4 bump has since made
 conditional.** ADR 0018 §4 says findings never leak a secret, justified by `detailFor` emitting

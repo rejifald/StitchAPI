@@ -70,6 +70,10 @@ A route's `match` selects which requests it answers:
 
 Omit `match` (and `method`) and the route catches every request.
 
+A predicate, `call.req` and the requests the spy returns are the request the engine
+built, so their header names are **lower-case**:
+`match: (req) => req.headers['x-trace'] === '1'`, not `['X-Trace']`.
+
 ### Responding
 
 `respond` is one of three shapes:

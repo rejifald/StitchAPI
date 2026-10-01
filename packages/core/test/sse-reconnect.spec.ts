@@ -133,9 +133,9 @@ describe('sse reconnect replays Last-Event-ID (issue #71)', () => {
         const out = await drainAll(s.stream());
         // First open carries NO Last-Event-ID; the reconnect replays the last id seen (2), then the
         // third reconnect replays 4.
-        expect(requests[0]?.headers['Last-Event-ID']).toBeUndefined();
-        expect(requests[1]?.headers['Last-Event-ID']).toBe('2');
-        expect(requests[2]?.headers['Last-Event-ID']).toBe('4');
+        expect(requests[0]?.headers['last-event-id']).toBeUndefined();
+        expect(requests[1]?.headers['last-event-id']).toBe('2');
+        expect(requests[2]?.headers['last-event-id']).toBe('4');
         // Events from BOTH live connections flowed as deltas, in order, collected into the result.
         expect(out.deltas).toEqual([
             { id: '1', data: 'a' },
@@ -317,7 +317,7 @@ describe('sse reconnect resumes from the last id after a mid-stream ERROR (issue
         });
 
         const out = await drainAll(s.stream());
-        expect(requests[1]?.headers['Last-Event-ID']).toBe('2');
+        expect(requests[1]?.headers['last-event-id']).toBe('2');
         expect(out.deltas).toEqual([
             { id: '1', data: 'a' },
             { id: '2', data: 'b' },
@@ -531,6 +531,6 @@ describe('sse resume hooks are wired on the surface (issue #71)', () => {
             headers: {},
         };
         sseSurface.applyResume?.(req, '42');
-        expect(req.headers['Last-Event-ID']).toBe('42');
+        expect(req.headers['last-event-id']).toBe('42');
     });
 });

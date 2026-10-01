@@ -14,7 +14,8 @@
         "types": ["node"],
         "paths": {
             "stitchapi": ["../../../packages/core/src/index.ts"],
-            "stitchapi/auth": ["../../../packages/core/src/auth.ts"]
+            "stitchapi/auth": ["../../../packages/core/src/auth.ts"],
+            "stitchapi/otlp": ["../../../packages/core/src/otlp.ts"]
         }
     },
     "include": ["stitch-browser.ts", "shims/**/*.ts"]

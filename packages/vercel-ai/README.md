@@ -50,7 +50,7 @@ stitchTool(getUser, z.object({ params: z.object({ id: z.string() }) }));
 
 The two forms are told apart by the `inputSchema` key: an object carrying one is the options envelope, anything else is the schema itself.
 
-The tool's result is the stitch's validated output, so the model reasons over real data, not a guess. A failure rejects, so the AI SDK's tool-error handling reports it.
+The tool's result is the stitch's validated output, so the model reasons over real data, not a guess. A failure rejects, so the AI SDK's tool-error handling reports it. That report is the error's `message`, which the AI SDK hands to the model, so core scrubs URL credentials from it first: a URL the transport quoted reads `?api_key=REDACTED`, never the key.
 
 ## `stitchExecute`
 

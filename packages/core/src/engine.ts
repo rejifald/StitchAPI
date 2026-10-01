@@ -45,10 +45,12 @@ import {
     buildQuery,
     expandPath,
     getPath,
+    hex,
     isSafeMethod,
     newRunContext,
     now,
     parseDuration,
+    scrubUrl,
     systemClock,
     topLevelQueryIndex,
 } from './util';
@@ -147,7 +149,13 @@ function emitInto(
     };
 }
 
-const nameOf = (cfg: ResolvedStitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
+// The DISPLAY name — on every event, trace line, OTLP span name and hook. The `path` fallback is
+// scrubbed: `stitch('https://h/x?api_key=S')` lands its URL on `path`, and an unnamed stitch's
+// name must not carry the credential into a log. The store keys below (`hostKey`, and
+// `cacheStitchId` in cache.ts) keep the RAW fallback — re-deriving them is #845's call.
+const storeKeyOf = (cfg: ResolvedStitchConfig) =>
+    cfg.name ?? cfg.path ?? 'stitch';
+export const nameOf = (cfg: ResolvedStitchConfig) => scrubUrl(storeKeyOf(cfg));
 
 function joinUrl(base: string, path: string): string {
     if (/^https?:\/\//i.test(path)) return path;
@@ -160,9 +168,37 @@ function joinUrl(base: string, path: string): string {
     return base.slice(0, end) + (path.startsWith('/') ? path : '/' + path);
 }
 
+// The low-cardinality target an HTTP attempt span is named by — `{method} {template}`, the OTel
+// HTTP client convention, and the OTLP sink's `url.template` attribute. It is the stitch's RFC 6570
+// PATH template as written, never expanded: `/users/{id}`. The rule, in order:
+//   1. a function `url` (or a function `baseUrl`, whose path prefix is then unknown) is computed per
+//      call, so it names nothing — no template;
+//   2. the endpoint is `url`, else `baseUrl` + `path` (joined as `buildRequest` joins them);
+//   3. every query (a literal `?…`, a `{?q}`/`{&q}` operator) and fragment is dropped, so a secret
+//      riding the query never reaches a span name;
+//   4. scheme and authority (userinfo, host, port) are dropped, leaving the path — the scheme is
+//      optional, so a scheme-relative `//user:pass@host/x` is authority too;
+//   5. an absolute `url` that carries no `{…}` variable is a single literal URL, whose path may be an
+//      instance id (`/users/42`) or a secret, so it is no template either. A relative `path` — the
+//      stitch's declared route — is a template even with no variable (`/users`).
+// An expression body never contains `{` (RFC 6570), so both patterns exclude it: a stray `{#…` with
+// no closing brace then fails in one scan instead of re-scanning to the end from every `{`.
+const ORIGIN = /^(?:[a-z][a-z\d+.-]*:)?\/\/(?:[^/{]|\{[^/{}][^{}]*\})*/i;
+function urlTemplate(cfg: ResolvedStitchConfig): string | undefined {
+    const { url, baseUrl, path = '' } = cfg;
+    const base = url === undefined ? baseUrl : '';
+    const raw = url ?? path;
+    if (typeof raw === 'function' || typeof base === 'function') return;
+    const t = joinUrl(base ?? '', raw)
+        .replace(/\{[?&#][^{}]*\}|[?#].*/g, '')
+        .replace(ORIGIN, '');
+    return t && (t.includes('{') || !ORIGIN.test(raw)) ? t : undefined;
+}
+
 // Inject a stable Idempotency-Key on writes. The key is computed once per logical call (here,
 // in buildRequest) and the attempt loop reuses the same request, so it stays constant across
-// retries. SAFE methods are skipped, and a caller-provided header (case-insensitive) wins.
+// retries. SAFE methods are skipped, and a caller-provided header wins (`headers` is already
+// folded to lower case by `buildRequest`, so a case-insensitive match is a plain lookup).
 // "Safe" rather than "GET/HEAD" because QUERY is a read that carries a body: stamping a
 // dedupe token on a request that changes nothing is a category error, and the header would
 // vary the cache key on every send.
@@ -174,13 +210,8 @@ function applyIdempotency(
 ): void {
     if (!cfg.idempotency) return;
     if (isSafeMethod(method)) return; // writes only
-    const header = cfg.idempotency.header ?? 'Idempotency-Key';
-    if (
-        Object.keys(headers).some(
-            (h) => h.toLowerCase() === header.toLowerCase(),
-        )
-    )
-        return;
+    const header = (cfg.idempotency.header ?? 'Idempotency-Key').toLowerCase();
+    if (Object.hasOwn(headers, header)) return;
     const keyOf = cfg.idempotency.keyOf;
     headers[header] = keyOf ? keyOf(input) : randomUUID();
 }
@@ -235,7 +266,7 @@ function buildRequest(
                 ? 'A relative `url` does NOT join `baseUrl` — `url` is the whole endpoint, so `baseUrl` is ignored. Pass the relative endpoint as `path` instead.'
                 : 'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).';
         const e = new Error(
-            `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(url)} is not absolute. ` +
+            `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(scrubUrl(url))} is not absolute. ` +
                 hint,
         );
         e.name = 'StitchConfigError';
@@ -267,6 +298,18 @@ function buildRequest(
     // The surface shapes the request (graphql packs { query, variables } + forces POST, …);
     // absent, the http identity above stands.
     if (cfg.kind.buildRequest) req = cfg.kind.buildRequest(cfg, input, req);
+    // Header names are case-insensitive on the wire, but the bag they travel in is not, and every
+    // auth strategy reads and writes it by ONE key (`req.headers['cookie']`, `['authorization']`, the
+    // lower-cased `apiKey` name). A caller's `Cookie` / `X-API-Key` / `Authorization` (an
+    // `input.headers` slot, a config header, a surface's own) is a DIFFERENT key to that code, so the
+    // strategy's pair landed beside the caller's instead of replacing it, and `fetch` joined the two
+    // on the wire (`X-API-Key: FORGED, REAL`; `Cookie: SESSION=forged; SESSION=real`). Fold the names
+    // to lower case once, here, after the last place a header can be authored and before auth runs
+    // (it runs on a clone of this request), so there is only one spelling to collide on. The merge
+    // order decides a clash: a later source (the call's input over the config) wins.
+    req.headers = Object.fromEntries(
+        Object.entries(req.headers).map(([k, v]) => [k.toLowerCase(), v]),
+    );
     // Idempotency runs AFTER surface shaping so a surface that forces a write still gets a key.
     applyIdempotency(cfg, input, req.method, req.headers);
     return req;
@@ -284,7 +327,7 @@ const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
             /* fall through */
         }
     }
-    return nameOf(cfg);
+    return storeKeyOf(cfg);
 };
 
 // A non-enumerable back-reference from an `error` event to the live error instance it was built
@@ -316,7 +359,8 @@ const pinSource = <E extends object>(evt: E, err: unknown): E => {
 //     can tell a socket reset from a generic "fetch failed". A StitchError the engine minted itself
 //     is excluded: it keeps being rebuilt from the event (unchanged behaviour).
 const ridesThrough = (err: unknown): boolean =>
-    (err as { response?: AdapterResult }).response !== undefined ||
+    (err as { response?: AdapterResult } | null | undefined)?.response !==
+        undefined ||
     err instanceof RateLimitError ||
     (err instanceof Error && !(err instanceof StitchError));
 
@@ -380,15 +424,36 @@ function contractViolationEvt(
     return evt;
 }
 
+// The failing error's class discriminator for the `errorType` event field: its `name` (CONTRACT.md
+// P10 — what `StitchError` subclasses set), so a sink can tell a `TimeoutError` from a socket
+// `TypeError` without parsing the message. A plain `Error` names nothing — an HTTP status failure
+// is one, and it carries `status` instead — so it yields `undefined` and the field is omitted.
+const errorType = (err: unknown): string | undefined => {
+    const n = (err as Error | undefined)?.name;
+    return n === 'Error' ? undefined : n;
+};
+
+// Where a THROWN value (a transport / adapter / hook failure) becomes the error event — and so, via
+// `rebuildError`, the `StitchError.message` every surface reads: MCP, serve, the host SSE frames,
+// the trace sinks, OTLP `status.message`, pino / sentry. A transport writes the URL it called into
+// its own message (`Failed to parse URL from http://host:99999/v1?api_key=…`, `request to
+// https://host/v1?api_key=… failed`), so the message is URL-scrubbed HERE and no consumer has to
+// remember to. The two other places the engine writes free text onto an event scrub the same way:
+// `surfaceErrEvt` (a surface's verdict, which can quote an upstream body) and the `retry` progress
+// `detail` of the transport and `interpret` arms. The foreign error is not touched: it rides on as
+// `cause` (see `ridesThrough`), raw, for a caller who deliberately walks it. A bag with no
+// `message` — or a `throw undefined` / `throw null`, which has no properties at all — is reported
+// as the string it stringifies to.
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
-    const e = err as { message?: string; status?: number };
-    const evt: Extract<StitchEvent, { type: 'error' }> = {
+    const e = (err ?? {}) as { message?: string; status?: number };
+    const evt: Extract<StitchEvent, { type: 'error' }> = compact({
         type: 'error',
         name,
-        message: e.message ?? String(err),
+        message: scrubUrl(String(e.message ?? err)),
+        errorType: errorType(err),
         attempts,
         at: now(),
-    };
+    });
     if (e.status !== undefined) evt.status = e.status;
     // Delegate-backoff signal: the structured `retryAfter` is stamped onto the EVENT so `.stream()`
     // consumers see it; the live instance itself rides ERROR_SOURCE below for the awaited path.
@@ -698,7 +763,17 @@ async function* attemptLoop(
                 yield* infos;
             }
             await cfg.hooks?.onRequest?.({ name: nameOf(cfg), attempt, req });
-            yield { type: 'progress', phase: 'request', attempt, at: now() };
+            // One span per PHYSICAL request (ADR 0017 D6): its id is minted HERE, at request time,
+            // and parented to the run — or to the page when paginating (`run` is then the page's
+            // context). A resend (retry, auth refresh) is a new request, so it mints a new id.
+            yield {
+                type: 'progress',
+                phase: 'request',
+                attempt,
+                spanId: hex(8),
+                parentSpanId: run.spanId,
+                at: now(),
+            };
 
             // Clamp this attempt's abort to whatever is left of the total budget.
             const attemptMs =
@@ -730,13 +805,16 @@ async function* attemptLoop(
                 // `retry` event, no onRetry, no backoff — the run ends here with the abort error.
                 if (baseReq.signal?.aborted) throw err;
                 if (attempt < max) {
-                    yield {
+                    yield compact({
                         type: 'progress',
                         phase: 'retry',
                         attempt,
-                        detail: String((err as Error)?.message ?? err),
+                        detail: scrubUrl(
+                            String((err as Error)?.message ?? err),
+                        ),
+                        errorType: errorType(err),
                         at: now(),
-                    };
+                    });
                     await cfg.hooks?.onRetry?.({
                         name: nameOf(cfg),
                         attempt,
@@ -766,6 +844,7 @@ async function* attemptLoop(
                     phase: 'auth',
                     attempt,
                     detail: 'refresh',
+                    status: res.status,
                     at: now(),
                 };
                 const infos: StitchEvent[] = [];
@@ -805,6 +884,7 @@ async function* attemptLoop(
                     phase: 'retry',
                     attempt,
                     detail: `status ${res.status}`,
+                    status: res.status,
                     at: now(),
                 };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
@@ -838,7 +918,8 @@ async function* attemptLoop(
                     type: 'progress',
                     phase: 'retry',
                     attempt,
-                    detail: `interpret: ${outcome.message}`,
+                    detail: scrubUrl(`interpret: ${outcome.message}`),
+                    status: res.status,
                     at: now(),
                 };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
@@ -981,14 +1062,18 @@ async function* paginated(
     const max = pg.pages ?? 50;
     const acc: unknown[] = [];
     let pageInput = input;
-    let page = 0;
+    let pages = 0;
     let lastStatus: number;
 
     const first = buildRequest(cfg, pageInput);
-    yield startEvt(name, first, input, run);
+    yield startEvt(cfg, name, first, input, run);
 
     for (;;) {
         const req = buildRequest(cfg, pageInput);
+        // Each page is its own span, a child of the run, and its attempts nest under it (ADR 0017
+        // D6): the page's context — same trace, a fresh span id, parented to the run — is what the
+        // attempt loop parents its requests to. Its id rides the page's closing `paginate` event.
+        const page = newRunContext(run);
         let res: AdapterResult;
         let outcome: SurfaceOutcome;
         try {
@@ -998,7 +1083,7 @@ async function* paginated(
                 rt,
                 req,
                 state,
-                run,
+                page,
                 budget,
             ));
         } catch (e) {
@@ -1023,17 +1108,20 @@ async function* paginated(
               ? value
               : [value];
         acc.push(...items);
-        page += 1;
+        pages += 1;
         yield {
             type: 'progress',
             phase: 'paginate',
             attempt: state.attempts,
-            detail: `page ${page} (+${items.length}, total ${acc.length})`,
+            detail: `page ${pages} (+${items.length}, total ${acc.length})`,
+            status: res.status,
+            spanId: page.spanId,
+            parentSpanId: run.spanId,
             at: now(),
         };
 
-        if (items.length === 0 || page >= max) break;
-        const nextPartial = pg.next(res.body, page);
+        if (items.length === 0 || pages >= max) break;
+        const nextPartial = pg.next(res.body, pages);
         if (!nextPartial) break;
         pageInput = mergeInput(input, nextPartial);
     }
@@ -1121,6 +1209,7 @@ type RunOutcome =
     { ok: true; value: unknown; status: number; vary?: string } | { ok: false };
 
 const startEvt = (
+    cfg: ResolvedStitchConfig,
     name: string,
     baseReq: AdapterRequest,
     input: StitchInput,
@@ -1132,6 +1221,13 @@ const startEvt = (
         method: baseReq.method,
         url: baseReq.url,
         input,
+        // Which surface shaped the call, and what carried it: the HTTP adapter, or the surface
+        // itself when its `execute` replaces the transport (ADR 0008 — shell, postmessage). The
+        // OTLP sink reads the latter to export an attempt as a CLIENT HTTP span or an INTERNAL one.
+        surface: cfg.kind.id,
+        transport: cfg.kind.execute ? cfg.kind.id : 'http',
+        // The path template an HTTP attempt span is named by; only an HTTP request has one.
+        template: cfg.kind.execute ? undefined : urlTemplate(cfg),
         at: now(),
         spanId: run.spanId,
         traceId: run.traceId,
@@ -1199,7 +1295,7 @@ function surfaceErrEvt(
     const evt: Extract<StitchEvent, { type: 'error' }> = {
         type: 'error',
         name,
-        message: outcome.message,
+        message: scrubUrl(outcome.message),
         attempts,
         at: now(),
     };
@@ -1339,7 +1435,7 @@ async function* runStreaming(
     }
     // Ask the transport for the live body — un-buffered, un-parsed (ADR 0005 Q1).
     baseReq = { ...baseReq, stream: true };
-    yield startEvt(name, baseReq, input, run);
+    yield startEvt(cfg, name, baseReq, input, run);
     state.attempts = 1;
 
     // Resumability is a GENERIC decision the engine makes from surface capability + config — never
@@ -1407,7 +1503,14 @@ async function* runStreaming(
                 applyResume?.(req, lastToken);
             if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
             await cfg.hooks?.onRequest?.({ name, attempt, req });
-            yield { type: 'progress', phase: 'request', attempt, at: now() };
+            yield {
+                type: 'progress',
+                phase: 'request',
+                attempt,
+                spanId: hex(8),
+                parentSpanId: run.spanId,
+                at: now(),
+            };
             // A surface that replaces the transport (ADR 0008) runs here too, so a future non-HTTP
             // streaming surface gets the same treatment as the buffered path.
             res = await (cfg.kind.execute ?? rt.adapter)(req);
@@ -1635,7 +1738,7 @@ async function* runOnce(
         yield doneEvt(false, t0, 0);
         return { ok: false };
     }
-    yield startEvt(name, baseReq, input, run);
+    yield startEvt(rt.cfg, name, baseReq, input, run);
     return yield* runFrom(rt, baseReq, name, state, t0, run, budget);
 }
 
@@ -1661,7 +1764,7 @@ async function* runCached(
         yield doneEvt(false, t0, 0);
         return;
     }
-    yield startEvt(name, baseReq, input, run);
+    yield startEvt(cfg, name, baseReq, input, run);
 
     // 'refuse' (ADR 0004): the output contract can't be soundly fingerprinted (no strategy for the
     // vendor / a non-Standard-Schema validator / an opaque un-versioned transform) and the caller
@@ -1945,7 +2048,7 @@ export async function executeRawTraced(
         parentSpanId: run.parentSpanId,
     });
     const baseReq = buildRequest(cfg, input);
-    sink.handle(startEvt(name, baseReq, input, run), ctx);
+    sink.handle(startEvt(cfg, name, baseReq, input, run), ctx);
     try {
         const gen = attemptLoop(rt, baseReq, state, run, totalBudget(cfg, t0));
         let step = await gen.next();

@@ -23,10 +23,21 @@ A union table can render sparsely, so here is each of the eight variants and its
 fields. Every event carries an `at` field — a millisecond timestamp.
 
 - **`start`** — the request is about to go out. Fields: `name` (the stitch
-  label), `method`, `url`, `input` (the `StitchInput` for this call), `at`.
+  label), `method`, `url`, `input` (the `StitchInput` for this call),
+  `surface?` (the surface id: `http`, `graphql`, `shell`, …), `transport?`
+  (`http` when the HTTP adapter carries the request, else the id of the
+  surface that replaces it), `template?` (the stitch's unexpanded path
+  template, `/users/{id}`, when one is known), the run identity (`spanId?`,
+  `traceId?`, `parentSpanId?`), `at`.
 - **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
   `ProgressPhase`), `attempt` (1-based), `detail?`, `waited?` (set when the
-  phase involved a wait, e.g. `throttled` or `retry`), `at`.
+  phase involved a wait, e.g. `throttled` or `retry`), `status?` (the response
+  status behind a `retry`, an `auth` refresh or a `paginate` step),
+  `errorType?` (the class of the error a `retry` re-attempts), `at`. A
+  `request` step carries `spanId?`/`parentSpanId?` — the id the engine minted
+  for that physical request and its parent (the run, or the page) — and a
+  `paginate` step carries the id of the page it closes. The OTLP sink builds its
+  [span tree](/docs/guides/observability/otlp#the-span-tree) from them.
 - **`info`** — an announcement, never carrying a secret. Fields: `topic`,
   `detail?`, `at`. An auth strategy uses it for a decision it made (topic
   `auth` — which env var a `bearer` token resolved from, or that `oauth2`
@@ -43,10 +54,29 @@ fields. Every event carries an `at` field — a millisecond timestamp.
   (`unknown`), `at`.
 - **`result`** — the call succeeded and produced a value. Fields: `data` (the
   `T`), `status` (HTTP status), `attempts` (how many it took), `at`.
-- **`error`** — the call failed. Fields: `name`, `message`, `status?`,
-  `attempts`, `at`.
+- **`error`** — the call failed. Fields: `name`, `message`, `errorType?` (the
+  failing error's class — `TimeoutError`, `RateLimitError`, `TypeError` — omitted
+  for a plain `Error`, such as an HTTP status failure), `status?`, `attempts`,
+  `at`.
 - **`done`** — the stream is finished, success or failure. Fields: `ok`, `elapsed`
   (total duration), `attempts`, `at`.
+
+### Span ids
+
+Wherever an event carries `spanId`, it is the id of **the span the event belongs
+to**, and `parentSpanId` is that span's parent. Which span depends on the event:
+
+| Event                   | `spanId` is                      | `parentSpanId` is                         |
+| ----------------------- | -------------------------------- | ----------------------------------------- |
+| `start`                 | the **run**                      | the run that spawned this one, if any     |
+| `progress` · `request`  | the **attempt** (one request)    | the run, or the page for a paginated call |
+| `progress` · `paginate` | the **page** that just completed | the run                                   |
+
+Only those carry ids today. The meaning does not change when more events do: a
+later change that stamps ids on every event
+([#874](https://github.com/rejifald/StitchAPI/issues/874)) fills in fields that
+already exist, so a consumer that reads `spanId` as "the span this event belongs
+to" keeps working without a rename.
 
 `ProgressPhase` is one of `'auth'`, `'request'`, `'throttled'`, `'retry'`,
 `'paginate'`, or `'circuit'`.

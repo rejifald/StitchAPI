@@ -180,7 +180,7 @@ export const sseSurface: Surface<StitchInput, SseEvent[]> = {
     resumeToken: (chunk) => (chunk as SseEvent).id,
     resumeRetry: (chunk) => (chunk as SseEvent).retry,
     applyResume: (req, token) => {
-        req.headers['Last-Event-ID'] = token;
+        req.headers['last-event-id'] = token;
     },
 };
 

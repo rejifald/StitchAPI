@@ -188,7 +188,7 @@ Inference is always overridable. (Progressive disclosure: it usually "just works
 Agent today:  GET /api/websites  →  401 (httpOnly cookie wall)  →  dead end.
 
 Agent with a stitch:
-  stitch run list-websites
+  stitch run listWebsites
     → runtime runs `signIn`, manages the cookie jar, retries on 401,
       validates the response, returns typed Website[].
   The agent got the data. It never saw the password.
@@ -272,12 +272,12 @@ Observability is a **consumer of the event stream**, not a separate system — a
 
 One definition, four front doors:
 
-| Surface      | How                               | For                                                                    |
-| ------------ | --------------------------------- | ---------------------------------------------------------------------- |
-| **Function** | `await listWebsites()`            | your app; another agent's code-mode sandbox                            |
-| **CLI**      | `stitch run list-websites --id 1` | shell scripts & agents — JSONL output, pipeable, no app boot           |
-| **HTTP**     | `stitch serve`                    | remote/other-language callers                                          |
-| **MCP**      | `stitch mcp`                      | one code-mode tool (`run_stitch`) — avoids one-tool-per-endpoint bloat |
+| Surface      | How                              | For                                                                    |
+| ------------ | -------------------------------- | ---------------------------------------------------------------------- |
+| **Function** | `await listWebsites()`           | your app; another agent's code-mode sandbox                            |
+| **CLI**      | `stitch run listWebsites --id 1` | shell scripts & agents — JSONL output, pipeable, no app boot           |
+| **HTTP**     | `stitch serve`                   | remote/other-language callers                                          |
+| **MCP**      | `stitch mcp`                     | one code-mode tool (`run_stitch`) — avoids one-tool-per-endpoint bloat |
 
 ---
 
@@ -424,17 +424,17 @@ const listings = stitch({
 **12. Observability (off by default; opt in with `--trace`)**
 
 ```bash
-stitch run list-websites --trace  # records ~/.stitch/runs/*.jsonl for `stitch trace`
+stitch run listWebsites --trace   # records ~/.stitch/runs/*.jsonl for `stitch trace`
 stitch trace --since 1h           # p99, error rate, drift timeline — no infra
-stitch run list-websites --trace=console          # stream events to stderr instead
+stitch run listWebsites --trace=console           # stream events to stderr instead
 STITCH_EXPORT=otlp stitch serve   # opt-in: same events → Grafana/Jaeger/Langfuse
 ```
 
 **13. The four surfaces of one stitch**
 
 ```bash
-stitch run list-websites          # CLI
-stitch serve --port 8787          # HTTP   → POST /stitch/list-websites
+stitch run listWebsites           # CLI
+stitch serve --port 8787          # HTTP   → POST /stitch/listWebsites
 stitch mcp                        # MCP    → run_stitch tool for agents
 ```
 

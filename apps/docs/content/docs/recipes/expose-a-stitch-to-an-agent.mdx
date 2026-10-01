@@ -35,7 +35,8 @@ stitch mcp --module ./stitches.ts
 ```
 
 The agent discovers names with `list_stitches`, then calls one through the single
-`run_stitch` tool:
+`run_stitch` tool. The name is the export name, `getUser`, and the agent can
+reach nothing that `list_stitches` does not list:
 
 ```json
 {
@@ -52,8 +53,13 @@ stays at two entries (`run_stitch` + `list_stitches`) no matter how many stitche
 you register, keeping its context flat. The auth runs inside the runtime: the
 agent names a [capability](/docs/concepts/capability-not-credential), the server
 holds the `bearer(env('API_TOKEN'))` secret, and the result returns without the
-token. To run the server in your own process, import `serveStdio` from the
-`stitchapi/mcp` subpath.
+token. If a call fails, the agent gets the error message with credentials
+scrubbed from any URL in it.
+
+`--module` exposes every stitch the module exports. To expose only some of them,
+import `serveStdio` from the `stitchapi/mcp` subpath and pass it the registry
+you mean: `serveStdio({ getUser })`. That also runs the server in your own
+process.
 
 ## See also
 

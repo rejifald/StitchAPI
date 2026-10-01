@@ -60,6 +60,11 @@ directly.
 
 The tool's result is the stitch's validated output, so the model reasons over real
 data, not a guess; a failure rejects, and the AI SDK's tool-error handling reports it.
+That report is the error's `message`, which the AI SDK sends to the model as the
+tool's result, so core scrubs it first: a URL the transport quoted loses its
+userinfo and its secret query values (`?api_key=REDACTED`), and the model never reads
+a key you put in a URL with `apiKey({ in: 'query' })`. A key in a header is still the
+better placement. See [Errors & pitfalls](/docs/errors).
 
 ## `stitchExecute`
 
