@@ -114,6 +114,16 @@ describe('StitchError.message carries no URL credential after a transport throw 
         expect(err.message).not.toContain('tkn');
         const plain = (await thrower().catch((e: unknown) => e)) as Error;
         expect(plain.message).toBe('plain string thrown');
+        // A bring-your-own adapter may throw a bag whose `message` is not a string: still reported.
+        const bag = stitch({
+            url: 'https://x.test/c',
+            adapter: () =>
+                // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the case under test
+                Promise.reject({ message: 42 }),
+        });
+        expect(((await bag().catch((e: unknown) => e)) as Error).message).toBe(
+            '42',
+        );
     });
 });
 

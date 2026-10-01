@@ -390,7 +390,7 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const evt: Extract<StitchEvent, { type: 'error' }> = {
         type: 'error',
         name,
-        message: scrubUrls(e.message ?? String(err)),
+        message: scrubUrls(String(e.message ?? err)),
         attempts,
         at: now(),
     };
