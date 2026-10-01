@@ -3,6 +3,7 @@
 import { stitchError, streamStitchSse } from '../src';
 import * as api from '../src';
 
+import { RateLimitError, StitchError } from 'stitchapi';
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, test } from 'vitest';
 
@@ -35,11 +36,9 @@ const done: StitchEvent = {
     at: 0,
 };
 
-function makeStitchError(message: string, status?: number): Error {
-    const e = new Error(message) as Error & { status?: number };
-    e.name = 'StitchError';
-    if (status !== undefined) e.status = status;
-    return e;
+// A real StitchError — the guard trusts core's brand, not a borrowed `name`.
+function makeStitchError(message: string, status?: number): StitchError {
+    return new StitchError(message, { status });
 }
 
 // --- streamStitchSse -----------------------------------------------------------
@@ -290,6 +289,40 @@ describe('stitchError.is', () => {
         expect(stitchError.is(makeStitchError('x'))).toBe(true);
         expect(stitchError.is(new Error('x'))).toBe(false);
         expect(stitchError.is('x')).toBe(false);
+    });
+
+    test('recognises a subclass, not a borrowed name', () => {
+        expect(
+            stitchError.is(
+                new RateLimitError({
+                    status: 429,
+                    response: { status: 429, headers: {}, body: null },
+                }),
+            ),
+        ).toBe(true);
+        expect(
+            stitchError.is(
+                Object.assign(new Error('x'), { name: 'StitchError' }),
+            ),
+        ).toBe(false);
+    });
+});
+
+// #867: `RateLimitError` sets `name = 'RateLimitError'`, so the old `name === 'StitchError'` guard
+// made `stitchError.map` return `undefined` and the route's rethrow carried the raw message out.
+describe('stitchError.map on a RateLimitError', () => {
+    test('a RateLimitError gets the generic default body, never the raw message', async () => {
+        const err = new RateLimitError({
+            status: 429,
+            retryAfter: 30_000,
+            response: { status: 429, headers: {}, body: null },
+            message: 'quota exceeded for tenant acme on payments.internal',
+        });
+        const res = stitchError.map(err);
+        expect(res?.status).toBe(502);
+        const body = await res!.text();
+        expect(JSON.parse(body)).toEqual({ error: 'Bad Gateway' });
+        expect(body).not.toContain('payments.internal');
     });
 });
 

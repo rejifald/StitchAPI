@@ -30,6 +30,21 @@ try {
 }
 ```
 
+`instanceof` holds while the error and the check share one copy of
+`stitchapi`. Two copies can meet in one process: a CommonJS build, where each
+`stitchapi/*` subpath carries its own copy of the class, or two installed
+versions. Where that can happen, check with `isStitchError(e)` instead. It is
+true for `StitchError` and every subclass, `RateLimitError` included, and it is
+the check every `@stitchapi/*` host adapter's `stitchError.is` runs:
+
+```ts twoslash
+import { isStitchError } from 'stitchapi';
+
+function describeFailure(e: unknown): string {
+    return isStitchError(e) ? `upstream ${e.status ?? 'unreachable'}` : 'bug';
+}
+```
+
 <Callout type="info">
     `.body` carries the upstream error payload only to the awaited / `.safe()`
     caller — it rides a non-enumerable channel and is **never** written to a trace

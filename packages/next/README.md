@@ -44,7 +44,7 @@ export async function GET(
 }
 ```
 
-`stitchError.map` maps a `StitchError` to `502` by default (never leaking the upstream's status) and returns `undefined` for any other error, so the map-or-rethrow composition stays one branch; pass `{ status: (e) => e.status ?? 502 }` to propagate the upstream status. The body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the raw `err.message` is withheld, since it can leak an internal hostname (`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). Opt in with `{ body: (e) => ({ error: e.message }) }` when the upstream messages are safe to expose.
+`stitchError.map` maps a `StitchError`, or any subclass such as `RateLimitError` (it checks with core's `isStitchError`), to `502` by default (never leaking the upstream's status) and returns `undefined` for any other error, so the map-or-rethrow composition stays one branch; pass `{ status: (e) => e.status ?? 502 }` to propagate the upstream status. The body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the raw `err.message` is withheld, since it can leak an internal hostname (`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). Opt in with `{ body: (e) => ({ error: e.message }) }` when the upstream messages are safe to expose.
 
 `stitchError` is the same namespace every `@stitchapi` host adapter exports for this one concept. There is no `.handler` here: a route handler is its own `Request` → `Response` function, so Next has no central error hook to register one on — you map in the handler's own `catch`, as above.
 

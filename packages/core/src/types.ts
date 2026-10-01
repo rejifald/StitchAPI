@@ -2020,6 +2020,7 @@ export class StitchError extends Error {
             opts.cause !== undefined ? { cause: opts.cause } : undefined,
         );
         this.name = 'StitchError';
+        Object.defineProperty(this, STITCH_ERROR, { value: true });
         this.status = opts.status;
         this.attempts = opts.attempts ?? 0;
         if (opts.body !== undefined) this.body = opts.body;
@@ -2261,6 +2262,32 @@ export function isSeam(x: unknown): x is Seam {
         typeof x === 'object' &&
         x !== null &&
         (x as { __seam?: boolean }).__seam === true
+    );
+}
+
+// The brand every {@link StitchError} carries (set, non-enumerable, in its constructor, so every
+// subclass inherits it). `Symbol.for` reads the global symbol registry, so every copy of this module
+// gets the SAME symbol — the CJS and ESM builds side by side (the dual-package hazard), each CJS
+// subpath entry's own bundled copy, or two installed versions. That is what lets
+// {@link isStitchError} see an error that `instanceof` cannot.
+const STITCH_ERROR = Symbol.for('stitchapi.error');
+
+/**
+ * True when `err` is a {@link StitchError} — the base class or any subclass ({@link RateLimitError},
+ * and every class that extends it later). Use it wherever a boundary decides "is this a stitch
+ * failure?", in place of either check it replaces:
+ *
+ * - **Not `err.name === 'StitchError'`.** A subclass keeps `name` as its own discriminator
+ *   (CONTRACT.md P10), so `RateLimitError` reads `'RateLimitError'` and a name check misses it.
+ * - **Not `instanceof` alone.** A second copy of `stitchapi` in the process (a CJS consumer beside
+ *   an ESM one, or two installed versions) has its own `StitchError` class, and an error from one
+ *   is not an `instanceof` the other. The guard also reads the realm-wide brand, so both match.
+ */
+export function isStitchError(err: unknown): err is StitchError {
+    return (
+        err instanceof StitchError ||
+        (err as Record<symbol, unknown> | null | undefined)?.[STITCH_ERROR] ===
+            true
     );
 }
 

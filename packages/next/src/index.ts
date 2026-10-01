@@ -19,6 +19,7 @@
 // Built on Web standards (`Response`, `ReadableStream`, `TextEncoder`) only — no
 // `next` import — so the same helpers work in Next route handlers, Remix, SvelteKit
 // endpoints, Bun, Deno, and Workers. `stitchapi` is the only peer dependency.
+import { isStitchError as isCoreStitchError } from 'stitchapi';
 import {
     DEFAULT_ERROR_DATA,
     type SseEmitOptions,
@@ -151,9 +152,12 @@ export type StitchErrorLike = Error & { status?: number };
 // not exported — so the namespace is a thin facade rather than the only way to reach either.
 //
 // Guard half of `stitchError`; the namespace carries the contract. True when `err` is the error
-// a stitch throws on failure (`name === 'StitchError'`).
+// a stitch throws on failure — a `StitchError` or any subclass (`RateLimitError` included), from
+// any copy of `stitchapi`. Delegates to core's `isStitchError` rather than checking `err.name`,
+// which a subclass overrides: a name check let a 429's raw upstream message past the generic
+// default (#867).
 function isStitchError(err: unknown): err is StitchErrorLike {
-    return err instanceof Error && err.name === 'StitchError';
+    return isCoreStitchError(err);
 }
 
 // A small map of the statuses this helper emits → their generic reason phrase, used for

@@ -1,6 +1,6 @@
-// StitchError → Express error-handling middleware. A failed stitch throws a plain `Error` branded
-// `name === 'StitchError'` carrying the upstream `status` (packages/core/src/stitch.ts). This adapts
-// the Fastify error handler to Express's four-arg error middleware `(err, req, res, next)`, so a
+// StitchError → Express error-handling middleware. A failed stitch throws a `StitchError` (or a
+// subclass such as `RateLimitError`) carrying the upstream `status` (packages/core/src/types.ts),
+// recognised by core's `isStitchError`. This adapts the Fastify error handler to Express's four-arg error middleware `(err, req, res, next)`, so a
 // route handler calling a stitch needs no per-handler try/catch — register it last with
 // `app.use(stitchError.handler())`.
 //
@@ -13,6 +13,7 @@ import type {
     Request,
     Response,
 } from 'express';
+import { isStitchError as isCoreStitchError } from 'stitchapi';
 
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
@@ -21,10 +22,13 @@ export type StitchErrorLike = Error & { status?: number };
  * Guard half of {@link stitchError}; the namespace carries the contract. Internal — the
  * barrel exports the namespace, not this.
  *
- * True when `err` is the error a stitch throws on failure (`name === 'StitchError'`).
+ * True when `err` is the error a stitch throws on failure — a `StitchError` or any subclass
+ * (`RateLimitError` included), from any copy of `stitchapi`. Delegates to core's `isStitchError`
+ * rather than checking `err.name`, which a subclass overrides: a name check let a 429's raw
+ * upstream message past the generic default (#867).
  */
 export function isStitchError(err: unknown): err is StitchErrorLike {
-    return err instanceof Error && err.name === 'StitchError';
+    return isCoreStitchError(err);
 }
 
 export interface StitchErrorOptions {

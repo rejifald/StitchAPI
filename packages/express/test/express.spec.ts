@@ -13,7 +13,7 @@ import type {
 
 import type { Request, Response } from 'express';
 import { EventEmitter } from 'node:events';
-import { isSeam, seam } from 'stitchapi';
+import { RateLimitError, StitchError, isSeam, seam } from 'stitchapi';
 import type {
     Adapter,
     AdapterRequest,
@@ -480,10 +480,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
 
 describe('stitchError.handler maps a StitchError to HTTP', () => {
     test('maps a StitchError to 502 by default and does not leak the upstream status', () => {
-        const err = Object.assign(new Error('down'), {
-            name: 'StitchError',
-            status: 503,
-        });
+        const err = new StitchError('down', { status: 503 });
         const res = mockRes();
         let nextedWith: unknown = 'untouched';
         stitchError.handler()(
@@ -503,9 +500,8 @@ describe('stitchError.handler maps a StitchError to HTTP', () => {
 
     test('does not leak a transport failure message (internal hostname) by default', () => {
         // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
-        const err = Object.assign(
-            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
-            { name: 'StitchError' },
+        const err = new StitchError(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
         );
         const res = mockRes();
         stitchError.handler()(
@@ -524,10 +520,7 @@ describe('stitchError.handler maps a StitchError to HTTP', () => {
 
     test('does not leak the upstream status message (`HTTP 401`) by default', () => {
         // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
-        const err = Object.assign(new Error('HTTP 401'), {
-            name: 'StitchError',
-            status: 401,
-        });
+        const err = new StitchError('HTTP 401', { status: 401 });
         const res = mockRes();
         stitchError.handler()(
             err,
@@ -542,9 +535,8 @@ describe('stitchError.handler maps a StitchError to HTTP', () => {
     });
 
     test('the `body` opt-in still includes the raw message', () => {
-        const err = Object.assign(
-            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
-            { name: 'StitchError' },
+        const err = new StitchError(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
         );
         const res = mockRes();
         stitchError.handler({ body: (e) => ({ error: e.message }) })(
@@ -561,10 +553,7 @@ describe('stitchError.handler maps a StitchError to HTTP', () => {
     });
 
     test('can propagate the upstream status', () => {
-        const err = Object.assign(new Error('limited'), {
-            name: 'StitchError',
-            status: 429,
-        });
+        const err = new StitchError('limited', { status: 429 });
         const res = mockRes();
         stitchError.handler({ status: (e) => e.status ?? 502 })(
             err,
@@ -591,14 +580,50 @@ describe('stitchError.handler maps a StitchError to HTTP', () => {
         expect(res.jsonBody).toBeUndefined(); // not handled here
     });
 
-    test('stitchError.is discriminates by name', () => {
+    test('stitchError.is recognises a StitchError and its subclasses, not a borrowed name', () => {
+        expect(stitchError.is(new StitchError('x'))).toBe(true);
+        expect(
+            stitchError.is(
+                new RateLimitError({
+                    status: 429,
+                    response: { status: 429, headers: {}, body: null },
+                }),
+            ),
+        ).toBe(true);
+        // The name is not trusted: only core's brand marks a stitch failure.
         expect(
             stitchError.is(
                 Object.assign(new Error('x'), { name: 'StitchError' }),
             ),
-        ).toBe(true);
+        ).toBe(false);
         expect(stitchError.is(new Error('plain'))).toBe(false);
         expect(stitchError.is('nope')).toBe(false);
+    });
+
+    // #867: `RateLimitError` sets `name = 'RateLimitError'`, so the old name check missed it and the
+    // error fell through to Express's default handler with the raw upstream message.
+    test('a RateLimitError gets the generic default body, never the raw message', () => {
+        const err = new RateLimitError({
+            status: 429,
+            retryAfter: 30_000,
+            response: { status: 429, headers: {}, body: null },
+            message: 'quota exceeded for tenant acme on payments.internal.corp',
+        });
+        const res = mockRes();
+        let nextedWith: unknown = 'untouched';
+        stitchError.handler()(
+            err,
+            mockReq(),
+            res as unknown as Response,
+            (e?: unknown) => {
+                nextedWith = e;
+            },
+        );
+
+        expect(nextedWith).toBe('untouched'); // mapped here, not passed on
+        expect(res.statusCode).toBe(502);
+        expect(res.jsonBody).toEqual({ error: 'Bad Gateway' });
+        expect(JSON.stringify(res.jsonBody)).not.toContain('payments.internal');
     });
 });
 

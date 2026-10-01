@@ -20,7 +20,7 @@ import type {
     Seam,
     StitchEvent,
 } from 'stitchapi';
-import { isSeam } from 'stitchapi';
+import { RateLimitError, StitchError, isSeam } from 'stitchapi';
 import { afterEach, describe, expect, test } from 'vitest';
 
 // A fake adapter: route by URL path so one seam serves several test endpoints. It records the
@@ -474,6 +474,36 @@ describe('stitchPlugin', () => {
         expect(res.statusCode).toBe(429);
     });
 
+    // #867, the audit probe: `RateLimitError` sets `name = 'RateLimitError'`, so the old
+    // `name === 'StitchError'` guard rethrew it and Fastify's default handler answered 429 with the
+    // raw upstream message. A real delegate-backoff stitch reproduces it end to end.
+    test('a RateLimitError gets the generic default body, never the raw message', async () => {
+        const { adapter } = fakeAdapter(() => ({
+            status: 429,
+            headers: { 'retry-after': '30' },
+            body: { error: 'quota exceeded on payments.internal.corp' },
+        }));
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seam: { baseUrl: 'https://api.test', adapter },
+            logger: false,
+        });
+        app.get('/limited', async (request) =>
+            request.stitch.stitch({
+                path: '/limited',
+                throttle: { delegate: true },
+            })(),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/limited' });
+        expect(res.statusCode).toBe(502);
+        expect(res.json()).toEqual({ error: 'Bad Gateway' });
+        expect(res.body).not.toContain('rate limited');
+        expect(res.body).not.toContain('payments.internal');
+    });
+
     test('errorHandler:true registers the default mapping (the new P13 spelling, at runtime)', async () => {
         // `true` never type-checked before, so this asserts the RUNTIME honours it — not just
         // that the signature widened. It must behave exactly like omitting the key: register
@@ -582,9 +612,22 @@ describe('stitchPlugin', () => {
 });
 
 describe('stitchError.is / stitchError.handler unit', () => {
-    test('stitchError.is discriminates by name', () => {
-        const e = Object.assign(new Error('x'), { name: 'StitchError' });
-        expect(stitchError.is(e)).toBe(true);
+    test('stitchError.is recognises a StitchError and its subclasses, not a borrowed name', () => {
+        expect(stitchError.is(new StitchError('x'))).toBe(true);
+        expect(
+            stitchError.is(
+                new RateLimitError({
+                    status: 429,
+                    response: { status: 429, headers: {}, body: null },
+                }),
+            ),
+        ).toBe(true);
+        // The name is not trusted: only core's brand marks a stitch failure.
+        expect(
+            stitchError.is(
+                Object.assign(new Error('x'), { name: 'StitchError' }),
+            ),
+        ).toBe(false);
         expect(stitchError.is(new Error('plain'))).toBe(false);
         expect(stitchError.is('nope')).toBe(false);
     });
@@ -637,9 +680,8 @@ describe('stitchError.is / stitchError.handler unit', () => {
 
     test('does not leak a transport failure message (internal hostname) by default', () => {
         // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
-        const err = Object.assign(
-            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
-            { name: 'StitchError' },
+        const err = new StitchError(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
         ) as unknown as FastifyError;
         const cap = captureReply();
         stitchError.handler()(err, {} as FastifyRequest, cap.reply);
@@ -653,8 +695,7 @@ describe('stitchError.is / stitchError.handler unit', () => {
 
     test('does not leak the upstream status message (`HTTP 401`) by default', () => {
         // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
-        const err = Object.assign(new Error('HTTP 401'), {
-            name: 'StitchError',
+        const err = new StitchError('HTTP 401', {
             status: 401,
         }) as unknown as FastifyError;
         const cap = captureReply();
@@ -666,9 +707,8 @@ describe('stitchError.is / stitchError.handler unit', () => {
     });
 
     test('the `body` opt-in still includes the raw message', () => {
-        const err = Object.assign(
-            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
-            { name: 'StitchError' },
+        const err = new StitchError(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
         ) as unknown as FastifyError;
         const cap = captureReply();
         stitchError.handler({ body: (e) => ({ error: e.message }) })(

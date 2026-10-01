@@ -39,6 +39,11 @@ const FUNCTIONS = [
     'compile',
     'isStitch',
     'isSeam',
+    // The one "is this a stitch failure?" check (#867). Public because every host adapter's
+    // `stitchError.is` delegates to it: a name check misses a subclass (`RateLimitError`) and
+    // `instanceof` misses an error from a second copy of this package, so a host must not roll
+    // its own.
+    'isStitchError',
     // The `exactOptionalPropertyTypes` companion: public because config authoring under that flag
     // otherwise needs the `...(key !== undefined ? { key } : {})` spread dance at every call site,
     // and a peer package building a `StitchConfig` hits it as often as core does.
