@@ -27,19 +27,17 @@ function label(text: string): string {
 
 /**
  * Build a Mermaid `flowchart` of the registry: one subgraph per stitch, each a left-to-right chain
- * of its configured pipeline stages. Pure (no I/O). `opts.name` filters to a single stitch (by
- * registry key or configured `name`). Returns the diagram text plus warnings (e.g. an unknown name).
+ * of its configured pipeline stages. Pure (no I/O). `opts.name` filters to a single stitch by its
+ * registry key. Returns the diagram text plus warnings (e.g. an unknown name).
  */
 export function toMermaid(
     registry: StitchRegistry,
     opts: { name?: string } = {},
 ): MermaidExportResult {
     const warnings: string[] = [];
+    // By registry key only — the name `stitch run`, `serve` and MCP resolve (see `selectStitch`).
     const entries = Object.entries(registry).filter(
-        ([key, s]) =>
-            opts.name === undefined ||
-            key === opts.name ||
-            s.__config.name === opts.name,
+        ([key]) => opts.name === undefined || key === opts.name,
     );
     if (opts.name !== undefined && entries.length === 0)
         warnings.push(`no stitch named "${opts.name}"`);

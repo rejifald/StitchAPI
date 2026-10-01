@@ -44,6 +44,15 @@ npm release are grouped under the in-development version that introduced them.
   omitted for a plain `Error`. `TimeoutError` now sets its `name`, so it reads `'TimeoutError'`
   in a minified build instead of `'Error'`.
 
+- **The MCP tools carry `annotations`.** ([#866](https://github.com/rejifald/StitchAPI/issues/866)
+  / [P22](docs/CONTRACT.md#p22--a-standards-interop-contract-uses-the-standards-field-names))
+  `list_stitches` and `describe_stitch` are `readOnlyHint: true, openWorldHint: false`: they read
+  the in-process registry and make no request. `run_stitch` is
+  `readOnlyHint: false, destructiveHint: true, openWorldHint: true`. It fronts every registered
+  stitch, a write included, so it claims nothing it cannot promise for all of them. `destructiveHint` is the spec's
+  own default and is set explicitly, so a host lands on the cautious side without having to know
+  the default. Additive: no existing field moves.
+
 ### Changed
 
 - **BREAKING CHANGE: `otlp` moves to `stitchapi/otlp`.** ([#871](https://github.com/rejifald/StitchAPI/issues/871),
@@ -141,6 +150,43 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
     `stitch.waited`, set `OTEL_SERVICE_NAME` (or `resource`) for the service you used to find under
     `stitchapi`, and stop filtering on `status = OK`.
 
+- **BREAKING CHANGE: `stitch run`, `stitch serve`, `stitch diagram --name` and the MCP tools resolve
+  a stitch by its registry key only.** ([#866](https://github.com/rejifald/StitchAPI/issues/866),
+  part of [#863](https://github.com/rejifald/StitchAPI/issues/863); pre-GA hard break per
+  [D5](docs/CONTRACT.md#0-resolved-decisions)) `selectStitch` fell back from the key to each
+  stitch's configured `name`, so a registry that renamed a stitch to hide it
+  (`{ approvedRefund: issueRefund }`) still answered to `issueRefund`. The stitch was callable
+  and absent from `list_stitches` and `GET /` at the same time, which inverts the one allow-list
+  seam the MCP surface has. The lookup was also a plain `registry[name]`, so `constructor` and `toString`
+  resolved to `Object.prototype` members. Resolution is now `Object.hasOwn` on the registry, and the
+  callable identity is exactly what the listings show. The "unknown stitch … Available: …" error is
+  unchanged. `toMermaid`'s name filter, behind `stitch diagram --name` and `describe_stitch`'s
+  diagram, follows the same rule. `StitchConfig.name` stays what its JSDoc always called it: a label
+  for events and traces. The one exception is unchanged: a module's `default` export has no export
+  name, so `collectStitches` keys it by its configured `name` (else `default`), the only name it has.
+
+    **Migration:** call a stitch by its export name (`stitch run getUser`, `POST /stitch/getUser`,
+    `run_stitch { "name": "getUser" }`), not by its configured `name`. Where the two differed, export
+    the stitch under the name your callers use.
+
+- **BREAKING CHANGE: request header names are lower-case wherever they are read.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866); pre-GA hard break per
+  [D5](docs/CONTRACT.md#0-resolved-decisions)) The engine folds every request header name to lower
+  case in `buildRequest`, so the `headers` of the request a custom adapter receives,
+  `hooks.onRequest`'s `ctx.req.headers`, `stitchapi/testing`'s `MockCall.req`, and the `req` a
+  `MockMatch` predicate or a `calls(filter)` is handed all carry lower-case names (`content-type`,
+  `x-trace`, `idempotency-key`, and the `last-event-id` an SSE reconnect sets). They carried the
+  authored spelling before. A credential strategy and a caller's header could not be made to collide
+  without one spelling: see the cookie and header bullet under Security. `fetch`, axios and XHR are
+  case-insensitive and need nothing.
+
+    **Migration:** read request headers by their lower-case name: `req.headers['content-type']`,
+    `ctx.req?.headers['x-trace']`, `mockAdapter({ match: (req) => req.headers['x-trace'] === '1' })`.
+    A lookup by the authored spelling (`['X-Trace']`) is `undefined` now; compare case-insensitively
+    where the casing is not under your control. Where two sources spelled one header differently (the
+    config's `X-Trace`, the call's `x-trace`) the call's wins and only one is sent. A header a hook
+    adds by mutating `ctx.req.headers` is written after the fold and keeps the spelling you give it.
+
 ### Fixed
 
 - **An OTLP export that fails says so once, and the OTel environment lists ignore a blank name.**
@@ -206,6 +252,108 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
     on a package runner (`npx`, `pnpx`, `bunx`, `pnpm dlx`, `yarn dlx`, `npm exec`) pointed at the
     bare `stitch` name anywhere in the tracked docs, READMEs, source or workflows, and on
     `stitchapi` ever losing its single `bin` — the property `npx stitchapi` relies on.
+
+- **An MCP server keeps answering after a tool throws.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) A throw outside `run_stitch`'s own
+  guard, such as a `describe_stitch` on an entry whose `__config` cannot be read, escaped
+  `handle()`. Over stdio every message runs on one promise chain, so that rejection stalled every
+  later message, a `ping` included. Unobserved, it could also end the process under Node's default
+  `--unhandled-rejections=throw`. Every tool now turns a throw into an `isError` result. A line that
+  is valid JSON but not a request object (`null`, `42`, `[]`) is a JSON-RPC `-32600`, and
+  `handle()` never rejects. The stdio chain also catches at each link, so a failed write cannot
+  stall the messages behind it.
+
+- **An adapter that throws `undefined` or `null` is reported, not a `TypeError`.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) Building the `error` event read a property
+  of the thrown value, so `throw undefined` / `throw null` became a `TypeError` out of the engine and
+  `.stream()` rejected instead of yielding its `error` and `done` events. The failure is now reported
+  as the string it stringifies to (`undefined`, `null`), on every consumer.
+
+### Security
+
+- **MCP: an error message no longer carries a URL credential to the model.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) `run_stitch` returned
+  `(e as Error).message` verbatim. StitchAPI's own messages are request-free, but a message the
+  transport wrote quotes the request URL. With `apiKey({ in: 'query' })` on the default
+  `fetchAdapter` and a mistyped port, the model received
+  `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_…`, from zero
+  lines of user code. A `node-fetch`-shaped adapter does the same on any DNS failure. Every error
+  text that crosses the MCP boundary is now URL-scrubbed (a free-text companion to the trace
+  sinks' `scrubUrl`): each absolute (`scheme://`) URL in the text loses its userinfo and the values
+  of its secret-bearing query parameters (`api_key=REDACTED`), using the same denylist as the trace
+  sinks, names registered by `apiKey({ in: 'query', name })` included. A URL the WHATWG parser
+  rejects is exactly the one such a message quotes, so the scrub is lexical and never asks `new URL`
+  whether the text is well-formed. Punctuation that closes the sentence or the bracket around a URL
+  (`) ] , . ;`, a trailing run only: a JWT is dotted) is not part of it, so `(…?key=K), retry` keeps
+  its `), retry`. A relative path or a schemeless `host/path?key=K` is not recognised as a URL yet.
+  A `throw` of a non-`Error` value now reaches the model as its string instead of `undefined`.
+
+    The same sweep found the success path leaking too: `describe_stitch` quoted the configured
+    endpoint verbatim in its `endpoint`, `pipeline` and `diagram` fields, so a `baseUrl` with
+    userinfo (`https://svc:pass@host`) or a secret query pair written into the URL reached the
+    model on a call that makes no request at all. Those fields are scrubbed the same way, and
+    `list_stitches` returned a literal query pinned into a stitch's `path` (`/v1/{id}?sig=tok`),
+    which is now cut: `path` is the route template, and a `{?limit}` operator stays. All three MCP
+    tools are now cases in the `no-credential-leak` class guard that every URL-emitting surface must
+    join.
+
+- **A transport error's message carries no URL credential, on any surface.**
+  ([#890](https://github.com/rejifald/StitchAPI/issues/890), the root cause behind the MCP bullet
+  above) The leak was never specific to MCP. `@stitchapi/vercel-ai` hands a failed tool call to the
+  AI SDK, which sends `getErrorMessage(error)` to the model as an `error-text` tool result, and
+  `stitch serve`, the SSE host adapters, every trace sink, OTLP `status.message`, `@stitchapi/pino`
+  and `@stitchapi/sentry` all read the same text. The engine now scrubs it once, where a thrown value
+  becomes the error event: `StitchError.message` (awaited, `.safe()`, `.stream()`), the `error`
+  event, and the `retry` progress detail that quotes the same message all read
+  `…/v1/metrics?api_key=REDACTED` and never the key. The text a surface writes when it rejects a
+  response (a GraphQL `errors` message that echoes a URL, an `interpret` verdict) is scrubbed the
+  same way, on the `error` event and on the `interpret:` retry detail. It is the scrubber from the
+  MCP bullet, so the denylist is the trace sinks' and the names `apiKey({ in: 'query', name })`
+  registers are covered, and only absolute (`scheme://`) URLs are recognised for now. The MCP
+  boundary keeps its own scrub as defence in depth.
+
+    **What does not change.** The error the transport threw is left alone: it rides on
+    `StitchError.cause`, raw, so its `.code` and an undici cause chain stay readable. Its message is
+    the transport's own, so user code that logs `err.cause` itself, or `console.error(err)` (which
+    prints the cause chain), still shows the raw URL; so do the `onError` / `onRetry` hooks, which
+    receive the error as thrown. `StitchError.url`, the final URL of a failing HTTP response, is
+    likewise unscrubbed. Reading those is a decision to look at what the transport saw; scrubbing
+    them belongs with `StitchError.toJSON()` in [#873](https://github.com/rejifald/StitchAPI/issues/873).
+
+- **`cookieSession` replaces a same-named cookie instead of joining it.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) `apply` appended the session to any
+  `Cookie` header the request already carried. On a stitch that declares an `input.headers` schema,
+  a caller (on the MCP surface, the model) could send `SESSION=attacker`, and the vendor received
+  `SESSION=attacker; SESSION=sess_live_…`. A vendor that reads the first occurrence then ran the
+  call as the forger's session: session fixation. Each pair the session sets now replaces the
+  same-named pair through `setCookiePair`, the rule `apiKey({ in: 'cookie' })` already followed. In
+  jar mode (`cookie: '*'` / `jar: true`), every pair the login set replaces its twin. Unrelated
+  cookies keep their place. The name match is case-insensitive: RFC 6265 calls cookie names
+  case-sensitive, but a vendor on ASP.NET reads `session` and `SESSION` as one cookie, so
+  `session=forged` must not sit beside the real `SESSION=…`. The wider match also replaces an
+  unrelated cookie that differs from the session's name only in case, which is the safe side.
+
+    `setCookiePair` itself replaced only the **first** same-named pair, so
+    `sid=forged; theme=dark; sid=forged2` kept a forged `sid` for a vendor that reads the last
+    occurrence. It now drops every later duplicate, for `apiKey({ in: 'cookie' })` and
+    `cookieSession` alike.
+
+- **A credential header or cookie in another case no longer slips past the strategies.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) The cookie fix above could be bypassed
+  with a capital letter. Every auth strategy reads and writes `req.headers` by one key (`cookie`,
+  `authorization`, the lower-cased `apiKey` name), so a caller's `Cookie`, `X-API-Key` or
+  `Authorization` was a different key to it: the strategy's pair landed beside the caller's, and
+  `fetch` joined the two on the wire. `input.headers: { Cookie: 'tracking=xyz; SESSION=attacker' }`
+  reached the vendor as `Cookie: tracking=xyz; SESSION=attacker; SESSION=sess_live_…` with the forged
+  pair first, and `X-API-Key: FORGED` as `X-API-Key: FORGED, REAL`. Jar mode and
+  `apiKey({ in: 'cookie' })` behaved the same. `buildRequest` now folds every request header name to
+  lower case once, after the last place a header can be authored (the config's `headers`, the call's
+  `input.headers`, the surface) and before auth runs, so there is one spelling to collide on and the
+  strategy's value replaces the caller's. Where two sources spell one header differently the later
+  one wins: the call's input over the config's.
+
+    The names a hook, a mock or an adapter reads are lower-case now: see the BREAKING CHANGE under
+    Changed.
 
 ## [1.0.0-rc.8] — 2026-09-17
 

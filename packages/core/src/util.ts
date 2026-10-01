@@ -1097,3 +1097,49 @@ export function scrubUrl(url: string): string {
     }
     return hadUserinfo || secretKeys.length > 0 ? u.toString() : url;
 }
+
+/**
+ * {@link scrubUrl} for free text — an error message, a log line — that may quote URLs. Every
+ * absolute URL in it loses its userinfo and the values of its secret-named query / fragment
+ * parameters; the text around it is untouched. The URL a transport error quotes is often one the
+ * WHATWG parser rejects (`Failed to parse URL from http://host:99999/v1?api_key=…`), and
+ * {@link scrubUrl} hands such a URL back as-is, so the scrub here is lexical: it never asks
+ * `new URL` whether the text is well-formed.
+ *
+ * A URL is whatever follows a `://` up to whitespace or a character that conventionally delimits
+ * one in prose or JSON (a backslash too, so an escaped quote in JSON-ish text is never swallowed and
+ * rewritten), minus a trailing run of `) ] , . ;`: punctuation that ends a sentence or closes a
+ * bracket around the URL is not part of it, so `(…?key=K), retry` keeps its `), retry`. Only the
+ * TRAILING run is dropped, not every such character: a credential can hold one (a JWT is dotted), and
+ * leaving the tail of a secret in the clear is worse than eating the comma after it. The scheme is
+ * never inspected: only what FOLLOWS the `://` is rewritten. Only absolute (`scheme://`) URLs are
+ * recognised: a relative path or a schemeless `host/path?key=K` is not scrubbed.
+ *
+ * Linear on untrusted text (a transport's message, a vendor's error body): the scan is anchored on
+ * the literal `://`, so there is no scheme run to retry from every start position — that is what made
+ * the first version, `/[a-z][a-z\d+.-]*:\/\/…/g`, quadratic on a long run of letters (CodeQL). Every
+ * pattern below is anchored or bounded by a delimiter, so each character is read a bounded number
+ * of times.
+ */
+export function scrubUrls(text: string): string {
+    return text.replace(/:\/\/[^\s"'<>`\\]*[^\s"'<>`\\).,;\]]/g, (url) =>
+        url
+            // userinfo runs to the LAST `@` before the authority ends, as the WHATWG parser reads it
+            .replace(/^:\/\/[^/?#]*@/, '://')
+            // a `?` / `&` / `#` pair whose (decoded) key is a secret keeps its key and loses its
+            // value, so the message still says which parameter it was
+            .replace(/([?&#][^=&#?]*=)[^&#]*/g, (pair, head: string) =>
+                isSecretKey(decodeQueryKey(head.slice(1, -1)))
+                    ? head + URL_REDACTED
+                    : pair,
+            ),
+    );
+}
+
+function decodeQueryKey(key: string): string {
+    try {
+        return decodeURIComponent(key);
+    } catch {
+        return key; // a stray `%` — match the raw spelling rather than give up on the pair
+    }
+}

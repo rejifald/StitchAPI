@@ -108,6 +108,15 @@ where `input` is the stitch input `{ params?, query?, body?, headers? }`;
 `list_stitches` takes no arguments and returns the names, methods, and paths;
 `describe_stitch` takes `{ name }` and returns the JSON shape above.
 
+`name` is always a registry key, exactly as `list_stitches` returns it. A
+stitch's configured `name` is a trace label and does not select it, so a name
+the listing does not show is an `unknown stitch` error on every tool. A failed
+`run_stitch` returns the error message as an `isError` result, with credentials
+scrubbed from any absolute (`scheme://`) URL it quotes. The tools also carry MCP `annotations`:
+`list_stitches` and `describe_stitch` are read-only, and `run_stitch` is not.
+The [MCP surface](/docs/surfaces/mcp#which-names-a-call-resolves) page covers
+all three rules.
+
 This is **code-mode**: one tool for every stitch, rather than one MCP tool per
 endpoint. One-tool-per-endpoint floods the model's context — every registered
 stitch adds another schema the model must carry — while `run_stitch` keeps the

@@ -69,18 +69,30 @@ token on every attempt.
     removed before that merge ever runs.
 </Callout>
 
+**One leak sat at the edge of the boundary, and it is now closed.** When this audit ran,
+`run_stitch` passed an error message through unfiltered, so text the _transport_ wrote reached
+the model verbatim. With `apiKey({ in: 'query' })` on the default adapter, a mistyped port put
+`…/v1/metrics?api_key=ak_live_…` into the model's context, from zero lines of user code. We filed
+it as [#866](https://github.com/rejifald/StitchAPI/issues/866). Every absolute (`scheme://`) URL in an MCP error message
+now loses its userinfo and its secret query values, so the model reads `api_key=REDACTED`. The
+same text reached the model through `@stitchapi/vercel-ai` too, so
+[#890](https://github.com/rejifald/StitchAPI/issues/890) moved the scrub to where the engine turns a
+transport's throw into the error, and every surface reads the scrubbed message. A key
+in a header is still the better placement: the
+[auth guide](/docs/reference/auth-strategies) explains why a key in a URL leaks wherever URLs go.
+
 ### The argument boundary is yours
 
 Everything else in `input` reaches the request. Five levers, measured on an **ordinary stitch** —
 one that declares no input schemas:
 
-| Lever                                                        | Measured                                                                                                                     |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| **A query parameter pinned in the path is a _default_**      | `path: '/v1/orders?tenant=acme'` → the model sent `tenant=globex`, **and the vendor returned the other tenant's data**       |
-| **The whole request body of a write**, when no `body` schema | a 999,999 refund                                                                                                             |
-| **Reserved expansion traverses endpoints**                   | `{+id}` reached `/v1/api-keys` **with the bearer token attached**; ordinary `{id}` correctly encoded it to `..%2F..%2F`      |
-| **A templated endpoint reaches anywhere**                    | `url: '{+endpoint}'` → `https://metadata.internal/latest`                                                                    |
-| **`cookieSession` joins where `apiKey` replaces**            | with headers opted in: `SESSION=attacker; SESSION=sess_live_…` — a vendor reading the first pair runs as the model's session |
+| Lever                                                        | Measured                                                                                                                                                                        |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A query parameter pinned in the path is a _default_**      | `path: '/v1/orders?tenant=acme'` → the model sent `tenant=globex`, **and the vendor returned the other tenant's data**                                                          |
+| **The whole request body of a write**, when no `body` schema | a 999,999 refund                                                                                                                                                                |
+| **Reserved expansion traverses endpoints**                   | `{+id}` reached `/v1/api-keys` **with the bearer token attached**; ordinary `{id}` correctly encoded it to `..%2F..%2F`                                                         |
+| **A templated endpoint reaches anywhere**                    | `url: '{+endpoint}'` → `https://metadata.internal/latest`                                                                                                                       |
+| **`cookieSession` joined where `apiKey` replaced**           | with headers opted in: `SESSION=attacker; SESSION=sess_live_…`. Fixed in [#866](https://github.com/rejifald/StitchAPI/issues/866): the session pair now replaces the forged one |
 
 The first row is the sharpest, because `?tenant=acme` in a configured path reads like an
 operator invariant and is spelled like one. It is `{ ...predefined, ...input.query }`.
@@ -99,7 +111,7 @@ filters the one slot it is declared on, and an undeclared slot stays the full pa
 table above measures — declaring `params` says nothing about `query`, and nothing requires a slot
 to be declared.
 
-### The safe exposure is 47 lines across 3 seams
+### The safe exposure is 40 lines across 3 seams
 
 No fork, no config key. Replayed against the same vendor, the naive exposure sent
 `?tenant=globex`, `?include=internal_notes` and a 999,999 refund; the safe one sent
@@ -113,9 +125,11 @@ const server = createMcpServer(
 );
 ```
 
-- **`expose`** — the registry object you hand `createMcpServer` _is_ the allow-list. It also has
-  to reject a stitch whose configured `name` differs from its key, because `selectStitch` falls
-  back to that name: a renamed stitch stays callable while vanishing from `list_stitches`.
+- **`expose`** — the registry object you hand `createMcpServer` _is_ the allow-list. When this
+  audit ran it also had to reject a stitch whose configured `name` differed from its key, because
+  `selectStitch` fell back to that name: a renamed stitch stayed callable while vanishing from
+  `list_stitches`. Since [#866](https://github.com/rejifald/StitchAPI/issues/866) a call resolves
+  the registry's own keys only, so a rename really hides the old name.
 - **`only`** — a `Proxy` apply-trap that **rebuilds** the input from an explicit key list before
   the engine sees it. Since [#663](https://github.com/rejifald/StitchAPI/pull/663) a declared
   schema filters its own slot, so `only` is no longer forced — it earns its place covering the
@@ -128,33 +142,29 @@ turned twenty tool calls into three vendor requests and seventeen fast-fails.
 
 ## What StitchAPI does not solve
 
-1. **An error message can carry a credential out.** `run_stitch` renders `(e as Error).message`
-   unfiltered, so any text the _transport_ writes reaches the model verbatim. With
-   `apiKey({ in: 'query' })` on the default adapter, a DNS failure put
-   `…/v1/metrics?api_key=ak_live_…` into the model's context — **from zero lines of user code**.
-   The fix is `apiKey({ in: 'header' })`; the [auth guide](/docs/reference/auth-strategies) already
-   warns that a key in a URL leaks wherever URLs go, and the model's context is one more place
-   URLs go.
-2. **There is no confirmation seam, in either direction.** The server advertises only
-   `capabilities: { tools }` and cannot originate a message, so it cannot ask. The tool
-   descriptors carry no `annotations`, so `readOnlyHint`/`destructiveHint` are absent and the
-   host cannot decide to prompt — and because code-mode puts every endpoint behind one tool
-   name, reading an order and issuing a 25,000 refund arrive at the host as the same
-   `run_stitch` call. User code can **refuse** (`hooks.onRequest` throws; the vendor got zero
-   requests, and `retry: { attempts: 3 }` asked the gate exactly once) but never **ask**.
-3. **One tool call is not one request.** `retry: { attempts: 5 }` made five; `paginate` made
+1. **There is no confirmation seam, in either direction.** The server advertises only
+   `capabilities: { tools }` and cannot originate a message, so it cannot ask. Since
+   [#866](https://github.com/rejifald/StitchAPI/issues/866) the tools carry MCP `annotations`,
+   and `list_stitches`/`describe_stitch` are marked read-only. But code-mode puts every endpoint
+   behind one tool name, so `run_stitch` has to be annotated as a possible write
+   (`readOnlyHint: false`, `destructiveHint: true`). Reading an order and issuing a 25,000 refund
+   still arrive at the host as the same `run_stitch` call. User code can **refuse**
+   (`hooks.onRequest` throws; the vendor got zero requests, and `retry: { attempts: 3 }` asked
+   the gate exactly once) but never **ask**.
+2. **One tool call is not one request.** `retry: { attempts: 5 }` made five; `paginate` made
    twelve, with a default ceiling of 50 — and neither is signalled in the tool result. A host
    that budgets 20 tool calls has budgeted up to 1,000 vendor requests.
-4. **No bound expresses cost.** Every limiter is a count (`throttle.rate`, `retry.attempts`,
+3. **No bound expresses cost.** Every limiter is a count (`throttle.rate`, `retry.attempts`,
    `paginate.pages`, `circuit.failures`) or a duration (`timeout`, `circuit.cooldown`). Nothing
    expresses tokens, bytes or money — the axis the runaway-bill incidents actually ran along.
-5. **`describe_stitch` is a map.** Per stitch it discloses the full internal endpoint URL, the
+4. **`describe_stitch` is a map.** Per stitch it discloses the full internal endpoint URL, the
    surface, the auth _scheme_, which resilience features are on, and a Mermaid diagram — about
    1 KB. Not the credential, not your configured request headers, not the env var name. Whether
    that is disclosure or documentation depends on who is connected.
-6. **`stitch mcp --module ./stitches.ts` exposes everything.** `collectStitches` sweeps up every
+5. **`stitch mcp --module ./stitches.ts` exposes everything.** `collectStitches` sweeps up every
    exported stitch — in our fixture, a write and a login stitch alongside the intended read. The
-   registry filter is a real seam, but the documented starter does not use it.
+   registry filter is a real seam, and the [MCP surface](/docs/surfaces/mcp) page now warns that
+   `--module` does not filter, but the documented starter still does not use it.
 
 <Callout type="warn">
     Nothing in `StitchConfig`'s 32 top-level slots excludes a stitch from MCP.

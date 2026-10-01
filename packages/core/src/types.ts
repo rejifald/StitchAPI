@@ -980,6 +980,12 @@ export interface AdapterProgress {
 export interface AdapterRequest {
     url: string;
     method: string;
+    /**
+     * The request headers, with LOWER-CASE names. The engine folds every name (the config's
+     * `headers`, the call's `input.headers`, a surface's own) in `buildRequest`, before auth runs, so
+     * an auth strategy and a caller's header of another spelling cannot ride side by side. Read
+     * `headers['content-type']`, not `['Content-Type']`.
+     */
     headers: Record<string, string>;
     body?: unknown;
     bodyType?: 'json' | 'form' | 'multipart';
@@ -1531,7 +1537,8 @@ export interface HookContext {
     /**
      * The live request this attempt is about to send — for READING (log the method/url, count a
      * retry). It is the same object handed to the transport, so a mutation does take effect, but
-     * see {@link Hooks.onRequest}: by the time a hook sees it, auth has already signed it.
+     * see {@link Hooks.onRequest}: by the time a hook sees it, auth has already signed it. Its header
+     * names are lower-case ({@link AdapterRequest.headers}).
      */
     req?: AdapterRequest;
     res?: AdapterResult;
@@ -1758,7 +1765,13 @@ export type KnownMethod =
     'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'QUERY';
 
 export interface StitchConfig {
-    /** Label used in events and traces; defaults to `path` or `'stitch'`. */
+    /**
+     * Label used in events and traces; defaults to `path` or `'stitch'`. Not an address:
+     * `stitch run`, `stitch serve` and the MCP tools resolve a stitch by its registry key only, so
+     * this never makes a stitch callable under a second name. For a module's named exports that key
+     * is the export name. The one exception is a module's `default` export, which has no export name:
+     * `collectStitches` keys it by this `name` (else `"default"`), because that is the only name it has.
+     */
     name?: string;
     /**
      * Request style — a {@link Surface} plugin (ADR 0005 Decisions 1-2). Omitted = the built-in
@@ -2044,6 +2057,12 @@ export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
  * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
  * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
  * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
+ *
+ * When the failure was a transport throw, `message` is the transport's own text with the credential
+ * scrubbed from every absolute (`scheme://`) URL in it (userinfo dropped, secret query values read
+ * `REDACTED`; a relative or schemeless URL is not recognised yet): a transport
+ * quotes the request URL, and with `apiKey({ in: 'query' })` that URL holds the key. The original
+ * error rides on `cause`, unmodified and so with its raw message.
  */
 export class StitchError extends Error {
     /** HTTP status when the failure came from a response; `undefined` for transport/internal errors. */

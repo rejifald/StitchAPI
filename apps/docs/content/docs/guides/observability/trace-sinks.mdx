@@ -195,6 +195,14 @@ attribute. The matching keys in the `start` event's structured `input.query` are
 redacted the same way, so the two views can't disagree; benign params (`page`,
 `sort`) survive for observability.
 
+The URL also shows up in failure text: a transport writes the URL it called into its
+own error message, and with `apiKey({ in: 'query' })` that URL carries the key. The
+engine scrubs it before the `error` event is built, so a `.message` that quotes an
+absolute (`scheme://`) URL (and the `retry` progress `detail` that quotes the same
+text) reads `?api_key=REDACTED` for every sink, a custom one included. The `start`
+event's raw `url` is a different field: a custom sink still has to scrub that one
+itself.
+
 Need to redact a non-standard auth header (say `x-auth-token`)? Widen the
 denylist — you can extend it but never shrink it — with `redactHeaders`:
 

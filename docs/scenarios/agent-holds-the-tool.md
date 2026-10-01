@@ -126,12 +126,12 @@ adversarial.
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | C1 — does the credential reach the model? | **HELD.** 34 exchanges, 30 payload scans, 14,529 bytes, 5 held secrets, **zero hits** — including a vendor 401 with a credential-shaped body, and stdio. Controls confirm the wire carried them. |
 | C2 — can `input` rewrite the call?        | **Header hypothesis REFUTED**; 5 other levers real                                                                                                                                               |
-| C3 — allow-list?                          | The registry object, and it is usable — but `--module` sweeps everything, and a rename bypasses it                                                                                               |
-| C4 — error rendering                      | StitchAPI's own errors are terse; **the channel is unfiltered** — one real leak                                                                                                                  |
+| C3 — allow-list?                          | The registry object, and it is usable — but `--module` sweeps everything (a rename used to bypass it; closed in #866)                                                                            |
+| C4 — error rendering                      | StitchAPI's own errors are terse; **the channel was unfiltered** — one real leak, closed in #866 / #890                                                                                          |
 | C5 — runaway containment                  | `throttle`/`circuit` apply; 1 tool call ≠ 1 request; no cost budget                                                                                                                              |
 | C6 — confirmation seam                    | None, either direction. User code can refuse, never ask                                                                                                                                          |
 | C7 — schema quality                       | Validated but did not filter — filed as [#648](https://github.com/rejifald/StitchAPI/issues/648), fixed by #663; **a declared slot now filters, an undeclared slot stays passthrough**           |
-| C8 — assembled                            | 47 lines, 3 seams                                                                                                                                                                                |
+| C8 — assembled                            | 40 lines, 3 seams                                                                                                                                                                                |
 
 ### Hypotheses that were wrong
 

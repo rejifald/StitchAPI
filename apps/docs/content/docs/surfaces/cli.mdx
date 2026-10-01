@@ -25,8 +25,9 @@ export const getUser = stitch({
 });
 ```
 
-Run it by name. A bare `--id` routes to the `{id}` path param, and every event
-is printed as one line of JSON, so the stream pipes straight into `jq`:
+Run it by its export name. A bare `--id` routes to the `{id}` path param, and
+every event is printed as one line of JSON, so the stream pipes straight into
+`jq`:
 
 ```bash
 stitch run getUser --id 1
@@ -90,9 +91,10 @@ there.
 [Mermaid](https://mermaid.js.org) flowchart of each stitch's configured pipeline
 — throttle, request, retry, the request [surface](/docs/reference/surfaces),
 pagination, validation, transform, pick, and cache — read straight from the
-definition, with no run. Pass `--name` to diagram a single stitch by export name
-or configured `name`. Auth is redacted from a stitch's public config, so the
-credential never appears in the diagram.
+definition, with no run. Pass `--name` to diagram a single stitch by its export
+name; a configured `name` does not select it (a module's `default` export, which
+has no export name, is keyed by its configured `name`). Auth is redacted from a stitch's
+public config, so the credential never appears in the diagram.
 
 ```bash
 stitch diagram --name getUser   # paste the Mermaid into any renderer

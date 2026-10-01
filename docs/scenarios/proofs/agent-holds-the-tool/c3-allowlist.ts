@@ -13,9 +13,9 @@
 // default exposure is "everything in the file", including a write and a stitch that only exists to
 // serve another stitch's login.
 //
-// And one bypass worth knowing about: `selectStitch` resolves a name against the registry KEY and,
-// failing that, against each stitch's CONFIGURED `name` — so leaving a stitch out of the keys is
-// not the same as leaving it out of the registry.
+// And one bypass that WAS worth knowing about: `selectStitch` used to resolve a name against the
+// registry KEY and, failing that, against each stitch's CONFIGURED `name` — so renaming a stitch's
+// key was not the same as hiding it. #866 closed it: only the registry's own keys resolve.
 //
 //   pnpm exec tsx docs/scenarios/proofs/agent-holds-the-tool/c3-allowlist.ts
 import { bearer, env } from '../../../../packages/core/src/auth';
@@ -208,10 +208,12 @@ async function main(): Promise<void> {
         'the model cannot see them; it also cannot know they are what pins the tenant',
     );
 
-    heading('C3 (e) — the allow-list bypass: keys are not the only names');
+    heading(
+        'C3 (e) — the former allow-list bypass: keys are now the only names',
+    );
     // An operator filters the registry down to "the safe two" and renames the key, believing the
-    // rename hides the original. `selectStitch` resolves the registry KEY first and then falls
-    // back to each stitch's CONFIGURED `name` (registry.ts:71-74).
+    // rename hides the original. `selectStitch` used to resolve the registry KEY first and then
+    // fall back to each stitch's CONFIGURED `name`; it resolves the key alone now.
     const filtered = {
         readOnlyOrders: registry['getOrder'] as (typeof registry)['getOrder'],
     };
@@ -225,7 +227,12 @@ async function main(): Promise<void> {
         name: 'getOrder',
         input: { params: { id: '77' } },
     });
-    check('ALSO reachable by its configured name', byConfigName.isError, false);
+    check('NOT reachable by its configured name', byConfigName.isError, true);
+    checkDiscloses(
+        'the refusal is the plain unknown-stitch error',
+        byConfigName.text,
+        'unknown stitch "getOrder". Available: readOnlyOrders',
+    );
     const filteredList = JSON.parse(
         (await filteredClient.callTool('list_stitches')).text,
     ) as { name: string }[];
@@ -235,8 +242,8 @@ async function main(): Promise<void> {
         ['readOnlyOrders'],
     );
     note(
-        'a name the discovery tool never mentions is still callable',
-        'registry.ts:71-74 — key first, then a scan of every `__config.name`',
+        'a name the discovery tool never mentions is not callable',
+        'registry.ts `selectStitch` — `Object.hasOwn(registry, name)` and nothing else',
     );
 
     heading('C3 (f) — what `stitch mcp` exposes by default');
@@ -263,7 +270,7 @@ async function main(): Promise<void> {
 
     finish(
         'C3',
-        "NO ALLOW-LIST BEYOND THE REGISTRY OBJECT, AND THE DISCOVERY TOOLS ARE A MAP. Every registered stitch is equally callable: an irreversible `POST /v1/refunds` ran on first ask with no opt-in, and none of `StitchConfig`'s 32 top-level slots excludes a stitch from MCP — the nearest-looking word, `sensitive: true`, is a CACHE opt-out (types.ts:1652-1658) and a stitch carrying it was still listed and still ran. The allow-list is therefore the object handed to `createMcpServer` — which is a real, usable seam (one `Object.fromEntries` filter, measured in C8) — but the documented starter, `stitch mcp --module ./stitches.ts`, builds that object with `collectStitches`, which sweeps up EVERY exported stitch: the module here exposed a write and a login stitch alongside the read. DISCLOSED to the model: every stitch NAME, METHOD and PATH from `list_stitches`; and from `describe_stitch`, the full internal endpoint URL (`GET https://api.vendor.test/v1/metrics`), the surface, which input slots exist, whether output is validated, THE AUTH SCHEME, which of retry/throttle/cache/timeout are on, the engine-order pipeline, and a Mermaid diagram that repeats the endpoint — about 1KB per stitch. NOT disclosed: the credential (C1), the operator's configured request headers (an `x-internal-tenant` pin and an internal shard hostname stayed hidden), and the env var name the credential resolves from. THE BYPASS: `selectStitch` falls back from the registry key to each stitch's CONFIGURED `name` (registry.ts:71-74), so a filtered registry that RENAMES a stitch still answers to the original name — reachable, and absent from `list_stitches`, at the same time",
+        "NO ALLOW-LIST BEYOND THE REGISTRY OBJECT, AND THE DISCOVERY TOOLS ARE A MAP. Every registered stitch is equally callable: an irreversible `POST /v1/refunds` ran on first ask with no opt-in, and none of `StitchConfig`'s 32 top-level slots excludes a stitch from MCP — the nearest-looking word, `sensitive: true`, is a CACHE opt-out (types.ts:1652-1658) and a stitch carrying it was still listed and still ran. The allow-list is therefore the object handed to `createMcpServer` — which is a real, usable seam (one `Object.fromEntries` filter, measured in C8) — but the documented starter, `stitch mcp --module ./stitches.ts`, builds that object with `collectStitches`, which sweeps up EVERY exported stitch: the module here exposed a write and a login stitch alongside the read. DISCLOSED to the model: every stitch NAME, METHOD and PATH from `list_stitches`; and from `describe_stitch`, the full internal endpoint URL (`GET https://api.vendor.test/v1/metrics`), the surface, which input slots exist, whether output is validated, THE AUTH SCHEME, which of retry/throttle/cache/timeout are on, the engine-order pipeline, and a Mermaid diagram that repeats the endpoint — about 1KB per stitch. NOT disclosed: the credential (C1), the operator's configured request headers (an `x-internal-tenant` pin and an internal shard hostname stayed hidden), and the env var name the credential resolves from. THE BYPASS, CLOSED IN #866: `selectStitch` used to fall back from the registry key to each stitch's CONFIGURED `name`, so a filtered registry that RENAMED a stitch still answered to the original name — reachable, and absent from `list_stitches`, at the same time. It resolves the registry's own key alone now, so the rename really hides the old name",
     );
 }
 

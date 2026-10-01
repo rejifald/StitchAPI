@@ -78,6 +78,7 @@ import {
     newRunContext,
     readEnv,
     redactSecretsDeep,
+    scrubUrls,
     systemClock,
 } from './util';
 import { type Validator, toValidator } from './validator';
@@ -634,7 +635,8 @@ async function drain<T>(
 // class identity + `retryAfter`/`response`) and a contract-violation StitchError pinned by
 // `.inspect()`'s retain path; a foreign error carrying `.response` is flattened into a StitchError
 // carrying the response `body`/`url`. Absent a source, build a StitchError from the event's
-// `status`/`attempts`. Shared by `drain` and `consumeInspect`.
+// `status`/`attempts`. Shared by `drain` and `consumeInspect`. `ev.message` is already URL-scrubbed
+// (`errEvt`), so every StitchError minted here is; the foreign `source` it carries as `cause` is not.
 function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
     const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
     const res =
@@ -889,10 +891,13 @@ async function consume<T>(
 function asStitchError(e: unknown): StitchError {
     if (e instanceof StitchError) return e;
     const status = (e as { status?: unknown }).status;
-    return new StitchError(e instanceof Error ? e.message : String(e), {
-        ...(typeof status === 'number' ? { status } : {}),
-        cause: e,
-    });
+    return new StitchError(
+        scrubUrls(e instanceof Error ? e.message : String(e)),
+        {
+            ...(typeof status === 'number' ? { status } : {}),
+            cause: e,
+        },
+    );
 }
 
 // Safe consumer: `stitch.safe(...)` / `stitch(...).safe()`. Never throws — an `error` event or an
