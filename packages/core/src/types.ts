@@ -1578,6 +1578,16 @@ export type ProgressPhase =
     | 'paginate'
     | 'circuit'
     | 'cache';
+/**
+ * One thing that happened during a call. Every call is a stream of these, from `start` to `done`.
+ *
+ * **Span ids (ADR 0017 D6).** Wherever an event carries `spanId`, it is the id of the span the event
+ * BELONGS TO, and `parentSpanId` is that span's parent. Which span that is depends on the event:
+ * the RUN on `start`, the ATTEMPT (one physical request) on a `progress` step with `phase:
+ * 'request'`, the PAGE that just completed on `phase: 'paginate'`. Only those carry ids today; the
+ * meaning is the same wherever one is added, so a later change that stamps ids on every event
+ * (#874) fills in fields that already exist rather than renaming any.
+ */
 export type StitchEvent<T = unknown> =
     | {
           type: 'start';
@@ -1585,12 +1595,32 @@ export type StitchEvent<T = unknown> =
           method: string;
           url: string;
           input: StitchInput;
+          /** The id of the {@link Surface} that shaped the call (`'http'`, `'graphql'`, `'shell'`, …). */
+          surface?: string;
+          /**
+           * What carried the request: `'http'` — the HTTP adapter (`fetch`, or a custom `adapter`)
+           * — or the surface's own id when its `execute` replaces the transport (ADR 0008:
+           * `'shell'`, `'postmessage'`). The OTLP sink exports an `'http'` attempt as a CLIENT span
+           * with `http.*` attributes and any other as an INTERNAL span without them.
+           */
+          transport?: string;
+          /**
+           * The stitch's low-cardinality path template, unexpanded — `/users/{id}`, from `path`
+           * (under a static `baseUrl`'s own path) or a templated `url` — for an `'http'` transport.
+           * The query, the fragment and the scheme/authority are never in it. Omitted when none is
+           * known: a function `url`/`baseUrl`, an absolute `url` with no `{…}` variable, a
+           * non-HTTP transport. The OTLP sink names an attempt span `{method} {template}` and sets
+           * `url.template` to it.
+           */
+          template?: string;
           at: number;
           // Run identity (ADR 0007) — also delivered on the {@link TraceContext} ctx. Stamped
           // here too so a non-sink `.stream()` consumer can read a run's identity off its first
           // event. Optional: a `start` event built by hand (tests) may omit them.
+          /** The span this event belongs to: the RUN (see {@link StitchEvent}). */
           spanId?: string;
           traceId?: string;
+          /** The run's parent: the run that spawned this one (a `cookieSession` login, a `linked` step). */
           parentSpanId?: string;
       }
     | {
@@ -1600,6 +1630,23 @@ export type StitchEvent<T = unknown> =
           detail?: string;
           /** How long the engine waited before this step (ms): throttle pacing or retry/reconnect backoff. */
           waited?: number;
+          /**
+           * The response status behind this step, when a response caused it: the status a `retry`
+           * re-attempts (a `retry.on` match, or the surface asking for another attempt), the one an
+           * `auth` refresh answers, or the page a `paginate` step just read.
+           */
+          status?: number;
+          /** The thrown error's class (its `name`) behind a `retry`, omitted for a plain `Error`. */
+          errorType?: string;
+          /**
+           * The span this step belongs to (ADR 0017 D6; see {@link StitchEvent}), minted by the
+           * engine when it happens. On `request` it is the ATTEMPT — one per physical request,
+           * retries and refreshes included; on `paginate`, the PAGE that just completed. Absent on
+           * every other phase.
+           */
+          spanId?: string;
+          /** That span's parent: the run's `spanId`, or the page's for an attempt inside a page. */
+          parentSpanId?: string;
           at: number;
       }
     // A strategy-level announcement (auth decisions, inference). Non-progress; carries no secret.
@@ -1618,6 +1665,13 @@ export type StitchEvent<T = unknown> =
           type: 'error';
           name: string;
           message: string;
+          /**
+           * The failing error's class — its `name`, the discriminator every `StitchError` subclass
+           * sets (CONTRACT.md P10): `'TimeoutError'`, `'RateLimitError'`, a socket `'TypeError'`.
+           * Omitted for a plain `Error` (an HTTP status failure carries `status` instead) and for a
+           * failure the engine rendered without one (a contract violation, a surface's rejection).
+           */
+          errorType?: string;
           status?: number;
           // Set only on a delegate-backoff rate-limit outcome (`throttle.delegate`): the ms parsed
           // from `Retry-After` (delta-seconds OR HTTP-date), so a `.stream()` consumer gets the same

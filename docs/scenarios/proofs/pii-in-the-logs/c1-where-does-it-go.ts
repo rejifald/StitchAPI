@@ -11,7 +11,8 @@
 // not a filter: it keeps a prefix, which is the sentinels that happen to sort early.
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c1-where-does-it-go.ts
-import { otlp, stitch } from '../../../../packages/core/src/index';
+import { stitch } from '../../../../packages/core/src/index';
+import { otlp } from '../../../../packages/core/src/otlp';
 import type { OtelSpan } from '../../../../packages/core/src/otlp';
 import { consoleSink, loggerSink } from '../../../../packages/core/src/trace';
 import type { StitchEvent } from '../../../../packages/core/src/types';

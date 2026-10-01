@@ -1,4 +1,5 @@
 // Small dependency-free helpers shared across the prototype.
+import { processWide } from './process-wide';
 import type { ArrayFormat, Clock, RunContext } from './types';
 
 export const now = (): number => Date.now();
@@ -941,7 +942,12 @@ const URL_REDACTED = 'REDACTED';
 // structured `input.query` via `redactSecretQuery`) without listing every vendor spelling. The
 // default `api_key` already matches a stem; this covers an arbitrary configured name too.
 // Lower-cased on insert so the membership test in `isSecretKey` stays case-insensitive.
-const REGISTERED_SECRET_KEYS = new Set<string>();
+//
+// Process-wide, not module-local: the CJS build bundles one copy of this module per entry, and
+// `require('stitchapi/auth')` registers a key that `require('stitchapi')`'s engine and
+// `require('stitchapi/otlp')`'s sink must both honour (#898). See `processWide`.
+const registeredSecretKeys = (): Set<string> =>
+    processWide('stitchapi.secretKeys/1', Set<string>);
 
 /**
  * Widen half of {@link secrets}; the namespace carries the contract. Internal — the
@@ -953,7 +959,7 @@ const REGISTERED_SECRET_KEYS = new Set<string>();
  * Idempotent — registering the same name twice is a no-op.
  */
 export function registerSecretKey(name: string): void {
-    REGISTERED_SECRET_KEYS.add(name.toLowerCase());
+    registeredSecretKeys().add(name.toLowerCase());
 }
 
 /**
@@ -970,7 +976,7 @@ export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
     return (
         SECRET_QUERY_KEYS.has(k) ||
-        REGISTERED_SECRET_KEYS.has(k) ||
+        registeredSecretKeys().has(k) ||
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
 }

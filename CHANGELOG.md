@@ -11,7 +11,175 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **The OTLP sink resolves a resource: `otlp.sink({ resource })`, `OTEL_SERVICE_NAME` and
+  `OTEL_RESOURCE_ATTRIBUTES`.** ([#872](https://github.com/rejifald/StitchAPI/issues/872)) Each
+  exported batch now carries `telemetry.sdk.name`/`language`/`version`, then the
+  `OTEL_RESOURCE_ATTRIBUTES` pairs (percent-decoded; a value that fails to decode is discarded
+  whole), then `service.name` from `OTEL_SERVICE_NAME` (else `unknown_service`), then the sink's
+  `resource` option over all of it. The instrumentation scope carries the package version, and the
+  batch carries the `schemaUrl` of the semantic-conventions release it follows (1.44.0).
+  `SpanExporter.export` receives the resolved resource as a second argument and `otlp.json` takes
+  it as one, so a custom transport ships the same resource the default exporter does.
+
+- **The default OTLP exporter reads the standard OTel exporter variables.**
+  ([#872](https://github.com/rejifald/StitchAPI/issues/872)) `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is
+  a full URL, used as-is and winning over `OTEL_EXPORTER_OTLP_ENDPOINT` (a base URL, `/v1/traces`
+  appended); `OTEL_EXPORTER_OTLP_HEADERS` and its traces-specific `OTEL_EXPORTER_OTLP_TRACES_HEADERS`
+  are comma-separated `key=value` pairs with percent-encoded values, merged under any `headers`
+  option (an explicit header wins over the environment's, whatever the case of its name). An empty
+  variable counts as unset. `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_RESOURCE_ATTRIBUTES` now split a
+  pair on its **first** `=`, so a value that contains one (base64 padding) is no longer truncated.
+
+- **`StitchEvent` gains the fields the span tree is built from — all optional, all additive.**
+  ([ADR 0017](docs/adr/0017-outbound-trace-context-propagation.md) D6) `start.surface` (the surface
+  id), `start.transport` (`'http'`, or the id of a surface that replaces the transport) and
+  `start.template` (the stitch's unexpanded path template, `/users/{id}`; see the span naming
+  below);
+  `progress.spanId`/`parentSpanId` on a `request` step (the engine-minted id of that physical
+  request, and its run or page) and on a `paginate` step (the page it closes); `progress.status`
+  on a `retry`, an `auth` refresh and a `paginate` step; `errorType` on an `error` event and on a
+  `retry` that re-attempts a throw — the failing error's class (`TimeoutError`, `RateLimitError`),
+  omitted for a plain `Error`. `TimeoutError` now sets its `name`, so it reads `'TimeoutError'`
+  in a minified build instead of `'Error'`.
+
+### Changed
+
+- **BREAKING CHANGE: `otlp` moves to `stitchapi/otlp`.** ([#871](https://github.com/rejifald/StitchAPI/issues/871),
+  [#872](https://github.com/rejifald/StitchAPI/issues/872), [ADR 0021](docs/adr/0021-auth-strategies-move-to-a-subpath.md)
+  addendum) The span-tree rewrite below put the core bundle 0.45 KB over its budget, so the OTLP
+  pipeline leaves the root entry the way the auth strategies did: the `otlp` namespace
+  (`otlp.sink`/`otlp.exporter`/`otlp.json`) and the `OtelSpan`, `OtelSpanEvent`, `SpanAttributes`,
+  `SpanExporter` and `OtlpOptions` types are no longer exported from `stitchapi`. Pre-GA hard break,
+  no root re-export ([CONTRACT D5](docs/CONTRACT.md#0-resolved-decisions)). The `STITCH_EXPORT=otlp`
+  toggle needs no import and is unchanged: the exporter loads on first use, holds the events of a call
+  that starts before it has loaded and sends them in order, and a load failure prints one warning
+  rather than failing a call. Measured with the size gate's new accounting (the next entry):
+  whole entry 24.62 → 20.93 KB gzip, `import { stitch }` 21.83 → 18.14 KB (advertised
+  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 3.17 KB.
+
+    Migration — `import { otlp } from 'stitchapi'` → `import { otlp } from 'stitchapi/otlp'`, and the
+    same for the types.
+
+- **The size gate measures what a code-splitting bundler ships; the cache engine and the OTLP
+  exporter are budgeted as their own entries.** ([#709](https://github.com/rejifald/StitchAPI/issues/709))
+  `scripts/bundle-size.mjs` re-bundles without code splitting, and esbuild then inlines every
+  `import()` it can resolve, so both root scenarios carried ~3 KB gzip of cache engine (reached by
+  a lazy `import('./cache')` that `tsup`'s ESM build keeps in its own chunk) and, after the move
+  above, the OTLP chunk too. Both root scenarios now name those chunks in `defer`, which keeps them
+  external, as the async chunks a splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`)
+  emits and downloads on first use. Each chunk is its own gated scenario (`stitchapi/cache` 3.44 KB,
+  `stitchapi/otlp` 3.17 KB), and the gate now fails if a `defer` names a chunk the build no longer
+  imports lazily or one it imports statically (a static edge would drop out of the measurement
+  instead of being counted). Whole entry 24.62 → 20.93 KB gzip, `import { stitch }` 21.83 → 18.14 KB;
+  the advertised `~25 / ~22 kB` becomes `~21 / ~18 kB`. That is what `import { stitch }` ships up
+  front: a bundler that does not split dynamic imports inlines both chunks (~26 / ~23 KB). The
+  budgets drop from 24.80 / 22.00 to 21.45 / 18.65 KB; the headroom is ~0.5 KB on purpose, for the
+  PRs queued behind this one.
+
+- **BREAKING CHANGE (dashboards): the OTLP export is a span tree — an INTERNAL run span over one
+  CLIENT span per physical request.** ([#871](https://github.com/rejifald/StitchAPI/issues/871),
+  [ADR 0017](docs/adr/0017-outbound-trace-context-propagation.md) D6) The sink exported one CLIENT
+  span per call, named `{method} {stitch}`, carrying every `http.*` attribute, with child spans
+  only for a retried or paginated call and ids minted at export. Attributes, kinds and names
+  move between spans, so it is fixed before 1.0, after which a dashboard or alert keyed on them
+  would break on every change:
+
+    | Span    | Kind     | Name                      | Carries                                                                                                                                                    |
+    | ------- | -------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | run     | INTERNAL | the stitch's name         | `stitch.name`, `stitch.surface`, the progress/info/drift span events, the run's status                                                                     |
+    | page    | INTERNAL | `page N`                  | `stitch.page` — a child of the run, one per page                                                                                                           |
+    | attempt | CLIENT   | `{method} {url.template}` | `http.request.method`, `url.template`, `url.full`, `server.address`, `server.port`, `http.response.status_code`, `http.request.resend_count`, `error.type` |
+
+    An HTTP attempt span is named `{method} {url.template}` — `GET /users/{id}` — per the OTel HTTP
+    client conventions, and `url.template` carries the same template.
+    ([#900](https://github.com/rejifald/StitchAPI/issues/900)) The template is the stitch's own
+    low-cardinality **path** template, as written and unexpanded: `path` under a static `baseUrl`'s
+    path prefix, or a templated `url`, with the scheme, authority (userinfo, host, port), query
+    (a literal `?…` and a `{?q}`/`{&q}` operator) and fragment removed — so an expanded value, a
+    query string or a credential can never reach a span name. Where no low-cardinality template is
+    known the name is the bare method and `url.template` is absent: a function `url` or `baseUrl`
+    (computed per call), and an absolute `url` with no `{…}` variable (a single literal URL whose
+    path may be an id or a secret). Fixed before 1.0 because adding the template later would rename
+    every HTTP span. The `start` event carries it as the new optional `template` field. A
+    scheme-relative `url` (`//user:pass@host/x/{id}`) is authority too: the template is
+    `/x/{id}`, never the userinfo.
+
+    The attempt span's HTTP attributes follow the client conventions: a method semconv does not
+    name (anything outside `CONNECT`, `DELETE`, `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT`,
+    `QUERY`, `TRACE` — the semconv 1.44 well-known set) is `http.request.method = _OTHER` with the
+    verb in the new `http.request.method_original`, and the span is named `HTTP` or
+    `HTTP {url.template}`; `OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS` (a comma list) replaces the set;
+    `server.address` is the bare host (an IPv6 literal without its brackets); `server.port` defaults
+    to 443 and 80 for `https:` and `http:` only, and is absent for another scheme with no port.
+    `stitch.attempt` is the 1-based ordinal of the physical request within its page (or the run),
+    not the engine's counter: an auth refresh resends without counting against `retry.attempts`, so
+    two attempts used to both read `1`.
+
+    An attempt span exists for **every** request, a clean single call included (one span → two),
+    and nests under its page. A surface that replaces the HTTP transport (`shell`, `postmessage`)
+    exports an INTERNAL attempt named for the surface with no `http.*` — `url.full` no longer reads
+    `shell:git`. Ids are minted by the engine at request time and read off the `progress` events,
+    never invented at export. Status follows the OTel conventions: a success stays **UNSET** (was
+    `OK`); a failure is ERROR with `error.type` set to the error class, else the HTTP status, else
+    `_OTHER` (was the literal `'error'`). An attempt answered with a 4xx/5xx is ERROR even when the
+    run recovers. The status description is kept only where it adds something: a 4xx/5xx is already
+    on `error.type` (and, on an attempt, `http.response.status_code`), so the engine's `HTTP 503`,
+    `status 503` and `refresh` messages are not repeated, while a timeout's text or a contract
+    violation's message stays; a failed page span carries the same `error.type` and description as
+    its run. `server.port` is new; the span-event attribute `stitch.waited_ms` is now
+    `stitch.waited` ([P17](docs/CONTRACT.md#p17--one-canonical-duration-form)); `service.name` is no
+    longer `stitchapi` (see Added). The public types widen to match: `OtelSpan.kind` is the OTLP
+    span-kind set rather than the `'CLIENT'` literal, and `SpanAttributes` values may be
+    homogeneous arrays — a consumer that implements `SpanExporter` and switches on `kind` must
+    handle `'INTERNAL'`.
+
+    Migration — re-key HTTP panels and alerts from the run span to its CLIENT child (`kind =
+CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch panels on
+    `stitch.name`, rename `stitch.waited_ms` to
+    `stitch.waited`, set `OTEL_SERVICE_NAME` (or `resource`) for the service you used to find under
+    `stitchapi`, and stop filtering on `status = OK`.
+
 ### Fixed
+
+- **An OTLP export that fails says so once, and the OTel environment lists ignore a blank name.**
+  ([#872](https://github.com/rejifald/StitchAPI/issues/872)) Every export path swallowed its
+  failure, so a wrong endpoint, a refused credential or a header `fetch` rejects dropped every
+  batch silently. The first failure in a process — a network error, a non-2xx answer, a custom
+  exporter that throws — now prints one `console.warn` naming the endpoint (userinfo scrubbed) and
+  the reason; later ones are not reported. `STITCH_EXPORT=otlp` follows the same rule: while the
+  lazily loaded module is pending a sink holds at most 1000 events (the oldest are dropped, with
+  one warning, so a load that never resolves cannot grow memory), and a chunk that does not load, an
+  exporter that fails to start or a sink that throws on replay is reported once instead of swallowed.
+  `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_EXPORTER_OTLP_HEADERS`/`_TRACES_HEADERS` skip an entry whose
+  name is empty or only whitespace (an empty header name makes `fetch` throw), and an empty
+  `service.name` (`service.name=`) falls back to `unknown_service`.
+
+- **`spanId` on a `StitchEvent` is documented as "the span this event belongs to".**
+  ([#874](https://github.com/rejifald/StitchAPI/issues/874)) The run on `start`, the attempt on
+  `progress{request}`, the page on `progress{paginate}`, with `parentSpanId` as its parent: stated in
+  the types' JSDoc and the events reference so that stamping ids on every record later fills in
+  existing fields instead of renaming any. No behaviour change.
+
+- **Under CommonJS, the secret-key denylist, the fingerprinter registry, the host-pooled rate budget
+  and the seam-id counter are one object per process, not one per entry.**
+  ([#898](https://github.com/rejifald/StitchAPI/issues/898)) The ESM build code-splits, so every
+  entry shares one chunk. The CJS build does not: `lib/index.js`, `lib/auth.js`, `lib/otlp.js`, …
+  each bundle their own copy of every module they reach, so a module-level registry existed once per
+  entry. In a CJS program, `require('stitchapi/auth').apiKey({ in: 'query', name })` and
+  `require('stitchapi').secrets.register(name)` registered a secret query key that the engine and
+  `require('stitchapi/otlp')` never saw, so it reached `url.full` and the trace file unredacted; a
+  `@stitchapi/fingerprint-*` package registered through `stitchapi/fingerprint` was invisible to the
+  cache engine inside `stitchapi` (every schema fell to `refuse`); `pool: 'host'` budgets and seam
+  bucket ids were counted per entry, so a `stitchapi` stitch and a `stitchapi/graphql` stitch on one
+  host each had a budget of their own. These four, and the two warn-once flags of the OTLP export,
+  now live on `globalThis` under `Symbol.for` keys (`src/process-wide.ts`). Every key ends in a layout
+  number (`/1`, bumped when the stored shape changes), and a slot is always a `Set` or a `Map`
+  that is checked before use: one holding anything else is replaced, never thrown on. ESM was never
+  affected. Class identity across CJS entries (`instanceof`,
+  [#896](https://github.com/rejifald/StitchAPI/issues/896)) is a separate problem and is not
+  changed here.
 
 - **The docs and the agent-rules template send you to `npx stitchapi …`, not `npx stitch …`.**
   ([#861](https://github.com/rejifald/StitchAPI/issues/861)) The executable is `stitch`, but it
