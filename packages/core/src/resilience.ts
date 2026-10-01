@@ -1,6 +1,8 @@
 // Resilience primitives: retry backoff math, Retry-After parsing, a proactive
 // throttle (rate + concurrency, per key), and a timeout wrapper. Dependency-free;
 // pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
+import { compact } from './compact';
+import { processWide } from './process-wide';
 import type {
     AcquireOptions,
     AdapterResult,
@@ -9,16 +11,22 @@ import type {
     Clock,
     RetryOptions,
     StatusMatch,
+    StitchErrorResult,
     StitchStore,
     ThrottleOptions,
 } from './types';
 // The one VALUE import from `./types` (everything else above is type-only): `RateLimitError`
-// extends `StitchError` per CONTRACT.md P10. `types.ts` imports nothing at runtime — its own
-// imports are all type-only — so this edge adds no cycle.
+// extends `StitchError` per CONTRACT.md P10. `types.ts` imports only the leaf helpers `compact`
+// and `util` (for `toJSON`'s scrub) at runtime, and neither imports it back — so this edge adds
+// no cycle.
 import { StitchError } from './types';
 import { abortReason, parseDuration, parseRate, systemClock } from './util';
 
-export class TimeoutError extends Error {}
+// Named so it identifies itself once minified (`class extends Error {}` would report `'Error'`): the
+// error event's `errorType` and the OTLP `error.type` read `name`, the CONTRACT.md P10 discriminator.
+export class TimeoutError extends Error {
+    override name = 'TimeoutError';
+}
 
 /**
  * Normalize a status-match field (a bare number, a number list, a predicate, or unset) into a
@@ -85,7 +93,13 @@ interface KeyState {
 // store (throttle.mdx: "'host' pools the budget across every stitch hitting the same
 // host"). Closure-local maps can't do that, so host-pooled throttles share their KeyState
 // here, keyed by the host. A configured `store` still overrides for cross-process pooling.
-const hostStates = new Map<string, KeyState>();
+//
+// Process-wide, not module-local: the CJS build bundles one engine per entry (`stitchapi`,
+// `stitchapi/graphql`, `/sse`, …), so a stitch from one and a stitch from another would otherwise
+// each draw from a budget of their own and together exceed the host's rate. `/1` is the layout
+// number of `KeyState`; bump it when that shape changes. See `processWide`.
+const hostStates = (): Map<string, KeyState> =>
+    processWide('stitchapi.hostStates/1', Map<string, KeyState>);
 
 /**
  * Proactive limiter. `rate` ("2/s") enforces a minimum spacing between successive
@@ -108,7 +122,7 @@ export function createThrottle(
     const paced = opts?.rate ? parseRate(opts.rate) : undefined;
     const spacing = paced ? paced.per / paced.count : 0; // ms between grants
     const hostPooled = opts?.pool === 'host';
-    const states = hostPooled ? hostStates : new Map<string, KeyState>();
+    const states = hostPooled ? hostStates() : new Map<string, KeyState>();
 
     const stateFor = (key: string): KeyState => {
         let s = states.get(key);
@@ -259,8 +273,9 @@ export class CircuitOpenError extends Error {
  * signal that gate needs on top of what it inherits: the `retryAfter` parsed from `Retry-After`
  * (delta-seconds OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw
  * `response` so the host can read other rate headers (`X-RateLimit-*`, etc.). The full `response`
- * rides on the live instance only — never the serialized `error` event — so it cannot leak into a
- * trace sink.
+ * rides on the live instance only — never the serialized `error` event, nor `JSON.stringify(err)`
+ * ({@link RateLimitError.toJSON} adds only `retryAfter` to the base view) — so its `set-cookie` and
+ * body cannot leak into a trace sink or a log line.
  *
  * A **subclass of {@link StitchError}** (CONTRACT.md P10): `status`/`attempts`/`body`/`url` are the
  * inherited field set rather than a hand-kept copy, so the one identity survives every consumer —
@@ -302,6 +317,22 @@ export class RateLimitError extends StitchError {
         this.retryAfter = opts.retryAfter;
         this.response = opts.response;
     }
+
+    /**
+     * The base {@link StitchError.toJSON} view plus `retryAfter` — the one non-secret field this
+     * subclass adds. The raw `response` (headers incl. `set-cookie`, body) stays off the JSON.
+     */
+    override toJSON(): RateLimitErrorResult {
+        return compact({ ...super.toJSON(), retryAfter: this.retryAfter });
+    }
+}
+
+/**
+ * The JSON view of a {@link RateLimitError}: the {@link StitchErrorResult} plus `retryAfter` (ms),
+ * absent from the JSON when the response carried no parseable `Retry-After`.
+ */
+export interface RateLimitErrorResult extends StitchErrorResult {
+    retryAfter?: number;
 }
 
 export type CircuitPhase = 'closed' | 'open' | 'half-open';

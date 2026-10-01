@@ -22,9 +22,10 @@ import {
     executeRaw,
     executeRawTraced,
     makeRuntime,
+    nameOf,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
-import { otlpSink } from './otlp';
+import { processWide } from './process-wide';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface, httpSurface } from './surface';
@@ -65,6 +66,7 @@ import {
     type StitchResult,
     type StitchStore,
     type StreamOptions,
+    type TraceContext,
     type TraceSink,
     type WireBodyFixedByGraphql,
     type WireOptions,
@@ -76,7 +78,9 @@ import {
     isSafeMethod,
     newRunContext,
     readEnv,
+    redactKeys,
     redactSecretsDeep,
+    scrubUrl,
     systemClock,
 } from './util';
 import { type Validator, toValidator } from './validator';
@@ -439,7 +443,7 @@ export function compose(config: ComposeInput): ResolvedStitchConfig {
 // gate the repo deliberately keeps tight. Behaviour is unchanged: the circuit nudge runs before the
 // idempotency guard, so it still fires for every surface, not just `http`.
 function warnConstruction(cfg: ResolvedStitchConfig): void {
-    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const name = nameOf(cfg);
     // `halfOpenAfter` is off the type now, so it is read back at its former `number | string`
     // shape — the only values a stale config can be carrying.
     const circuit = cfg.circuit as
@@ -500,6 +504,71 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
     return Number.isInteger(n) && n >= 0 ? n : undefined;
 }
 
+// `STITCH_EXPORT=otlp` — the sink lives on the `stitchapi/otlp` subpath, so the toggle loads it with
+// a lazy `import('./otlp')` (the way the engine reaches `cache`): a process that never sets it
+// pays for none of it. Sink construction is synchronous and the import is not, so events that
+// arrive first are held, then forwarded IN ORDER once the module resolves, and straight through
+// after. One load per process: the memoised promise warns once if it fails (a missing chunk must
+// not take the run down) and resolves to nothing, and a sink whose load failed drops its events.
+//
+// Nothing here may fail a call, and nothing here may fail silently: every way the export can be lost
+// (the chunk does not load, `otlp.sink()` throws, the replay throws, the hold overflows) warns once
+// per process, so a missing span tree has a reason on stderr.
+let otlpModule:
+    Promise<{ otlp: { sink(): TraceSink } } | undefined> | undefined;
+// Process-wide, not per CJS entry: this module is bundled into several of them, and each would
+// otherwise warn once for the same missing chunk. See `processWide`.
+const otlpWarned = (): Set<string> =>
+    processWide('stitchapi.otlp.loadWarned/1', Set<string>);
+const warnOtlp = (what: string): void => {
+    if (otlpWarned().size) return;
+    otlpWarned().add(what);
+    console.warn(`stitchapi: STITCH_EXPORT=otlp ${what}.`);
+};
+
+// How many events a sink holds while the module loads (a few runs' worth). Past it the OLDEST are
+// dropped: a load that never resolves must not grow memory with every call.
+const OTLP_HELD_MAX = 1000;
+
+function lazyOtlpSink(): TraceSink {
+    let sink: TraceSink | undefined;
+    let held: [StitchEvent, TraceContext][] | undefined = [];
+    otlpModule ??= import('./otlp').catch((error: unknown) => {
+        warnOtlp(
+            `could not load \`stitchapi/otlp\`, so spans are not exported (${String(error)})`,
+        );
+        return undefined;
+    });
+    const ready = otlpModule
+        .then((m) => {
+            sink = m?.otlp.sink();
+            for (const [event, ctx] of held ?? []) sink?.handle(event, ctx);
+        })
+        .catch((error: unknown) => {
+            warnOtlp(
+                `could not start its exporter, so spans may be lost (${String(error)})`,
+            );
+        })
+        .finally(() => {
+            held = undefined;
+        });
+    return {
+        handle(event, ctx): void {
+            if (sink) sink.handle(event, ctx);
+            else if (held) {
+                held.push([event, ctx]);
+                if (held.length > OTLP_HELD_MAX) {
+                    held.shift();
+                    warnOtlp(
+                        `is still loading and holds ${OTLP_HELD_MAX} events at most; the oldest are dropped`,
+                    );
+                }
+            }
+        },
+        flush: () => ready.then(() => sink?.flush?.()),
+    };
+}
+
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
     const maxBody = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
@@ -514,7 +583,7 @@ function getTrace(): TraceSink {
         }),
     );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
-    return multiplex(base, otlpSink());
+    return multiplex(base, lazyOtlpSink());
 }
 
 // A sink that drops every event — `trace: false` forces tracing off even when the
@@ -568,7 +637,8 @@ async function drain<T>(
 // class identity + `retryAfter`/`response`) and a contract-violation StitchError pinned by
 // `.inspect()`'s retain path; a foreign error carrying `.response` is flattened into a StitchError
 // carrying the response `body`/`url`. Absent a source, build a StitchError from the event's
-// `status`/`attempts`. Shared by `drain` and `consumeInspect`.
+// `status`/`attempts`. Shared by `drain` and `consumeInspect`. `ev.message` is already URL-scrubbed
+// (`errEvt`), so every StitchError minted here is; the foreign `source` it carries as `cause` is not.
 function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
     const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
     const res =
@@ -823,10 +893,13 @@ async function consume<T>(
 function asStitchError(e: unknown): StitchError {
     if (e instanceof StitchError) return e;
     const status = (e as { status?: unknown }).status;
-    return new StitchError(e instanceof Error ? e.message : String(e), {
-        ...(typeof status === 'number' ? { status } : {}),
-        cause: e,
-    });
+    return new StitchError(
+        scrubUrl(e instanceof Error ? e.message : String(e)),
+        {
+            ...(typeof status === 'number' ? { status } : {}),
+            cause: e,
+        },
+    );
 }
 
 // Safe consumer: `stitch.safe(...)` / `stitch(...).safe()`. Never throws — an `error` event or an
@@ -957,6 +1030,8 @@ const REDACTED_IF_FN_SLOTS = [
     'url',
     'baseUrl',
 ] as const satisfies readonly RedactedIfFnSlot[];
+// The string-endpoint slots whose literal form is URL-scrubbed on the way to `__config`.
+const ENDPOINT_SLOTS = ['url', 'baseUrl', 'path'] as const;
 const FN_BEARING_SLOTS = [
     'paginate',
     'retry',
@@ -1027,6 +1102,23 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     for (const k of FN_BEARING_SLOTS) {
         if (cfg[k] !== undefined) out[k] = stripFns(cfg[k]);
     }
+    // Literal secrets the author wrote straight into the config are scrubbed too — `__config` is
+    // what `report().config`, `diagram`, `export --openapi`, MCP `describe_stitch` and the
+    // query-core/swr keys echo, and they all call it safe to show. A string endpoint loses its
+    // userinfo and secret query values (`scrubUrl` — the trace sinks' URL scrubber, textual so a
+    // relative or `{template}` endpoint is scrubbed too and its param slots survive; the
+    // `stitch('https://…')` string form lands on `path`, so `path` goes through it as well), and a
+    // secret header value reads `[REDACTED]` (`redactKeys` — the sinks' header denylist plus any
+    // secret-named header). Applied when the stitch is BUILT: a name registered with
+    // `secrets.register` afterwards reaches the sinks but not this snapshot. The engine never
+    // reads these off `__config`: it sends the real values from `__rawConfig`, and so do the
+    // readers that need the real thing (`seam.invalidate`'s cache id).
+    for (const k of ENDPOINT_SLOTS) {
+        const v = out[k];
+        if (typeof v === 'string') out[k] = scrubUrl(v);
+    }
+    if (cfg.headers)
+        redacted.headers = redactKeys(cfg.headers) as Record<string, string>;
     return redacted;
 }
 
@@ -1079,7 +1171,7 @@ export function makeStitch<T = unknown>(
     if (shared?.vault) rtOpts.vault = shared.vault;
     if (shared?.principal !== undefined) rtOpts.principal = shared.principal;
     const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);
-    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const name = nameOf(cfg);
 
     // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
     // ROOT run per consumption; composition (`linked`/`all`, stitchapi/pipe) supplies a CHILD run via

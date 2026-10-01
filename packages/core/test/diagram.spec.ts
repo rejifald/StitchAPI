@@ -85,6 +85,24 @@ describe('toMermaid', () => {
         const missing = toMermaid(sampleRegistry(), { name: 'nope' });
         expect(missing.warnings.some((w) => w.includes('nope'))).toBe(true);
     });
+
+    // #866: `--name` resolves the registry key, the same rule as `stitch run` / serve / MCP — a
+    // configured `name` neither selects a stitch nor drags a second one into the diagram.
+    test('--name matches the registry key, never a configured name', () => {
+        const registry: StitchRegistry = {
+            hidden: stitch({ name: 'ping', url: 'https://x.test/hidden' }),
+            ping: stitch('https://x.test/ping'),
+        };
+        const only = toMermaid(registry, { name: 'ping' });
+        expect(only.diagram).toContain('https://x.test/ping');
+        expect(only.diagram).not.toContain('/hidden');
+
+        const byLabel = toMermaid(
+            { hidden: stitch({ name: 'label', url: 'https://x.test/h' }) },
+            { name: 'label' },
+        );
+        expect(byLabel.warnings).toEqual(['no stitch named "label"']);
+    });
 });
 
 describe('stitch diagram (CLI)', () => {

@@ -7,6 +7,7 @@ const core = (p: string): string =>
 export default defineConfig({
     resolve: {
         alias: [
+            { find: /^stitchapi\/auth$/, replacement: core('auth.ts') },
             { find: /^stitchapi\/testing$/, replacement: core('testing.ts') },
             { find: /^stitchapi$/, replacement: core('index.ts') },
         ],

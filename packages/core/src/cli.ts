@@ -30,6 +30,7 @@ import {
     windsurfRule,
 } from './rules-template';
 import { serve } from './serve';
+import { redactEventForTransport } from './trace';
 import type { Stitch, StitchEvent, StitchInput } from './types';
 import { parseDuration } from './util';
 
@@ -168,7 +169,11 @@ export function argsToInput(
 // ---- run: stream a stitch's events to stdout as JSONL ---------------------
 
 // Drive a stitch's event stream, writing one JSON object per line. Returns the
-// process exit code: 1 if an error event was seen, else 0.
+// process exit code: 1 if an error event was seen, else 0. Each event is redacted the
+// way `serve` redacts its SSE frames (`redactEventForTransport`): stdout lands in
+// terminal scrollback, CI logs and pipes, so the `start` frame's echo of the request
+// — an `--headers.authorization` value, a URL `?api_key=`, a `--body.password` — is
+// scrubbed, while the response payload the operator ran the stitch for is kept.
 async function streamToJsonl(
     stitch: Stitch,
     input: StitchInput,
@@ -176,7 +181,7 @@ async function streamToJsonl(
 ): Promise<number> {
     let exit = 0;
     for await (const ev of stitch.stream(input) as AsyncIterable<StitchEvent>) {
-        writeLine(JSON.stringify(ev));
+        writeLine(JSON.stringify(redactEventForTransport(ev)));
         if (ev.type === 'error') exit = 1;
     }
     return exit;
@@ -468,7 +473,7 @@ serve:
                on the server
 
 diagram:
-  --name <name>   diagram only this stitch (by export name or configured name)
+  --name <name>   diagram only this stitch (by export name)
   Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
   retry, surface, pagination, validation, transform, pick, cache). Auth is redacted
   from a stitch's public config, so it is not shown.

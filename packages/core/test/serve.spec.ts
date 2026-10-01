@@ -185,6 +185,21 @@ test('an unknown stitch is a 404 with a listing message', async () => {
     });
 });
 
+// #866: resolution is by the registry's OWN key — `Object.prototype` names are not stitches.
+test.each(['constructor', 'toString', '__proto__'])(
+    'the inherited key %s is a 404 unknown stitch, not a call',
+    async (name) => {
+        const res = await fetch(`${base}/stitch/${name}`, {
+            method: 'POST',
+            body: '{}',
+        });
+        expect(res.status).toBe(404);
+        await expect(res.json()).resolves.toMatchObject({
+            error: `unknown stitch "${name}". Available: getWidget, ping`,
+        });
+    },
+);
+
 test('a malformed JSON body is a 400', async () => {
     const res = await fetch(`${base}/stitch/ping`, {
         method: 'POST',

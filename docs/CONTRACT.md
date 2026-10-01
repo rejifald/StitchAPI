@@ -61,6 +61,14 @@ must preserve it.
   `Surface` already do. This explicitly includes the key-derivation functions
   ([`keyOf`](#p6--key-is-a-string-keyof-is-a-function)) — they are sugar, not a
   blessed `__config` exception.
+- Literal **secret values** are scrubbed on the way to `__config` as well, because every reader
+  above echoes it as safe to show: a string `url` / `baseUrl` / `path` — absolute, relative,
+  protocol-relative or templated — loses its userinfo and secret query values (RFC 6570
+  `{param}` slots preserved: the scrub is textual, never a `new URL` round-trip), and a secret
+  header value in `headers` reads `[REDACTED]` (#873). The data stays plain JSON; the engine
+  sends the real values from `__rawConfig`, and so does any reader that needs the real thing
+  rather than a display (`seam.invalidate`'s cache id). `__config` is a snapshot taken when the
+  stitch is built: `secrets.register` applies to it only if called before.
 - **One exemption, and only one:** the schema slots `input` / `output` hold Standard
   Schema validators, whose `validate` sits at depth 2. They are **not** sugar —
   `export --openapi` reads them off `__config` to build its parameter and response
@@ -306,6 +314,14 @@ sets it, because an older copy's guard has to keep recognising a newer copy's er
 guard stays strict (a lookalike that only borrows `name` is rejected); the hosts add a
 fail-safe `name` check (`StitchError` / `RateLimitError`) on top, since for them a missed
 error is a leaked message and over-recognising only redacts more.
+
+The guaranteed field set is the _property_ view on the live instance. The **JSON** view —
+what `JSON.stringify(err)` and a logger that serialises through it emit, via `toJSON` — is a
+deliberate subset, a `StitchErrorResult` (a `RateLimitErrorResult` for the subclass; the
+produced-shape suffix of [P3](#p3--one-suffix-system)): `{ name, message, status?, attempts,
+url? }` with URL credentials scrubbed from `message` and `url`, and **no `body`** (nor the
+subclass's `response`, nor `cause`) — those are unredacted upstream data, read off the
+instance on purpose. Absent optional keys are absent from the JSON, not `undefined`.
 
 Two consequences the surface **MUST** hold to:
 
@@ -1402,6 +1418,15 @@ against both — the findings sit at the end of the list:
   the three implementations stay plain module functions and `otlp` is a thin facade over them;
   core's own call site (`stitch.ts`) keeps importing `otlpSink` directly. Measured both sides: the
   whole entry unchanged at 24.60 KB gzip, `import { stitch }` 21.82 → 21.83 KB. No budget raise.
+  _Amendment (2026-10-01, #871/#872):_ the whole namespace left the root barrel for
+  **`stitchapi/otlp`** ([ADR 0021](adr/0021-auth-strategies-move-to-a-subpath.md)'s move), hard
+  break and no alias ([D5](#0-resolved-decisions), `rc` channel), when the D6 span-tree rewrite put
+  both root scenarios over budget. `stitch.ts` no longer imports `otlpSink`: `STITCH_EXPORT=otlp`
+  reaches the module through a lazy `import('./otlp')`, and the module exports **only** `otlp` —
+  the three implementation functions are private, so the subpath carries the one decision and the
+  old spellings are pinned absent from it as well as from the root. The facade-over-plain-functions
+  reasoning above is unchanged, but its measured bytes now sit in a lazy chunk with its own gate
+  scenario (`stitchapi/otlp`).
 - **ADR 0012 rule 6 (an adapter package the sweep never reached, 2026-08-28)** —
   `@stitchapi/react-native` exported `assertStreamingPolyfills` and
   `hasStreamingPolyfills`: two bare, non-branded names in an adapter package, which

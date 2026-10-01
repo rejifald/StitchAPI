@@ -77,6 +77,14 @@ ceilings in [`packages/core/scripts/bundle-size.mjs`](packages/core/scripts/bund
 It is the same gate CI enforces (the `size` job in
 [`.github/workflows/verify.yml`](.github/workflows/verify.yml)).
 
+The two root scenarios (`stitchapi` whole entry, `import { stitch }`) count what a
+**code-splitting bundler** ships up front. The cache engine and the OTLP exporter are
+reached through a lazy `import()`, so a splitting bundler emits them as async chunks
+that load on first use; the gate keeps them out of the root scenarios (`defer`) and
+budgets each as its own scenario (`stitchapi/cache`, `stitchapi/otlp`). A new lazy
+chunk gets the same treatment, and the gate fails if a `defer` no longer matches a
+lazy import in the build.
+
 A change that grows the bundle past its ceiling **fails** the gate. The budget is
 a deliberate ceiling: prefer trimming the entry, or moving a new capability behind
 its own subpath import, over raising it. If growth is genuinely necessary, raise
