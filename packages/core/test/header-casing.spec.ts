@@ -9,6 +9,7 @@
 import { stitch } from '../src';
 import type { AdapterRequest } from '../src';
 import { apiKey, basic, bearer, cookieSession, env } from '../src/auth';
+import { mockAdapter } from '../src/testing';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -267,5 +268,48 @@ describe('what the adapter receives', () => {
         expect(mine.headers).toEqual({ 'idempotency-key': 'mine' });
         const generated = await seen({ method: 'POST', idempotency: true });
         expect(Object.keys(generated.headers)).toEqual(['idempotency-key']);
+    });
+});
+
+// The same fold is what every other reader of the built request sees: a hook, a mock responder, a
+// mock predicate, the spy. (BREAKING for a reader that looked a header up by its authored spelling.)
+describe('hooks and mocks read lower-case names', () => {
+    test('hooks.onRequest: ctx.req.headers is folded, and carries the credential the strategy wrote', async () => {
+        let seenInHook: Record<string, string> | undefined;
+        const call = stitch({
+            url: 'https://x.test/a',
+            headers: { 'X-Trace': 'config' },
+            auth: apiKey({ secret: 'REAL' }),
+            adapter: () =>
+                Promise.resolve({ status: 200, headers: {}, body: {} }),
+            hooks: {
+                onRequest: ({ req }) => {
+                    seenInHook = { ...req?.headers };
+                },
+            },
+        });
+        await call({ headers: { 'X-API-KEY': 'FORGED', 'x-TRACE': 'input' } });
+        expect(seenInHook).toEqual({ 'x-trace': 'input', 'x-api-key': 'REAL' });
+    });
+
+    test('mockAdapter: a predicate, call.req and the spy see lower-case names', async () => {
+        const seenByResponder: string[][] = [];
+        const api = mockAdapter({
+            match: (req) => req.headers['x-trace'] === '1',
+            respond: ({ req }) => {
+                seenByResponder.push(Object.keys(req.headers));
+                return { body: { ok: true } };
+            },
+        });
+        const call = stitch({
+            url: 'https://x.test/a',
+            adapter: api,
+            headers: { 'X-Trace': '1', 'Content-Type': 'application/json' },
+        });
+        await call();
+        expect(seenByResponder).toEqual([['x-trace', 'content-type']]);
+        expect(api.callCount((req) => req.headers['x-trace'] === '1')).toBe(1);
+        expect(api.lastRequest()?.headers['X-Trace']).toBeUndefined();
+        expect(api.lastRequest()?.headers['x-trace']).toBe('1');
     });
 });

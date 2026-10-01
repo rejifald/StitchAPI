@@ -8,9 +8,11 @@
 //
 // These specs drive core only. The per-surface proofs (the MCP tool result, the vercel-ai tool
 // failure the model reads) live with those surfaces; this is the root-cause guard behind them.
-import { StitchError, otlp, stitch } from '../src';
-import type { OtelSpan, SpanExporter, StitchEvent, TraceSink } from '../src';
+import { StitchError, stitch } from '../src';
+import type { StitchEvent, TraceSink } from '../src';
 import { apiKey } from '../src/auth';
+import { otlp } from '../src/otlp';
+import type { OtelSpan, SpanExporter } from '../src/otlp';
 import { serve } from '../src/serve';
 import type { Surface } from '../src/surface';
 import { fileSink } from '../src/trace';

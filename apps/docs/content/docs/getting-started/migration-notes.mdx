@@ -15,9 +15,10 @@ template-narrowed stitch infers. Each section is the same shape — what you'd
 expect, what a stitch emits, why it's conformant, and the one-line adjustment to
 your fixture or field type.
 
-It opens with two items of a different kind — not conformance surprises but
-deliberate pre-GA breaks: the auth strategies moved to their own import, and the
-four secret resolvers folded into two namespaces.
+It opens with three items of a different kind — not conformance surprises but
+deliberate pre-GA breaks: the auth strategies moved to their own import, the
+four secret resolvers folded into two namespaces, and the OTLP exporter moved to
+its own import too.
 
 The running example is a generic catalog provider at `api.example.com` — a media
 server exposing items behind an API key.
@@ -120,6 +121,45 @@ There are no aliases and no deprecation shims. StitchAPI is still pre-GA
 (`1.0.0-rc`), and keeping the old spellings would leave two ways to write one
 call on the subpath — the thing being removed. The break is a compile error at
 the import line, not a runtime surprise.
+
+## The OTLP exporter imports from `stitchapi/otlp`
+
+If you built the OTLP sink yourself, the import stops compiling:
+
+```
+Module '"stitchapi"' has no exported member 'otlp'.
+```
+
+The `otlp` namespace (`otlp.sink`, `otlp.exporter`, `otlp.json`) and its types
+(`OtelSpan`, `SpanExporter`, `OtlpOptions`, …) now live on the `stitchapi/otlp`
+subpath:
+
+```ts twoslash
+// @noErrors
+// before
+import { multiplex, otlp, stitch } from 'stitchapi';
+```
+
+```ts twoslash
+// after
+import { multiplex, stitch } from 'stitchapi';
+import { otlp } from 'stitchapi/otlp';
+```
+
+Setting `STITCH_EXPORT=otlp` needs no import and keeps working unchanged: the
+exporter now loads on first use instead of riding in the bundle.
+
+**Why.** The exporter builds the span tree, serializes OTLP/JSON and POSTs it —
+real bytes, wanted by the few apps that export spans and paid for by every app
+that imports `stitch`. Behind its own import it is off the root entry for
+everyone else, the same move the auth strategies made. There is no
+compatibility re-export: it would undo the move, and StitchAPI is still pre-GA
+(`1.0.0-rc`). The break is a compile error at the import line.
+
+The exported spans changed shape in the same release — a run span over one
+attempt span per request, a resolved `service.name`, `UNSET` status on success —
+which is a dashboard change, not an import one. See
+[OTLP export](/docs/guides/observability/otlp#the-span-tree).
 
 ## Header names go on the wire lowercase
 
