@@ -16,6 +16,7 @@
 // dependency, each proving compliance via `conformance.fingerprint`
 // (`stitchapi/testing`). No validator ever enters core's dependency graph.
 import { xxh128 } from './hash';
+import { processWide } from './process-wide';
 import { type StandardSchemaV1, isStandardSchema } from './standard-schema';
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,14 @@ export interface SchemaFingerprinter {
 // literal to drop a dead property, so routing an internal read through `fingerprinters`
 // would weld all four onto the path of everyone who imports the caller.
 
-const registry = new Map<string, SchemaFingerprinter>();
+// Process-wide, not module-local: the CJS build bundles one copy of this module per entry, so
+// `require('stitchapi/fingerprint')` (where `@stitchapi/fingerprint-*` registers) and the cache
+// engine inside `require('stitchapi')` would otherwise hold two registries, and every schema would
+// land on rung 5 (`refuse`) in the engine's copy. See `processWide`.
+const registry = processWide(
+    'stitchapi.fingerprinters',
+    () => new Map<string, SchemaFingerprinter>(),
+);
 
 /**
  * Register half of {@link fingerprinters}; the namespace carries the contract. Internal —

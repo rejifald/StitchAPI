@@ -1,4 +1,5 @@
 // Small dependency-free helpers shared across the prototype.
+import { processWide } from './process-wide';
 import type { ArrayFormat, Clock, RunContext } from './types';
 
 export const now = (): number => Date.now();
@@ -941,7 +942,14 @@ const URL_REDACTED = 'REDACTED';
 // structured `input.query` via `redactSecretQuery`) without listing every vendor spelling. The
 // default `api_key` already matches a stem; this covers an arbitrary configured name too.
 // Lower-cased on insert so the membership test in `isSecretKey` stays case-insensitive.
-const REGISTERED_SECRET_KEYS = new Set<string>();
+//
+// Process-wide, not module-local: the CJS build bundles one copy of this module per entry, and
+// `require('stitchapi/auth')` registers a key that `require('stitchapi')`'s engine and
+// `require('stitchapi/otlp')`'s sink must both honour (#898). See `processWide`.
+const REGISTERED_SECRET_KEYS = processWide(
+    'stitchapi.secretKeys',
+    () => new Set<string>(),
+);
 
 /**
  * Widen half of {@link secrets}; the namespace carries the contract. Internal — the

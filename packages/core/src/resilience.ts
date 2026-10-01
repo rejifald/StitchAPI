@@ -1,6 +1,7 @@
 // Resilience primitives: retry backoff math, Retry-After parsing, a proactive
 // throttle (rate + concurrency, per key), and a timeout wrapper. Dependency-free;
 // pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
+import { processWide } from './process-wide';
 import type {
     AcquireOptions,
     AdapterResult,
@@ -89,7 +90,15 @@ interface KeyState {
 // store (throttle.mdx: "'host' pools the budget across every stitch hitting the same
 // host"). Closure-local maps can't do that, so host-pooled throttles share their KeyState
 // here, keyed by the host. A configured `store` still overrides for cross-process pooling.
-const hostStates = new Map<string, KeyState>();
+//
+// Process-wide, not module-local: the CJS build bundles one engine per entry (`stitchapi`,
+// `stitchapi/graphql`, `/sse`, …), so a stitch from one and a stitch from another would otherwise
+// each draw from a budget of their own and together exceed the host's rate. `/1` is the layout
+// number of `KeyState`; bump it when that shape changes. See `processWide`.
+const hostStates = processWide(
+    'stitchapi.hostStates/1',
+    () => new Map<string, KeyState>(),
+);
 
 /**
  * Proactive limiter. `rate` ("2/s") enforces a minimum spacing between successive

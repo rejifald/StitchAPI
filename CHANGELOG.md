@@ -126,6 +126,22 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
 
 ### Fixed
 
+- **Under CommonJS, the secret-key denylist, the fingerprinter registry, the host-pooled rate budget
+  and the seam-id counter are one object per process, not one per entry.**
+  ([#898](https://github.com/rejifald/StitchAPI/issues/898)) The ESM build code-splits, so every
+  entry shares one chunk. The CJS build does not: `lib/index.js`, `lib/auth.js`, `lib/otlp.js`, …
+  each bundle their own copy of every module they reach, so a module-level registry existed once per
+  entry. In a CJS program, `require('stitchapi/auth').apiKey({ in: 'query', name })` and
+  `require('stitchapi').secrets.register(name)` registered a secret query key that the engine and
+  `require('stitchapi/otlp')` never saw, so it reached `url.full` and the trace file unredacted; a
+  `@stitchapi/fingerprint-*` package registered through `stitchapi/fingerprint` was invisible to the
+  cache engine inside `stitchapi` (every schema fell to `refuse`); `pool: 'host'` budgets and seam
+  bucket ids were counted per entry, so a `stitchapi` stitch and a `stitchapi/graphql` stitch on one
+  host each had a budget of their own. These four now live on `globalThis` under `Symbol.for` keys
+  (`src/process-wide.ts`). ESM was never affected. Class identity across CJS entries (`instanceof`,
+  [#896](https://github.com/rejifald/StitchAPI/issues/896)) is a separate problem and is not
+  changed here.
+
 - **The docs and the agent-rules template send you to `npx stitchapi …`, not `npx stitch …`.**
   ([#861](https://github.com/rejifald/StitchAPI/issues/861)) The executable is `stitch`, but it
   ships inside the `stitchapi` package, and the npm name `stitch` belongs to an unrelated package
