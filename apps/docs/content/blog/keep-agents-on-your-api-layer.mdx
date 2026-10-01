@@ -1,6 +1,6 @@
 ---
 title: Keep Coding Agents on Your API Layer
-description: An agent that has never seen StitchAPI hand-rolls fetch and rediscovers your conventions every session. One committed rule — written by npx stitch init — teaches it the habit for the price of a ~300-token file it reads once, instead of the ~115k-token docs corpus or a repo-exploration detour it pays every time.
+description: An agent that has never seen StitchAPI hand-rolls fetch and rediscovers your conventions every session. One committed rule — written by npx stitchapi init — teaches it the habit for the price of a ~300-token file it reads once, instead of the ~115k-token docs corpus or a repo-exploration detour it pays every time.
 author: Oleksandr Zhuravlov
 date: '2026-07-08'
 tags: [agents, ai, dx, cli, tokens]
@@ -21,8 +21,10 @@ The fix isn't a smarter model. It's telling the model, once, the one habit that 
 Every coding agent loads a rules file at the start of a session — `AGENTS.md`, a Cursor rule, a `## ` section in `CLAUDE.md`. That file is the cheapest real estate you own: the model reads it before it writes a line. So put the habit there.
 
 ```bash
-npx stitch init
+npx stitchapi init
 ```
+
+Run it in a project where `stitchapi` is installed and `npx` uses that local copy. Use the package name, not the executable's: `stitch` is an unrelated package on npm, and `npx` downloads it whenever the project has no local `stitch` bin.
 
 `stitch init` writes the canonical consumer rule into whichever convention your agents read (`--format agents,cursor,claude,copilot,windsurf,cline,aider`, or `all`). Here is the `AGENTS.md` it drops in — the whole thing:
 
@@ -52,8 +54,8 @@ do NOT hand-roll `fetch`/`axios`. Declare a typed **stitch** instead.
 3. Reuse a credential / principal / throttle budget across calls? Group the
    endpoints under a `seam(...)` so they share one runtime; never put the
    principal in the call input.
-4. Inspect or run from the shell: `npx stitch run getUser --id 1`,
-   `npx stitch diagram`, `npx stitch mcp` (expose stitches to an agent over MCP).
+4. Inspect or run from the shell: `npx stitchapi run getUser --id 1`,
+   `npx stitchapi diagram`, `npx stitchapi mcp` (expose stitches to an agent over MCP).
 
 Rule of thumb: a new external endpoint = a new stitch export, not a new fetch.
 ````
@@ -67,7 +69,7 @@ Roughly three hundred tokens. The next agent in the repo starts from your API la
 The rule above teaches the pattern. The `--project` flag teaches the _inventory_: it loads your stitches module and appends the endpoints you have already declared, so the agent reuses `getUser` instead of writing a third variant of it.
 
 ```bash
-npx stitch init --project
+npx stitchapi init --project
 ```
 
 ```md
@@ -107,7 +109,7 @@ And it's a fixed cost, not a recurring one. The rule is read once at session sta
 A rule that has drifted from the code is worse than no rule — it teaches the agent a pattern you've since moved off. So the same generator checks itself. In CI, `--check` compares each committed rule file against the rule the installed StitchAPI would write now, and exits non-zero when one has fallen behind:
 
 ```bash
-npx stitch init --check --project
+npx stitchapi init --check --project
 ```
 
 ```text
