@@ -1092,10 +1092,13 @@ export function scrubUrl(url: string): string {
     return hadUserinfo || secretKeys.length > 0 ? u.toString() : url;
 }
 
-// An absolute URL quoted inside free text: a scheme, `://`, then everything up to the next
-// whitespace or a character that conventionally delimits a URL in prose or JSON. A backslash ends
-// it too, so an escaped quote in JSON-ish text is never swallowed into the URL and rewritten.
-const URL_IN_TEXT = /[a-z][a-z\d+.-]*:\/\/[^\s"'<>`\\]+/gi;
+// What may precede `://` in a scheme (RFC 3986: a letter, then letters, digits, `+`, `-`, `.`),
+// and what ends a URL quoted in free text: whitespace or a character that conventionally delimits a
+// URL in prose or JSON. A backslash ends it too, so an escaped quote in JSON-ish text is never
+// swallowed into the URL and rewritten. Each is tested ONE character at a time — see `scrubUrls`.
+const SCHEME_CHAR = /[a-z\d+.-]/i;
+const SCHEME_START = /[a-z]/i;
+const URL_END = /[\s"'<>`\\]/;
 
 /**
  * {@link scrubUrl} for free text — an error message, a log line — that may quote URLs. Every
@@ -1103,19 +1106,51 @@ const URL_IN_TEXT = /[a-z][a-z\d+.-]*:\/\/[^\s"'<>`\\]+/gi;
  * it is untouched. The URL a transport error quotes is often one the WHATWG parser rejects
  * (`Failed to parse URL from http://host:99999/v1?api_key=…`), and {@link scrubUrl} hands such a
  * URL back as-is, so for those the same two scrubs run over the URL's text instead.
+ *
+ * A hand-rolled scan rather than one global regex, because the text is untrusted (a transport's
+ * message, a vendor's error body): a `/[a-z][a-z\d+.-]*:\/\/…/g` sweep retries the scheme run from
+ * every start position, which is quadratic on a long run of letters with no `://` in it. Here each
+ * `://` is found by `indexOf` and the scheme is walked back from it, so every character is visited
+ * a bounded number of times.
  */
 export function scrubUrls(text: string): string {
-    return text.replace(URL_IN_TEXT, (url) => {
-        const parsed = scrubUrl(url);
-        return parsed !== url ? parsed : scrubUrlText(url);
-    });
+    let out = '';
+    let copied = 0; // text[copied..] is not yet in `out`
+    let sep = text.indexOf('://');
+    while (sep >= 0) {
+        let start = sep;
+        while (start > copied && SCHEME_CHAR.test(text.charAt(start - 1)))
+            start--;
+        while (start < sep && !SCHEME_START.test(text.charAt(start))) start++;
+        let end = sep + 3;
+        while (end < text.length && !URL_END.test(text.charAt(end))) end++;
+        if (start < sep && end > sep + 3) {
+            const url = text.slice(start, end);
+            const parsed = scrubUrl(url);
+            out +=
+                text.slice(copied, start) +
+                (parsed !== url ? parsed : scrubUrlText(url));
+            copied = end;
+        }
+        sep = text.indexOf('://', Math.max(copied, sep + 3));
+    }
+    return out + text.slice(copied);
 }
 
 // The lexical half of `scrubUrls`, for a URL `new URL` refuses. Userinfo runs to the LAST `@`
 // before the authority ends, as the WHATWG parser reads it; a query pair whose (decoded) key is a
 // secret keeps its key and loses its value, so the message still says which parameter it was.
 function scrubUrlText(url: string): string {
-    const bare = url.replace(/^([a-z][a-z\d+.-]*:\/\/)[^/?#]*@/i, '$1');
+    const authority = url.indexOf('://') + 3;
+    let authorityEnd = authority;
+    while (
+        authorityEnd < url.length &&
+        !'/?#'.includes(url.charAt(authorityEnd))
+    )
+        authorityEnd++;
+    const at = url.lastIndexOf('@', authorityEnd - 1);
+    const bare =
+        at >= authority ? url.slice(0, authority) + url.slice(at + 1) : url;
     const q = bare.indexOf('?');
     if (q < 0) return bare;
     const hash = bare.indexOf('#', q);
