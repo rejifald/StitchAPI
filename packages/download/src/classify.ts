@@ -1,4 +1,4 @@
-import { StitchError, compact } from 'stitchapi';
+import { StitchError, compact, isStitchError } from 'stitchapi';
 
 /**
  * Transport-error codes (undici / Node) a retry might plausibly clear — sockets dropped, connections
@@ -35,7 +35,10 @@ export interface Classification {
  * walkable (see {@link classifyFailure}).
  */
 export function toStitchError(e: unknown): StitchError {
-    if (e instanceof StitchError) return e;
+    // `isStitchError`, not `instanceof`: under CJS each `stitchapi` entry (the root here,
+    // `stitchapi/download` in the manager) bundles its own `StitchError` class, so an error the
+    // download surface raised is not an `instanceof` this one — and would be wrapped (#867).
+    if (isStitchError(e)) return e;
     const message = e instanceof Error ? e.message : String(e);
     return new StitchError(message, { cause: e });
 }

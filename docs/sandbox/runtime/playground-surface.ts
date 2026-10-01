@@ -79,6 +79,7 @@ export const PLAYGROUND_SURFACE_NAMES = [
     // Guards + verdict reader.
     'isStitch',
     'isSeam',
+    'isStitchError',
     'verdictOf',
     // Surface descriptors.
     'httpSurface',

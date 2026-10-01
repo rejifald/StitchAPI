@@ -160,8 +160,13 @@ describe('every consumer of the message reads the scrubbed text (#890)', () => {
         expect(JSON.stringify(spans)).not.toContain(KEY);
     });
 
-    test('`stitch serve`: the JSON error body and the SSE error frame are scrubbed', async () => {
-        const handle = await serve({ metrics: dnsFailure() }, { port: 0 });
+    // `serve` withholds the raw message by default (#867), so the scrubbed text is what a caller
+    // sees once `disclose` is on: the case that matters for a trusted caller.
+    test('`stitch serve`: the disclosed JSON error body and SSE error frame are scrubbed', async () => {
+        const handle = await serve(
+            { metrics: dnsFailure() },
+            { port: 0, disclose: true },
+        );
         try {
             for (const accept of ['application/json', 'text/event-stream']) {
                 const res = await fetch(`${handle.url}/stitch/metrics`, {
@@ -172,6 +177,25 @@ describe('every consumer of the message reads the scrubbed text (#890)', () => {
                 const body = await res.text();
                 expect(body).toContain('vk=REDACTED');
                 expect(body).not.toContain(KEY);
+            }
+        } finally {
+            await handle.close();
+        }
+    });
+
+    test('`stitch serve` sends neither the key nor the message by default', async () => {
+        const handle = await serve({ metrics: dnsFailure() }, { port: 0 });
+        try {
+            for (const accept of ['application/json', 'text/event-stream']) {
+                const res = await fetch(`${handle.url}/stitch/metrics`, {
+                    method: 'POST',
+                    headers: { accept },
+                    body: '{}',
+                });
+                const body = await res.text();
+                expect(body).not.toContain('vk=');
+                expect(body).not.toContain(KEY);
+                expect(body).toContain('Bad Gateway');
             }
         } finally {
             await handle.close();
@@ -258,8 +282,11 @@ describe('a surface verdict that quotes a URL is scrubbed too', () => {
         expect(JSON.stringify(retry)).not.toMatch(/hunter2|tkn/);
     });
 
-    test('`stitch serve` returns the scrubbed text', async () => {
-        const handle = await serve({ echo: call(surface(false)) }, { port: 0 });
+    test('`stitch serve` returns the scrubbed text once disclosed', async () => {
+        const handle = await serve(
+            { echo: call(surface(false)) },
+            { port: 0, disclose: true },
+        );
         try {
             const res = await fetch(`${handle.url}/stitch/echo`, {
                 method: 'POST',

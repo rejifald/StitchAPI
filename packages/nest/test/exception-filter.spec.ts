@@ -7,15 +7,21 @@ import * as api from '../src';
 
 import { type ArgumentsHost, HttpException } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
+import { RateLimitError, StitchError } from 'stitchapi';
 import { describe, expect, it } from 'vitest';
 
-// Mirror what core throws on a failed call (packages/core/src/stitch.ts).
-const makeStitchError = (message: string, status?: number): Error => {
-    const e = new Error(message) as Error & { status?: number };
-    e.name = 'StitchError';
-    if (status !== undefined) e.status = status;
-    return e;
-};
+// What core throws on a failed call: a real StitchError, so the test exercises core's brand
+// rather than the hosts' name fallback.
+const makeStitchError = (message: string, status?: number): StitchError =>
+    new StitchError(message, { status });
+
+const rateLimited = (message?: string): RateLimitError =>
+    new RateLimitError({
+        status: 429,
+        retryAfter: 30_000,
+        response: { status: 429, headers: {}, body: null },
+        ...(message !== undefined ? { message } : {}),
+    });
 
 describe('stitchError.is', () => {
     it('recognises the branded error and rejects everything else', () => {
@@ -23,6 +29,38 @@ describe('stitchError.is', () => {
         expect(stitchError.is(new Error('plain'))).toBe(false);
         expect(stitchError.is('nope')).toBe(false);
         expect(stitchError.is(undefined)).toBe(false);
+    });
+
+    it('recognises a subclass and a name-only lookalike', () => {
+        expect(stitchError.is(rateLimited())).toBe(true);
+        // Fail-safe: an `Error` named after a stitch failure matches without core's brand (a copy
+        // of the class older than the brand, or a lookalike). Over-recognising only redacts more;
+        // any other name still falls through.
+        for (const name of ['StitchError', 'RateLimitError'])
+            expect(
+                stitchError.is(Object.assign(new Error('x'), { name })),
+            ).toBe(true);
+        expect(
+            stitchError.is(
+                Object.assign(new Error('x'), { name: 'TypeError' }),
+            ),
+        ).toBe(false);
+    });
+});
+
+// #867: `RateLimitError` sets `name = 'RateLimitError'`, so the old `name === 'StitchError'` guard
+// left it unmapped and the filter handed the raw error on instead of the generic exception.
+describe('a RateLimitError', () => {
+    it('gets the generic default body, never the raw message', () => {
+        const ex = stitchError.map(
+            rateLimited('quota exceeded for tenant acme on payments.internal'),
+        );
+        expect(ex).toBeInstanceOf(HttpException);
+        expect(ex!.getStatus()).toBe(502);
+        expect(ex!.message).toBe('Upstream request failed');
+        expect(JSON.stringify(ex!.getResponse())).not.toContain(
+            'payments.internal',
+        );
     });
 });
 
@@ -158,6 +196,18 @@ describe('StitchExceptionFilter', () => {
         expect(seen[0]).toBeInstanceOf(HttpException);
         expect((seen[0] as HttpException).getStatus()).toBe(502); // not the upstream 503
         expect(seen[1]).toBe(other); // untouched passthrough
+    });
+
+    it('maps a RateLimitError too, rather than passing the raw error on (#867)', () => {
+        const [delegated] = captureDelegated(
+            new StitchExceptionFilter(),
+            rateLimited('quota exceeded on payments.internal'),
+        );
+        expect(delegated).toBeInstanceOf(HttpException);
+        expect((delegated as HttpException).getStatus()).toBe(502);
+        expect((delegated as HttpException).message).toBe(
+            'Upstream request failed',
+        );
     });
 
     it('forwards status options to the mapper', () => {

@@ -132,6 +132,8 @@ const app = new Elysia().use(
 Set `onError: false` to register none and wire your own with `stitchError.handler()`
 (an `.onError`-compatible mapper) or `stitchError.map(err, options)` (a one-off
 `StitchError` → `Response`); `stitchError.is(err)` narrows an unknown error first.
+The guard runs core's [`isStitchError`](/docs/errors), so a subclass such as
+`RateLimitError` is mapped like the base class.
 
 `stitchError` is the same namespace every `@stitchapi` host adapter exports for this
 one concept. The **option** keeps Elysia's own word (`onError`) while the **export**

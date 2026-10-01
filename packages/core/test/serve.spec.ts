@@ -4,6 +4,7 @@ import type { StitchRegistry } from '../src/registry';
 import { createServeHandler, serve } from '../src/serve';
 import type { ServeHandle } from '../src/serve';
 import { sse } from '../src/sse';
+import { stubStitch } from '../src/test-stub';
 import type { Stitch, StitchEvent } from '../src/types';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -220,6 +221,291 @@ test('an upstream failure surfaces as a non-2xx JSON error', async () => {
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
     await expect(res.json()).resolves.toHaveProperty('error');
+});
+
+// #867: an unexpected throw in JSON mode escapes the handler to `serve`'s own last-resort 500,
+// which echoed `e.message` — the same disclosure the failure body withholds. It follows `disclose`.
+describe('serve withholds the message of an unexpected throw unless `disclose` is on', () => {
+    const LEAK = 'getaddrinfo ENOTFOUND payments.internal.corp';
+    const throws = stubStitch('ignored', {
+        events: () => {
+            throw new Error(LEAK);
+        },
+    });
+    const run = async (disclose?: boolean): Promise<Response> => {
+        const h = await serve(
+            { throws },
+            disclose === undefined ? { port: 0 } : { port: 0, disclose },
+        );
+        try {
+            return await fetch(`${h.url}/stitch/throws`, {
+                method: 'POST',
+                body: '{}',
+            });
+        } finally {
+            await h.close();
+        }
+    };
+
+    test('by default the 500 body is the reason phrase', async () => {
+        const res = await run();
+        expect(res.status).toBe(500);
+        await expect(res.json()).resolves.toEqual({
+            error: 'Internal Server Error',
+        });
+    });
+
+    test('`disclose: true` sends the raw message', async () => {
+        const res = await run(true);
+        expect(res.status).toBe(500);
+        await expect(res.json()).resolves.toEqual({ error: LEAK });
+    });
+});
+
+// #867: the SSE stream is the other door a failure's text leaves by. With `retry` on, each retried
+// attempt's `progress.detail` is the raw transport error; a strategy's `info.detail` is free text;
+// a `drift` finding's `detail` is a validator's issue message, which can echo the received value;
+// and the `start` frame names the upstream URL and its route template. All of it follows `disclose`, like the `error`
+// frame. The frames and their types stay either way.
+describe('serve SSE withholds the trace fields that name the upstream unless `disclose` is on', () => {
+    const HOST = 'payments.internal.corp';
+    const LEAK = `getaddrinfo ENOTFOUND ${HOST}`;
+    const SECRET = 'UPSTREAM-SECRET-VALUE-42';
+    // A validator whose issue message echoes the value it received (valibot does, and so does
+    // zod for an enum), so the hard `drift` finding's `detail` carries upstream data.
+    const echoing = {
+        '~standard': {
+            version: 1 as const,
+            vendor: 'test',
+            validate: (v: unknown) => ({
+                issues: [
+                    {
+                        message: `expected number, received ${String((v as { id: unknown }).id)}`,
+                        path: ['id'],
+                    },
+                ],
+            }),
+        },
+    };
+    const registry = {
+        // A templated route, retried once on a 503: `start.template` names the upstream route, and
+        // the retry's `progress` frame carries a `status`. Unnamed on purpose: an event's `name`
+        // then defaults to the stitch's `path`, the same route again.
+        routed: stitch({
+            baseUrl: 'https://upstream.test',
+            path: '/internal/ledger/{id}',
+            adapter: () =>
+                Promise.resolve({ status: 503, headers: {}, body: {} }),
+            retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+        }),
+        // A response the output schema rejects: a hard `drift` finding whose `detail` echoes it.
+        drifts: stitch({
+            url: `https://${HOST}/x`,
+            adapter: () =>
+                Promise.resolve({
+                    status: 200,
+                    headers: {},
+                    body: { id: SECRET },
+                }),
+            output: asValidator(echoing),
+        }),
+        // A soft finding with every field set: only `detail` is withheld.
+        softDrift: stubStitch('ok', {
+            events: () => [
+                {
+                    type: 'drift',
+                    finding: {
+                        level: 'warn',
+                        path: 'items[].id',
+                        change: 'coerced',
+                        detail: `all 2 elements: string -> number (${SECRET})`,
+                        sample: 'items[3].id',
+                    },
+                    at: 1,
+                },
+            ],
+        }),
+        // A transport that throws, retried once: `progress.detail` carries the raw error text.
+        flaky: stitch({
+            url: `https://${HOST}/x`,
+            adapter: () => Promise.reject(new Error(LEAK)),
+            retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+        }),
+        // A strategy announcement whose free-text detail names an internal host.
+        announces: stubStitch('ok', {
+            events: () => [
+                {
+                    type: 'info',
+                    topic: 'auth.refresh',
+                    detail: `refreshing against ${HOST}`,
+                    at: 1,
+                },
+            ],
+        }),
+    };
+    const stream = async (
+        name: keyof typeof registry,
+        disclose?: boolean,
+        input = '{}',
+    ): Promise<string> => {
+        const h = await serve(
+            registry,
+            disclose === undefined ? { port: 0 } : { port: 0, disclose },
+        );
+        try {
+            const res = await fetch(`${h.url}/stitch/${name}?stream=1`, {
+                method: 'POST',
+                body: input,
+            });
+            return await res.text();
+        } finally {
+            await h.close();
+        }
+    };
+
+    test('by default the stream carries neither the host nor the transport error text', async () => {
+        const body = await stream('flaky');
+        expect(body).not.toContain('ENOTFOUND');
+        expect(body).not.toContain(HOST);
+        // The frames stay; only the fields that name the upstream are dropped.
+        expect(body).toContain('event: start');
+        expect(body).toContain('event: progress');
+        expect(body).toContain('"phase":"retry"');
+        expect(body).toContain('event: error');
+        expect(body).toContain('"message":"Bad Gateway"');
+    });
+
+    test('by default an `info` frame keeps its topic and drops its detail', async () => {
+        const body = await stream('announces');
+        expect(body).toContain('event: info');
+        expect(body).toContain('"topic":"auth.refresh"');
+        expect(body).not.toContain(HOST);
+        expect(body).not.toContain('"detail"');
+    });
+
+    // Splits the stream into frames and returns the parsed `data` of every frame of one type.
+    const framesOf = (body: string, type: string): Record<string, unknown>[] =>
+        body
+            .split('\n\n')
+            .filter((block) => block.startsWith(`event: ${type}\n`))
+            .map(
+                (block) =>
+                    JSON.parse(block.split('\ndata: ')[1] ?? '{}') as Record<
+                        string,
+                        unknown
+                    >,
+            );
+
+    test('by default `start` drops the route template and keeps what the engine stamps', async () => {
+        const body = await stream('routed', undefined, '{"params":{"id":7}}');
+        // Neither the `template` nor the default `name` (the stitch's `path`) may carry the route.
+        expect(body).not.toContain('/internal/ledger');
+        const [start] = framesOf(body, 'start');
+        expect(start).toEqual(
+            expect.objectContaining({
+                surface: 'http',
+                transport: 'http',
+                spanId: expect.any(String),
+            }),
+        );
+        expect(start).not.toHaveProperty('url');
+        expect(start).not.toHaveProperty('template');
+        // The retry's `progress` frame keeps its `status` and drops only `detail`.
+        expect(framesOf(body, 'progress')).toContainEqual(
+            expect.objectContaining({ phase: 'retry', status: 503 }),
+        );
+    });
+
+    test('by default every frame that carries a `name` says the key the caller addressed', async () => {
+        const body = await stream('routed', undefined, '{"params":{"id":7}}');
+        const named = ['start', 'error'].flatMap((type) =>
+            framesOf(body, type),
+        );
+        expect(named).toHaveLength(2);
+        for (const frame of named)
+            expect(frame).toHaveProperty('name', 'routed');
+    });
+
+    test('by default the JSON error body has no `name`, and no route', async () => {
+        const h = await serve({ routed: registry.routed }, { port: 0 });
+        try {
+            const res = await fetch(`${h.url}/stitch/routed`, {
+                method: 'POST',
+                body: '{"params":{"id":7}}',
+            });
+            expect(res.status).toBe(503);
+            await expect(res.json()).resolves.toEqual({
+                error: 'Service Unavailable',
+                status: 503,
+            });
+        } finally {
+            await h.close();
+        }
+    });
+
+    test("`disclose: true` sends the route template and the stitch's own name", async () => {
+        const body = await stream('routed', true, '{"params":{"id":7}}');
+        expect(framesOf(body, 'start')[0]).toEqual(
+            expect.objectContaining({
+                template: '/internal/ledger/{id}',
+                name: '/internal/ledger/{id}',
+            }),
+        );
+        expect(framesOf(body, 'error')[0]).toHaveProperty(
+            'name',
+            '/internal/ledger/{id}',
+        );
+    });
+
+    test('by default a `drift` finding keeps its level, path and change and drops its detail', async () => {
+        const body = await stream('drifts');
+        expect(body).not.toContain(SECRET);
+        expect(framesOf(body, 'drift')).toEqual([
+            expect.objectContaining({
+                type: 'drift',
+                finding: { level: 'error', path: 'id', change: 'invalid' },
+            }),
+        ]);
+    });
+
+    test('by default a soft `drift` finding keeps every field but `detail`', async () => {
+        const body = await stream('softDrift');
+        expect(body).not.toContain(SECRET);
+        expect(framesOf(body, 'drift')).toEqual([
+            expect.objectContaining({
+                finding: {
+                    level: 'warn',
+                    path: 'items[].id',
+                    change: 'coerced',
+                    sample: 'items[3].id',
+                },
+            }),
+        ]);
+    });
+
+    test('`disclose: true` sends the `drift` detail with the echoed upstream value', async () => {
+        const body = await stream('drifts', true);
+        expect(framesOf(body, 'drift')).toEqual([
+            expect.objectContaining({
+                finding: {
+                    level: 'error',
+                    path: 'id',
+                    change: 'invalid',
+                    detail: `expected number, received ${SECRET}`,
+                },
+            }),
+        ]);
+    });
+
+    test('`disclose: true` sends the upstream url, the retry detail and the raw message', async () => {
+        const body = await stream('flaky', true);
+        expect(body).toContain(`"url":"https://${HOST}/x"`);
+        expect(body).toContain(`"detail":"${LEAK}"`);
+        expect(body).toContain(`"message":"${LEAK}"`);
+
+        const info = await stream('announces', true);
+        expect(info).toContain(`"detail":"refreshing against ${HOST}"`);
+    });
 });
 
 describe('serve forwards a streaming surface as `event: delta` SSE frames', () => {

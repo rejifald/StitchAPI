@@ -148,7 +148,8 @@ await app.register(stitchPlugin, {
 ```
 
 Set `errorHandler: false` to register none and wire your own with
-`stitchError.handler(options)`; `stitchError.is(err)` is the guard on its own.
+`stitchError.handler(options)`; `stitchError.is(err)` is the guard on its own. It runs core's
+`isStitchError`, so a subclass such as `RateLimitError` is mapped like the base class.
 
 `stitchError` is the same namespace every `@stitchapi` host adapter exports for this one
 concept: `.is` everywhere, `.map` wherever the framework has a mapped value to return, and

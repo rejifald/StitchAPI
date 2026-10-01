@@ -20,6 +20,7 @@
 import { downloadAll } from '../../src';
 import { DownloadCancelledError, DownloadIdleTimeoutError } from '../../src';
 import type { ItemResult } from '../../src';
+import { toStitchError } from '../../src/classify';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 
@@ -151,3 +152,18 @@ test('cancelling an in-flight item hands a DownloadCancelledError to the callerâ
     expect(cancel).toBeInstanceOf(StitchError);
     expect((cancel as Error).name).toBe('DownloadCancelledError');
 }, 20000);
+
+// #867: under CommonJS `stitchapi/download` and the root each bundle their own `StitchError`, so the
+// pass-through arm must not hinge on `instanceof`. A fresh module registry stands in for that
+// second copy: its RateLimitError fails `instanceof` here yet must come back unchanged.
+test('toStitchError passes a StitchError from another copy of stitchapi through unchanged', async () => {
+    vi.resetModules();
+    const copy = await import('stitchapi');
+    const foreign = new copy.RateLimitError({
+        status: 429,
+        retryAfter: 1000,
+        response: { status: 429, headers: {}, body: null },
+    });
+    expect(foreign instanceof StitchError).toBe(false);
+    expect(toStitchError(foreign)).toBe(foreign);
+});

@@ -15,6 +15,7 @@ import { parseBytes } from './util';
 
 import {
     type IncomingMessage,
+    STATUS_CODES,
     type Server,
     type ServerResponse,
     createServer,
@@ -30,6 +31,27 @@ export interface ServeOptions {
      * the memory a single request can buffer. Default {@link MAX_REQUEST_BODY_BYTES}.
      */
     body?: number | string | AtLeastOne<ServeBodyOptions>;
+    /**
+     * Disclose a failed run's raw detail to the caller. **Default `false`**: the JSON error body
+     * carries the reason phrase for the response status (`{ error: 'Bad Gateway', status }`), and
+     * in SSE mode:
+     *
+     * - an `error` frame's `message` is that same phrase;
+     * - a `start` frame omits the upstream `url` and its path `template`;
+     * - `progress` and `info` frames, and a `drift` finding, omit their `detail` (a finding keeps
+     *   its `level`, `path`, `change` and `sample`);
+     * - a frame's `name` is the name the caller addressed the stitch by, not the stitch's own
+     *   (which defaults to its `path`).
+     *
+     * The raw message can reveal internal topology (a transport failure reads like
+     * `getaddrinfo ENOTFOUND payments.internal.corp`) or an upstream's own wording to an untrusted
+     * client; the `url`, the `template`, the default `name` and a retry's `detail` name the same
+     * hosts and routes; and a validator's issue message in a finding can echo the received value.
+     * All of it is withheld by default, as every `@stitchapi/*` host adapter withholds the
+     * message. The frames and event types stay; only those fields change. Turn it on when the
+     * callers are trusted (local development, an internal network). CLI: `stitch serve --disclose`.
+     */
+    disclose?: boolean;
 }
 
 /**
@@ -73,9 +95,101 @@ class PayloadTooLargeError extends Error {
     }
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-    res.writeHead(status, { 'content-type': 'application/json' });
+function sendJson(
+    res: ServerResponse,
+    status: number,
+    body: unknown,
+    headers?: Record<string, string>,
+): void {
+    res.writeHead(status, { 'content-type': 'application/json', ...headers });
     res.end(JSON.stringify(body));
+}
+
+// The HTTP status a failed run answers with. Unchanged by the disclosure default: a failure that
+// carries an error status passes through and everything else is a 502 (the mapping itself is
+// #707's open decision).
+const failureStatus = (status: number | undefined): number =>
+    status && status >= 400 ? status : 502;
+
+// What the caller is told about a failure: the raw message only when `disclose` is on, otherwise
+// the standard reason phrase for the status it is answered with — `Bad Gateway`, `Too Many
+// Requests` — so an internal hostname or an upstream's own wording never leaves the process.
+const failureText = (
+    message: string,
+    status: number,
+    disclose: boolean | undefined,
+): string => (disclose ? message : (STATUS_CODES[status] ?? 'Error'));
+
+// A `Retry-After` header for a delegate-backoff failure's `retryAfter` (ms), in whole seconds.
+// Dropped when the value is not finite and clamped to a day otherwise, so the header is always a
+// valid delta-seconds (a 22-digit upstream value would stringify as `1e+21`).
+const MAX_RETRY_AFTER_SECONDS = 86_400;
+const retryAfterHeader = (
+    ms: number | undefined,
+): Record<string, string> | undefined =>
+    ms === undefined || !Number.isFinite(ms)
+        ? undefined
+        : {
+              'retry-after': String(
+                  Math.min(
+                      MAX_RETRY_AFTER_SECONDS,
+                      Math.max(0, Math.ceil(ms / 1000)),
+                  ),
+              ),
+          };
+
+// The wire body of one SSE frame. `serve` is unauthenticated (loopback by default; DESIGN.md §10)
+// and the SSE consumer is remote, so scrub credential-bearing metadata a `start` frame would
+// otherwise echo — URL credentials and `authorization`/`cookie` headers — before it leaves the
+// process. The streamed `delta`/`result` payload is preserved (it is what the caller asked for).
+//
+// Unless `disclose` is on, also drop what names the upstream: a `start` frame's `url` (its host)
+// and `template` (its route, `/internal/ledger/{id}`), the raw transport error text a retry's
+// `progress.detail` carries (the engine's `String(err.message)`), a strategy's `info.detail`, a
+// `drift` finding's `detail` (a validator's issue message, which can echo the received value), and
+// an `error` frame's `message` (which becomes the reason phrase JSON mode would answer with). A
+// finding keeps its `level`, `path`, `change` and `sample`: those are structural coordinates
+// (`items[3].x`), not values. Every frame that carries a `name` (`start`, `error`) gets the name the
+// caller addressed the stitch by instead: the engine's own name defaults to the stitch's `path`, so
+// an unnamed stitch would say `/internal/ledger/{id}` there. Everything else the engine stamps on a
+// frame stays: span ids, `surface` / `transport` (ids the code defines), a `progress` frame's
+// `status` (a number, which JSON mode also passes through) and an `errorType` (a class name, never
+// a message). The frame types stay, so a client keyed on them is unaffected.
+function frameBody(
+    ev: StitchEvent,
+    disclose: boolean | undefined,
+    name: string,
+): object {
+    const safe = redactEventForTransport(ev);
+    if (disclose) return safe;
+    const body = withheld(safe, disclose);
+    return 'name' in body ? { ...body, name } : body;
+}
+
+function withheld(safe: StitchEvent, disclose: boolean | undefined): object {
+    switch (safe.type) {
+        case 'start':
+            return compact({ ...safe, url: undefined, template: undefined });
+        case 'progress':
+        case 'info':
+            return compact({ ...safe, detail: undefined });
+        case 'drift':
+            return {
+                ...safe,
+                finding: compact({ ...safe.finding, detail: undefined }),
+            };
+        case 'error':
+            return {
+                ...safe,
+                message: failureText(
+                    safe.message,
+                    failureStatus(safe.status),
+                    disclose,
+                ),
+            };
+        default:
+            return safe;
+    }
 }
 
 // Read the request body, enforcing a byte cap. Rejects with a `PayloadTooLargeError` — before
@@ -137,9 +251,15 @@ const wantsSse = (req: IncomingMessage, url: URL): boolean =>
 // completes), and we iterate manually here — checking `writableEnded`/`destroyed` before each write
 // and calling `iterator.return()` in `finally` to run the generator's cleanup, releasing the
 // upstream. This mirrors the elysia/hono/fastify SSE bridges' `iterator.return()`-on-abort teardown.
+//
+// Frame bodies come from {@link frameBody}, which withholds a failure's raw message and the
+// upstream-naming trace fields unless `disclose` is on; the catch frame for an unexpected throw
+// follows the same rule (`Internal Server Error`).
 async function streamSse(
     res: ServerResponse,
     stream: AsyncIterable<StitchEvent>,
+    disclose: boolean | undefined,
+    name: string,
 ): Promise<void> {
     res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -152,19 +272,14 @@ async function streamSse(
             const result = await iterator.next();
             if (result.done) break;
             const ev = result.value;
-            // `serve` is unauthenticated (loopback by default; DESIGN.md §10) and the SSE consumer
-            // is remote, so scrub credential-bearing metadata a `start` frame would otherwise echo
-            // — URL credentials and `authorization`/`cookie` headers — before it leaves the
-            // process. The streamed `delta`/`result` payload is preserved (it is what the caller
-            // asked for).
             res.write(
-                `event: ${ev.type}\ndata: ${JSON.stringify(redactEventForTransport(ev))}\n\n`,
+                `event: ${ev.type}\ndata: ${JSON.stringify(frameBody(ev, disclose, name))}\n\n`,
             );
         }
     } catch (e) {
         if (!res.writableEnded && !res.destroyed)
             res.write(
-                `event: error\ndata: ${JSON.stringify({ message: (e as Error).message })}\n\n`,
+                `event: error\ndata: ${JSON.stringify({ message: failureText((e as Error).message, 500, disclose) })}\n\n`,
             );
     } finally {
         // Release the upstream: runs the generator's `finally` (which aborts the in-flight call and
@@ -174,27 +289,32 @@ async function streamSse(
     }
 }
 
-// Consume the stream and return the final result as JSON (or a leveled error).
+// Consume the stream and return the final result as JSON (or a leveled error). A failure's body is
+// `{ error, status }`: `error` is the reason phrase for the response status unless `disclose` is on,
+// and a delegate-backoff `RateLimitError` (its `error` event carries `retryAfter`, in ms) also
+// answers with a `Retry-After` header, so a caller backs off for as long as the upstream asked.
 async function runJson(
     res: ServerResponse,
     stream: AsyncIterable<StitchEvent>,
+    disclose: boolean | undefined,
 ): Promise<void> {
     let value: unknown;
-    let failure: { message: string; status?: number } | undefined;
+    let failure: Extract<StitchEvent, { type: 'error' }> | undefined;
     for await (const ev of stream) {
         if (ev.type === 'result') value = ev.data;
-        else if (ev.type === 'error') {
-            failure = { message: ev.message };
-            if (ev.status !== undefined) failure.status = ev.status;
-        }
+        else if (ev.type === 'error') failure = ev;
     }
     if (failure) {
-        const status =
-            failure.status && failure.status >= 400 ? failure.status : 502;
-        sendJson(res, status, {
-            error: failure.message,
-            status: failure.status,
-        });
+        const status = failureStatus(failure.status);
+        sendJson(
+            res,
+            status,
+            {
+                error: failureText(failure.message, status, disclose),
+                status: failure.status,
+            },
+            retryAfterHeader(failure.retryAfter),
+        );
         return;
     }
     sendJson(res, 200, value ?? null);
@@ -202,10 +322,11 @@ async function runJson(
 
 // A framework-free request handler. Exposed so it can be mounted in an existing
 // server or driven directly in tests. `body` caps the request body (413 past it) — the
-// scalar or the `{ max }` envelope; defaults to {@link MAX_REQUEST_BODY_BYTES}.
+// scalar or the `{ max }` envelope; defaults to {@link MAX_REQUEST_BODY_BYTES}. `disclose`
+// sends a failure's raw message instead of the status's reason phrase (default off).
 export function createServeHandler(
     registry: StitchRegistry,
-    { body }: { body?: ServeOptions['body'] } = {},
+    { body, disclose }: Pick<ServeOptions, 'body' | 'disclose'> = {},
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
     // Fold the P12 scalar and parse the cap ONCE here, not per request. An unparseable token
     // resolves to `undefined` and lands on the default cap — a typo can never widen this to
@@ -269,8 +390,9 @@ export function createServeHandler(
                 ...input,
                 signal: controller.signal,
             }) as AsyncIterable<StitchEvent>;
-            if (wantsSse(req, url)) await streamSse(res, stream);
-            else await runJson(res, stream);
+            if (wantsSse(req, url))
+                await streamSse(res, stream, disclose, name);
+            else await runJson(res, stream, disclose);
         } finally {
             req.off('close', onClose);
             res.off('close', onClose);
@@ -285,12 +407,23 @@ export function serve(
     opts: ServeOptions = {},
 ): Promise<ServeHandle> {
     const host = opts.host ?? '127.0.0.1';
-    const handle = createServeHandler(registry, compact({ body: opts.body }));
+    const handle = createServeHandler(
+        registry,
+        compact({ body: opts.body, disclose: opts.disclose }),
+    );
     const server = createServer((req, res) => {
         handle(req, res).catch((e: unknown) => {
             if (!res.headersSent)
                 res.writeHead(500, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ error: (e as Error).message }));
+            res.end(
+                JSON.stringify({
+                    error: failureText(
+                        (e as Error).message,
+                        500,
+                        opts.disclose,
+                    ),
+                }),
+            );
         });
     });
 
