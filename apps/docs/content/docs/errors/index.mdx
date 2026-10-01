@@ -44,6 +44,23 @@ the same failure arrives as an `error` event carrying
 `{ name, message, status?, attempts, at }` — `attempts` is how many tries the
 runtime made before giving up, `at` is when it gave up.
 
+<Callout type="info">
+    **A transport error's `message` carries no URL credential.** A transport
+    writes the URL it called into its own error text — `Failed to parse URL from
+    http://host:99999/v1?api_key=…`, or a DNS failure quoting the request — and
+    with `apiKey({ in: 'query' })` that URL holds the key. The engine scrubs it
+    once, where the throw becomes a `StitchError`: userinfo is dropped and the
+    value of every secret-named query parameter becomes `REDACTED`, so `?api_key=…`
+    reads `?api_key=REDACTED`. Every consumer of the message gets the scrubbed
+    text — the awaited error, `.safe()`, the `error` event, `stitch serve`, the
+    MCP tool result, an AI SDK tool failure the model reads, and the trace sinks.
+    What it does not touch is the original: the error the transport threw rides on
+    `.cause`, unmodified, and `.url` is the response's final URL as the transport
+    reported it. Code that logs `err.cause`, or `console.error(err)` (which prints
+    the cause chain), shows the raw text, and so do the `onError` / `onRetry`
+    hooks. Decide whether that log line may hold a key before you write it.
+</Callout>
+
 ## Handle failure without throwing
 
 `await` and `.unwrap()` throw on failure. When you'd rather branch than wrap the

@@ -49,6 +49,7 @@ import {
     newRunContext,
     now,
     parseDuration,
+    scrubUrls,
     systemClock,
     topLevelQueryIndex,
 } from './util';
@@ -377,12 +378,19 @@ function contractViolationEvt(
     return evt;
 }
 
+// THE choke point where a thrown value (a transport / adapter / hook failure) becomes the error
+// event — and so, via `rebuildError`, the `StitchError.message` — every surface reads: MCP, serve,
+// the host SSE frames, the trace sinks, OTLP `status.message`, pino / sentry. A transport writes the
+// URL it called into its own message (`Failed to parse URL from http://host:99999/v1?api_key=…`,
+// `request to https://host/v1?api_key=… failed`), so the message is URL-scrubbed HERE, once, and no
+// consumer has to remember to. The foreign error is not touched: it rides on as `cause` (see
+// `ridesThrough`), raw, for a caller who deliberately walks it.
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
     const evt: Extract<StitchEvent, { type: 'error' }> = {
         type: 'error',
         name,
-        message: e.message ?? String(err),
+        message: scrubUrls(e.message ?? String(err)),
         attempts,
         at: now(),
     };
@@ -716,7 +724,9 @@ async function* attemptLoop(
                         type: 'progress',
                         phase: 'retry',
                         attempt,
-                        detail: String((err as Error)?.message ?? err),
+                        detail: scrubUrls(
+                            String((err as Error)?.message ?? err),
+                        ),
                         at: now(),
                     };
                     await cfg.hooks?.onRetry?.({

@@ -78,16 +78,19 @@ else. For `stitch mcp --module`, a key is the export name. The names
 ### Errors the agent sees
 
 A failed call returns an `isError` tool result whose text is the error message.
-Before any message reaches the model, every URL in it loses its userinfo and the
-values of its secret-bearing query parameters. A transport error often quotes
-the request URL, and with `apiKey({ in: 'query' })` that URL carries the key.
-The model sees
+Every URL in that message has lost its userinfo and the values of its
+secret-bearing query parameters. A transport error often quotes the request URL,
+and with `apiKey({ in: 'query' })` that URL carries the key. The model sees
 `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=REDACTED`,
-never the key itself. The scrubber matches the same parameter names as the
-trace sinks, including any name `apiKey({ in: 'query', name })` registers.
-`describe_stitch` scrubs the endpoint it reports the same way, so a credential
-written into a `baseUrl` does not reach the model either. A key in a header is
-still the better choice: it is never part of a URL.
+never the key itself. The scrub happens in core, where the engine turns the
+transport's throw into the stitch's error, so the same message reaches every
+other surface too (see [Errors & pitfalls](/docs/errors)); the MCP server scrubs
+once more at its own boundary as a second line. The scrubber matches the same
+parameter names as the trace sinks, including any name
+`apiKey({ in: 'query', name })` registers. `describe_stitch` scrubs the endpoint
+it reports the same way, so a credential written into a `baseUrl` does not reach
+the model either. A key in a header is still the better choice: it is never part
+of a URL.
 
 ### Tool annotations
 

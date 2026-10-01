@@ -77,6 +77,28 @@ npm release are grouped under the in-development version that introduced them.
     MCP tools are now cases in the `no-credential-leak` class guard that every URL-emitting surface
     must join.
 
+- **A transport error's message carries no URL credential, on any surface.**
+  ([#890](https://github.com/rejifald/StitchAPI/issues/890), the root cause behind the MCP bullet
+  above) The leak was never specific to MCP. `@stitchapi/vercel-ai` hands a failed tool call to the
+  AI SDK, which sends `getErrorMessage(error)` to the model as an `error-text` tool result, and
+  `stitch serve`, the SSE host adapters, every trace sink, OTLP `status.message`, `@stitchapi/pino`
+  and `@stitchapi/sentry` all read the same text. The engine now scrubs it once, where a thrown value
+  becomes the error event: `StitchError.message` (awaited, `.safe()`, `.stream()`), the `error`
+  event, and the `retry` progress detail that quotes the same message all read
+  `…/v1/metrics?api_key=REDACTED` and never the key. It is the scrubber from the MCP bullet, so the
+  denylist is the trace sinks' and the names `apiKey({ in: 'query', name })` registers are covered. The
+  MCP boundary keeps its own scrub as defence in depth. Cost: about 0.12 KB min+gzip on
+  `import { stitch }`.
+
+    **What does not change.** The error the transport threw is left alone: it rides on
+    `StitchError.cause`, raw, so its `.code` and an undici cause chain stay readable. Its message is
+    the transport's own, so user code that logs `err.cause` itself, or `console.error(err)` (which
+    prints the cause chain), still shows the raw URL; so do the `onError` / `onRetry` hooks, which
+    receive the error as thrown. `StitchError.url`, the final URL of a failing HTTP response, is
+    likewise unscrubbed. Reading those is a decision to look at what the transport saw; scrubbing
+    them belongs with `StitchError.toJSON()` in [#873](https://github.com/rejifald/StitchAPI/issues/873).
+    A message an upstream wrote into a response body is not a transport throw and is not rewritten here.
+
 - **`cookieSession` replaces a same-named cookie instead of joining it.**
   ([#866](https://github.com/rejifald/StitchAPI/issues/866)) `apply` appended the session to any
   `Cookie` header the request already carried. On a stitch that declares an `input.headers` schema,

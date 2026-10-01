@@ -1,8 +1,9 @@
-// `scrubUrls` (src/util.ts) — the free-text companion to `scrubUrl` that every error text crossing
-// the MCP boundary runs through (#866). mcp.spec.ts proves it end to end on the tool result; these
-// pin the scanner itself: which spans count as a URL, the parser-rejected fallback, and that the
-// scan stays linear on untrusted text (CodeQL flagged the first, single-regex version as
-// polynomial on a long run of scheme characters).
+// `scrubUrls` (src/util.ts) — the free-text companion to `scrubUrl`. The engine runs every thrown
+// message through it where the throw becomes the error event (#890), and the MCP boundary runs every
+// error text through it again as defence in depth (#866). transport-error-scrub.spec.ts and
+// mcp.spec.ts prove those end to end; these pin the scanner itself: which spans count as a URL, the
+// parser-rejected fallback, and that the scan stays linear on untrusted text (CodeQL flagged the
+// first, single-regex version as polynomial on a long run of scheme characters).
 import { scrubUrls } from '../src/util';
 
 describe('scrubUrls', () => {
@@ -47,16 +48,58 @@ describe('scrubUrls', () => {
         );
     });
 
-    test('the scheme starts at a letter, as RFC 3986 spells it', () => {
+    test('the scheme is never inspected: only what follows `://` is rewritten', () => {
         expect(scrubUrls('1+http://u:pw@a.test:99999/')).toBe(
             '1+http://a.test:99999/',
         );
+        expect(scrubUrls('(https://u:pw@a.test/?token=t )')).toBe(
+            '(https://a.test/?token=REDACTED )',
+        );
     });
 
-    test('stays linear on a long run of scheme characters with no URL in it', () => {
-        const hostile = `${'a'.repeat(200_000)}:/${'a'.repeat(200_000)}://`;
+    test('userinfo runs to the last `@` of the authority; an `@` in the path or query is left alone', () => {
+        expect(scrubUrls('http://user@a.test/x')).toBe('http://a.test/x');
+        expect(scrubUrls('http://u:p@w@a.test/x')).toBe('http://a.test/x');
+        const clean = 'http://a.test/u@b?mail=x@y.test#a@b';
+        expect(scrubUrls(clean)).toBe(clean);
+    });
+
+    test('a secret in a repeated key, a fragment, or a percent-encoded key is redacted too', () => {
+        expect(scrubUrls('http://a.test/?k=1&token=a&token=b&k=2')).toBe(
+            'http://a.test/?k=1&token=REDACTED&token=REDACTED&k=2',
+        );
+        expect(scrubUrls('http://a.test/cb#access_token=t&state=s')).toBe(
+            'http://a.test/cb#access_token=REDACTED&state=s',
+        );
+        expect(scrubUrls('http://a.test/?%61pi_key=k&%5Bbad=1')).toBe(
+            'http://a.test/?%61pi_key=REDACTED&%5Bbad=1',
+        );
+        // a stray `%` makes the key undecodable — it is matched by its raw spelling, not skipped
+        expect(scrubUrls('http://a.test/?secret%=k&bad%zz=v')).toBe(
+            'http://a.test/?secret%=REDACTED&bad%zz=v',
+        );
+    });
+
+    // Every one of these is a shape that makes a careless scan quadratic: a long run of scheme
+    // characters, a long run of `?` / `&` / `@` delimiters, and back-to-back `://`.
+    test.each([
+        [
+            'scheme characters',
+            `${'a'.repeat(200_000)}:/${'a'.repeat(200_000)}://`,
+        ],
+        ['query delimiters', `http://a.test/${'?'.repeat(200_000)}`],
+        ['pair delimiters', `http://a.test/?${'&'.repeat(200_000)}`],
+        ['userinfo markers', `http://${'@'.repeat(200_000)}`],
+        ['bare separators', '://'.repeat(100_000)],
+        ['keys without a value', `http://a.test/?${'k'.repeat(200_000)}`],
+    ])('stays linear on a long run of %s', (_label, hostile) => {
         const started = performance.now();
-        expect(scrubUrls(hostile)).toBe(hostile);
+        scrubUrls(hostile);
         expect(performance.now() - started).toBeLessThan(1000);
+    });
+
+    test('a hostile input that holds no URL comes back byte-identical', () => {
+        const hostile = `${'a'.repeat(200_000)}:/${'a'.repeat(200_000)}://`;
+        expect(scrubUrls(hostile)).toBe(hostile);
     });
 });

@@ -11,7 +11,7 @@
 // client publishing (ADR 0013/0014) — that forgets to scrub will fail THIS test instead of baking
 // a password into a shared document. Add the surface here in the same PR that adds the surface.
 import { otlp, stitch } from '../src';
-import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
+import type { OtelSpan, SpanExporter, StitchEvent, TraceSink } from '../src';
 import { createMcpServer } from '../src/mcp';
 import { toOpenApi } from '../src/openapi';
 import type { StitchRegistry } from '../src/registry';
@@ -111,6 +111,37 @@ async function mcpToolCall(
     return JSON.stringify(response);
 }
 
+// The engine's own error channel (#890): the same DNS-shaped failure, read where the engine turns
+// the transport's throw into an error. The awaited `StitchError.message`, the `.safe()` copy and
+// what a custom trace sink is handed (the `error` event, and the `retry` progress detail that
+// quotes the same message) are every consumer of that text — serve, the SSE hosts, pino, sentry
+// and OTLP read these same fields. The throw itself stays on `.cause`, raw, and is not scanned.
+async function engineErrorChannel(): Promise<string> {
+    const seen: StitchEvent[] = [];
+    const sink: TraceSink = { handle: (event) => void seen.push(event) };
+    const getUser = stitch({
+        url: POISONED_URL,
+        retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+        trace: sink,
+        adapter: (request) =>
+            Promise.reject(
+                new Error(
+                    `request to ${request.url} failed, reason: getaddrinfo ENOTFOUND ${HOST}`,
+                ),
+            ),
+    });
+    const thrown = (await getUser().catch((e: unknown) => e)) as Error;
+    const { error } = await getUser().safe();
+    const channel = seen.filter(
+        (e) => e.type === 'error' || e.type === 'progress',
+    );
+    return JSON.stringify({
+        thrown: thrown.message,
+        safe: error?.message,
+        events: channel,
+    });
+}
+
 const SURFACES: Surface[] = [
     {
         // Config export — the family the #415 leak lived in. `stitch export --openapi`.
@@ -137,6 +168,13 @@ const SURFACES: Surface[] = [
         // OTLP export — `url.full` / `server.address` on the exported CLIENT span.
         name: 'otlp.sink → span url.full',
         serialize: () => JSON.stringify(otlpSpans()),
+        emitsHost: true,
+    },
+    {
+        // #890: the root cause behind the MCP rows below — a transport error quoting the request
+        // URL, scrubbed once where the engine mints the error, for every surface that reads it.
+        name: 'engine → StitchError.message, error event, retry detail',
+        serialize: engineErrorChannel,
         emitsHost: true,
     },
     {

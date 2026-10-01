@@ -74,7 +74,10 @@ token on every attempt.
 the model verbatim. With `apiKey({ in: 'query' })` on the default adapter, a mistyped port put
 `…/v1/metrics?api_key=ak_live_…` into the model's context, from zero lines of user code. We filed
 it as [#866](https://github.com/rejifald/StitchAPI/issues/866). Every URL in an MCP error message
-now loses its userinfo and its secret query values, so the model reads `api_key=REDACTED`. A key
+now loses its userinfo and its secret query values, so the model reads `api_key=REDACTED`. The
+same text reached the model through `@stitchapi/vercel-ai` too, so
+[#890](https://github.com/rejifald/StitchAPI/issues/890) moved the scrub to where the engine turns a
+transport's throw into the error, and every surface reads the scrubbed message. A key
 in a header is still the better placement: the
 [auth guide](/docs/reference/auth-strategies) explains why a key in a URL leaks wherever URLs go.
 

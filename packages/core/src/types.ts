@@ -1994,6 +1994,11 @@ export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
  * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
  * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
  * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
+ *
+ * When the failure was a transport throw, `message` is the transport's own text with every URL
+ * credential scrubbed from it (userinfo dropped, secret query values read `REDACTED`): a transport
+ * quotes the request URL, and with `apiKey({ in: 'query' })` that URL holds the key. The original
+ * error rides on `cause`, unmodified and so with its raw message.
  */
 export class StitchError extends Error {
     /** HTTP status when the failure came from a response; `undefined` for transport/internal errors. */
