@@ -107,6 +107,20 @@
                 "default": "./lib/auth.js"
             }
         },
+        "./otlp": {
+            "browser": {
+                "types": "./lib/otlp.d.mts",
+                "default": "./lib/otlp.mjs"
+            },
+            "import": {
+                "types": "./lib/otlp.d.mts",
+                "default": "./lib/otlp.mjs"
+            },
+            "require": {
+                "types": "./lib/otlp.d.ts",
+                "default": "./lib/otlp.js"
+            }
+        },
         "./graphql": {
             "browser": {
                 "types": "./lib/graphql.d.mts",

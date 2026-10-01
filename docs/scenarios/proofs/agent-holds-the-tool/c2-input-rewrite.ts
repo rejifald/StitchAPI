@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     );
 
     heading(
-        'C2 (c) — headers on a COOKIE-session stitch: the two cookie writers disagree',
+        'C2 (c) — headers on a COOKIE-session stitch: both cookie writers REPLACE (#866)',
     );
     const varWire = new Wire(route);
     const varClient = await inProcess(variants(varWire));
@@ -161,22 +161,39 @@ async function main(): Promise<void> {
         name: 'profileOpenHeaders',
         input: { headers: { cookie: 'tracking=xyz; SESSION=attacker' } },
     });
-    // `cookieSession.apply` CONCATENATES (auth.ts:918-921) rather than replacing, so the model's
-    // pair is sent FIRST and the real session second. RFC 6265 §5.4 gives no ordering rule for a
-    // duplicate name; Express, Rails, Go's net/http and PHP all read the FIRST occurrence.
+    // `cookieSession.apply` used to CONCATENATE, so the model's pair went first and the real session
+    // second — and a vendor that reads the FIRST occurrence (Express, Rails, Go's net/http, PHP) ran
+    // the call as the model's session. It now folds each pair in through `setCookiePair`, which
+    // REPLACES a same-named pair, in any case: the cookie NAME is matched case-insensitively, and
+    // the engine folds the header NAME to lower case before auth runs, so `Cookie` and `COOKIE`
+    // collide with the strategy's `cookie` instead of travelling beside it.
     checkWire(
-        '.cookie (model pair, then the real session)',
+        '.cookie (the real session replaced the pair)',
         varWire.last.headers['cookie'],
-        `tracking=xyz; SESSION=attacker; SESSION=${SECRETS.session}`,
+        `tracking=xyz; SESSION=${SECRETS.session}`,
     );
     check(
-        'a vendor that reads the FIRST pair sees the MODEL’s session',
+        'a vendor that reads the FIRST pair sees the REAL session',
         profile.isError,
-        true,
+        false,
     );
+    for (const spelling of ['Cookie', 'COOKIE']) {
+        varWire.reset();
+        await varClient.callTool('run_stitch', {
+            name: 'profileOpenHeaders',
+            input: {
+                headers: { [spelling]: 'tracking=xyz; session=attacker' },
+            },
+        });
+        checkWire(
+            `.cookie, the model’s header spelled "${spelling}", its cookie name in another case`,
+            varWire.last.headers['cookie'],
+            `tracking=xyz; SESSION=${SECRETS.session}`,
+        );
+    }
     note(
-        'cookieSession.apply is a plain join (auth.ts:918-921)',
-        '`req.headers.cookie = [req.headers.cookie, cookie].filter(Boolean).join("; ")` — no same-name replacement',
+        'cookieSession.apply folds each pair through setCookiePair (auth.ts)',
+        'a same-named pair — in any case, in a header of any case — is replaced, never joined',
     );
     // The contrast: `apiKey({ in: 'cookie' })` writes the same header through `setCookiePair`,
     // which DOES replace a same-named pair (auth.ts:228-245). Same header, two behaviours.
@@ -207,8 +224,8 @@ async function main(): Promise<void> {
         `tracking=xyz; SESSION=${SECRETS.apiKeyHeader}`,
     );
     note(
-        'the same header, two behaviours',
-        'apiKey uses setCookiePair (replace); cookieSession uses a join (prepend) — only the second is forgeable',
+        'the same header, one behaviour',
+        'apiKey and cookieSession both go through setCookiePair (replace); before #866 only apiKey did',
     );
 
     heading('C2 (d) — query: can the model overwrite an operator’s pin?');
@@ -371,7 +388,7 @@ async function main(): Promise<void> {
 
     finish(
         'C2',
-        "THE CAPTURE'S HEADER HYPOTHESIS IS REFUTED; FIVE OTHER LEVERS ARE REAL. The `engine.ts:231` header merge is real, but `sanitizeAgentInput` (mcp.ts:125-130) deletes `input.headers` before it: six model-supplied headers including `authorization`, `cookie` and `host` reached the vendor as ZERO headers, and the only header on the wire was the real `Bearer sk_live_…`. The credential header specifically is unforgeable even when a stitch DOES opt in, because `auth` is applied to a clone AFTER the merge (engine.ts:647) — `authorization` was rewritten to the real token on every attempt. What the model CAN do, ON AN ORDINARY STITCH WITH NO OPT-IN: (1) OVERWRITE A QUERY PARAMETER PINNED IN THE CONFIGURED PATH — `tenant=acme` became `tenant=globex` and the vendor returned the other tenant's data, because `{ ...predefined, ...input.query }` makes a pin a default; (2) send the entire request BODY of a write, uncapped, when no `input.body` schema is declared (a 999,999 refund); (3) shadow an `apiKey({ in: 'query' })` credential with a duplicate parameter, and abort a call before it is sent with a forged `input.signal` — both self-inflicted denials, no disclosure. And where the OPERATOR opted in: (4) with an `input.headers` schema, every non-credential header — and on a `cookieSession` stitch the model's `SESSION=attacker` is sent BEFORE the real one, measured `SESSION=attacker; SESSION=sess_live_…`, because `cookieSession.apply` joins where `apiKey({ in: 'cookie' })` replaces (auth.ts:918-921 vs 228-245); a vendor that reads the first pair runs the call as the model's session; (5) with RFC 6570 reserved expansion, cross-endpoint traversal WITH the credential attached — `{+id}` sent the bearer token to `/v1/api-keys`, while the ordinary `{id}` percent-encoded it to `..%2F..%2F`, and templating the whole endpoint (`url: '{+endpoint}'`) reached `metadata.internal`. Nothing URL-shaped in `input` is read otherwise: `url`, `baseUrl`, `path`, `adapter` and `auth` keys were inert",
+        "THE CAPTURE'S HEADER HYPOTHESIS IS REFUTED; FIVE OTHER LEVERS ARE REAL. The `engine.ts:231` header merge is real, but `sanitizeAgentInput` (mcp.ts:125-130) deletes `input.headers` before it: six model-supplied headers including `authorization`, `cookie` and `host` reached the vendor as ZERO headers, and the only header on the wire was the real `Bearer sk_live_…`. The credential header specifically is unforgeable even when a stitch DOES opt in, because `auth` is applied to a clone AFTER the merge (engine.ts:647) — `authorization` was rewritten to the real token on every attempt. What the model CAN do, ON AN ORDINARY STITCH WITH NO OPT-IN: (1) OVERWRITE A QUERY PARAMETER PINNED IN THE CONFIGURED PATH — `tenant=acme` became `tenant=globex` and the vendor returned the other tenant's data, because `{ ...predefined, ...input.query }` makes a pin a default; (2) send the entire request BODY of a write, uncapped, when no `input.body` schema is declared (a 999,999 refund); (3) shadow an `apiKey({ in: 'query' })` credential with a duplicate parameter, and abort a call before it is sent with a forged `input.signal` — both self-inflicted denials, no disclosure. And where the OPERATOR opted in: (4) with an `input.headers` schema, every non-credential header — and on a `cookieSession` stitch the model's `SESSION=attacker` is REPLACED by the real session whatever case the header and the cookie name are spelled in (it was joined, `SESSION=attacker; SESSION=sess_live_…`, until #866: both cookie writers go through `setCookiePair` now, and the engine folds header names to lower case before auth runs); (5) with RFC 6570 reserved expansion, cross-endpoint traversal WITH the credential attached — `{+id}` sent the bearer token to `/v1/api-keys`, while the ordinary `{id}` percent-encoded it to `..%2F..%2F`, and templating the whole endpoint (`url: '{+endpoint}'`) reached `metadata.internal`. Nothing URL-shaped in `input` is read otherwise: `url`, `baseUrl`, `path`, `adapter` and `auth` keys were inert",
     );
 }
 

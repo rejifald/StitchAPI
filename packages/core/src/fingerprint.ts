@@ -16,6 +16,7 @@
 // dependency, each proving compliance via `conformance.fingerprint`
 // (`stitchapi/testing`). No validator ever enters core's dependency graph.
 import { xxh128 } from './hash';
+import { processWide } from './process-wide';
 import { type StandardSchemaV1, isStandardSchema } from './standard-schema';
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,12 @@ export interface SchemaFingerprinter {
 // literal to drop a dead property, so routing an internal read through `fingerprinters`
 // would weld all four onto the path of everyone who imports the caller.
 
-const registry = new Map<string, SchemaFingerprinter>();
+// Process-wide, not module-local: the CJS build bundles one copy of this module per entry, so
+// `require('stitchapi/fingerprint')` (where `@stitchapi/fingerprint-*` registers) and the cache
+// engine inside `require('stitchapi')` would otherwise hold two registries, and every schema would
+// land on rung 5 (`refuse`) in the engine's copy. See `processWide`.
+const registry = (): Map<string, SchemaFingerprinter> =>
+    processWide('stitchapi.fingerprinters/1', Map<string, SchemaFingerprinter>);
 
 /**
  * Register half of {@link fingerprinters}; the namespace carries the contract. Internal —
@@ -104,7 +110,7 @@ const registry = new Map<string, SchemaFingerprinter>();
  * Register a per-vendor fingerprint strategy (last registration wins).
  */
 function registerFingerprinter(fp: SchemaFingerprinter): void {
-    registry.set(fp.vendor, fp);
+    registry().set(fp.vendor, fp);
 }
 
 /**
@@ -114,7 +120,7 @@ function registerFingerprinter(fp: SchemaFingerprinter): void {
  * The strategy registered for a `~standard.vendor`, if any.
  */
 function getFingerprinter(vendor: string): SchemaFingerprinter | undefined {
-    return registry.get(vendor);
+    return registry().get(vendor);
 }
 
 /**
@@ -124,7 +130,7 @@ function getFingerprinter(vendor: string): SchemaFingerprinter | undefined {
  * Every registered strategy (registration order not guaranteed).
  */
 function listFingerprinters(): readonly SchemaFingerprinter[] {
-    return [...registry.values()];
+    return [...registry().values()];
 }
 
 /**
@@ -134,7 +140,7 @@ function listFingerprinters(): readonly SchemaFingerprinter[] {
  * Drop all registrations — for tests.
  */
 function clearFingerprinters(): void {
-    registry.clear();
+    registry().clear();
 }
 
 /**

@@ -25,7 +25,7 @@ import {
     nameOf,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
-import { otlpSink } from './otlp';
+import { processWide } from './process-wide';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface, httpSurface } from './surface';
@@ -66,6 +66,7 @@ import {
     type StitchResult,
     type StitchStore,
     type StreamOptions,
+    type TraceContext,
     type TraceSink,
     type WireBodyFixedByGraphql,
     type WireOptions,
@@ -503,6 +504,71 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
     return Number.isInteger(n) && n >= 0 ? n : undefined;
 }
 
+// `STITCH_EXPORT=otlp` — the sink lives on the `stitchapi/otlp` subpath, so the toggle loads it with
+// a lazy `import('./otlp')` (the way the engine reaches `cache`): a process that never sets it
+// pays for none of it. Sink construction is synchronous and the import is not, so events that
+// arrive first are held, then forwarded IN ORDER once the module resolves, and straight through
+// after. One load per process: the memoised promise warns once if it fails (a missing chunk must
+// not take the run down) and resolves to nothing, and a sink whose load failed drops its events.
+//
+// Nothing here may fail a call, and nothing here may fail silently: every way the export can be lost
+// (the chunk does not load, `otlp.sink()` throws, the replay throws, the hold overflows) warns once
+// per process, so a missing span tree has a reason on stderr.
+let otlpModule:
+    Promise<{ otlp: { sink(): TraceSink } } | undefined> | undefined;
+// Process-wide, not per CJS entry: this module is bundled into several of them, and each would
+// otherwise warn once for the same missing chunk. See `processWide`.
+const otlpWarned = (): Set<string> =>
+    processWide('stitchapi.otlp.loadWarned/1', Set<string>);
+const warnOtlp = (what: string): void => {
+    if (otlpWarned().size) return;
+    otlpWarned().add(what);
+    console.warn(`stitchapi: STITCH_EXPORT=otlp ${what}.`);
+};
+
+// How many events a sink holds while the module loads (a few runs' worth). Past it the OLDEST are
+// dropped: a load that never resolves must not grow memory with every call.
+const OTLP_HELD_MAX = 1000;
+
+function lazyOtlpSink(): TraceSink {
+    let sink: TraceSink | undefined;
+    let held: [StitchEvent, TraceContext][] | undefined = [];
+    otlpModule ??= import('./otlp').catch((error: unknown) => {
+        warnOtlp(
+            `could not load \`stitchapi/otlp\`, so spans are not exported (${String(error)})`,
+        );
+        return undefined;
+    });
+    const ready = otlpModule
+        .then((m) => {
+            sink = m?.otlp.sink();
+            for (const [event, ctx] of held ?? []) sink?.handle(event, ctx);
+        })
+        .catch((error: unknown) => {
+            warnOtlp(
+                `could not start its exporter, so spans may be lost (${String(error)})`,
+            );
+        })
+        .finally(() => {
+            held = undefined;
+        });
+    return {
+        handle(event, ctx): void {
+            if (sink) sink.handle(event, ctx);
+            else if (held) {
+                held.push([event, ctx]);
+                if (held.length > OTLP_HELD_MAX) {
+                    held.shift();
+                    warnOtlp(
+                        `is still loading and holds ${OTLP_HELD_MAX} events at most; the oldest are dropped`,
+                    );
+                }
+            }
+        },
+        flush: () => ready.then(() => sink?.flush?.()),
+    };
+}
+
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
     const maxBody = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
@@ -517,7 +583,7 @@ function getTrace(): TraceSink {
         }),
     );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
-    return multiplex(base, otlpSink());
+    return multiplex(base, lazyOtlpSink());
 }
 
 // A sink that drops every event — `trace: false` forces tracing off even when the
@@ -571,7 +637,8 @@ async function drain<T>(
 // class identity + `retryAfter`/`response`) and a contract-violation StitchError pinned by
 // `.inspect()`'s retain path; a foreign error carrying `.response` is flattened into a StitchError
 // carrying the response `body`/`url`. Absent a source, build a StitchError from the event's
-// `status`/`attempts`. Shared by `drain` and `consumeInspect`.
+// `status`/`attempts`. Shared by `drain` and `consumeInspect`. `ev.message` is already URL-scrubbed
+// (`errEvt`), so every StitchError minted here is; the foreign `source` it carries as `cause` is not.
 function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
     const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
     const res =
@@ -826,10 +893,13 @@ async function consume<T>(
 function asStitchError(e: unknown): StitchError {
     if (e instanceof StitchError) return e;
     const status = (e as { status?: unknown }).status;
-    return new StitchError(e instanceof Error ? e.message : String(e), {
-        ...(typeof status === 'number' ? { status } : {}),
-        cause: e,
-    });
+    return new StitchError(
+        scrubUrl(e instanceof Error ? e.message : String(e)),
+        {
+            ...(typeof status === 'number' ? { status } : {}),
+            cause: e,
+        },
+    );
 }
 
 // Safe consumer: `stitch.safe(...)` / `stitch(...).safe()`. Never throws — an `error` event or an

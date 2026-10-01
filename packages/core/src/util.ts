@@ -1,4 +1,5 @@
 // Small dependency-free helpers shared across the prototype.
+import { processWide } from './process-wide';
 import type { ArrayFormat, Clock, RunContext } from './types';
 
 export const now = (): number => Date.now();
@@ -920,7 +921,12 @@ const URL_REDACTED = 'REDACTED';
 // structured `input.query` via `redactKeys`) without listing every vendor spelling. The
 // default `api_key` already matches a stem; this covers an arbitrary configured name too.
 // Lower-cased on insert so the membership test in `isSecretKey` stays case-insensitive.
-const REGISTERED_SECRET_KEYS = new Set<string>();
+//
+// Process-wide, not module-local: the CJS build bundles one copy of this module per entry, and
+// `require('stitchapi/auth')` registers a key that `require('stitchapi')`'s engine and
+// `require('stitchapi/otlp')`'s sink must both honour (#898). See `processWide`.
+const registeredSecretKeys = (): Set<string> =>
+    processWide('stitchapi.secretKeys/1', Set<string>);
 
 /**
  * Widen half of {@link secrets}; the namespace carries the contract. Internal — the
@@ -932,7 +938,7 @@ const REGISTERED_SECRET_KEYS = new Set<string>();
  * Idempotent — registering the same name twice is a no-op.
  */
 export function registerSecretKey(name: string): void {
-    REGISTERED_SECRET_KEYS.add(name.toLowerCase());
+    registeredSecretKeys().add(name.toLowerCase());
 }
 
 /**
@@ -947,7 +953,7 @@ export function registerSecretKey(name: string): void {
  */
 export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
-    return SECRET_QUERY_KEYS.test(k) || REGISTERED_SECRET_KEYS.has(k);
+    return SECRET_QUERY_KEYS.test(k) || registeredSecretKeys().has(k);
 }
 
 /**
@@ -1063,10 +1069,10 @@ function decodeKey(key: string): string {
 /**
  * Strip credentials from a URL — or from free text that quotes URLs — before it reaches an output
  * documented as safe to show: a trace sink, the public `__config`, an error's JSON, an error
- * message. Removes userinfo (`https://user:pass@host` → `https://host`) and replaces the VALUE of
- * every secret-bearing query pair (`api_key`, `access_token`, `signature`, …, by the shared
- * {@link isSecretKey} denylist) with `REDACTED`, while keeping benign pairs (`page`, `sort`)
- * intact for observability.
+ * message, an MCP tool result. Removes userinfo (`https://user:pass@host` → `https://host`) and
+ * replaces the VALUE of every secret-bearing query pair (`api_key`, `access_token`, `signature`, …,
+ * by the shared {@link isSecretKey} denylist, which includes every name registered process-wide)
+ * with `REDACTED`, while keeping benign pairs (`page`, `sort`) intact for observability.
  *
  * Textual, not parsed: the string is rewritten in place, so ONE function covers every shape a
  * config or an error message holds — absolute, protocol-relative (`//u:p@h/x`), relative
@@ -1074,34 +1080,41 @@ function decodeKey(key: string): string {
  * rejects (`Failed to parse URL from http://h:99999/?api_key=K`), or a whole sentence of prose or
  * JSON around any of those — and text with nothing to scrub comes back byte-for-byte. A `{template}`
  * slot is a parameter name, never a literal credential, so a pair or a userinfo with a brace in it
- * is left alone: `paramNamesOf` and the OpenAPI path still read the slots.
+ * is left alone: `paramNamesOf` and the OpenAPI path still read the slots. Nothing here keys on a
+ * `scheme://`, so the scheme is never inspected either.
  *
  * What it reaches, beyond a well-formed `https://u:p@h/x?k=v`:
- * - a schemeless URL (`//u:p@h/x`, `/v1?api_key=K`): nothing here keys on a `scheme://`;
+ * - a schemeless or relative URL (`//u:p@h/x`, `/v1?api_key=K`);
  * - a URL nested in a benign value (`next=https://o/?token=…`): a second pass stops at `?`, so the
  *   nested pairs are scanned as pairs (the first lets a secret value run through a raw `?`);
  * - a raw `/`, `?` or `#` in a userinfo password (base64), unless what follows the colon is a port
  *   (`host:8080/@pkg`) — so a password of only digits is not told from one and is left;
  * - `;` separators, a JSON-escaped `https:\/\/…` and the escaped ampersand Go's JSON encoder writes
  *   (backslash, `u0026`) between pairs;
- * - the punctuation around a value: it ends at whitespace, a quote, a bracket, `,`, `;` or `}`
- *   (`{u: https://h/x?token=S}` keeps its brace), and a sentence's closing `.` stays outside it —
- *   a `.` inside, as in a JWT, is part of the secret.
+ * - a pair after `?`, `&`, `;` or `#` (a fragment carries an OAuth `#access_token=`).
+ *
+ * Where a value ends. It runs to whitespace, a quote, `<` `>`, a backslash, `&`, `#` or `}` (a `}`
+ * is the end of the text around the URL — `{u: https://h/x?token=S}` keeps its brace; a `{` opens a
+ * template slot and leaves the pair alone), and a `;` that begins another pair (`;k=`). Only a
+ * TRAILING run of `) ] , . ;` is cut off: punctuation that ends a sentence or closes a bracket
+ * around the URL is not part of it, so `(…?key=K), retry` keeps its `), retry`; but a credential
+ * can hold those characters inside (a JWT is dotted), and leaving the tail of a secret in the clear
+ * is worse than eating the comma after it.
+ *
  * Not reached, each a known limit: a nested URL that is itself percent-encoded
  * (`next=https%3A%2F%2Fo%2F%3Ftoken%3D…`, which is how the engine re-serialises a query), and a
- * secret that contains a raw `,` or `;`.
+ * secret that contains a raw `;k=`.
  * Idempotent: a scrubbed string scrubs to itself.
  *
  * Linear on untrusted text (a transport's message, a vendor's error body): every pattern starts at a
  * fixed marker (`//` after a non-word character, or `?` `&` `#` `;`) and its character classes
- * exclude the markers, so a scan runs to the next one and no further. None matches a scheme — the
- * quadratic shape a `/[a-z][a-z\d+.-]*:\/\/…/g` sweep has on a long run of letters.
+ * exclude the markers, so a scan runs to the next one and no further; the trailing run is found by
+ * backing off from the end of ONE value, not by retrying from every position. None matches a
+ * scheme — the quadratic shape a `/[a-z][a-z\d+.-]*:\/\/…/g` sweep has on a long run of letters.
  */
 export function scrubUrl(text: string): string {
     // One pair: a secret key keeps its name and loses its value. `{page,token}` has no `=` and
-    // never matches; a `{` in the value opens a template slot, not a literal credential (a `}`
-    // alone is just the end of the text around the URL — a value stops at it). A sentence's
-    // closing `.` stays outside the secret; one inside (a JWT) is part of it.
+    // never matches; a `{` in the value opens a template slot, not a literal credential.
     const scrubPair = (
         pair: string,
         sep: string,
@@ -1110,7 +1123,7 @@ export function scrubUrl(text: string): string {
     ): string =>
         value.includes('{') || !isSecretKey(decodeKey(key))
             ? pair
-            : `${sep}${key}=${URL_REDACTED}${value.endsWith('.') ? '.' : ''}`;
+            : `${sep}${key}=${URL_REDACTED}`;
     return (
         text
             // Userinfo, after a `//` that opens an authority (`://`, a leading `//`, JSON's
@@ -1122,18 +1135,18 @@ export function scrubUrl(text: string): string {
                 /((?:^|[^\w/])(?:\\?\/){2})(?:[^\s/?#\\{"'<>`]*|[^\s/?#\\{"'<>`@:]*:(?!\d+(?!\w))[^\s\\{"'<>`@:]*)@/g,
                 '$1',
             )
-            // A `k=v` pair after `?`, `&`, `;`, `#` (a fragment carries an OAuth `#access_token=`)
-            // or the six characters `\` `u` `0` `0` `2` `6` (how Go's JSON encoder writes `&`). A
-            // value ends at whitespace, a quote, a bracket, `,`, `;` or `}`. This pass lets a value
-            // run through `?`, so a secret holding a raw `?` goes whole…
+            // A `k=v` pair after `?`, `&`, `;`, `#` or the six characters `\` `u` `0` `0` `2` `6`
+            // (how Go's JSON encoder writes `&`). The value is any run of value characters (a `;`
+            // only if no pair follows it) ending in a character that is not closing punctuation.
+            // This pass lets a value run through `?`, so a secret holding a raw `?` goes whole…
             .replace(
-                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;"'<>`\\),\]}]*)/g,
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=((?:(?:[^\s&#;"'<>`\\}]|;(?![^\s=&#?;{}\\]+=))*[^\s&#;"'<>`\\}).,\]])?)/g,
                 scrubPair,
             )
             // …and this one stops at it, so a URL nested in a benign value (`next=https://o/?token=…`)
             // is scanned as the pairs it holds.
             .replace(
-                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;?"'<>`\\),\]}]*)/g,
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=((?:(?:[^\s&#;?"'<>`\\}]|;(?![^\s=&#?;{}\\]+=))*[^\s&#;?"'<>`\\}).,\]])?)/g,
                 scrubPair,
             )
     );

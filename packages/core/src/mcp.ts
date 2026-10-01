@@ -16,7 +16,7 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { envelope } from './util';
+import { envelope, scrubUrl, topLevelQueryIndex } from './util';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -67,6 +67,18 @@ const RUN_STITCH_TOOL = {
         },
         required: ['name'],
     },
+    // MCP tool annotations (spec 2025-06-18), the fields a host reads to decide whether to ask a
+    // human before a call. Code-mode puts EVERY registered stitch behind this one name — a read and
+    // a refund arrive as the same call — so it claims nothing it cannot promise for all of them:
+    // not read-only, and `destructiveHint` stays at the spec's own default (`true`), set explicitly
+    // so a host never has to know the default to land on the safe side. `openWorldHint: true`
+    // because a stitch reaches an external system (a vendor API, a shell, an LLM).
+    // `idempotentHint` is left to its default (`false`) for the same reason as `destructiveHint`.
+    annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+    },
 } as const;
 
 const LIST_STITCHES_TOOL = {
@@ -79,6 +91,9 @@ const LIST_STITCHES_TOOL = {
         properties: {},
         additionalProperties: false,
     },
+    // Reads the in-process registry and makes no request: read-only, and a closed world.
+    // (`destructiveHint`/`idempotentHint` only mean something when `readOnlyHint` is false.)
+    annotations: { readOnlyHint: true, openWorldHint: false },
 } as const;
 
 const DESCRIBE_STITCH_TOOL = {
@@ -95,6 +110,8 @@ const DESCRIBE_STITCH_TOOL = {
         },
         required: ['name'],
     },
+    // Built from the redacted `__config` alone, with no request made: read-only, closed world.
+    annotations: { readOnlyHint: true, openWorldHint: false },
 } as const;
 
 function textResult(value: unknown): ToolResult {
@@ -102,8 +119,22 @@ function textResult(value: unknown): ToolResult {
         typeof value === 'string' ? value : JSON.stringify(value, null, 2);
     return { content: [{ type: 'text', text }] };
 }
+// EVERY error text that crosses the MCP boundary goes through here, and is URL-scrubbed on the way:
+// a message the transport wrote quotes the request URL verbatim (`Failed to parse URL from
+// https://…?api_key=…`, `request to https://… failed, reason: getaddrinfo ENOTFOUND`), and with
+// `apiKey({ in: 'query' })` that URL carries the credential. The model's context is the worst place
+// for it — it flows into the model's output, its logs and every downstream tool. StitchAPI's own
+// messages are request-free already; this closes the channel for the ones it did not write.
 function errorResult(message: string): ToolResult {
-    return { content: [{ type: 'text', text: message }], isError: true };
+    return {
+        content: [{ type: 'text', text: scrubUrl(message) }],
+        isError: true,
+    };
+}
+// A caught value as a tool error. `throw 'x'` and `throw undefined` are legal JavaScript, so the
+// message is read defensively rather than assumed to be an `Error`.
+function failure(e: unknown): ToolResult {
+    return errorResult(e instanceof Error ? e.message : String(e));
 }
 
 // The scheme TAG of a stitch's auth — never the credential. `authScheme` is the non-secret
@@ -171,29 +202,30 @@ export function createMcpServer(
                 'run_stitch requires a string "name". ' +
                     'Call list_stitches to see the available names.',
             );
-        let stitch: Stitch;
         try {
-            stitch = selectStitch(registry, a.name);
-        } catch (e) {
-            return errorResult((e as Error).message);
-        }
-        try {
+            const stitch = selectStitch(registry, a.name);
             const value = await stitch(sanitizeAgentInput(stitch, a.input));
             return textResult(value);
         } catch (e) {
-            return errorResult((e as Error).message);
+            return failure(e);
         }
     }
 
+    // `path` is the route TEMPLATE. A literal query written into it (`/v1/{id}?sig=tok`) is the
+    // operator's pinned default, which can be a credential — `describe_stitch` scrubs the same text —
+    // and the agent has no use for it to pick a stitch, so it is cut. The cut is brace-aware, as the
+    // engine's is: a `{?limit}` operator is part of the template, not a query.
     function callListStitches(): ToolResult {
         const list = Object.keys(registry)
             .sort()
             .map((name) => {
                 const cfg = registry[name]?.__config;
+                const path = cfg?.path ?? '';
+                const q = topLevelQueryIndex(path);
                 return {
                     name,
                     method: (cfg?.method ?? 'GET').toUpperCase(),
-                    path: cfg?.path ?? '',
+                    path: q < 0 ? path : path.slice(0, q),
                 };
             });
         return textResult(list);
@@ -201,7 +233,9 @@ export function createMcpServer(
 
     // Teach the agent a stitch's SHAPE — endpoint, surface, per-slot input, output, auth scheme,
     // policies, pipeline, diagram — purely from the redacted `__config` (never the live auth/store)
-    // plus `toMermaid`. No request is made; the credential stays unreachable.
+    // plus `toMermaid`. No request is made; the credential stays unreachable. The three fields that
+    // quote the endpoint are URL-scrubbed like an error text: a `baseUrl` with userinfo or a secret
+    // query pair written into the configured URL is not the auth strategy's, so redaction keeps it.
     function callDescribeStitch(args: unknown): ToolResult {
         const a = (args ?? {}) as { name?: unknown };
         if (typeof a.name !== 'string')
@@ -209,17 +243,12 @@ export function createMcpServer(
                 'describe_stitch requires a string "name". ' +
                     'Call list_stitches to see the available names.',
             );
-        let stitch: Stitch;
-        try {
-            stitch = selectStitch(registry, a.name);
-        } catch (e) {
-            return errorResult((e as Error).message);
-        }
+        const stitch = selectStitch(registry, a.name);
         const cfg = stitch.__config;
         const inputSlots = cfg.input ?? {};
         return textResult({
             name: a.name,
-            endpoint: endpointLabel(cfg),
+            endpoint: scrubUrl(endpointLabel(cfg)),
             surface: cfg.kind ?? 'http', // __config.kind is the surface id string
             input: {
                 params: inputSlots.params !== undefined,
@@ -233,57 +262,92 @@ export function createMcpServer(
             },
             auth: authTagOf(cfg),
             policies: policySummary(cfg),
-            pipeline: pipelineStages(cfg),
-            diagram: toMermaid(registry, { name: a.name }).diagram,
+            pipeline: pipelineStages(cfg).map(scrubUrl),
+            // A one-entry registry under the resolved key: `toMermaid`'s name filter must not
+            // draw a different stitch that merely shares the name.
+            diagram: scrubUrl(toMermaid({ [a.name]: stitch }).diagram),
         });
     }
 
+    // A throw from any tool — an unknown stitch, a `__config` a describe cannot read, a result
+    // `JSON.stringify` rejects — is a tool ERROR RESULT, never a rejection out of `handle()`.
     async function callTool(params: unknown): Promise<ToolResult> {
-        const p = (params ?? {}) as { name?: unknown; arguments?: unknown };
-        if (p.name === 'run_stitch') return callRunStitch(p.arguments);
-        if (p.name === 'list_stitches') return callListStitches();
-        if (p.name === 'describe_stitch')
-            return callDescribeStitch(p.arguments);
-        return errorResult(`unknown tool: ${String(p.name)}`);
+        try {
+            const p = (params ?? {}) as { name?: unknown; arguments?: unknown };
+            if (p.name === 'run_stitch')
+                return await callRunStitch(p.arguments);
+            if (p.name === 'list_stitches') return callListStitches();
+            if (p.name === 'describe_stitch')
+                return callDescribeStitch(p.arguments);
+            return errorResult(`unknown tool: ${String(p.name)}`);
+        } catch (e) {
+            return failure(e);
+        }
+    }
+
+    // `handle()` never rejects. Over stdio the messages are processed on one promise chain, so a
+    // rejection here would stall every later message (a `ping` included) and, unobserved, crash
+    // the process under Node's default `--unhandled-rejections=throw`.
+    async function respond(message: unknown): Promise<JsonRpcMessage | null> {
+        // Typed `unknown`, not `JsonRpcMessage`: over stdio it is whatever `JSON.parse` returned,
+        // and anything but an object — a line holding `null`, `42`, `[]` — is not a request.
+        if (!message || typeof message !== 'object' || Array.isArray(message))
+            return {
+                jsonrpc: '2.0',
+                id: null,
+                error: { code: -32600, message: 'invalid request' },
+            };
+        const { id, method, params } = message as JsonRpcMessage;
+        const reply = (result: unknown): JsonRpcMessage => ({
+            jsonrpc: '2.0',
+            id: id ?? null,
+            result,
+        });
+        const fail = (code: number, msg: string): JsonRpcMessage => ({
+            jsonrpc: '2.0',
+            id: id ?? null,
+            error: { code, message: msg },
+        });
+
+        switch (method) {
+            case 'initialize':
+                return reply({
+                    protocolVersion: pickProtocol(params),
+                    capabilities: { tools: { listChanged: false } },
+                    serverInfo,
+                });
+            case 'ping':
+                return reply({});
+            case 'tools/list':
+                return reply({
+                    tools: [
+                        RUN_STITCH_TOOL,
+                        LIST_STITCHES_TOOL,
+                        DESCRIBE_STITCH_TOOL,
+                    ],
+                });
+            case 'tools/call':
+                return reply(await callTool(params));
+            default:
+                // notifications (notifications/*) carry no id and expect no response
+                if (id === undefined || id === null) return null;
+                return fail(-32601, `method not found: ${method}`);
+        }
     }
 
     return {
         async handle(message) {
-            const { id, method, params } = message;
-            const reply = (result: unknown): JsonRpcMessage => ({
-                jsonrpc: '2.0',
-                id: id ?? null,
-                result,
-            });
-            const fail = (code: number, msg: string): JsonRpcMessage => ({
-                jsonrpc: '2.0',
-                id: id ?? null,
-                error: { code, message: msg },
-            });
-
-            switch (method) {
-                case 'initialize':
-                    return reply({
-                        protocolVersion: pickProtocol(params),
-                        capabilities: { tools: { listChanged: false } },
-                        serverInfo,
-                    });
-                case 'ping':
-                    return reply({});
-                case 'tools/list':
-                    return reply({
-                        tools: [
-                            RUN_STITCH_TOOL,
-                            LIST_STITCHES_TOOL,
-                            DESCRIBE_STITCH_TOOL,
-                        ],
-                    });
-                case 'tools/call':
-                    return reply(await callTool(params));
-                default:
-                    // notifications (notifications/*) carry no id and expect no response
-                    if (id === undefined || id === null) return null;
-                    return fail(-32601, `method not found: ${method}`);
+            try {
+                return await respond(message);
+            } catch {
+                // Defense in depth for a caller handing `handle()` an object whose reads throw
+                // (a JSON-parsed stdio line cannot). The id is unreadable by then, so it is null,
+                // and no detail crosses: an internal error's text is not the agent's business.
+                return {
+                    jsonrpc: '2.0',
+                    id: null,
+                    error: { code: -32603, message: 'internal error' },
+                };
             }
         },
     };
@@ -362,7 +426,10 @@ export function serveStdio(
         while ((nl = buffer.indexOf('\n')) >= 0) {
             const line = buffer.slice(0, nl).trim();
             buffer = buffer.slice(nl + 1);
-            if (line) chain = chain.then(() => dispatch(line));
+            // `handle()` never rejects, but a write to a closed `stdout` can throw: catch at the
+            // link so one failed message never stalls the rest, or surfaces as an unhandled rejection.
+            if (line)
+                chain = chain.then(() => dispatch(line)).catch(() => undefined);
         }
     };
 

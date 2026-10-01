@@ -10,9 +10,12 @@
 // into output MUST be registered as a case below. A future config-exporter — `stitch gen` /
 // client publishing (ADR 0013/0014) — that forgets to scrub will fail THIS test instead of baking
 // a password into a shared document. Add the surface here in the same PR that adds the surface.
-import { otlp, stitch } from '../src';
-import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
+import { stitch } from '../src';
+import type { StitchEvent, TraceSink } from '../src';
+import { createMcpServer } from '../src/mcp';
 import { toOpenApi } from '../src/openapi';
+import { otlp } from '../src/otlp';
+import type { OtelSpan, SpanExporter } from '../src/otlp';
 import type { StitchRegistry } from '../src/registry';
 import { redactEventForTransport } from '../src/trace';
 
@@ -66,6 +69,11 @@ function otlpSpans(): OtelSpan[] {
     const sink = otlp.sink({ exporter });
     const name = 'getUser';
     sink.handle(startEvent(), { name });
+    // The request opens the attempt span — the one that carries `url.full` (ADR 0017 D6).
+    sink.handle(
+        { type: 'progress', phase: 'request', attempt: 1, at: 1 },
+        { name },
+    );
     sink.handle(
         { type: 'result', data: {}, status: 200, attempts: 1, at: 2 },
         { name },
@@ -82,8 +90,80 @@ function otlpSpans(): OtelSpan[] {
 // scrub removed the credential, not the whole URL).
 interface Surface {
     name: string;
-    serialize: () => string;
+    serialize: () => string | Promise<string>;
     emitsHost: boolean;
+}
+
+// One MCP tool call against a registry holding a stitch on the poisoned endpoint, serialized as the
+// whole JSON-RPC response — everything the model would receive. The adapter fails the way a
+// `node-fetch`-shaped transport does on a DNS error: by quoting the request URL in its message.
+async function mcpToolCall(
+    tool: 'run_stitch' | 'describe_stitch',
+): Promise<string> {
+    const getUser = stitch({
+        url: POISONED_URL,
+        adapter: (request) =>
+            Promise.reject(
+                new Error(
+                    `request to ${request.url} failed, reason: getaddrinfo ENOTFOUND ${HOST}`,
+                ),
+            ),
+    });
+    const response = await createMcpServer({ getUser }).handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: tool, arguments: { name: 'getUser' } },
+    });
+    return JSON.stringify(response);
+}
+
+// `list_stitches` returns each stitch's `path`. A literal query written into it is the operator's
+// pinned default (`?access_token=...`), which the discovery tool must not hand to the model; the
+// whole JSON-RPC response is scanned, `baseUrl` userinfo included.
+async function mcpListStitches(): Promise<string> {
+    const getUser = stitch({
+        baseUrl: POISONED_BASE_URL,
+        path: `/users/1?access_token=${SECRET_QUERY_VALUE}`,
+    });
+    const response = await createMcpServer({ getUser }).handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'list_stitches' },
+    });
+    return JSON.stringify(response);
+}
+
+// The engine's own error channel (#890): the same DNS-shaped failure, read where the engine turns
+// the transport's throw into an error. The awaited `StitchError.message`, the `.safe()` copy and
+// what a custom trace sink is handed (the `error` event, and the `retry` progress detail that
+// quotes the same message) are every consumer of that text — serve, the SSE hosts, pino, sentry
+// and OTLP read these same fields. The throw itself stays on `.cause`, raw, and is not scanned.
+async function engineErrorChannel(): Promise<string> {
+    const seen: StitchEvent[] = [];
+    const sink: TraceSink = { handle: (event) => void seen.push(event) };
+    const getUser = stitch({
+        url: POISONED_URL,
+        retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+        trace: sink,
+        adapter: (request) =>
+            Promise.reject(
+                new Error(
+                    `request to ${request.url} failed, reason: getaddrinfo ENOTFOUND ${HOST}`,
+                ),
+            ),
+    });
+    const thrown = (await getUser().catch((e: unknown) => e)) as Error;
+    const { error } = await getUser().safe();
+    const channel = seen.filter(
+        (e) => e.type === 'error' || e.type === 'progress',
+    );
+    return JSON.stringify({
+        thrown: thrown.message,
+        safe: error?.message,
+        events: channel,
+    });
 }
 
 const SURFACES: Surface[] = [
@@ -114,6 +194,34 @@ const SURFACES: Surface[] = [
         serialize: () => JSON.stringify(otlpSpans()),
         emitsHost: true,
     },
+    {
+        // #890: the root cause behind the MCP rows below — a transport error quoting the request
+        // URL, scrubbed once where the engine mints the error, for every surface that reads it.
+        name: 'engine → StitchError.message, error event, retry detail',
+        serialize: engineErrorChannel,
+        emitsHost: true,
+    },
+    {
+        // The model's context (#866): a transport error quoting the request URL, returned to the
+        // agent as a `run_stitch` tool error.
+        name: 'mcp run_stitch → tool error text',
+        serialize: () => mcpToolCall('run_stitch'),
+        emitsHost: true,
+    },
+    {
+        // The model's context, discovery side: `list_stitches` returns every stitch's `path`, and a
+        // literal query pinned into it is a credential the agent has no use for.
+        name: 'mcp list_stitches → name, method, path',
+        serialize: mcpListStitches,
+        emitsHost: false, // `path` is the template only: no scheme or host
+    },
+    {
+        // The model's context again: `describe_stitch` quotes the configured endpoint in its
+        // `endpoint`, `pipeline` and Mermaid `diagram` fields.
+        name: 'mcp describe_stitch → endpoint, pipeline, diagram',
+        serialize: () => mcpToolCall('describe_stitch'),
+        emitsHost: true,
+    },
 ];
 
 describe('no credential leaks in emitted artifacts (class guard behind per-sink scrubUrl)', () => {
@@ -126,8 +234,8 @@ describe('no credential leaks in emitted artifacts (class guard behind per-sink 
         );
     });
 
-    test.each(SURFACES)('$name emits no credential', ({ serialize }) => {
-        const artifact = serialize();
+    test.each(SURFACES)('$name emits no credential', async ({ serialize }) => {
+        const artifact = await serialize();
         for (const marker of LEAK_MARKERS) {
             expect(artifact).not.toContain(marker);
         }
@@ -138,8 +246,8 @@ describe('no credential leaks in emitted artifacts (class guard behind per-sink 
     // assertion isn't guarded by a per-surface conditional).
     test.each(SURFACES.filter((s) => s.emitsHost))(
         '$name preserves the target host',
-        ({ serialize }) => {
-            expect(serialize()).toContain(HOST);
+        async ({ serialize }) => {
+            expect(await serialize()).toContain(HOST);
         },
     );
 });

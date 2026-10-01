@@ -1,7 +1,8 @@
 // Loads a user's stitches module and resolves stitches by name. Shared by every
 // non-function surface (CLI `run`, HTTP `serve`, MCP) so they agree on what "the
-// stitch named X" means: a stitch exported from the module, keyed by its export
-// name and, as a fallback, its configured `name`.
+// stitch named X" means: the stitch under the registry's OWN key X — its export
+// name, exactly what `list_stitches` and `GET /` list. A configured `name` is a
+// trace label, not an address.
 import { type Stitch, isStitch } from './types';
 
 import { existsSync } from 'node:fs';
@@ -47,6 +48,9 @@ export function collectStitches(mod: unknown): StitchRegistry {
 
     for (const [key, value] of Object.entries(mod as Record<string, unknown>)) {
         if (isStitch(value)) {
+            // A `default` export has no export name of its own, so its configured `name` (else
+            // "default") is the only name it can be called by: the one place `name` is an address.
+            // Every other stitch is keyed by its export name, and `name` stays a trace label.
             out[key === 'default' ? (value.__config.name ?? 'default') : key] =
                 value;
         } else if (
@@ -61,17 +65,21 @@ export function collectStitches(mod: unknown): StitchRegistry {
     return out;
 }
 
-// Resolve a stitch by name: exact export-key match first, then a stitch whose
-// configured `name` matches. Throws a helpful, listing error when absent.
+// Resolve a stitch by the registry's OWN key, and nothing else. Throws a helpful, listing error
+// when absent. Two lookups this deliberately refuses, because each made a stitch callable under a
+// name no listing shows — on the MCP surface the model picks that name:
+//   - an inherited key: `registry['constructor']` / `['toString']` are `Object.prototype`'s;
+//   - a stitch's configured `name`: a registry that renamed a stitch to hide it (`{ safe: s }`)
+//     must not keep answering to the original. The callable identity is what the listing shows.
 export function selectStitch(registry: StitchRegistry, name: string): Stitch {
     // Re-widen the input-erased registry element (`Stitch<unknown, never>`) to an invokable `Stitch`:
     // the surfaces call it with a `StitchInput` built at runtime from CLI flags / the request body /
     // the MCP argument, and the engine reads that input by field name regardless of its static type.
     // This is the single dynamic-dispatch boundary the registry's type erasure is designed around.
-    const direct = registry[name] as Stitch | undefined;
+    const direct = Object.hasOwn(registry, name)
+        ? (registry[name] as Stitch | undefined)
+        : undefined;
     if (direct) return direct;
-    for (const s of Object.values(registry))
-        if (s.__config.name === name) return s as Stitch;
 
     const available = Object.keys(registry).sort();
     const err = new Error(

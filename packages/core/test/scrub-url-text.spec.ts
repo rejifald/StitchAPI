@@ -360,9 +360,14 @@ describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other sep
                 'https://h/y?token=REDACTED, then',
             ],
             [
-                'a list',
+                'a comma inside a value is part of the secret, so a comma-list is eaten (no leak)',
                 '[https://h/a?token=A,https://h/b?token=B]',
-                '[https://h/a?token=REDACTED,https://h/b?token=REDACTED]',
+                '[https://h/a?token=REDACTED]',
+            ],
+            [
+                'closing punctuation, only the trailing run: interior ones stay in the secret',
+                'https://a.test/x?key=a),b;c',
+                'https://a.test/x?key=REDACTED',
             ],
             [
                 'a semicolon',
@@ -509,6 +514,20 @@ const HEADER_NAME_TABLE: readonly (readonly [string, boolean])[] = [
 
 describe('redactKeys — header names', () => {
     test.each(HEADER_NAME_TABLE)('%s → secret: %s', (name, secret) => {
+        const out = redactKeys({ [name]: 'value' }) as Record<string, string>;
+        expect(out[name]).toBe(secret ? '[REDACTED]' : 'value');
+    });
+
+    // The engine folds a REQUEST's header names to lower case (`buildRequest`, #891), so a sink and
+    // a hook see `ocp-apim-subscription-key`; a config-authored `headers` block keeps whatever
+    // spelling its author used (`Ocp-Apim-Subscription-Key`), and `redactConfig` reads it as
+    // written. The match is case-insensitive in every spelling, so each row holds in all three.
+    test.each(
+        HEADER_NAME_TABLE.flatMap(([name, secret]) => [
+            [name.toLowerCase(), secret],
+            [name.toUpperCase(), secret],
+        ]),
+    )('%s (re-cased) → secret: %s', (name, secret) => {
         const out = redactKeys({ [name]: 'value' }) as Record<string, string>;
         expect(out[name]).toBe(secret ? '[REDACTED]' : 'value');
     });

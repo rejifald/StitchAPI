@@ -15,7 +15,8 @@
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c4-credentials.ts
 import { apiKey, bearer } from '../../../../packages/core/src/auth';
-import { otlp, stitch } from '../../../../packages/core/src/index';
+import { stitch } from '../../../../packages/core/src/index';
+import { otlp } from '../../../../packages/core/src/otlp';
 import type { OtelSpan } from '../../../../packages/core/src/otlp';
 import { consoleSink, loggerSink } from '../../../../packages/core/src/trace';
 import {

@@ -2,8 +2,8 @@
 // `open` map, and prompt abort during retry/reconnect backoff + throttle waits. These are leak
 // regressions, not behaviour changes — each test asserts a bound or a prompt cancellation that the
 // pre-fix code violated (an ever-growing Map, or a backoff sleep that ignored the caller signal).
-import { otlp, stitch } from '../../src';
-import { OPEN_SPANS } from '../../src/otlp';
+import { stitch } from '../../src';
+import { otlp } from '../../src/otlp';
 import { THROTTLE_STATES, createThrottle } from '../../src/resilience';
 import {
     THROTTLE_LOCAL,
@@ -151,7 +151,7 @@ test('otlp sink: the internal open-span map is empty after a completed run', () 
             },
         },
     });
-    const open = probeMap(sink, OPEN_SPANS);
+    const open = probeMap(sink, Symbol.for('stitch.otlp.openSpans'));
 
     const ev = (e: StitchEvent, spanId: string): void => {
         sink.handle(e, {

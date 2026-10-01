@@ -117,6 +117,22 @@ describe('apiKey — location model (header / query / cookie)', () => {
         expect(call?.headers['cookie']).toBe('sid=fresh; theme=dark');
         expect(call?.cookies['sid']).toBe('fresh');
     });
+
+    // #866: replacing only the FIRST same-named pair left a second forged one for a vendor that
+    // reads the last occurrence. Every duplicate goes; the key lands where the first one stood.
+    test("in: 'cookie' drops every same-named duplicate, not just the first", async () => {
+        server.route('GET', '/thing', { body: { ok: true } });
+        const s = stitch({
+            baseUrl: server.url,
+            path: '/thing',
+            headers: { cookie: 'sid=forged; theme=dark; sid=forged2' },
+            auth: apiKey({ in: 'cookie', name: 'sid', secret: 'fresh' }),
+        });
+        await s();
+        expect(server.calls('/thing')[0]?.headers['cookie']).toBe(
+            'sid=fresh; theme=dark',
+        );
+    });
 });
 
 // P14/P16 — `ApiKeyOptions` is EXPORTED, like every sibling auth builder's option type

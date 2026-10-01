@@ -48,7 +48,9 @@ transport the engine can drive:
   is an error or an empty result — so a throwing transport takes that decision
   away from the declaration.
 - **Lowercase the response header names.** Readers above you look them up in that
-  case.
+  case. The request header names you receive are already lowercase: the engine
+  folds them before auth runs, so read `req.headers['content-type']`, not
+  `['Content-Type']`.
 - **Honor `req.signal`.** Abort the in-flight request when it fires, and reject if
   it is already aborted.
 - **Reject `req.stream` if you can't stream.** Failing loudly at the call beats
