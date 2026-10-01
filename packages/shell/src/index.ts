@@ -218,6 +218,11 @@ export function shell<T = string>(
     command: string,
     options?: AtLeastOne<Omit<ShellOptions, 'command'>>,
 ): Stitch<T>;
+/**
+ * {@link shell} with the command inside the options object: `shell({ command: 'git', env })`.
+ *
+ * @experimental
+ */
 export function shell<T = string>(options: ShellOptions): Stitch<T>;
 export function shell<T = string>(
     commandOrOptions: string | ShellOptions,

@@ -9,7 +9,9 @@
 // scripts/contract-violations.baseline.json is empty again and the gate fails on the
 // FIRST new violation — exactly like the repo's ESLint-suppression ratchet at zero. The
 // mechanism is kept (rather than hard-failing inline) so a deliberate, contract-aligned
-// exception can still be baselined with a committed diff for review.
+// exception can still be baselined with a committed diff for review. R12 (the experimental tier,
+// P26) is the one rule that is never baselined: `--update` leaves it out and a baseline entry for it
+// is rejected.
 //
 //   pnpm check:contract            # check working tree against the baseline (CI/hook mode)
 //   node scripts/check-contract.mjs --list     # print every current violation, grouped
@@ -76,16 +78,18 @@
 //
 // R12 holds the experimental tier (P26) to its member table, which lives in docs/CONTRACT.md and is
 // read from there (see "R12: the experimental tier" below) — so the tier has ONE list, not a rule
-// plus a copy of it. Every symbol a listed entry exports must carry `@experimental`, and an
-// `@experimental` tag anywhere else is a finding. It enters at zero: the tier is new, and the tags
+// plus a copy of it. Every public declaration of every symbol a listed entry exports must carry
+// `@experimental` (each overload signature, not just the first), an `@experimental` tag anywhere
+// else is a finding, and no published file outside the tier may import a member — which is how
+// P26's "stable surfaces never re-export or name an experimental symbol" is held without a type
+// checker, since naming a symbol takes an import. It enters at zero: the tier is new, and the tags
 // land in the change that adds the rule. Unlike R1–R11 it is not a naming rule and reads no
-// member vocabulary; it is the one rule whose input is a table in the prose.
+// member vocabulary; it is the one rule whose input is a table in the prose, and the one rule that
+// is never baselined.
 //
 // Still deferred to a type-aware phase (needs the TS checker): shape-diffing (full P9 —
 // R5's watch list is the by-name proxy), default-value inversion (P8), cross-PACKAGE parity
-// of the same capability (P16), the no-leak clause of P26 (a STABLE signature naming an
-// experimental type — a type seen through an alias or an inferred return is invisible to a text
-// scan, so R12 holds the declarations and leaves that clause to review), and the CONTAINER half
+// of the same capability (P16), and the CONTAINER half
 // of the alias gap — R6 scans only the
 // `*Options` + blessed `*Config` family, so `MockRoute.respond: MockResponder` stays
 // under-flagged even now that the alias resolves, because `MockRoute` is not an `*Options`
@@ -112,10 +116,15 @@ import {
     statSync,
     writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+// CHECK_CONTRACT_ROOT points the gate at another tree. It exists for ONE caller: the self-test
+// (scripts/check-contract-selftest.mjs), which builds a miniature repository and mutates it to prove
+// R12 fails when it should. Nothing else sets it.
+const ROOT = process.env.CHECK_CONTRACT_ROOT
+    ? resolve(process.env.CHECK_CONTRACT_ROOT)
+    : join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKGS = join(ROOT, 'packages');
 const BASELINE = join(ROOT, 'scripts', 'contract-violations.baseline.json');
 
@@ -455,20 +464,30 @@ function surfaceExports(dir) {
 // reviewed list with a reason per entry), except the list lives where the rule is written. A
 // second copy here would be exactly the drift this ratchet exists to stop.
 //
-// Two checks, both source-text, both over the table:
-//   (a) every symbol a listed entry point exports carries `@experimental` on its FIRST
+// Three checks, all source-text, all over the table:
+//   (a) every symbol a listed entry point exports carries `@experimental` on EVERY public
 //       declaration — direct declarations, `export { … }` lists, and relative `export *` /
-//       `export { … } from` chains, followed to the declaration. Overload signatures carry the
-//       tag once, on the first; the implementation signature is not a public one.
+//       `export { … } from` chains, followed to the declaration. A function with overloads has one
+//       public declaration per overload SIGNATURE, and each carries the tag (TS hover and
+//       deprecation-style tooling resolve per signature); the implementation signature is not a
+//       public one and is exempt. A member PACKAGE's entry points are the union over every key of its
+//       `exports` map, so a second entry point cannot hide an untagged file.
 //   (b) an `@experimental` tag that is NOT on one of those declarations is a finding, so the
 //       table stays the only way into the tier.
+//   (c) the tier's edge: no published `src` file outside a member may import a member module or a
+//       member package. P26 says a stable entry point neither re-exports nor names an experimental
+//       symbol; an import is the only way to do either, and the import graph needs no type checker.
 //
-// Neither check is vacuous by construction: a table that yields no rows, or a row that resolves
-// to no entry point, is itself a finding.
+// None of them is vacuous by construction: a table that yields no rows, a row that resolves to no
+// entry point, and an `exports` key whose source file cannot be read are each a finding.
+//
+// R12 is also the one rule that is NOT baselinable: P26 is unconditional, so `--update` leaves its
+// findings out of the baseline and a baseline entry never silences one (see the ratchet below).
 //
 // What this does NOT see, stated because the same honesty is owed here as on every rule above:
-// the banner (P26 clause 3) is prose on a docs page or README, and the no-leak clause (a stable
-// signature naming an experimental type) needs the type-aware phase this file defers. Both are
+// the banner (P26 clause 3), the inline note on a page that teaches a member and a member's CLI
+// flags are prose or flags, not declarations, and (c) reads imports, so a hand-written ambient
+// declaration that restated an experimental type inside a stable package would pass it. Those are
 // review obligations.
 const CONTRACT_MD = join(ROOT, 'docs', 'CONTRACT.md');
 const MEMBERS_OPEN = '<!-- R12 members:';
@@ -493,30 +512,53 @@ function experimentalMembers() {
     return specs;
 }
 
-// `stitchapi/llm` → core's `./llm` entry; `@stitchapi/shell` → that package's `.` entry. The
+// `stitchapi/llm` → core's `./llm` entry; `@stitchapi/shell` → EVERY entry of that package. The
 // longest package name that is the specifier or a `/`-prefix of it wins, so a core subpath is
 // never mistaken for a package.
+//
+// A member PACKAGE is the whole package, so its entry points are the union over every key of its
+// `exports` map, not just `.`: reading only `.` let a second entry (`./extra`) hold untagged
+// symbols unseen. A core SUBPATH row names exactly one key, because core itself is not a member.
+// `gaps` lists the package keys whose source R12 cannot read (a wildcard, a path outside `lib/`):
+// a key the gate cannot follow is a finding, never a silent drop. `./package.json` is metadata.
 function entryFilesFor(spec, packages) {
     let pkg;
     for (const p of packages) {
         const hit = spec === p.name || spec.startsWith(`${p.name}/`);
         if (hit && (!pkg || p.name.length > pkg.name.length)) pkg = p;
     }
-    if (!pkg) return [];
-    const key =
-        spec === pkg.name ? '.' : `./${spec.slice(pkg.name.length + 1)}`;
+    if (!pkg) return { pkg: null, files: [], gaps: [] };
     let manifest;
     try {
         manifest = JSON.parse(
             readFileSync(join(PKGS, pkg.dir, 'package.json'), 'utf8'),
         );
     } catch {
-        return [];
+        return { pkg, files: [], gaps: [] };
     }
-    return [...libBases(manifest.exports?.[key])]
-        .sort()
-        .map((base) => join(PKGS, pkg.dir, 'src', `${base}.ts`))
-        .filter((p) => existsSync(p));
+    // `exports` is a subpath map, or sugar for `{ ".": <it> }` (a bare string or a conditions object).
+    let map = manifest.exports ?? {};
+    if (
+        typeof map !== 'object' ||
+        Array.isArray(map) ||
+        !Object.keys(map).every((k) => k.startsWith('.'))
+    )
+        map = { '.': map };
+    const wholePackage = spec === pkg.name;
+    const keys = wholePackage
+        ? Object.keys(map).filter((k) => k !== './package.json')
+        : [`./${spec.slice(pkg.name.length + 1)}`];
+    const files = [];
+    const gaps = [];
+    for (const key of keys) {
+        const found = [...libBases(map[key])]
+            .sort()
+            .map((base) => join(PKGS, pkg.dir, 'src', `${base}.ts`))
+            .filter((p) => existsSync(p));
+        if (found.length) files.push(...found);
+        else if (wholePackage) gaps.push(key);
+    }
+    return { pkg, files: [...new Set(files)], gaps };
 }
 
 // Blank everything that is not code — comments, string/template/regex contents — preserving every
@@ -649,6 +691,47 @@ const DECL_KEYWORD =
 // the only metacharacter that can occur, but a half-escape is the pattern CodeQL rightly flags.
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// The module specifier following the quote at masked offset `q` — read from the ORIGINAL text,
+// because the masked copy blanks it.
+const specAt = (s, q) =>
+    s.src.slice(q + 1, s.masked.indexOf(s.masked[q], q + 1));
+
+// Does the `{` at `i` open a TYPE (a type literal in a signature) rather than a function body? It
+// does after `:`, `|`, `&`, `,`, `<`, `=`, `(`, `=>` or one of the type-position words.
+function opensType(masked, i) {
+    let j = i - 1;
+    while (j >= 0 && /\s/.test(masked[j])) j--;
+    if (j < 0) return false;
+    const c = masked[j];
+    if (/[:|&,<=(]/.test(c)) return true;
+    if (c === '>' && masked[j - 1] === '=') return true;
+    return /\b(?:extends|is|asserts|keyof|typeof|infer|readonly)$/.test(
+        masked.slice(Math.max(0, j - 10), j + 1),
+    );
+}
+
+// Is the `function` declaration whose name ends at `from` an IMPLEMENTATION (it has a body) or a
+// SIGNATURE only — an overload, or an ambient `declare function`? Walks the masked text to the first
+// `;` or body brace at nesting depth zero. Overload signatures are adjacent and end in `;`, and the
+// public ones are exactly those: TS shows the overloads and hides the implementation. A scan that
+// cannot tell reports "has a body", which makes R12 ask for MORE tags, never fewer.
+function hasFunctionBody(masked, from) {
+    let nest = 0; // () and [], so a type literal in a parameter never counts
+    let braces = 0; // type-literal braces already opened in the return type
+    for (let i = from; i < masked.length; i++) {
+        const c = masked[i];
+        if (c === '(' || c === '[') nest++;
+        else if (c === ')' || c === ']') nest--;
+        else if (c === '{') {
+            if (nest === 0 && braces === 0 && !opensType(masked, i))
+                return true;
+            braces++;
+        } else if (c === '}') braces--;
+        else if (c === ';' && nest === 0 && braces === 0) return false;
+    }
+    return false;
+}
+
 // The experimental surface, as the tier's own view of it: every symbol each listed entry exports,
 // resolved to where it is DECLARED.
 function r12Surface(entries) {
@@ -657,10 +740,6 @@ function r12Surface(entries) {
         if (!scans.has(f)) scans.set(f, scanSource(readFileSync(f, 'utf8')));
         return scans.get(f);
     };
-    // The module specifier following the quote at masked offset `q` — read from the ORIGINAL
-    // text, because the masked copy blanks it.
-    const specAt = (s, q) =>
-        s.src.slice(q + 1, s.masked.indexOf(s.masked[q], q + 1));
     const cache = new Map(); // file -> Map(exported name -> { file, local })
     const foreign = []; // exports of another package's symbol — the tag cannot ride one
     const unresolved = []; // a local name with no declaration this scanner can find
@@ -744,20 +823,34 @@ function r12Surface(entries) {
         }
         return out;
     };
-    // The first top-level declaration of `local` in `file`, or null.
-    const firstDecl = (file, local) => {
+    // Every top-level declaration of `local` in `file`, in source order: where it is, what kind it is
+    // and — for a function — whether it has a body (an implementation) or is a signature only.
+    const declsOf = (file, local) => {
         const s = scan(file);
         const re = new RegExp(
             `(?:^|[^\\w$.])(${DECL_KEYWORD}${escapeRe(local)}(?![\\w$]))`,
             'g',
         );
+        const out = [];
         for (const m of s.masked.matchAll(re)) {
             const at = m.index + m[0].length - m[1].length;
-            if (s.depth[at] === 0) return { s, at };
+            if (s.depth[at] !== 0) continue;
+            const kind =
+                /\b(function|class|interface|type|const|let|var|enum|namespace)\b/.exec(
+                    m[1],
+                )[1];
+            out.push({
+                s,
+                at,
+                kind,
+                body:
+                    kind !== 'function' ||
+                    hasFunctionBody(s.masked, at + m[1].length),
+            });
         }
-        return null;
+        return out;
     };
-    return { scan, exportsOf, firstDecl, foreign, unresolved };
+    return { scan, exportsOf, declsOf, foreign, unresolved };
 }
 
 // True iff a JSDoc block in the comment/whitespace run directly above `at` carries the tag.
@@ -798,7 +891,7 @@ function checkExperimental(packages, add) {
     const entries = [];
     const bySpec = [];
     for (const spec of specs) {
-        const files = entryFilesFor(spec, packages);
+        const { pkg, files, gaps } = entryFilesFor(spec, packages);
         if (!files.length)
             report(
                 CONTRACT_MD,
@@ -806,34 +899,69 @@ function checkExperimental(packages, add) {
                 `P26 member \`${spec}\` resolves to no entry point — a \`stitchapi/<subpath>\` needs an \`exports\` entry in core, a \`@stitchapi/<name>\` a published package`,
                 null,
             );
+        for (const key of gaps)
+            report(
+                CONTRACT_MD,
+                `${spec} ${key}`,
+                `the \`${key}\` entry of member package \`${spec}\` maps to no source file under packages/${pkg.dir}/src that R12 can read (a wildcard, or a path outside \`lib/\`) — every entry point of a member is part of the tier, so R12 must be able to follow it`,
+                null,
+            );
         entries.push(...files);
-        bySpec.push({ spec, files });
+        bySpec.push({ spec, pkg, files });
     }
     const surf = r12Surface(entries);
     const declared = new Set(); // `${file}|${local}` — every declaration the tier owns
-    for (const { spec, files } of bySpec) {
+    const memberFiles = new Set(); // every source file that belongs to a member, for check (c)
+    for (const { spec, pkg, files } of bySpec) {
+        // A member PACKAGE is wholly inside the tier; a core subpath is only the files that declare
+        // what it exports.
+        if (pkg && spec === pkg.name)
+            for (const f of tsFiles(join(PKGS, pkg.dir, 'src')))
+                memberFiles.add(f);
         const symbols = new Map();
-        for (const f of files)
+        for (const f of files) {
+            memberFiles.add(f);
             for (const [name, { file, local }] of surf.exportsOf(f))
                 symbols.set(`${file}|${local}`, { file, local, name });
+        }
         for (const { file, local, name } of symbols.values()) {
             declared.add(`${file}|${local}`);
-            const hit = surf.firstDecl(file, local);
-            if (!hit) {
+            memberFiles.add(file);
+            const decls = surf.declsOf(file, local);
+            if (!decls.length) {
                 report(
                     file,
                     name,
                     `\`${spec}\` exports \`${name}\`, but its declaration cannot be found in ${rel(file)} — declare it at the top level of that file`,
                     null,
                 );
-            } else if (!taggedAbove(hit.s, hit.at)) {
+                continue;
+            }
+            // A function with overloads has one PUBLIC declaration per signature; its implementation
+            // is not public. Everything else is held to its first declaration.
+            const overloads =
+                decls[0].kind === 'function'
+                    ? decls.filter((d) => !d.body)
+                    : [];
+            const required =
+                decls[0].kind !== 'function'
+                    ? [decls[0]]
+                    : overloads.length
+                      ? overloads
+                      : decls;
+            required.forEach((d, i) => {
+                if (taggedAbove(d.s, d.at)) return;
                 report(
                     file,
-                    local,
-                    `exported from the experimental \`${spec}\` without @experimental on its declaration (P26: every symbol an experimental surface exports carries the tag; an overload carries it on the first signature)`,
-                    lineOf(hit.s.src, hit.at),
+                    overloads.length > 1
+                        ? `${local} (overload ${i + 1} of ${overloads.length})`
+                        : local,
+                    overloads.length
+                        ? `exported from the experimental \`${spec}\` with an overload signature that lacks @experimental (P26: every public overload signature carries the tag, because TS hover and deprecation-style tooling resolve per signature; the implementation signature is exempt)`
+                        : `exported from the experimental \`${spec}\` without @experimental on its declaration (P26: every symbol an experimental surface exports carries the tag)`,
+                    lineOf(d.s.src, d.at),
                 );
-            }
+            });
         }
         R12_SUMMARY.push({ spec, symbols: symbols.size });
     }
@@ -888,6 +1016,36 @@ function checkExperimental(packages, add) {
                         ? `@experimental on something other than a top-level declaration — the tier is whole surfaces, so a member, parameter or statement cannot carry it (P26)`
                         : `@experimental on \`${name}\`, which no P26 member exports — add its surface to the member table, or remove the tag (P26: the table is the only way into the tier)`,
                     lineOf(s.src, c.start),
+                );
+            }
+        }
+    }
+
+    // (c) the tier's edge: no published src file outside a member imports a member. P26 says a
+    // stable entry point neither re-exports nor names an experimental symbol, and an import is the
+    // only way to do either, so the import graph is enough — no type checker. Checked on the
+    // masked text, so an import inside a comment, a string or a template (the code a generator
+    // emits) is not one.
+    const memberSpecs = bySpec.map((b) => b.spec);
+    const IMPORT_SPEC =
+        /(?<![.\w$])(?:from\s*|import\s*\(?\s*|require\s*\(\s*)(['"])/g;
+    for (const { dir } of packages) {
+        for (const file of tsFiles(join(PKGS, dir, 'src'))) {
+            if (memberFiles.has(file)) continue;
+            const s = surf.scan(file);
+            for (const m of s.masked.matchAll(IMPORT_SPEC)) {
+                const spec = specAt(s, m.index + m[0].length - 1);
+                const hit = spec.startsWith('.')
+                    ? memberFiles.has(resolveRelative(spec, file))
+                    : memberSpecs.some(
+                          (ms) => spec === ms || spec.startsWith(`${ms}/`),
+                      );
+                if (!hit) continue;
+                report(
+                    file,
+                    `import of ${spec}`,
+                    `imports \`${spec}\`, a P26 experimental module, from outside the tier — a stable entry point MUST NOT re-export or name an experimental symbol, so a member is imported only by other members (P26: stable surfaces do not touch the tier; graduate the surface first, or take a structural type of your own)`,
+                    lineOf(s.src, m.index),
                 );
             }
         }
@@ -1804,20 +1962,43 @@ if (args.has('--list')) {
     process.exit(0);
 }
 
+// R12 is the one rule with no baseline. Every other rule here can carry a reviewed exception — a
+// contract-aligned finding that is written down and shrunk later. P26 cannot: the tier is a promise
+// to consumers, so an untagged symbol on an experimental surface (or an experimental symbol reachable
+// from a stable one) is wrong on the day it lands, and a baseline entry would only record that the
+// promise is already broken. `--update` leaves R12 out, and a baseline that names one is rejected.
+const UNBASELINABLE = new Set(['R12']);
+const baselinable = current.filter((v) => !UNBASELINABLE.has(v.rule));
+
+const printFinding = (v) =>
+    console.error(
+        `    [${v.rule}] ${v.file}${v.line ? `:${v.line}` : ''}  ${v.symbol} — ${v.detail}`,
+    );
+
 if (args.has('--update')) {
+    const refused = current.filter((v) => UNBASELINABLE.has(v.rule));
     writeFileSync(
         BASELINE,
         JSON.stringify(
             {
                 generatedBy: 'scripts/check-contract.mjs --update',
-                count: current.length,
-                violations: current,
+                count: baselinable.length,
+                violations: baselinable,
             },
             null,
             4,
         ) + '\n',
     );
-    console.log(`✓ Baseline rewritten: ${current.length} known violations.`);
+    console.log(
+        `✓ Baseline rewritten: ${baselinable.length} known violations.`,
+    );
+    if (refused.length) {
+        console.error(
+            `\n✗ ${refused.length} R12 finding(s) NOT baselined — the experimental tier (P26) has no exceptions; fix them:`,
+        );
+        refused.forEach(printFinding);
+        process.exit(1);
+    }
     process.exit(0);
 }
 
@@ -1829,9 +2010,21 @@ if (!existsSync(BASELINE)) {
 }
 
 const baseline = JSON.parse(readFileSync(BASELINE, 'utf8'));
+const smuggled = (baseline.violations ?? []).filter(
+    (v) => UNBASELINABLE.has(v.rule) || /^R12\|/.test(String(v.key)),
+);
+if (smuggled.length) {
+    console.error(
+        `\n✗ ${smuggled.length} R12 entr${smuggled.length === 1 ? 'y' : 'ies'} in ${rel(BASELINE)} — the experimental tier (P26) cannot be baselined; delete them and fix the findings:`,
+    );
+    for (const v of smuggled) console.error(`    ${v.key}`);
+    process.exit(1);
+}
 const baseKeys = new Set((baseline.violations ?? []).map((v) => v.key));
 
-const added = current.filter((v) => !baseKeys.has(v.key));
+const added = current.filter(
+    (v) => UNBASELINABLE.has(v.rule) || !baseKeys.has(v.key),
+);
 const fixed = [...baseKeys].filter((k) => !currentKeys.has(k));
 
 if (fixed.length) {
@@ -1846,13 +2039,13 @@ if (added.length) {
     console.error(
         `\n✗ ${added.length} NEW API meta-contract violation(s) (docs/CONTRACT.md):`,
     );
-    for (const v of added)
-        console.error(
-            `    [${v.rule}] ${v.file}${v.line ? `:${v.line}` : ''}  ${v.symbol} — ${v.detail}`,
-        );
+    added.forEach(printFinding);
     console.error(
-        '\n  Fix it, or — if this is an intentional, contract-aligned change — refresh the ' +
-            'baseline with `node scripts/check-contract.mjs --update` and commit it.',
+        added.every((v) => UNBASELINABLE.has(v.rule))
+            ? '\n  Fix it: R12 (the experimental tier, P26) has no baseline.'
+            : '\n  Fix it, or — if this is an intentional, contract-aligned change — refresh the ' +
+                  'baseline with `node scripts/check-contract.mjs --update` and commit it ' +
+                  '(R12 findings are never baselined).',
     );
     process.exit(1);
 }

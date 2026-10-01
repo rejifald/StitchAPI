@@ -98,6 +98,12 @@ export function stitchExecute<
     stitch: S,
     toInput?: (args: Args) => QueryInput<S>,
 ): ToolExecute<Args, QueryOutput<S>>;
+/**
+ * The explicit-types form of {@link stitchExecute}: `stitch` is any `StitchLike<T, Input>`, and the
+ * output, input and tool-argument types are named as type arguments instead of read off `stitch`.
+ *
+ * @experimental
+ */
 export function stitchExecute<T, Input = unknown, Args = Input>(
     stitch: StitchLike<T, Input>,
     toInput?: (args: Args) => Input,
@@ -205,14 +211,33 @@ export function stitchTool<
     stitch: S,
     options: StitchToolOptions<Args, QueryInput<S>>,
 ): StitchTool<Args, QueryOutput<S>>;
+/**
+ * The explicit-types form of {@link stitchTool} with an options object: `stitch` is any
+ * `StitchLike<T, Input>`, and the output, input and tool-argument types are named as type
+ * arguments instead of read off `stitch`.
+ *
+ * @experimental
+ */
 export function stitchTool<T, Input = unknown, Args = Input>(
     stitch: StitchLike<T, Input>,
     options: StitchToolOptions<Args, Input>,
 ): StitchTool<Args, T>;
+/**
+ * The positional-schema shorthand of {@link stitchTool}: `stitchTool(stitch, schema)` is
+ * `stitchTool(stitch, { inputSchema: schema })`, with the tool's types read off `stitch`.
+ *
+ * @experimental
+ */
 export function stitchTool<S extends StitchLike<unknown, never>>(
     stitch: S,
     inputSchema: StitchToolSchema,
 ): StitchTool<QueryInput<S>, QueryOutput<S>>;
+/**
+ * The explicit-types form of the positional-schema shorthand of {@link stitchTool}:
+ * `stitchTool(stitch, schema)` over any `StitchLike<T, Input>`.
+ *
+ * @experimental
+ */
 export function stitchTool<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     inputSchema: StitchToolSchema,

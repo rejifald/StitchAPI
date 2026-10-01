@@ -258,9 +258,21 @@ function isBag(x: unknown): x is Record<string, Node> {
 export function all<const T extends readonly Member[]>(
     members: T,
 ): Composable<TupleOut<T>>;
+/**
+ * {@link all} over a NAMED object of members, resolving to an object keyed by the same names:
+ * `all({ user: fetchUser, prefs: fetchPrefs })`.
+ *
+ * @experimental
+ */
 export function all<M extends Record<string, Member>>(
     members: M,
 ): Composable<BagOut<M>>;
+/**
+ * {@link all} over bare member ARGUMENTS, resolving to the same tuple as the array form:
+ * `all(fetchUser, fetchPrefs)`.
+ *
+ * @experimental
+ */
 export function all<const T extends readonly Member[]>(
     ...members: T
 ): Composable<TupleOut<T>>;
@@ -296,6 +308,11 @@ export function all(...args: readonly unknown[]): Composable<unknown> {
 export function any<M extends readonly Member[]>(
     members: M,
 ): Composable<OutputOf<M[number]>>;
+/**
+ * {@link any} over bare member ARGUMENTS: `any(a, b)`, the same combinator as the array form.
+ *
+ * @experimental
+ */
 export function any<M extends readonly Member[]>(
     ...members: M
 ): Composable<OutputOf<M[number]>>;
@@ -326,6 +343,11 @@ export function any(...args: readonly unknown[]): Composable<unknown> {
 export function race<M extends readonly Member[]>(
     members: M,
 ): Composable<OutputOf<M[number]>>;
+/**
+ * {@link race} over bare member ARGUMENTS: `race(a, b)`, the same combinator as the array form.
+ *
+ * @experimental
+ */
 export function race<M extends readonly Member[]>(
     ...members: M
 ): Composable<OutputOf<M[number]>>;
