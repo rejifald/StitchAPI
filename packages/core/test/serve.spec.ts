@@ -265,7 +265,7 @@ describe('serve withholds the message of an unexpected throw unless `disclose` i
 // #867: the SSE stream is the other door a failure's text leaves by. With `retry` on, each retried
 // attempt's `progress.detail` is the raw transport error; a strategy's `info.detail` is free text;
 // a `drift` finding's `detail` is a validator's issue message, which can echo the received value;
-// and the `start` frame names the upstream URL. All of it follows `disclose`, like the `error`
+// and the `start` frame names the upstream URL and its route template. All of it follows `disclose`, like the `error`
 // frame. The frames and their types stay either way.
 describe('serve SSE withholds the trace fields that name the upstream unless `disclose` is on', () => {
     const HOST = 'payments.internal.corp';
@@ -288,6 +288,17 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
         },
     };
     const registry = {
+        // A templated route, retried once on a 503: `start.template` names the upstream route, and
+        // the retry's `progress` frame carries a `status` and (for a throw) an `errorType`.
+        // Named, because an unnamed stitch's event `name` defaults to its `path`.
+        routed: stitch({
+            name: 'ledger-read',
+            baseUrl: 'https://upstream.test',
+            path: '/internal/ledger/{id}',
+            adapter: () =>
+                Promise.resolve({ status: 503, headers: {}, body: {} }),
+            retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+        }),
         // A response the output schema rejects: a hard `drift` finding whose `detail` echoes it.
         drifts: stitch({
             url: `https://${HOST}/x`,
@@ -336,6 +347,7 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
     const stream = async (
         name: keyof typeof registry,
         disclose?: boolean,
+        input = '{}',
     ): Promise<string> => {
         const h = await serve(
             registry,
@@ -344,7 +356,7 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
         try {
             const res = await fetch(`${h.url}/stitch/${name}?stream=1`, {
                 method: 'POST',
-                body: '{}',
+                body: input,
             });
             return await res.text();
         } finally {
@@ -384,6 +396,32 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
                         unknown
                     >,
             );
+
+    test('by default `start` drops the route template and keeps what the engine stamps', async () => {
+        const body = await stream('routed', undefined, '{"params":{"id":7}}');
+        expect(body).not.toContain('/internal/ledger');
+        const [start] = framesOf(body, 'start');
+        expect(start).toEqual(
+            expect.objectContaining({
+                surface: 'http',
+                transport: 'http',
+                spanId: expect.any(String),
+            }),
+        );
+        expect(start).not.toHaveProperty('url');
+        expect(start).not.toHaveProperty('template');
+        // The retry's `progress` frame keeps its `status` and drops only `detail`.
+        expect(framesOf(body, 'progress')).toContainEqual(
+            expect.objectContaining({ phase: 'retry', status: 503 }),
+        );
+    });
+
+    test('`disclose: true` sends the route template', async () => {
+        const body = await stream('routed', true, '{"params":{"id":7}}');
+        expect(framesOf(body, 'start')[0]).toEqual(
+            expect.objectContaining({ template: '/internal/ledger/{id}' }),
+        );
+    });
 
     test('by default a `drift` finding keeps its level, path and change and drops its detail', async () => {
         const body = await stream('drifts');

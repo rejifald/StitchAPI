@@ -488,7 +488,8 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
   withhold. `error` is now the standard reason phrase for the response status (`'Bad Gateway'`,
   `'Too Many Requests'`). The same rule covers the SSE stream and the last-resort `500` body: an
   `error` frame's `message` and the frame for a stream that throws carry the reason phrase, a
-  `start` frame has no `url` (it names the upstream host), a `progress` or `info` frame has no
+  `start` frame has no `url` or `template` (they name the upstream host and its route), a
+  `progress` or `info` frame has no
   `detail` (on a retry it is the raw transport error text), and a `drift` finding has no `detail`
   (for a failed output validation it is the validator's issue message, which can echo the value
   the upstream sent) but keeps its `level`, `path`, `change` and `sample`. The frames and event

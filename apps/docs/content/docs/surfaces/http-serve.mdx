@@ -86,7 +86,8 @@ these fields are dropped:
 
 - an `event: error` frame's `message` is the reason phrase, and so is the
   frame sent when the stream throws;
-- an `event: start` frame has no `url`, which names the upstream host;
+- an `event: start` frame has no `url` and no `template`, which name the
+  upstream host and its route (`/internal/ledger/{id}`);
 - an `event: progress` or `event: info` frame has no `detail`. On a retry
   `progress` frame that field is the raw transport error text;
 - an `event: drift` frame's `finding` has no `detail`. For a failed output
@@ -94,8 +95,9 @@ these fields are dropped:
   value the upstream sent. The finding keeps its `level`, `path`, `change` and
   `sample`.
 
-Anything else a stream carries, such as `delta` and `result` payloads and the
-request input echoed on `start`, is unchanged.
+Anything else a stream carries is unchanged: `delta` and `result` payloads, the
+request input echoed on `start`, span ids, `surface` and `transport`, and a
+`progress` frame's `status` and `errorType`.
 
 When the callers are trusted, such as in local development or on an internal
 network, turn the detail on with `stitch serve --disclose`, or
