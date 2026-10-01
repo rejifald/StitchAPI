@@ -74,18 +74,29 @@ failure's own message:
 The raw message can name an internal host (`getaddrinfo ENOTFOUND
 payments.internal.corp`) or repeat an upstream's wording to whoever called the
 server. Every `@stitchapi/*` host adapter withholds it by default, and `serve`
-does the same. SSE mode follows the same rule: an `event: error` frame's
-`message` is that reason phrase, and so is the frame sent when the stream
-throws.
+does the same.
+
+SSE mode withholds the same detail. The frames and their event types stay, and
+these fields are dropped:
+
+- an `event: error` frame's `message` is the reason phrase, and so is the
+  frame sent when the stream throws;
+- an `event: start` frame has no `url`, which names the upstream host;
+- an `event: progress` or `event: info` frame has no `detail`. On a retry
+  `progress` frame that field is the raw transport error text.
+
+Anything else a stream carries, such as `delta` and `result` payloads and the
+request input echoed on `start`, is unchanged.
 
 When the callers are trusted, such as in local development or on an internal
-network, turn the raw message on with `stitch serve --expose`, or
-`serve(registry, { expose: true })` in code.
+network, turn the detail on with `stitch serve --disclose`, or
+`serve(registry, { disclose: true })` in code. It restores the raw message and
+the dropped SSE fields together.
 
 A delegate-backoff rate limit (a `RateLimitError` from
 [`throttle.delegate`](/docs/guides/resilience/delegate-backoff)) also sends a
-`Retry-After` header, in whole seconds, when the upstream gave one. A caller
-can then wait as long as the upstream asked.
+`Retry-After` header, in whole seconds, when the upstream gave one. The value
+is capped at one day. A caller can then wait as long as the upstream asked.
 
 ## Programmatic API
 
@@ -108,7 +119,7 @@ await handle.close();
 `serve(registry, options?)` returns a handle with the bound `url`, `port`, the
 underlying `server`, and a `close()` method. It binds `127.0.0.1:8787` by
 default; pass `{ port: 0 }` to let the OS pick an ephemeral port, and
-`{ expose: true }` to send failure messages as described in
+`{ disclose: true }` to send failure detail as described in
 [Failures](#failures).
 
 A served stitch is the same definition as the in-process

@@ -151,8 +151,8 @@ describe('createServeHandler SSE + JSON outcomes', () => {
 
 // #867: serve answered a failure with `{ error: failure.message }` — the raw upstream message the
 // six host adapters withhold by default. It now answers with the status's reason phrase unless
-// `expose` is on, on every path a failure reaches the caller.
-describe('createServeHandler withholds a failure message unless `expose` is on', () => {
+// `disclose` is on, on every path a failure reaches the caller.
+describe('createServeHandler withholds a failure message unless `disclose` is on', () => {
     const LEAK = 'getaddrinfo ENOTFOUND payments.internal.corp';
     const leaky = (): StitchRegistry => ({
         down: failStitch(LEAK),
@@ -185,8 +185,8 @@ describe('createServeHandler withholds a failure message unless `expose` is on',
         });
     });
 
-    test('JSON: `expose: true` sends the raw message', async () => {
-        const res = await call(leaky(), post('down'), { expose: true });
+    test('JSON: `disclose: true` sends the raw message', async () => {
+        const res = await call(leaky(), post('down'), { disclose: true });
         expect(res.statusCode).toBe(502);
         expect(JSON.parse(res.body)).toEqual({ error: LEAK });
     });
@@ -197,10 +197,10 @@ describe('createServeHandler withholds a failure message unless `expose` is on',
         expect(res.body).toContain('"message":"Bad Gateway"');
         expect(res.body).not.toContain('ENOTFOUND');
 
-        const exposed = await call(leaky(), post('down', true), {
-            expose: true,
+        const disclosed = await call(leaky(), post('down', true), {
+            disclose: true,
         });
-        expect(exposed.body).toContain(LEAK);
+        expect(disclosed.body).toContain(LEAK);
     });
 
     test('SSE: the catch frame for a thrown stream is generic too', async () => {
@@ -209,10 +209,10 @@ describe('createServeHandler withholds a failure message unless `expose` is on',
             'event: error\ndata: {"message":"Internal Server Error"}\n\n',
         );
 
-        const exposed = await call(leaky(), post('throws', true), {
-            expose: true,
+        const disclosed = await call(leaky(), post('throws', true), {
+            disclose: true,
         });
-        expect(exposed.body).toContain(LEAK);
+        expect(disclosed.body).toContain(LEAK);
     });
 });
 
@@ -243,5 +243,21 @@ describe('createServeHandler sends Retry-After for a delegate-backoff RateLimitE
         const res = await call(limited(undefined), post);
         expect(res.statusCode).toBe(429);
         expect(res.headers['retry-after']).toBeUndefined();
+    });
+
+    // A 22-digit upstream value parses to 1e24 ms; `String(1e21)` would send the invalid `1e+21`.
+    test('a huge value is clamped to a day, so the header stays valid delta-seconds', async () => {
+        const res = await call(limited(1e24), post);
+        expect(res.statusCode).toBe(429);
+        expect(res.headers['retry-after']).toBe('86400');
+        expect(res.headers['retry-after']).toMatch(/^\d+$/);
+    });
+
+    test('a non-finite value sends no header', async () => {
+        for (const value of [Infinity, NaN]) {
+            const res = await call(limited(value), post);
+            expect(res.statusCode).toBe(429);
+            expect(res.headers['retry-after']).toBeUndefined();
+        }
     });
 });

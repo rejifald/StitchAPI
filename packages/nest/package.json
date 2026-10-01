@@ -57,7 +57,7 @@
         "@nestjs/common": "^10.0.0 || ^11.0.0 || ^12.0.0",
         "@nestjs/core": "^10.0.0 || ^11.0.0 || ^12.0.0",
         "rxjs": "^7.8.1",
-        "stitchapi": "^1.0.0-rc.1"
+        "stitchapi": "^1.0.0-rc.8"
     },
     "devDependencies": {
         "@nestjs/common": "^12.1.0",

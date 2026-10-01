@@ -209,18 +209,18 @@ test('an upstream failure surfaces as a non-2xx JSON error', async () => {
 });
 
 // #867: an unexpected throw in JSON mode escapes the handler to `serve`'s own last-resort 500,
-// which echoed `e.message` — the same disclosure the failure body withholds. It follows `expose`.
-describe('serve withholds the message of an unexpected throw unless `expose` is on', () => {
+// which echoed `e.message` — the same disclosure the failure body withholds. It follows `disclose`.
+describe('serve withholds the message of an unexpected throw unless `disclose` is on', () => {
     const LEAK = 'getaddrinfo ENOTFOUND payments.internal.corp';
     const throws = stubStitch('ignored', {
         events: () => {
             throw new Error(LEAK);
         },
     });
-    const run = async (expose?: boolean): Promise<Response> => {
+    const run = async (disclose?: boolean): Promise<Response> => {
         const h = await serve(
             { throws },
-            expose === undefined ? { port: 0 } : { port: 0, expose },
+            disclose === undefined ? { port: 0 } : { port: 0, disclose },
         );
         try {
             return await fetch(`${h.url}/stitch/throws`, {
@@ -240,10 +240,86 @@ describe('serve withholds the message of an unexpected throw unless `expose` is 
         });
     });
 
-    test('`expose: true` sends the raw message', async () => {
+    test('`disclose: true` sends the raw message', async () => {
         const res = await run(true);
         expect(res.status).toBe(500);
         await expect(res.json()).resolves.toEqual({ error: LEAK });
+    });
+});
+
+// #867: the SSE stream is the other door a failure's text leaves by. With `retry` on, each retried
+// attempt's `progress.detail` is the raw transport error; a strategy's `info.detail` is free text;
+// and the `start` frame names the upstream URL. All of it follows `disclose`, like the `error`
+// frame. The frames and their types stay either way.
+describe('serve SSE withholds the trace fields that name the upstream unless `disclose` is on', () => {
+    const HOST = 'payments.internal.corp';
+    const LEAK = `getaddrinfo ENOTFOUND ${HOST}`;
+    const registry = {
+        // A transport that throws, retried once: `progress.detail` carries the raw error text.
+        flaky: stitch({
+            url: `https://${HOST}/x`,
+            adapter: () => Promise.reject(new Error(LEAK)),
+            retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+        }),
+        // A strategy announcement whose free-text detail names an internal host.
+        announces: stubStitch('ok', {
+            events: () => [
+                {
+                    type: 'info',
+                    topic: 'auth.refresh',
+                    detail: `refreshing against ${HOST}`,
+                    at: 1,
+                },
+            ],
+        }),
+    };
+    const stream = async (
+        name: keyof typeof registry,
+        disclose?: boolean,
+    ): Promise<string> => {
+        const h = await serve(
+            registry,
+            disclose === undefined ? { port: 0 } : { port: 0, disclose },
+        );
+        try {
+            const res = await fetch(`${h.url}/stitch/${name}?stream=1`, {
+                method: 'POST',
+                body: '{}',
+            });
+            return await res.text();
+        } finally {
+            await h.close();
+        }
+    };
+
+    test('by default the stream carries neither the host nor the transport error text', async () => {
+        const body = await stream('flaky');
+        expect(body).not.toContain('ENOTFOUND');
+        expect(body).not.toContain(HOST);
+        // The frames stay; only the fields that name the upstream are dropped.
+        expect(body).toContain('event: start');
+        expect(body).toContain('event: progress');
+        expect(body).toContain('"phase":"retry"');
+        expect(body).toContain('event: error');
+        expect(body).toContain('"message":"Bad Gateway"');
+    });
+
+    test('by default an `info` frame keeps its topic and drops its detail', async () => {
+        const body = await stream('announces');
+        expect(body).toContain('event: info');
+        expect(body).toContain('"topic":"auth.refresh"');
+        expect(body).not.toContain(HOST);
+        expect(body).not.toContain('"detail"');
+    });
+
+    test('`disclose: true` sends the upstream url, the retry detail and the raw message', async () => {
+        const body = await stream('flaky', true);
+        expect(body).toContain(`"url":"https://${HOST}/x"`);
+        expect(body).toContain(`"detail":"${LEAK}"`);
+        expect(body).toContain(`"message":"${LEAK}"`);
+
+        const info = await stream('announces', true);
+        expect(info).toContain(`"detail":"refreshing against ${HOST}"`);
     });
 });
 

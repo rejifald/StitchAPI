@@ -1,8 +1,8 @@
 // StitchError → Hono HTTPException (mirrors @stitchapi/nest's exception-filter). A failed stitch
 // rejects with a `StitchError` (or a subclass such as `RateLimitError`) carrying the upstream
-// `status`, recognised by core's `isStitchError`. This bridges it to Hono's HTTP layer so a handler calling a stitch needs no per-route
-// try/catch: register `stitchError.handler` as the app's `onError`, or map by hand with
-// `stitchError.map`.
+// `status`, recognised by core's `isStitchError`. This bridges it to Hono's HTTP layer so a
+// handler calling a stitch needs no per-route try/catch: register `stitchError.handler` as the
+// app's `onError`, or map by hand with `stitchError.map`.
 //
 // The three functions below are the implementations; the barrel exports only the `stitchError`
 // namespace that faces them. They stay plain module functions so this package's own call sites
@@ -22,12 +22,17 @@ export type StitchErrorLike = Error & { status?: number };
  * barrel exports the namespace, not this.
  *
  * True when `err` is the error a stitch rejects with on failure — a `StitchError` or any subclass
- * (`RateLimitError` included), from any copy of `stitchapi`. Delegates to core's `isStitchError`
- * rather than checking `err.name`, which a subclass overrides: a name check let a 429's raw
- * upstream message past the generic default (#867).
+ * (`RateLimitError` included), from any copy of `stitchapi`: core's `isStitchError`, or an `Error`
+ * named after a stitch failure. The name fallback is fail-safe: a copy of `stitchapi` older than
+ * the brand, or a lookalike, would otherwise fall through to the app's own error handling, which
+ * may echo the message. Recognising too much only redacts more.
  */
 export function isStitchError(err: unknown): err is StitchErrorLike {
-    return isCoreStitchError(err);
+    return (
+        isCoreStitchError(err) ||
+        (err instanceof Error &&
+            (err.name === 'StitchError' || err.name === 'RateLimitError'))
+    );
 }
 
 export interface StitchErrorOptions {

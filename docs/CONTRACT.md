@@ -291,8 +291,21 @@ stable discriminator) so a consumer can branch on any thrown error uniformly.
 Parity is achieved by **inheritance, not duplication**: `StitchError` is the root, and
 every other thrown class **MUST** extend it rather than re-declare its fields. A new
 class adds only what is genuinely its own (`RateLimitError` adds `retryAfter` and
-`response`) and **MUST** keep `name` as its own discriminator — that is what the
-serialising hosts branch on once the instance is gone (rtk-query stores a plain object).
+`response`) and **MUST** keep `name` as its own discriminator — that is what a consumer
+branches on once the instance is gone (rtk-query stores a plain object).
+
+While the instance is alive, "is this a stitch failure?" is core's **`isStitchError(err)`**
+(root export), never `err.name === 'StitchError'` (a subclass keeps its own `name`, so that
+check misses `RateLimitError`) and never `instanceof` alone (a second copy of `stitchapi` — the
+CJS build's per-entry bundles, or two installed versions — has its own class). Every
+`@stitchapi/*` host's `stitchError.is` runs it. The guard reads the
+**`Symbol.for('stitchapi.error')` brand** that `StitchError`'s constructor sets
+(non-enumerable, so a spread or a JSON copy does not carry it). That key is a **frozen
+cross-version contract key**: its spelling never changes and every future copy of the class
+sets it, because an older copy's guard has to keep recognising a newer copy's errors. The core
+guard stays strict (a lookalike that only borrows `name` is rejected); the hosts add a
+fail-safe `name` check (`StitchError` / `RateLimitError`) on top, since for them a missed
+error is a leaked message and over-recognising only redacts more.
 
 Two consequences the surface **MUST** hold to:
 

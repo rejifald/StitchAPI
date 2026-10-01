@@ -10,8 +10,8 @@ import { BaseExceptionFilter } from '@nestjs/core';
 import { RateLimitError, StitchError } from 'stitchapi';
 import { describe, expect, it } from 'vitest';
 
-// What core throws on a failed call: a real StitchError — the guard trusts core's brand, not a
-// borrowed `name`.
+// What core throws on a failed call: a real StitchError, so the test exercises core's brand
+// rather than the hosts' name fallback.
 const makeStitchError = (message: string, status?: number): StitchError =>
     new StitchError(message, { status });
 
@@ -31,11 +31,18 @@ describe('stitchError.is', () => {
         expect(stitchError.is(undefined)).toBe(false);
     });
 
-    it('recognises a subclass, not a borrowed name', () => {
+    it('recognises a subclass and a name-only lookalike', () => {
         expect(stitchError.is(rateLimited())).toBe(true);
+        // Fail-safe: an `Error` named after a stitch failure matches without core's brand (a copy
+        // of the class older than the brand, or a lookalike). Over-recognising only redacts more;
+        // any other name still falls through.
+        for (const name of ['StitchError', 'RateLimitError'])
+            expect(
+                stitchError.is(Object.assign(new Error('x'), { name })),
+            ).toBe(true);
         expect(
             stitchError.is(
-                Object.assign(new Error('x'), { name: 'StitchError' }),
+                Object.assign(new Error('x'), { name: 'TypeError' }),
             ),
         ).toBe(false);
     });

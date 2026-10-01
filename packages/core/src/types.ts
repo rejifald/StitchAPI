@@ -2282,6 +2282,11 @@ const STITCH_ERROR = Symbol.for('stitchapi.error');
  * - **Not `instanceof` alone.** A second copy of `stitchapi` in the process (a CJS consumer beside
  *   an ESM one, or two installed versions) has its own `StitchError` class, and an error from one
  *   is not an `instanceof` the other. The guard also reads the realm-wide brand, so both match.
+ *
+ * It is **strict**: a lookalike (a plain `Error` that borrows `name = 'StitchError'`, a spread or
+ * JSON copy of a real one) is rejected, and so is an error from a copy of `stitchapi` older than
+ * the brand. A boundary that must fail safe, such as the host adapters withholding a message,
+ * adds its own name check on top rather than loosening this guard.
  */
 export function isStitchError(err: unknown): err is StitchError {
     return (

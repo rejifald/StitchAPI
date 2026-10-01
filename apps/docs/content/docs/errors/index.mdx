@@ -35,7 +35,7 @@ try {
 `stitchapi/*` subpath carries its own copy of the class, or two installed
 versions. Where that can happen, check with `isStitchError(e)` instead. It is
 true for `StitchError` and every subclass, `RateLimitError` included, and it is
-the check every `@stitchapi/*` host adapter's `stitchError.is` runs:
+the check every `@stitchapi/*` host adapter's `stitchError.is` starts from:
 
 ```ts twoslash
 import { isStitchError } from 'stitchapi';
@@ -44,6 +44,12 @@ function describeFailure(e: unknown): string {
     return isStitchError(e) ? `upstream ${e.status ?? 'unreachable'}` : 'bug';
 }
 ```
+
+The guard is strict: an `Error` that only borrows `name = 'StitchError'` is not
+a stitch error to it, so build test doubles with `new StitchError(…)`. The host
+adapters also accept an `Error` with that name or `RateLimitError`, so a failure
+from a copy of `stitchapi` that predates the guard still gets the host's generic
+default body instead of reaching the framework's own error handling.
 
 <Callout type="info">
     `.body` carries the upstream error payload only to the awaited / `.safe()`

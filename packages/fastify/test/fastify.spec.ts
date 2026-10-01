@@ -504,6 +504,35 @@ describe('stitchPlugin', () => {
         expect(res.body).not.toContain('payments.internal');
     });
 
+    // A copy of the class older than core's brand (or a lookalike) carries no brand, so core's guard
+    // says no; the host also matches on the known stitch-error names, or Fastify's default handler
+    // would answer with the message. Over-recognising only redacts more.
+    test('a name-only lookalike gets the generic default body, never the raw message', async () => {
+        const { adapter } = fakeAdapter(() => ({
+            status: 200,
+            headers: {},
+            body: {},
+        }));
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seam: { baseUrl: 'https://api.test', adapter },
+            logger: false,
+        });
+        app.get('/lookalike', async () => {
+            throw Object.assign(
+                new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+                { name: 'RateLimitError', status: 429 },
+            );
+        });
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/lookalike' });
+        expect(res.statusCode).toBe(502);
+        expect(res.json()).toEqual({ error: 'Bad Gateway' });
+        expect(res.body).not.toContain('payments.internal');
+    });
+
     test('errorHandler:true registers the default mapping (the new P13 spelling, at runtime)', async () => {
         // `true` never type-checked before, so this asserts the RUNTIME honours it — not just
         // that the signature widened. It must behave exactly like omitting the key: register
@@ -612,7 +641,7 @@ describe('stitchPlugin', () => {
 });
 
 describe('stitchError.is / stitchError.handler unit', () => {
-    test('stitchError.is recognises a StitchError and its subclasses, not a borrowed name', () => {
+    test('stitchError.is recognises a StitchError, its subclasses and a name-only lookalike', () => {
         expect(stitchError.is(new StitchError('x'))).toBe(true);
         expect(
             stitchError.is(
@@ -622,10 +651,16 @@ describe('stitchError.is / stitchError.handler unit', () => {
                 }),
             ),
         ).toBe(true);
-        // The name is not trusted: only core's brand marks a stitch failure.
+        // Fail-safe: an `Error` named after a stitch failure matches without core's brand (a
+        // copy of the class older than the brand, or a lookalike). Over-recognising only redacts
+        // more; any other name still falls through.
+        for (const name of ['StitchError', 'RateLimitError'])
+            expect(
+                stitchError.is(Object.assign(new Error('x'), { name })),
+            ).toBe(true);
         expect(
             stitchError.is(
-                Object.assign(new Error('x'), { name: 'StitchError' }),
+                Object.assign(new Error('x'), { name: 'TypeError' }),
             ),
         ).toBe(false);
         expect(stitchError.is(new Error('plain'))).toBe(false);

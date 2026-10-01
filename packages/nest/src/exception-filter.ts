@@ -1,7 +1,8 @@
 // StitchError → Nest HttpException (ADR 0006 Decision 10 follow-up). A failed stitch
 // throws a `StitchError` (or a subclass such as `RateLimitError`) carrying the upstream `status`
-// (packages/core/src/types.ts), recognised by core's `isStitchError`. This bridges it to Nest's HTTP layer so a controller
-// calling a stitch needs no per-handler try/catch and no hand-rolled @Catch filter.
+// (packages/core/src/types.ts), recognised by core's `isStitchError`. This bridges it to Nest's
+// HTTP layer so a controller calling a stitch needs no per-handler try/catch and no hand-rolled
+// @Catch filter.
 //
 // The two functions below are the implementations; the barrel exports only the `stitchError`
 // namespace that faces them (the filter class stays a top-level class — it is DI-registered,
@@ -25,12 +26,17 @@ export type StitchErrorLike = Error & { status?: number };
  * barrel exports the namespace, not this.
  *
  * True when `err` is the error a stitch throws on failure — a `StitchError` or any subclass
- * (`RateLimitError` included), from any copy of `stitchapi`. Delegates to core's `isStitchError`
- * rather than checking `err.name`, which a subclass overrides: a name check let a 429's raw
- * upstream message past the generic default (#867).
+ * (`RateLimitError` included), from any copy of `stitchapi`: core's `isStitchError`, or an `Error`
+ * named after a stitch failure. The name fallback is fail-safe: a copy of `stitchapi` older than
+ * the brand, or a lookalike, would otherwise reach Nest's base filter, which answers with the
+ * message. Recognising too much only redacts more.
  */
 export function isStitchError(err: unknown): err is StitchErrorLike {
-    return isCoreStitchError(err);
+    return (
+        isCoreStitchError(err) ||
+        (err instanceof Error &&
+            (err.name === 'StitchError' || err.name === 'RateLimitError'))
+    );
 }
 
 /** The safe, fixed message the mapped exception carries by default. */

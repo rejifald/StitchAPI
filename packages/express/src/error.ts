@@ -1,8 +1,8 @@
 // StitchError → Express error-handling middleware. A failed stitch throws a `StitchError` (or a
 // subclass such as `RateLimitError`) carrying the upstream `status` (packages/core/src/types.ts),
-// recognised by core's `isStitchError`. This adapts the Fastify error handler to Express's four-arg error middleware `(err, req, res, next)`, so a
-// route handler calling a stitch needs no per-handler try/catch — register it last with
-// `app.use(stitchError.handler())`.
+// recognised by core's `isStitchError`. This adapts the Fastify error handler to Express's
+// four-arg error middleware `(err, req, res, next)`, so a route handler calling a stitch needs no
+// per-handler try/catch — register it last with `app.use(stitchError.handler())`.
 //
 // The two functions below are the implementations; the barrel exports only the `stitchError`
 // namespace that faces them. They stay plain module functions so a bundler reaches one of them
@@ -23,12 +23,17 @@ export type StitchErrorLike = Error & { status?: number };
  * barrel exports the namespace, not this.
  *
  * True when `err` is the error a stitch throws on failure — a `StitchError` or any subclass
- * (`RateLimitError` included), from any copy of `stitchapi`. Delegates to core's `isStitchError`
- * rather than checking `err.name`, which a subclass overrides: a name check let a 429's raw
- * upstream message past the generic default (#867).
+ * (`RateLimitError` included), from any copy of `stitchapi`: core's `isStitchError`, or an `Error`
+ * named after a stitch failure. The name fallback is fail-safe: a copy of `stitchapi` older than
+ * the brand, or a lookalike, would otherwise reach the framework's default handler, which may
+ * echo the message. Recognising too much only redacts more.
  */
 export function isStitchError(err: unknown): err is StitchErrorLike {
-    return isCoreStitchError(err);
+    return (
+        isCoreStitchError(err) ||
+        (err instanceof Error &&
+            (err.name === 'StitchError' || err.name === 'RateLimitError'))
+    );
 }
 
 export interface StitchErrorOptions {

@@ -244,7 +244,7 @@ describe('stitchError.map / stitchError.handler map a StitchError to HTTP', () =
         await api.close();
     });
 
-    test('stitchError.is recognises a StitchError and its subclasses, not a borrowed name', () => {
+    test('stitchError.is recognises a StitchError, its subclasses and a name-only lookalike', () => {
         expect(stitchError.is(new StitchError('x'))).toBe(true);
         expect(
             stitchError.is(
@@ -254,10 +254,16 @@ describe('stitchError.map / stitchError.handler map a StitchError to HTTP', () =
                 }),
             ),
         ).toBe(true);
-        // The name is not trusted: only core's brand marks a stitch failure.
+        // Fail-safe: an `Error` named after a stitch failure matches without core's brand (a
+        // copy of the class older than the brand, or a lookalike). Over-recognising only redacts
+        // more; any other name still falls through.
+        for (const name of ['StitchError', 'RateLimitError'])
+            expect(
+                stitchError.is(Object.assign(new Error('x'), { name })),
+            ).toBe(true);
         expect(
             stitchError.is(
-                Object.assign(new Error('x'), { name: 'StitchError' }),
+                Object.assign(new Error('x'), { name: 'TypeError' }),
             ),
         ).toBe(false);
         expect(stitchError.is(new Error('plain'))).toBe(false);

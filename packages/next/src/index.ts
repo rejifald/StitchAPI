@@ -153,11 +153,16 @@ export type StitchErrorLike = Error & { status?: number };
 //
 // Guard half of `stitchError`; the namespace carries the contract. True when `err` is the error
 // a stitch throws on failure — a `StitchError` or any subclass (`RateLimitError` included), from
-// any copy of `stitchapi`. Delegates to core's `isStitchError` rather than checking `err.name`,
-// which a subclass overrides: a name check let a 429's raw upstream message past the generic
-// default (#867).
+// any copy of `stitchapi`: core's `isStitchError`, or an `Error` named after a stitch failure.
+// The name fallback is fail-safe: a copy of `stitchapi` older than the brand, or a lookalike,
+// would otherwise be rethrown to the framework's own error handling. Recognising too much only
+// redacts more.
 function isStitchError(err: unknown): err is StitchErrorLike {
-    return isCoreStitchError(err);
+    return (
+        isCoreStitchError(err) ||
+        (err instanceof Error &&
+            (err.name === 'StitchError' || err.name === 'RateLimitError'))
+    );
 }
 
 // A small map of the statuses this helper emits → their generic reason phrase, used for
