@@ -66,6 +66,40 @@ npm release are grouped under the in-development version that introduced them.
   own default and is set explicitly, so a host lands on the cautious side without having to know
   the default. Additive: no existing field moves.
 
+- **An experimental tier outside the 1.x freeze: `stitchapi/llm`, `stitchapi/postmessage`,
+  `stitchapi/pipe`, `@stitchapi/openapi`, `@stitchapi/vercel-ai`, `@stitchapi/fingerprint-typebox`
+  and `@stitchapi/shell`.**
+  ([P26](docs/CONTRACT.md#p26--an-experimental-tier-sits-outside-the-freeze),
+  [#841](https://github.com/rejifald/StitchAPI/issues/841)) Versions are lockstep, so `1.0.0` would
+  have put every published package under
+  [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)'s deprecation
+  obligation at once — including seven surfaces whose shape is not settled. Those seven now ship in
+  the lockstep version with a narrower promise: a **minor** release may change their shape or
+  behaviour, each such change is listed in this file with a one-line migration, and no `@deprecated`
+  alias is owed. A **patch** release does not change one of them, so a `~1.0.0` pin stays on what
+  you built against. The one exception is a security fix, which may change a surface's behaviour
+  (never its shape) in a patch: it is the minimal change that closes the vulnerability and is
+  listed under the release's `### Security` heading with a one-line migration. Every other
+  contract rule still applies to them. Apart from the one type moved under Changed, no symbol,
+  field or behaviour moves.
+
+    The tier is marked in three places. Each of the 53 symbols the seven surfaces export carries an
+    `@experimental` JSDoc tag, on every overload signature (so an editor shows it on hover whichever
+    form of `all` or `stitchTool` you call); each surface's docs page or README opens with an
+    _Experimental_ banner, and a docs page that teaches a surface carries a short note of its own;
+    and a new [Stability](https://stitchapi.dev/docs/reference/stability) page in the Reference
+    section lists the members, with the version each entered the tier, and says how a surface
+    graduates — a dedicated docs-site page, no open issue proposing a change to its public shape,
+    and one minor release with no breaking changelog entry for it. A package's CLI
+    (`stitch-openapi`) is part of its surface. No stable entry point re-exports or names an
+    experimental symbol. A new ratchet rule, **R12**, reads the member table in P26 and fails the
+    gate when an exported symbol of a listed surface lacks its tag (on every entry point of a member
+    package), when a tag appears anywhere else, or when a published file outside the tier imports a
+    member, so the table stays the one list. It enters at zero, it is the one rule that cannot be
+    baselined, and a self-test that mutates a miniature repository runs with it. The full
+    compatibility policy — what counts as breaking, the TypeScript and Node floors — is
+    [#842](https://github.com/rejifald/StitchAPI/issues/842) and extends the same page.
+
 ### Changed
 
 - **BREAKING CHANGE: `StitchStore.increment` is optional — a store needs only `get` and `set`.**
@@ -242,6 +276,20 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
     where the casing is not under your control. Where two sources spelled one header differently (the
     config's `X-Trace`, the call's `x-trace`) the call's wins and only one is sent. A header a hook
     adds by mutating `ctx.req.headers` is written after the fold and keeps the spelling you give it.
+
+- **BREAKING CHANGE: `NoRequestShapeOnLlm` moves from `stitchapi` to `stitchapi/llm`.**
+  ([P26](docs/CONTRACT.md#p26--an-experimental-tier-sits-outside-the-freeze),
+  [D5](docs/CONTRACT.md#0-resolved-decisions)) The type rejects `method` and `wire.body` on an
+  `llm()` config and nothing else reads it, but it sat in the stable root barrel, where the 1.0
+  promise would have frozen the shape of an experimental surface. A stable entry point may not
+  name an experimental type, so the type moves into the surface that uses it. A hard break with no
+  alias, which D5 allows before 1.0 GA. Only code that named the guard itself changes; `llm()`
+  applies it for you.
+
+    ```ts
+    -import type { NoRequestShapeOnLlm } from 'stitchapi';
+    +import type { NoRequestShapeOnLlm } from 'stitchapi/llm';
+    ```
 
 ### Fixed
 
