@@ -8,7 +8,7 @@
 //   2. the exact rendered shape — the leading blank line, the section heading, the reuse
 //      instruction, and the `-   `name` — summary` list marker — plus the fact that the
 //      function preserves the caller's order (the CLI sorts; the function must not).
-import { projectStitchesSection } from '../src/rules-template';
+import { RULES_BODY, projectStitchesSection } from '../src/rules-template';
 
 describe('projectStitchesSection', () => {
     it('returns an empty string when there are no stitches', () => {
@@ -42,5 +42,26 @@ describe('projectStitchesSection', () => {
             { name: 'createPost', summary: 'POST /posts' },
         ]);
         expect(out.indexOf('getUser')).toBeLessThan(out.indexOf('createPost'));
+    });
+});
+
+// `stitch init` writes RULES_BODY into users' AGENTS.md / CLAUDE.md / rule files, and
+// `stitch init --check` pins it, so the shell commands it tells an agent to run are
+// effectively frozen once adopters commit them. The npm name `stitch` is an unrelated
+// package: a package runner given the bare name runs it whenever the project has no local
+// `stitch` bin.
+// The executable ships in the `stitchapi` package, so the rule must name the package
+// (#861; the repo-wide guard is scripts/check-npx-bin.mjs).
+describe('RULES_BODY shell invocations', () => {
+    it('launch the bin through the stitchapi package', () => {
+        expect(RULES_BODY).toContain('npx stitchapi run getUser --id 1');
+        expect(RULES_BODY).toContain('npx stitchapi diagram');
+        expect(RULES_BODY).toContain('npx stitchapi mcp');
+    });
+
+    it('never point a package runner at the bare `stitch` name', () => {
+        expect(RULES_BODY).not.toMatch(
+            /\b(?:npx|pnpm dlx|bunx|yarn dlx)\s+stitch(?!api)\b/,
+        );
     });
 });
