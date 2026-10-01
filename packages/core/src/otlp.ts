@@ -146,7 +146,7 @@ function otlpResource(resource?: SpanAttributes): SpanAttributes {
 interface OpenRun {
     span: OtelSpan; // the run span
     http: boolean; // attempts go out over HTTP (CLIENT + http.*), not a surface's own transport
-    name: string; // an attempt span's name: the method (HTTP) or the transport's id
+    name: string; // an attempt span's name: `{method} {template}` (HTTP), the method, or the transport's id
     base: SpanAttributes; // what every attempt carries (method, url.full, server.*)
     kids: OtelSpan[];
     attempt?: OtelSpan | undefined; // the attempt in flight
@@ -236,11 +236,12 @@ function endPage(r: OpenRun, at: number, failed?: string): void {
  *   failure); never an `http.*` attribute;
  * - a **page** span per page of a paginated run — INTERNAL, a child of the run;
  * - an **attempt** span per physical request, always (a single clean request included) — a child
- *   of its page, else of the run. Over HTTP it is a CLIENT span named `{method}` with the OTel HTTP
- *   semantic-convention attributes (`http.request.method`, `url.full`, `server.address`,
- *   `server.port`, `http.response.status_code`, `http.request.resend_count` on a resend,
- *   `error.type`); for a surface that replaces the transport (`shell`, `postmessage`) it is an
- *   INTERNAL span with none of them.
+ *   of its page, else of the run. Over HTTP it is a CLIENT span named `{method} {url.template}` —
+ *   `GET /users/{id}`, the template read off the `start` event, the bare method when none is
+ *   known — with the OTel HTTP semantic-convention attributes (`http.request.method`,
+ *   `url.template`, `url.full`, `server.address`, `server.port`, `http.response.status_code`,
+ *   `http.request.resend_count` on a resend, `error.type`); for a surface that replaces the
+ *   transport (`shell`, `postmessage`) it is an INTERNAL span with none of them.
  *
  * Span ids come from the engine: the run's off the {@link TraceContext} ctx (ADR 0007), an attempt's
  * and a page's off the `progress` events that open and close them. A sink fed events by hand
@@ -304,10 +305,16 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
                         }),
                     ),
                     http,
-                    name: http ? event.method : String(event.transport),
+                    // HTTP client semconv: `{method} {url.template}`, the method alone when no
+                    // low-cardinality template is known.
+                    name: http
+                        ? event.method +
+                          (event.template ? ` ${event.template}` : '')
+                        : String(event.transport),
                     base: http
                         ? compact({
                               'http.request.method': event.method,
+                              'url.template': event.template,
                               'url.full': scrubUrl(event.url),
                               'server.address': u?.hostname,
                               'server.port': u

@@ -34,7 +34,9 @@ npm release are grouped under the in-development version that introduced them.
 
 - **`StitchEvent` gains the fields the span tree is built from — all optional, all additive.**
   ([ADR 0017](docs/adr/0017-outbound-trace-context-propagation.md) D6) `start.surface` (the surface
-  id) and `start.transport` (`'http'`, or the id of a surface that replaces the transport);
+  id), `start.transport` (`'http'`, or the id of a surface that replaces the transport) and
+  `start.template` (the stitch's unexpanded path template, `/users/{id}`; see the span naming
+  below);
   `progress.spanId`/`parentSpanId` on a `request` step (the engine-minted id of that physical
   request, and its run or page) and on a `paginate` step (the page it closes); `progress.status`
   on a `retry`, an `auth` refresh and a `paginate` step; `errorType` on an `error` event and on a
@@ -67,11 +69,23 @@ npm release are grouped under the in-development version that introduced them.
   move between spans, so it is fixed before 1.0, after which a dashboard or alert keyed on them
   would break on every change:
 
-    | Span    | Kind     | Name              | Carries                                                                                                                                    |
-    | ------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-    | run     | INTERNAL | the stitch's name | `stitch.name`, `stitch.surface`, the progress/info/drift span events, the run's status                                                     |
-    | page    | INTERNAL | `page N`          | `stitch.page` — a child of the run, one per page                                                                                           |
-    | attempt | CLIENT   | `{method}`        | `http.request.method`, `url.full`, `server.address`, `server.port`, `http.response.status_code`, `http.request.resend_count`, `error.type` |
+    | Span    | Kind     | Name                      | Carries                                                                                                                                                    |
+    | ------- | -------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | run     | INTERNAL | the stitch's name         | `stitch.name`, `stitch.surface`, the progress/info/drift span events, the run's status                                                                     |
+    | page    | INTERNAL | `page N`                  | `stitch.page` — a child of the run, one per page                                                                                                           |
+    | attempt | CLIENT   | `{method} {url.template}` | `http.request.method`, `url.template`, `url.full`, `server.address`, `server.port`, `http.response.status_code`, `http.request.resend_count`, `error.type` |
+
+    An HTTP attempt span is named `{method} {url.template}` — `GET /users/{id}` — per the OTel HTTP
+    client conventions, and `url.template` carries the same template.
+    ([#900](https://github.com/rejifald/StitchAPI/issues/900)) The template is the stitch's own
+    low-cardinality **path** template, as written and unexpanded: `path` under a static `baseUrl`'s
+    path prefix, or a templated `url`, with the scheme, authority (userinfo, host, port), query
+    (a literal `?…` and a `{?q}`/`{&q}` operator) and fragment removed — so an expanded value, a
+    query string or a credential can never reach a span name. Where no low-cardinality template is
+    known the name is the bare method and `url.template` is absent: a function `url` or `baseUrl`
+    (computed per call), and an absolute `url` with no `{…}` variable (a single literal URL whose
+    path may be an id or a secret). Fixed before 1.0 because adding the template later would rename
+    every HTTP span. The `start` event carries it as the new optional `template` field.
 
     An attempt span exists for **every** request, a clean single call included (one span → two),
     and nests under its page. A surface that replaces the HTTP transport (`shell`, `postmessage`)
@@ -88,7 +102,8 @@ npm release are grouped under the in-development version that introduced them.
     handle `'INTERNAL'`.
 
     Migration — re-key HTTP panels and alerts from the run span to its CLIENT child (`kind =
-CLIENT`, name `{method}`), key per-stitch panels on `stitch.name`, rename `stitch.waited_ms` to
+CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch panels on
+    `stitch.name`, rename `stitch.waited_ms` to
     `stitch.waited`, set `OTEL_SERVICE_NAME` (or `resource`) for the service you used to find under
     `stitchapi`, and stop filtering on `status = OK`.
 

@@ -1594,6 +1594,15 @@ export type StitchEvent<T = unknown> =
            * with `http.*` attributes and any other as an INTERNAL span without them.
            */
           transport?: string;
+          /**
+           * The stitch's low-cardinality path template, unexpanded — `/users/{id}`, from `path`
+           * (under a static `baseUrl`'s own path) or a templated `url` — for an `'http'` transport.
+           * The query, the fragment and the scheme/authority are never in it. Omitted when none is
+           * known: a function `url`/`baseUrl`, an absolute `url` with no `{…}` variable, a
+           * non-HTTP transport. The OTLP sink names an attempt span `{method} {template}` and sets
+           * `url.template` to it.
+           */
+          template?: string;
           at: number;
           // Run identity (ADR 0007) — also delivered on the {@link TraceContext} ctx. Stamped
           // here too so a non-sink `.stream()` consumer can read a run's identity off its first

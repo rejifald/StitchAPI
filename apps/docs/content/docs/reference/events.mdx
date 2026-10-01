@@ -26,8 +26,9 @@ fields. Every event carries an `at` field — a millisecond timestamp.
   label), `method`, `url`, `input` (the `StitchInput` for this call),
   `surface?` (the surface id: `http`, `graphql`, `shell`, …), `transport?`
   (`http` when the HTTP adapter carries the request, else the id of the
-  surface that replaces it), the run identity (`spanId?`, `traceId?`,
-  `parentSpanId?`), `at`.
+  surface that replaces it), `template?` (the stitch's unexpanded path
+  template, `/users/{id}`, when one is known), the run identity (`spanId?`,
+  `traceId?`, `parentSpanId?`), `at`.
 - **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
   `ProgressPhase`), `attempt` (1-based), `detail?`, `waited?` (set when the
   phase involved a wait, e.g. `throttled` or `retry`), `status?` (the response

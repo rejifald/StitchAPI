@@ -143,11 +143,16 @@ before the header exists:
 - **Page spans** — INTERNAL children of the run, one per page of a paginated call.
 - **Attempt spans** — one per **physical request, always** (a single clean request
   included), a child of its page or else of the run. Over the HTTP adapter it is a
-  **CLIENT** span named `{method}` per the OTel HTTP conventions, with
-  `http.request.method`, `url.full` (scrubbed), `server.address`, `server.port`,
-  `http.response.status_code`, `http.request.resend_count` (on a resend) and `error.type`.
-  For a surface whose `execute` replaces the transport (ADR 0008 — `shell`, `postmessage`)
-  it is INTERNAL with no `http.*`.
+  **CLIENT** span named `{method} {url.template}` per the OTel HTTP conventions
+  ([#900](https://github.com/rejifald/StitchAPI/issues/900)) — `GET /users/{id}` — with
+  `http.request.method`, `url.template`, `url.full` (scrubbed), `server.address`,
+  `server.port`, `http.response.status_code`, `http.request.resend_count` (on a resend) and
+  `error.type`. The template is the stitch's unexpanded **path** template (`path` under a
+  static `baseUrl`'s path, or a templated `url`; scheme, authority, query and fragment
+  removed), stamped by the engine on `start.template`; with none known — a function `url` or
+  `baseUrl`, or an absolute `url` with no `{…}` variable — the name is the bare `{method}` and
+  `url.template` is absent. For a surface whose `execute` replaces the transport (ADR 0008 —
+  `shell`, `postmessage`) it is INTERNAL with no `http.*`.
 - **Ids are engine-minted at request time** — an attempt's on `progress{phase: 'request'}`
   (`spanId`, `parentSpanId`), a page's on the `progress{phase: 'paginate'}` that closes it —
   never at export. The same ids are what a future per-record stamp

@@ -52,22 +52,22 @@ paginated call puts a **page** span between the two:
 
 ```
 getUser                 INTERNAL  run: stitch.name, stitch.surface, span events
- ├─ GET                 CLIENT    attempt 1: 503 → ERROR, error.type "503"
- └─ GET                 CLIENT    attempt 2: 200, http.request.resend_count 1
+ ├─ GET /users/{id}     CLIENT    attempt 1: 503 → ERROR, error.type "503"
+ └─ GET /users/{id}     CLIENT    attempt 2: 200, http.request.resend_count 1
 
 listUsers               INTERNAL  run
  ├─ page 1              INTERNAL  stitch.page 1
- │   └─ GET             CLIENT    the request that fetched page 1
+ │   └─ GET /users      CLIENT    the request that fetched page 1
  └─ page 2              INTERNAL  stitch.page 2
-     ├─ GET             CLIENT    503 → ERROR
-     └─ GET             CLIENT    200, http.request.resend_count 1
+     ├─ GET /users      CLIENT    503 → ERROR
+     └─ GET /users      CLIENT    200, http.request.resend_count 1
 ```
 
 The run span is named for the stitch and never carries an `http.*` attribute:
-it is the call, not the wire. Each attempt span is named for the request's
-method, per the OTel HTTP conventions. A retry, an auth refresh and an SSE
-reconnect each send a new request, so each is its own attempt span, and the
-one it replaced ends in `ERROR`.
+it is the call, not the wire. Each attempt span is named
+[`{method} {url.template}`](#span-names), per the OTel HTTP conventions. A
+retry, an auth refresh and an SSE reconnect each send a new request, so each is
+its own attempt span, and the one it replaced ends in `ERROR`.
 
 A surface that replaces the HTTP transport — `shell`, `postmessage` — still gets
 an attempt span per request, but an `INTERNAL` one named for the surface, with
@@ -85,6 +85,42 @@ The engine mints each attempt's and each page's span id when it happens and
 stamps it on the `progress` event that opens it (`phase: 'request'`) or closes
 it (`phase: 'paginate'`), so the exporter never invents one.
 
+## Span names
+
+An HTTP attempt span is named `{method} {url.template}`, and `url.template`
+carries the same template. The template is the stitch's own low-cardinality
+**path** template, as you wrote it and unexpanded — `/users/{id}`, never
+`/users/42` — so a dashboard grouping by span name sees one series per route.
+
+It is derived from the config, never from a call's input:
+
+| Config                                                        | Span name                 |
+| ------------------------------------------------------------- | ------------------------- |
+| `baseUrl: 'https://api.example.com'`, `path: '/users/{id}'`   | `GET /users/{id}`         |
+| `baseUrl: 'https://api.example.com/v2'`, `path: '/users'`     | `GET /v2/users`           |
+| `url: 'https://api.example.com/orgs/{org}/members'`           | `GET /orgs/{org}/members` |
+| `path: '/search{?q,sort}'`, or `'/search?lang=en'`            | `GET /search`             |
+| `url: 'https://api.example.com/users/42'` (no `{…}` variable) | `GET`                     |
+| `url: () => …`, or `baseUrl: () => …`                         | `GET`                     |
+
+- **Path only.** The scheme and authority (userinfo, host, port) are dropped,
+  and so is the query — a literal `?…` and a `{?q}` or `{&q}` operator alike —
+  and the fragment. A query string, an expanded value or a credential in the
+  URL's userinfo or query can therefore never reach a span name or
+  `url.template`. Only the config's own text does, so keep a secret out of the
+  path you write.
+- **A static `baseUrl`'s path prefix is part of it** (`/v2/users`). A function
+  `baseUrl` leaves that prefix unknown, so the template is dropped.
+- **No template, no `url.template`.** A function `url` or `baseUrl` is computed
+  per call, and an absolute `url` with no `{…}` variable is one literal URL
+  whose path may be an instance id or a secret, so neither names a route. The
+  span is named for the method alone (`GET`) and carries no `url.template`.
+  Write the endpoint as `baseUrl` plus `path`, or give the absolute `url` its
+  variables, to get a template. The full URL is still on `url.full`.
+
+A surface that replaces the HTTP transport (`shell`, `postmessage`) has no
+template: its attempt span is named for the surface.
+
 ## Attributes
 
 | Attribute                   | On                 | Value                                                                                |
@@ -95,6 +131,7 @@ it (`phase: 'paginate'`), so the exporter never invents one.
 | `stitch.page`               | page               | The page number, from 1                                                              |
 | `stitch.attempt`            | attempt            | The engine's attempt number                                                          |
 | `http.request.method`       | HTTP attempt       | The request method                                                                   |
+| `url.template`              | HTTP attempt       | The stitch's path template, `/users/{id}`, when one is known ([above](#span-names))  |
 | `url.full`                  | HTTP attempt       | The request URL, scrubbed (below)                                                    |
 | `server.address`            | HTTP attempt       | The URL's host                                                                       |
 | `server.port`               | HTTP attempt       | The URL's port, or the scheme's default (`443`, `80`)                                |

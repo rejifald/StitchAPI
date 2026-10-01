@@ -158,6 +158,30 @@ function joinUrl(base: string, path: string): string {
     return base.slice(0, end) + (path.startsWith('/') ? path : '/' + path);
 }
 
+// The low-cardinality target an HTTP attempt span is named by — `{method} {template}`, the OTel
+// HTTP client convention, and the OTLP sink's `url.template` attribute. It is the stitch's RFC 6570
+// PATH template as written, never expanded: `/users/{id}`. The rule, in order:
+//   1. a function `url` (or a function `baseUrl`, whose path prefix is then unknown) is computed per
+//      call, so it names nothing — no template;
+//   2. the endpoint is `url`, else `baseUrl` + `path` (joined as `buildRequest` joins them);
+//   3. every query (a literal `?…`, a `{?q}`/`{&q}` operator) and fragment is dropped, so a secret
+//      riding the query never reaches a span name;
+//   4. scheme and authority (userinfo, host, port) are dropped, leaving the path;
+//   5. an absolute `url` that carries no `{…}` variable is a single literal URL, whose path may be an
+//      instance id (`/users/42`) or a secret, so it is no template either. A relative `path` — the
+//      stitch's declared route — is a template even with no variable (`/users`).
+const ORIGIN = /^[a-z][a-z\d+.-]*:\/\/(?:[^/{]|\{[^/}][^}]*\})*/i;
+function urlTemplate(cfg: ResolvedStitchConfig): string | undefined {
+    const { url, baseUrl, path = '' } = cfg;
+    const base = url === undefined ? baseUrl : '';
+    const raw = url ?? path;
+    if (typeof raw === 'function' || typeof base === 'function') return;
+    const t = joinUrl(base ?? '', raw)
+        .replace(/\{[?&#][^}]*\}|[?#].*/g, '')
+        .replace(ORIGIN, '');
+    return t && (t.includes('{') || !ORIGIN.test(raw)) ? t : undefined;
+}
+
 // Inject a stable Idempotency-Key on writes. The key is computed once per logical call (here,
 // in buildRequest) and the attempt loop reuses the same request, so it stays constant across
 // retries. SAFE methods are skipped, and a caller-provided header (case-insensitive) wins.
@@ -1152,6 +1176,8 @@ const startEvt = (
         // OTLP sink reads the latter to export an attempt as a CLIENT HTTP span or an INTERNAL one.
         surface: cfg.kind.id,
         transport: cfg.kind.execute ? cfg.kind.id : 'http',
+        // The path template an HTTP attempt span is named by; only an HTTP request has one.
+        template: cfg.kind.execute ? undefined : urlTemplate(cfg),
         at: now(),
         spanId: run.spanId,
         traceId: run.traceId,

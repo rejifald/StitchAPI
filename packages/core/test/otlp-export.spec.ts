@@ -1,6 +1,6 @@
 // OTLP export: an opt-in trace sink maps the event stream to an OpenTelemetry span tree — an
-// INTERNAL run span over a CLIENT span per request (OTel HTTP semconv attributes, ADR 0017 D6) —
-// and hands it to a SpanExporter. Tested with a STUB exporter that
+// INTERNAL run span over a CLIENT span per request, named `{method} {url.template}` (OTel HTTP
+// semconv, ADR 0017 D6) — and hands it to a SpanExporter. Tested with a STUB exporter that
 // captures spans in memory — no running collector, no network.
 import { stitch } from '../src';
 import type { StitchEvent } from '../src';
@@ -52,7 +52,8 @@ test('maps a retried call to an INTERNAL run span and a CLIENT span per request 
             type: 'start',
             name,
             method: 'GET',
-            url: 'http://api.example.com/x',
+            url: 'http://api.example.com/things/42',
+            template: '/things/{id}',
             input: {},
             at: 1000,
         },
@@ -81,14 +82,19 @@ test('maps a retried call to an INTERNAL run span and a CLIENT span per request 
     expect(run.events.some((e) => e.name === 'retry')).toBe(true);
     expect(run.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(run.spanId).toMatch(/^[0-9a-f]{16}$/);
-    // Each request is a CLIENT child named `{method}`, carrying the HTTP attributes.
+    // Each request is a CLIENT child named `{method} {template}` (`url.template` carries the
+    // template), with the HTTP attributes. The run itself carries no HTTP attribute.
+    expect(run.attributes).not.toHaveProperty('url.template');
     for (const a of [first, second]) {
         expect(a.kind).toBe('CLIENT');
-        expect(a.name).toBe('GET');
+        expect(a.name).toBe('GET /things/{id}');
         expect(a.parentSpanId).toBe(run.spanId);
         expect(a.traceId).toBe(run.traceId);
         expect(a.attributes['http.request.method']).toBe('GET');
-        expect(a.attributes['url.full']).toBe('http://api.example.com/x');
+        expect(a.attributes['url.template']).toBe('/things/{id}');
+        expect(a.attributes['url.full']).toBe(
+            'http://api.example.com/things/42',
+        );
         expect(a.attributes['server.address']).toBe('api.example.com');
         expect(a.attributes['server.port']).toBe(80);
     }
@@ -137,6 +143,9 @@ test('maps an error to an ERROR run and attempt with error.type and status_code'
     expect(attempt.attributes['http.response.status_code']).toBe(500);
     expect(attempt.attributes['error.type']).toBe('500');
     expect(attempt.attributes['server.port']).toBe(8443); // an explicit port survives
+    // No `template` on the `start` event (a hand-fed stream, or none known): the method alone.
+    expect(attempt.name).toBe('POST');
+    expect(attempt.attributes).not.toHaveProperty('url.template');
 });
 
 test('end-to-end: a real stitch call exports its run span and one attempt span', async () => {
@@ -155,6 +164,8 @@ test('end-to-end: a real stitch call exports its run span and one attempt span',
     expect(run.status.code).toBe('UNSET');
     expect(attempt.kind).toBe('CLIENT');
     expect(attempt.parentSpanId).toBe(run.spanId); // ids from the `start` event, not re-minted
+    expect(attempt.name).toBe('GET /ping'); // the stitch's path template, off the `start` event
+    expect(attempt.attributes['url.template']).toBe('/ping');
     expect(attempt.attributes['http.request.method']).toBe('GET');
     expect(String(attempt.attributes['url.full'])).toContain('/ping');
     expect(attempt.attributes['http.response.status_code']).toBe(200);

@@ -130,9 +130,10 @@ test('a clean call: an INTERNAL run span over one CLIENT attempt span', async ()
               "server.port": "<port>",
               "stitch.attempt": 1,
               "url.full": "http://127.0.0.1:<port>/ping",
+              "url.template": "/ping",
             },
             "kind": "CLIENT",
-            "name": "GET",
+            "name": "GET /ping",
             "status": {
               "code": "UNSET",
             },
@@ -148,6 +149,159 @@ test('a clean call: an INTERNAL run span over one CLIENT attempt span', async ()
         },
       }
     `);
+});
+
+// The attempt-span naming rule (#900): `{method} {url.template}` (OTel HTTP client semconv), the
+// template being the stitch's unexpanded RFC 6570 PATH template — never the expanded URL, a query,
+// a secret or an instance id — and the bare method when none is known. Dashboards group by these
+// names, so each shape of config below is a contract; the derivation table is `url-template.spec.ts`.
+const attemptOf = (c: Capture): OtelSpan =>
+    c.spans.find((s) => s.kind === 'CLIENT')!;
+
+test('a templated path: the attempt is named {method} {template}, url.template the unexpanded path', async () => {
+    const c = capture();
+    server.route('GET', '/users/42', { body: { id: 42 } });
+    const getUser = stitch({
+        name: 'getUser',
+        baseUrl: server.url,
+        path: '/users/{id}',
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await getUser({ params: { id: 42 } });
+
+    expect(tree(c.spans)).toMatchInlineSnapshot(`
+      {
+        "attributes": {
+          "stitch.name": "getUser",
+          "stitch.surface": "http",
+        },
+        "children": [
+          {
+            "attributes": {
+              "http.request.method": "GET",
+              "http.response.status_code": 200,
+              "server.address": "127.0.0.1",
+              "server.port": "<port>",
+              "stitch.attempt": 1,
+              "url.full": "http://127.0.0.1:<port>/users/42",
+              "url.template": "/users/{id}",
+            },
+            "kind": "CLIENT",
+            "name": "GET /users/{id}",
+            "status": {
+              "code": "UNSET",
+            },
+          },
+        ],
+        "events": [
+          "request",
+        ],
+        "kind": "INTERNAL",
+        "name": "getUser",
+        "status": {
+          "code": "UNSET",
+        },
+      }
+    `);
+});
+
+test('a templated query segment {?q} never reaches the name or url.template', async () => {
+    const c = capture();
+    server.route('GET', '/search', { body: [] });
+    const search = stitch({
+        name: 'search',
+        baseUrl: server.url,
+        path: '/search{?q}',
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await search({ params: { q: 'needle' } });
+
+    const a = attemptOf(c);
+    expect(a.name).toBe('GET /search');
+    expect(a.attributes['url.template']).toBe('/search');
+    // The query is on the wire (`url.full`), not in the low-cardinality name.
+    expect(String(a.attributes['url.full'])).toContain('?q=needle');
+    expect(JSON.stringify([a.name, a.attributes['url.template']])).not.toMatch(
+        /[?&]|needle/,
+    );
+});
+
+test('an absolute templated url: scheme, authority and the literal query are stripped', async () => {
+    const c = capture();
+    server.route('GET', '/orgs/acme/members', { body: [] });
+    const members = stitch({
+        name: 'members',
+        url: `${server.url}/orgs/{org}/members?api_key=hunter2`,
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await members({ params: { org: 'acme' } });
+
+    const a = attemptOf(c);
+    expect(a.name).toBe('GET /orgs/{org}/members');
+    expect(a.attributes['url.template']).toBe('/orgs/{org}/members');
+    // The secret is scrubbed from `url.full` and absent from every name and from the template.
+    expect(String(a.attributes['url.full'])).toContain('api_key=REDACTED');
+    expect(
+        JSON.stringify([
+            c.spans.map((s) => s.name),
+            a.attributes['url.template'],
+        ]),
+    ).not.toContain('hunter2');
+});
+
+test('a function url has no low-cardinality template: the name falls back to the method', async () => {
+    const c = capture();
+    server.route('GET', '/dyn/7', { body: {} });
+    const dyn = stitch({
+        name: 'dyn',
+        // Even a function that returns a `{…}` template is computed per call: it names nothing.
+        url: () => `${server.url}/dyn/{id}`,
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await dyn({ params: { id: 7 } });
+
+    const a = attemptOf(c);
+    expect(a.name).toBe('GET');
+    expect(a.attributes).not.toHaveProperty('url.template');
+});
+
+test('a function baseUrl leaves the path prefix unknown: the name falls back to the method', async () => {
+    const c = capture();
+    server.route('GET', '/users/42', { body: {} });
+    const getUser = stitch({
+        name: 'getUser',
+        baseUrl: () => server.url,
+        path: '/users/{id}',
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await getUser({ params: { id: 42 } });
+
+    const a = attemptOf(c);
+    expect(a.name).toBe('GET');
+    expect(a.attributes).not.toHaveProperty('url.template');
+});
+
+test('an absolute literal url may embed an id or a secret: the name falls back to the method', async () => {
+    const c = capture();
+    server.route('GET', '/orgs/acme/hooks/s3cr3t', { body: {} });
+    const hook = stitch({
+        name: 'hook',
+        url: `${server.url}/orgs/acme/hooks/s3cr3t`,
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await hook();
+
+    const a = attemptOf(c);
+    expect(a.name).toBe('GET');
+    expect(a.attributes).not.toHaveProperty('url.template');
+    // The span still says where it went — `url.full` is the scrubbed, high-cardinality field.
+    expect(String(a.attributes['url.full'])).toContain('/orgs/acme/hooks/');
 });
 
 test('a retried call: one attempt span per request, the resend carrying its count', async () => {
@@ -179,9 +333,10 @@ test('a retried call: one attempt span per request, the resend carrying its coun
               "server.port": "<port>",
               "stitch.attempt": 1,
               "url.full": "http://127.0.0.1:<port>/flaky",
+              "url.template": "/flaky",
             },
             "kind": "CLIENT",
-            "name": "GET",
+            "name": "GET /flaky",
             "status": {
               "code": "ERROR",
               "message": "status 503",
@@ -196,9 +351,10 @@ test('a retried call: one attempt span per request, the resend carrying its coun
               "server.port": "<port>",
               "stitch.attempt": 2,
               "url.full": "http://127.0.0.1:<port>/flaky",
+              "url.template": "/flaky",
             },
             "kind": "CLIENT",
-            "name": "GET",
+            "name": "GET /flaky",
             "status": {
               "code": "UNSET",
             },
@@ -259,9 +415,10 @@ test('a paginated call: attempts nest under their page, the resend count restart
                   "server.port": "<port>",
                   "stitch.attempt": 1,
                   "url.full": "http://127.0.0.1:<port>/list",
+                  "url.template": "/list",
                 },
                 "kind": "CLIENT",
-                "name": "GET",
+                "name": "GET /list",
                 "status": {
                   "code": "UNSET",
                 },
@@ -287,9 +444,10 @@ test('a paginated call: attempts nest under their page, the resend count restart
                   "server.port": "<port>",
                   "stitch.attempt": 1,
                   "url.full": "http://127.0.0.1:<port>/list",
+                  "url.template": "/list",
                 },
                 "kind": "CLIENT",
-                "name": "GET",
+                "name": "GET /list",
                 "status": {
                   "code": "ERROR",
                   "message": "status 503",
@@ -304,9 +462,10 @@ test('a paginated call: attempts nest under their page, the resend count restart
                   "server.port": "<port>",
                   "stitch.attempt": 2,
                   "url.full": "http://127.0.0.1:<port>/list",
+                  "url.template": "/list",
                 },
                 "kind": "CLIENT",
-                "name": "GET",
+                "name": "GET /list",
                 "status": {
                   "code": "UNSET",
                 },
@@ -331,9 +490,10 @@ test('a paginated call: attempts nest under their page, the resend count restart
                   "server.port": "<port>",
                   "stitch.attempt": 1,
                   "url.full": "http://127.0.0.1:<port>/list",
+                  "url.template": "/list",
                 },
                 "kind": "CLIENT",
-                "name": "GET",
+                "name": "GET /list",
                 "status": {
                   "code": "UNSET",
                 },
@@ -395,9 +555,10 @@ test('a failed call: ERROR on the attempt and the run, error.type the status', a
               "server.port": "<port>",
               "stitch.attempt": 1,
               "url.full": "http://127.0.0.1:<port>/things",
+              "url.template": "/things",
             },
             "kind": "CLIENT",
-            "name": "POST",
+            "name": "POST /things",
             "status": {
               "code": "ERROR",
               "message": "HTTP 500",
@@ -446,9 +607,10 @@ test('a call that throws: error.type is the error class, no status code', async 
               "server.port": "<port>",
               "stitch.attempt": 1,
               "url.full": "http://127.0.0.1:<port>/slow",
+              "url.template": "/slow",
             },
             "kind": "CLIENT",
-            "name": "GET",
+            "name": "GET /slow",
             "status": {
               "code": "ERROR",
               "message": "timed out after 20ms",
