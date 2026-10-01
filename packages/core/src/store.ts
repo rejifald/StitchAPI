@@ -157,7 +157,7 @@ export function chainThrottle(throttles: Throttle[]): Throttle {
     return {
         async acquire(key, opts) {
             let waited = 0;
-            let note = '';
+            const notes: string[] = [];
             // Thread the acquire options (e.g. `rateOnly` for streaming) to EVERY gate, so a
             // streaming member skips the concurrency slot on both the seam bucket and its own
             // local throttle while still charging each rate gate (ADR 0005 Decision 12).
@@ -165,9 +165,9 @@ export function chainThrottle(throttles: Throttle[]): Throttle {
                 const r = await t.acquire(key, opts);
                 waited += r.waited;
                 // Each gate announces its own per-process fallback once; keep every one.
-                if (r.note) note += (note && '; ') + r.note;
+                if (r.note) notes.push(r.note);
             }
-            return { waited, note };
+            return { waited, note: notes.join('; ') };
         },
         release(key) {
             // Unwind in reverse acquisition order.
@@ -363,7 +363,9 @@ export function createStoreThrottle(
         }
         if (paced) {
             const spacing = paced.per / paced.count; // ms between grants
-            let at: number | undefined;
+            // The instant this grant is due. Left at 0 on the in-process branch below, which does
+            // its own sleeping, so the wait computed from it is never positive there.
+            let at = 0;
             if (store.reserve) {
                 // The GCRA cell (ADR 0024). One atomic read-compute-write over a shared cursor
                 // gives the fleet what neither half of the fallback below can: the cursor carries
@@ -437,7 +439,7 @@ export function createStoreThrottle(
                 waited += (await inProcess.acquire(key, { rateOnly: true }))
                     .waited;
             }
-            const wait = at === undefined ? 0 : at - clock.now();
+            const wait = at - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
                 waited += wait;
