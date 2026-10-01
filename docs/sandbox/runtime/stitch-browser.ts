@@ -32,7 +32,7 @@ import type { TraceSink } from 'stitchapi';
  *     validate, compile,
  *     fetchAdapter, memoryStore, multiplex,
  *     StitchError, RateLimitError,
- *     isStitch, isSeam, verdictOf,
+ *     isStitch, isSeam, isStitchError, verdictOf,
  *     httpSurface, graphqlSurface,
  *     xhrAdapter, axiosAdapter,
  *     duration, size, rate, compact, secrets,
@@ -73,6 +73,7 @@ export {
     // Type guards and the verdict reader. Pure predicates over plain objects.
     isStitch,
     isSeam,
+    isStitchError,
     verdictOf,
     // Surface descriptors. Plain objects describing a protocol, no transport.
     httpSurface,

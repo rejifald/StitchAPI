@@ -100,6 +100,31 @@ npm release are grouped under the in-development version that introduced them.
     compatibility policy — what counts as breaking, the TypeScript and Node floors — is
     [#842](https://github.com/rejifald/StitchAPI/issues/842) and extends the same page.
 
+- **`isStitchError(err)` — one check for "is this a stitch failure?".**
+  ([#867](https://github.com/rejifald/StitchAPI/issues/867)) Exported from the root. It is true
+  for `StitchError` and every subclass (`RateLimitError` today, and any class that extends it
+  later), and it also matches an error raised by a second copy of `stitchapi` in the process.
+  Under CommonJS each `stitchapi/*` subpath bundles its own copy of the class, so an error from
+  `stitchapi/graphql` is not an `instanceof` the root's `StitchError`; two installed versions do
+  the same. The constructor now sets a non-enumerable `Symbol.for('stitchapi.error')` brand (a
+  frozen cross-version key, CONTRACT.md P10), and the guard checks it after an `instanceof` fast
+  path. The guard is strict: a spread or JSON copy does not carry the brand, and neither does a
+  plain `Error` that only sets `name = 'StitchError'`.
+
+    **BREAKING CHANGE for code that replaces a name check with this guard:** a fake built as
+    `Object.assign(new Error(…), { name: 'StitchError' })` is not a stitch error to
+    `isStitchError`, so a test double that passed `err.name === 'StitchError'` stops matching.
+    Migration: construct real errors in tests, with `new StitchError(…)` or
+    `new RateLimitError(…)`. (The host adapters' `stitchError.is` stays lenient on purpose; see
+    Security.)
+
+- **`stitch serve` sends `Retry-After` for a delegate-backoff rate limit.**
+  ([#867](https://github.com/rejifald/StitchAPI/issues/867)) When the failure is a
+  `RateLimitError` whose upstream gave a usable `Retry-After`, the JSON response carries a
+  `Retry-After` header in whole seconds (the parsed `retryAfter`, rounded up, capped at one day).
+  A value that is not finite sends no header. Before, the 429 passed through and the backoff hint
+  was dropped.
+
 ### Changed
 
 - **BREAKING CHANGE: `StitchStore.increment` is optional — a store needs only `get` and `set`.**
@@ -291,6 +316,14 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
     +import type { NoRequestShapeOnLlm } from 'stitchapi/llm';
     ```
 
+- **The host adapters and `@stitchapi/download` need a `stitchapi` that ships `isStitchError`.**
+  ([#867](https://github.com/rejifald/StitchAPI/issues/867)) `@stitchapi/express`, `fastify`,
+  `hono`, `next`, `nest`, `elysia` and `download` import `isStitchError` at runtime, so their
+  `stitchapi` peer floor is raised from `^1.0.0-rc.1` to the release that first ships it. The
+  published rc.8 core does not have it, and `check:release` only requires the floor to admit the
+  in-repo version, so the real minimum is set when that release is published (the release PR).
+  With an older core installed they would fail at link time.
+
 ### Fixed
 
 - **`nestBorrowStore` forwards every capability the store has.** (`@stitchapi/nest`) It hard-coded
@@ -404,6 +437,13 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
   of the thrown value, so `throw undefined` / `throw null` became a `TypeError` out of the engine and
   `.stream()` rejected instead of yielding its `error` and `done` events. The failure is now reported
   as the string it stringifies to (`undefined`, `null`), on every consumer.
+
+- **A `StitchError` from another copy of `stitchapi` keeps its identity in `stitchapi/testing` and
+  `@stitchapi/download`.** ([#867](https://github.com/rejifald/StitchAPI/issues/867))
+  `failStitch(err)`, the stub's error coercion and `@stitchapi/download`'s `toStitchError` passed
+  a `StitchError` through only on `instanceof`. Under CommonJS each entry has its own class, so a
+  root-built `RateLimitError` was flattened into a base `StitchError` and lost `retryAfter`. All
+  three now use `isStitchError`.
 
 ### Security
 
@@ -564,6 +604,39 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
     - **`stitch run` redacts its stdout the way `stitch serve` does.** It wrote the raw event, so an
       `--headers.authorization` or `--body.password` flag was echoed back on the `start` line. The
       response (`result`) is still printed as sent.
+
+- **The six host adapters no longer send a `RateLimitError`'s raw message to the client.**
+  ([#867](https://github.com/rejifald/StitchAPI/issues/867)) `@stitchapi/express`, `fastify`,
+  `hono`, `next`, `nest` and `elysia` recognised a stitch failure with
+  `err.name === 'StitchError'`. `RateLimitError` extends `StitchError` but keeps its own `name`
+  (CONTRACT.md P10), so it was never mapped. On Fastify the audit probe got a 429 carrying the raw
+  upstream message from the framework's default handler, which is the disclosure the generic
+  `{ error: 'Bad Gateway' }` default exists to prevent. The other five likewise handed it to the
+  framework's own error handling. Every host's `stitchError.is` now accepts what core's
+  `isStitchError` accepts, plus any `Error` named `StitchError` or `RateLimitError`. The name check
+  is the fail-safe half: an error from a copy of `stitchapi` older than the brand, or a lookalike,
+  still gets the host's generic default body, because over-recognising only redacts more. Status
+  codes and body shapes are unchanged.
+
+- **BREAKING CHANGE: `stitch serve` withholds a failure's raw detail by default — opt back in
+  with `disclose`.** ([#867](https://github.com/rejifald/StitchAPI/issues/867)) The JSON error
+  body was `{ error: failure.message, status }`, the raw upstream message the host adapters
+  withhold. `error` is now the standard reason phrase for the response status (`'Bad Gateway'`,
+  `'Too Many Requests'`). The same rule covers the SSE stream and the last-resort `500` body: an
+  `error` frame's `message` and the frame for a stream that throws carry the reason phrase, a
+  `start` frame has no `url` or `template` (they name the upstream host and its route), a
+  `progress` or `info` frame has no `detail` (on a retry it is the raw transport error text), a
+  `drift` finding has no `detail` (for a failed output validation it is the validator's issue
+  message, which can echo the value the upstream sent) but keeps its `level`, `path`, `change` and
+  `sample`, and a `start` or `error` frame's `name` is the name the caller addressed the stitch by
+  (the stitch's own name defaults to its `path`, which is the route again). The frames and event
+  types are unchanged, and so is everything else the stream carries, including `delta` and `result`
+  payloads. The status mapping is unchanged (#707). `ServeOptions.disclose` (a boolean, default
+  `false`) and `stitch serve --disclose` restore all of it for trusted callers.
+
+    Migration — a caller that read the upstream message from `error`, or the URL or retry detail
+    from an SSE stream: start the server with `serve(registry, { disclose: true })` or
+    `stitch serve --disclose`. There is no alias for an earlier spelling.
 
 ## [1.0.0-rc.8] — 2026-09-17
 

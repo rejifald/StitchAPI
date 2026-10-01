@@ -56,7 +56,7 @@
         "node": ">=18.18.0"
     },
     "peerDependencies": {
-        "stitchapi": "^1.0.0-rc.1",
+        "stitchapi": "^1.0.0-rc.8",
         "hono": "^4.0.0"
     },
     "devDependencies": {

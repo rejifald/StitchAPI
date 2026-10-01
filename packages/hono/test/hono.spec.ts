@@ -10,7 +10,7 @@ import { streamStitchSse } from '../src';
 import * as api from '../src';
 
 import { Hono } from 'hono';
-import { seam } from 'stitchapi';
+import { RateLimitError, StitchError, seam } from 'stitchapi';
 import type { Adapter } from 'stitchapi';
 import { sseSurface } from 'stitchapi/sse';
 import { describe, expect, test } from 'vitest';
@@ -214,13 +214,65 @@ describe('stitchError.map / stitchError.handler map a StitchError to HTTP', () =
         await api.close();
     });
 
+    // #867: `RateLimitError` sets `name = 'RateLimitError'`, so the old `name === 'StitchError'`
+    // guard rethrew it out of `onError` with the raw upstream message instead of mapping it.
+    test('a RateLimitError gets the generic default body, never the raw message', async () => {
+        const api = seam({ baseUrl: 'https://api.test' });
+        const app = new Hono<StitchEnv>();
+        app.use(stitch({ seam: api }));
+        app.onError(stitchError.handler());
+        app.get('/limited', async (c) => {
+            const data = await c.get('stitch').stitch({
+                path: '/limited',
+                throttle: { delegate: true },
+                adapter: () =>
+                    Promise.resolve({
+                        status: 429,
+                        headers: { 'retry-after': '30' },
+                        body: { error: 'quota exceeded on payments.internal' },
+                    }),
+            })();
+            return c.json(data);
+        });
+
+        const res = await app.request('/limited');
+        expect(res.status).toBe(502);
+        const body = await res.text();
+        expect(JSON.parse(body)).toEqual({ error: 'Bad Gateway' });
+        expect(body).not.toContain('rate limited');
+        expect(body).not.toContain('payments.internal');
+        await api.close();
+    });
+
+    test('stitchError.is recognises a StitchError, its subclasses and a name-only lookalike', () => {
+        expect(stitchError.is(new StitchError('x'))).toBe(true);
+        expect(
+            stitchError.is(
+                new RateLimitError({
+                    status: 429,
+                    response: { status: 429, headers: {}, body: null },
+                }),
+            ),
+        ).toBe(true);
+        // Fail-safe: an `Error` named after a stitch failure matches without core's brand (a
+        // copy of the class older than the brand, or a lookalike). Over-recognising only redacts
+        // more; any other name still falls through.
+        for (const name of ['StitchError', 'RateLimitError'])
+            expect(
+                stitchError.is(Object.assign(new Error('x'), { name })),
+            ).toBe(true);
+        expect(
+            stitchError.is(
+                Object.assign(new Error('x'), { name: 'TypeError' }),
+            ),
+        ).toBe(false);
+        expect(stitchError.is(new Error('plain'))).toBe(false);
+    });
+
     test('stitchError.map returns undefined for a non-Stitch error (caller rethrows)', () => {
         expect(stitchError.map(new Error('plain'))).toBeUndefined();
         const mapped = stitchError.map(
-            Object.assign(new Error('upstream'), {
-                name: 'StitchError',
-                status: 503,
-            }),
+            new StitchError('upstream', { status: 503 }),
             { status: (e) => e.status ?? 502 },
         );
         expect(mapped?.status).toBe(503);
@@ -234,10 +286,7 @@ describe('stitchError.map / stitchError.handler map a StitchError to HTTP', () =
         test('a transport failure with an internal hostname is not disclosed', async () => {
             // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
             const mapped = stitchError.map(
-                Object.assign(
-                    new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
-                    { name: 'StitchError' },
-                ),
+                new StitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
             );
             const res = mapped!.getResponse();
             expect(res.status).toBe(502); // status stays masked
@@ -250,10 +299,7 @@ describe('stitchError.map / stitchError.handler map a StitchError to HTTP', () =
         test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
             // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
             const mapped = stitchError.map(
-                Object.assign(new Error('HTTP 401'), {
-                    name: 'StitchError',
-                    status: 401,
-                }),
+                new StitchError('HTTP 401', { status: 401 }),
             );
             const res = mapped!.getResponse();
             expect(res.status).toBe(502);
@@ -262,10 +308,7 @@ describe('stitchError.map / stitchError.handler map a StitchError to HTTP', () =
 
         test('the `body` opt-in still includes the raw message', async () => {
             const mapped = stitchError.map(
-                Object.assign(
-                    new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
-                    { name: 'StitchError' },
-                ),
+                new StitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
                 { body: (e) => ({ error: e.message }) },
             );
             // The escape hatch is preserved — callers who want the message can still opt in.

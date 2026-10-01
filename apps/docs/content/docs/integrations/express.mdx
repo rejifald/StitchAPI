@@ -133,7 +133,8 @@ app.use(
 Because it `next(err)`s any non-Stitch error, Express's default handler — and any
 error middleware you register after it — stays in charge of everything else.
 `stitchError.is(err)` narrows an unknown error to a `StitchError` if you want to
-branch on one yourself.
+branch on one yourself. The guard runs core's [`isStitchError`](/docs/errors),
+so a subclass such as `RateLimitError` is mapped like the base class.
 
 `stitchError` is the same namespace every `@stitchapi` host adapter exports for this
 one concept — `.is` everywhere, `.handler` wherever the framework has an error hook,

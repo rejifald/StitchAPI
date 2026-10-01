@@ -130,7 +130,8 @@ app.register(stitchPlugin, {
 
 Set `errorHandler: false` to register none and wire your own with
 `stitchError.handler(options)`; `stitchError.is(err)` narrows an unknown error to a
-`StitchError` first. The **option** keeps Fastify's own word (`errorHandler`, after
+`StitchError` first. The guard runs core's [`isStitchError`](/docs/errors), so a
+subclass such as `RateLimitError` is mapped like the base class. The **option** keeps Fastify's own word (`errorHandler`, after
 `setErrorHandler`) while the **export** is the `stitchError` namespace every
 `@stitchapi` host adapter shares.
 
