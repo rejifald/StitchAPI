@@ -907,6 +907,13 @@ export const pages: Page[] = [
             'The StitchEvent union and the shape of each event in the stream.',
         kind: 'reference',
     },
+    {
+        path: 'reference/stability',
+        title: 'Stability',
+        description:
+            'Which StitchAPI surfaces are experimental, what that changes when you upgrade, and the three conditions for one to graduate to the stable 1.x promise.',
+        kind: 'reference',
+    },
 
     // ── Errors & pitfalls ───────────────────────────────────────────────────
     // Seed registry — PROVISIONAL until the runtime error-taxonomy refactor.

@@ -11,6 +11,32 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **An experimental tier outside the 1.x freeze: `stitchapi/llm`, `stitchapi/postmessage`,
+  `stitchapi/pipe`, `@stitchapi/openapi`, `@stitchapi/vercel-ai`, `@stitchapi/fingerprint-typebox`
+  and `@stitchapi/shell`.**
+  ([P26](docs/CONTRACT.md#p26--an-experimental-tier-sits-outside-the-freeze),
+  [#841](https://github.com/rejifald/StitchAPI/issues/841)) Versions are lockstep, so `1.0.0` would
+  have put every published package under
+  [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)'s deprecation
+  obligation at once — including seven surfaces whose shape is not settled. Those seven now ship in
+  the lockstep version with a narrower promise: a **minor** release may change their shape or
+  behaviour, each such change is listed in this file with a one-line migration, and no `@deprecated`
+  alias is owed. Every other contract rule still applies to them. Not a breaking change: no symbol,
+  field or behaviour moves.
+
+    The tier is marked in three places. Each of the 52 symbols the seven surfaces export carries an
+    `@experimental` JSDoc tag (so an editor shows it on hover); each surface's docs page or README
+    opens with an _Experimental_ banner; and a new
+    [Stability](https://stitchapi.dev/docs/reference/stability) page in the Reference section lists
+    the members and says how a surface graduates — a docs-site page, no open `v1.0 release` contract
+    issue touching it, and one minor release with no breaking change to it. A new ratchet rule,
+    **R12**, reads the member table in P26 and fails the gate when an exported symbol of a listed
+    surface lacks its tag, or a tag appears anywhere else, so the table stays the one list. It
+    enters at zero. The full compatibility policy — what counts as breaking, the TypeScript and Node
+    floors — is [#842](https://github.com/rejifald/StitchAPI/issues/842) and extends the same page.
+
 ## [1.0.0-rc.8] — 2026-09-17
 
 ### Added

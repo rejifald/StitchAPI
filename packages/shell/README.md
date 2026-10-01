@@ -2,6 +2,8 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/shell?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/shell)
 
+> **Experimental.** `@stitchapi/shell` ships in the 1.x line but may change shape in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+
 Run a **static local command** as a StitchAPI surface — so a subprocess gets the same `retry` /
 `throttle` / `circuit` / `timeout` / `trace` treatment as an HTTP call, through the same engine
 ([ADR 0008](../../docs/adr/0008-non-http-surfaces-and-pipe.md)).
