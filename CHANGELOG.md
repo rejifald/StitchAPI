@@ -55,11 +55,28 @@ npm release are grouped under the in-development version that introduced them.
   no root re-export ([CONTRACT D5](docs/CONTRACT.md#0-resolved-decisions)). The `STITCH_EXPORT=otlp`
   toggle needs no import and is unchanged: the exporter loads on first use, holds the events of a call
   that starts before it has loaded and sends them in order, and a load failure prints one warning
-  rather than failing a call. Measured: whole entry 25.25 → 23.55 KB gzip, `import { stitch }`
-  22.46 → 20.79 KB (advertised `~25 / ~22 kB` → `~24 / ~21 kB`), the subpath 2.70 KB.
+  rather than failing a call. Measured with the size gate's new accounting (the next entry):
+  whole entry 24.62 → 20.67 KB gzip, `import { stitch }` 21.83 → 17.95 KB (advertised
+  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 2.73 KB.
 
     Migration — `import { otlp } from 'stitchapi'` → `import { otlp } from 'stitchapi/otlp'`, and the
     same for the types.
+
+- **The size gate measures what a code-splitting bundler ships; the cache engine and the OTLP
+  exporter are budgeted as their own entries.** ([#709](https://github.com/rejifald/StitchAPI/issues/709))
+  `scripts/bundle-size.mjs` re-bundles without code splitting, and esbuild then inlines every
+  `import()` it can resolve, so both root scenarios carried ~3 KB gzip of cache engine (reached by
+  a lazy `import('./cache')` that `tsup`'s ESM build keeps in its own chunk) and, after the move
+  above, the OTLP chunk too. Both root scenarios now name those chunks in `defer`, which keeps them
+  external, as the async chunks a splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`)
+  emits and downloads on first use. Each chunk is its own gated scenario (`stitchapi/cache` 3.38 KB,
+  `stitchapi/otlp` 2.73 KB), and the gate now fails if a `defer` names a chunk the build no longer
+  imports lazily or one it imports statically (a static edge would drop out of the measurement
+  instead of being counted). Whole entry 24.62 → 20.67 KB gzip, `import { stitch }` 21.83 → 17.95 KB;
+  the advertised `~25 / ~22 kB` becomes `~21 / ~18 kB`. That is what `import { stitch }` ships up
+  front: a bundler that does not split dynamic imports inlines both chunks (25.70 / 22.97 KB). The
+  budgets drop from 24.80 / 22.00 to 21.20 / 18.45 KB; the headroom is ~0.5 KB on purpose, for the
+  PRs queued behind this one.
 
 - **BREAKING CHANGE (dashboards): the OTLP export is a span tree — an INTERNAL run span over one
   CLIENT span per physical request.** ([#871](https://github.com/rejifald/StitchAPI/issues/871),

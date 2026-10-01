@@ -12,6 +12,17 @@
 // the same method bundlephobia uses. The numbers quoted in the READMEs and docs come
 // from here; keep them in sync (see memory: core-zero-deps-bundle-size).
 //
+// What the root scenarios count is what a CODE-SPLITTING bundler (Vite, Rollup, webpack,
+// esbuild `--splitting`) ships up front. The library reaches two modules through a lazy
+// `import()` — the cache engine (`import('./cache')`, only for a stitch with a `cache`
+// block) and the OTLP exporter (`import('./otlp')`, only when `STITCH_EXPORT=otlp` is set) —
+// and a splitting bundler emits each as an async chunk that downloads on first use. This
+// script re-bundles WITHOUT splitting, and esbuild then inlines every `import()` it can
+// resolve, so left alone the gate would charge every consumer for code most never load
+// (#709: ~3 KB gzip of cache engine in both root scenarios). Each root scenario therefore
+// names those chunks in `defer`, they stay external to it, and each chunk is gated as its
+// own scenario. The deferral is checked, not assumed: see `assertDeferred`.
+//
 // Budgets are a deliberate ceiling. Raising one is a conscious act: edit the number
 // below and justify it in the PR. Prefer trimming the entry, or moving a new
 // capability behind its own subpath import, over bumping the budget.
@@ -384,29 +395,37 @@ const KB = 1024;
 //
 // The conventional ~0.2 KB step, not a minimum one: this is a new capability on the public
 // surface, not a fix squeezing past a ceiling. Headroom lands at 0.21 / 0.18.
-// Whole entry 24.80→23.75 / `import { stitch }` 22.00→21.00 KB — a DROP, not a raise, and a change
-// to what the two root scenarios COUNT. The OTLP pipeline was rewritten into the ADR 0017 D6 span
-// tree (#871/#872): +0.63 KB on both scenarios, which put them 0.45 / 0.46 KB over. It moved to
-// `stitchapi/otlp` instead of the budget moving: the root barrel no longer exports `otlp`, and the
-// only edge from the core path is the lazy `import('./otlp')` behind `STITCH_EXPORT=otlp` (stitch.ts),
-// which tsup's esm splitting keeps in its own chunk.
+// Whole entry 24.80→21.20 / `import { stitch }` 22.00→18.45 KB — a DROP, not a raise, and a change
+// to what the two root scenarios COUNT (#871/#872 and #709; measured 20.67 / 17.95 against a `main`
+// at 24.62 / 21.83). The OTLP pipeline was rewritten into the ADR 0017 D6 span tree: +0.63 KB on
+// both scenarios, which put them 0.45 / 0.46 KB over. It moved to `stitchapi/otlp` instead of the
+// budget moving: the root barrel no longer exports `otlp`, and the only edge from the core path is
+// the lazy `import('./otlp')` behind `STITCH_EXPORT=otlp` (stitch.ts), which tsup's esm splitting
+// keeps in its own chunk.
 //
-// That lazy edge is why the root scenarios take `defer: ['otlp']`. This gate re-bundles WITHOUT code
-// splitting, and esbuild then INLINES every `import()` it can resolve — measured, the lazy import on
-// its own left the root scenarios at 25.51 / 22.80 KB, worse than before the move (the chunk's bytes
-// plus the loader). A bundler that splits dynamic imports (Vite, Rollup, webpack, esbuild
-// `--splitting`) emits the chunk as an async file that only loads when the toggle is set, and that is
-// what the deferred scenarios measure: 23.55 / 20.80 KB. The bytes are not hidden — the chunk is its
-// own scenario below, with its own ceiling, and root + chunk is the no-splitting total.
+// Both root scenarios take `defer: ['otlp', 'cache']` for the reason in the header: this gate
+// re-bundles WITHOUT code splitting, and esbuild then INLINES every `import()` it can resolve. The
+// OTLP edge on its own left the root scenarios at 25.51 / 22.80 KB, worse than before the move (the
+// chunk's bytes plus the loader), and the cache edge (`import('./cache')` in the engine's
+// `ensureCache`, and in `seam.invalidate()`) had always been inlined the same way — ~3 KB gzip of
+// cache engine in a figure whose tsup config says `import { stitch }` never pulls it (#709). Both
+// are reached only by a stitch with a `cache` block (or a call to `seam.invalidate()`) and by the
+// `STITCH_EXPORT=otlp` toggle, so a splitting bundler (Vite, Rollup, webpack, esbuild
+// `--splitting`) ships each as an async file that downloads on first use, and that is what the
+// deferred scenarios measure. Neither chunk is hidden: each is its own scenario below with its own
+// ceiling. Measured without any deferral the same build is 25.70 / 22.97 KB, which is what a
+// bundler that does NOT split dynamic imports ships (everything, eagerly).
 //
-// NOT changed here: `cache.mjs` is reached the same way (`import('./cache')` in the engine) and is
-// still inlined into both root scenarios, ~3.0 KB gzip on each. Treating it like `otlp` would
-// re-baseline every advertised figure (~24 → ~21, ~21 → ~18), which is a decision about what this
-// gate promises, not a side effect of moving one sink — so it is left as it was.
+// The ADVERTISED figures move: 20.67 rounds to 21 and 17.95 to 18, so every site quoting them goes
+// ~25 → ~21 and ~22 → ~18 kB — the six sites under the `bundle-advertised-size` tether. They state
+// what `import { stitch }` ships UP FRONT; cache and OTLP load lazily on first use.
 //
-// The ADVERTISED figures move: 23.55 rounds to 24 and 20.80 to 21, so every site quoting them goes
-// ~25 → ~24 and ~22 → ~21 kB — the six sites under the `bundle-advertised-size` tether. Headroom
-// lands at ~0.2 KB on each ceiling, the step this gate is meant to hold.
+// Headroom is 0.53 / 0.50 KB on purpose, not the ~0.2 KB this gate usually restores. The reset
+// frees ~3 KB of room, and the PRs queued behind this one each need a few bytes of core path:
+// #891 ~+0.12, #892 ~+0.10, #895 ~+0.04, #897 ~+0.03 (~0.29 KB together). Sizing the ceiling at
+// the measured value + 0.5 KB lets all four land without a budget PR of their own and still leaves
+// ~0.2 KB, the headroom the gate is meant to hold, once they have. Both ceilings sit below `main`'s
+// (24.80 / 22.00): nothing here is a raise.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 // `defer` names lazy subpath chunks the scenario treats as deferred (an async chunk in a
@@ -415,32 +434,85 @@ const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.75 * KB,
+        budget: 21.2 * KB,
         advertised: true,
-        defer: ['otlp'],
+        defer: ['otlp', 'cache'],
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 21.0 * KB,
+        budget: 18.45 * KB,
         advertised: true,
-        defer: ['otlp'],
+        defer: ['otlp', 'cache'],
     },
     {
         name: 'stitchapi/auth — whole surface',
         code: `export * from './auth.mjs';`,
         budget: 5.35 * KB,
     },
-    // The lazy chunk the root scenarios defer: pay for the whole sink + serializer + exporter only
-    // if you import `otlp` (or set `STITCH_EXPORT=otlp`). Measured 2.70 KB, 0.2 KB of headroom.
+    // The lazy chunks the root scenarios defer. Each is gated as the whole subpath, which is what
+    // you pay if you `export *` from it; the root scenarios above are what you pay before either loads.
+    //
+    // `otlp`: the whole sink + serializer + exporter, paid only if you import it (or set
+    // `STITCH_EXPORT=otlp`). Measured 2.73 KB, 0.17 KB of headroom.
     {
         name: 'stitchapi/otlp — whole surface',
         code: `export * from './otlp.mjs';`,
         budget: 2.9 * KB,
     },
+    // `cache`: the whole cache engine (key derivation, the in-flight coalescer, the controller), paid only by a
+    // stitch with a `cache` block, `seam.invalidate()`, or an explicit `stitchapi/cache` import. This is the
+    // row #709 asked for: the cost the root scenarios used to carry inlined, now visible and
+    // ceilinged instead of absorbed. Measured 3.38 KB, 0.22 KB of headroom.
+    {
+        name: 'stitchapi/cache — whole surface',
+        code: `export * from './cache.mjs';`,
+        budget: 3.6 * KB,
+    },
 ];
 
-function measure(code, defer = []) {
+// A deferral is a claim about the build, so check it rather than trust a name. `*/<name>.mjs` is a
+// glob over import specifiers, and it fails in two silent directions:
+//   • a deferred name nothing imports lazily any more (the chunk was renamed, or the lazy edge
+//     went static or was removed) leaves a `defer` that defers nothing, and the scenario quietly
+//     measures the inlined build again;
+//   • a STATIC import of a deferred module (`import { x } from './cache.mjs'`) is left as an import
+//     statement, so its bytes drop out of the measurement instead of being counted — the one way a
+//     deferral can make the gate report a number LOWER than a consumer ships.
+// So every external the output keeps must be a builtin or a `dynamic-import` of exactly
+// `./<name>.mjs` for a name in `defer`, and every name in `defer` must appear at least once.
+function assertDeferred(metafile, defer, scenario) {
+    const deferred = new Map(defer.map((name) => [`./${name}.mjs`, 0]));
+    for (const output of Object.values(metafile.outputs)) {
+        for (const edge of output.imports) {
+            if (!edge.external) continue;
+            if (deferred.has(edge.path)) {
+                if (edge.kind !== 'dynamic-import') {
+                    throw new Error(
+                        `${scenario}: "${edge.path}" is deferred but imported as ${edge.kind}. A static ` +
+                            `edge cannot be deferred; its bytes would be dropped from the measurement.`,
+                    );
+                }
+                deferred.set(edge.path, deferred.get(edge.path) + 1);
+            } else if (/\.mjs$/.test(edge.path)) {
+                throw new Error(
+                    `${scenario}: "${edge.path}" stayed external but is not in \`defer\`; the \`*/<name>.mjs\` ` +
+                        `glob matched more than the chunk it was written for.`,
+                );
+            }
+        }
+    }
+    for (const [path, count] of deferred) {
+        if (count === 0) {
+            throw new Error(
+                `${scenario}: \`defer\` names "${path}" but the build has no lazy import of it; ` +
+                    `remove it, or the gate is measuring an inlined build while claiming a deferred one.`,
+            );
+        }
+    }
+}
+
+function measure(code, defer = [], scenario = 'scenario') {
     const result = esbuild.buildSync({
         stdin: {
             contents: code,
@@ -484,7 +556,9 @@ function measure(code, defer = []) {
         ],
         write: false,
         logLevel: 'silent',
+        metafile: true,
     });
+    assertDeferred(result.metafile, defer, scenario);
     const out = result.outputFiles[0].contents;
     return {
         min: out.length,
@@ -503,7 +577,7 @@ if (!existsSync(resolve(libDir, 'index.mjs'))) {
 }
 
 const rows = SCENARIOS.map((s) => {
-    const m = measure(s.code, s.defer);
+    const m = measure(s.code, s.defer, s.name);
     return { ...s, ...m, over: m.gzip > s.budget };
 });
 

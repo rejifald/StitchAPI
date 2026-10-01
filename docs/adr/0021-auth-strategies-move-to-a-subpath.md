@@ -366,13 +366,17 @@ It differs from auth in one respect, and the difference matters for the measurem
 `stitch.ts` has a real edge to it. `STITCH_EXPORT=otlp` is a zero-import toggle, so the
 module is reached through a lazy `import('./otlp')` (the engine's pattern for `cache`)
 behind a sink that holds its events until the module resolves. That edge is why the size
-gate's two root scenarios treat the chunk as deferred (`defer: ['otlp']` in
+gate's two root scenarios treat the chunk as deferred (`defer` in
 `scripts/bundle-size.mjs`): the gate re-bundles without code splitting, which inlines every
 dynamic import, so the lazy import alone left the root scenarios at 25.51 / 22.80 KB.
-Measured with the chunk deferred: whole entry 25.25 → 23.55 KB, `import { stitch }`
-22.46 → 20.79 KB, and the chunk itself — `stitchapi/otlp` — 2.70 KB, a gated scenario of
-its own. The advertised figures moved `~25 / ~22 kB` → `~24 / ~21 kB`.
 
-`cache.mjs` is reached by the same kind of edge and is still inlined into both root
-scenarios (~3.0 KB gzip on each); whether the gate should defer it too is a separate
-decision about what the advertised size promises.
+`cache.mjs` is reached by the same kind of edge (`import('./cache')` in the engine and in
+`seam.invalidate()`), and it was inlined into both root scenarios the same way (~3 KB gzip on
+each, [#709](https://github.com/rejifald/StitchAPI/issues/709)). The maintainer decided
+(2026-10-01) to defer it too, so the advertised size means what a code-splitting bundler ships
+up front: `defer: ['otlp', 'cache']` on both root scenarios, each chunk its own gated scenario
+(`stitchapi/otlp` 2.73 KB, `stitchapi/cache` 3.38 KB), and the gate fails if a `defer` names a
+chunk the build does not import lazily or imports statically. Measured: whole entry
+24.62 → 20.67 KB (budget 24.80 → 21.20), `import { stitch }` 21.83 → 17.95 KB (budget
+22.00 → 18.45). The advertised figures moved `~25 / ~22 kB` → `~21 / ~18 kB`. A bundler that does
+not split dynamic imports inlines both chunks and ships 25.70 / 22.97 KB.
