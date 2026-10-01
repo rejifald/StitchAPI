@@ -976,26 +976,43 @@ export function redactSecretsDeep(value: unknown, extra?: string[]): unknown {
 }
 
 // The ONE deep walker behind every secret scrub ({@link redactSecretsDeep} and {@link redactKeys}):
-// clone `value`, replacing each entry `flag(key, value, path)` flags with `mark`. Walks arrays and
-// objects — a class instance (a DTO, a model) by its own enumerable fields, as `JSON.stringify`
-// would — but not a `Date`, which has none and would come out as `{}`. `path` is where in the tree
-// `value` sits (`a.b[0].c`), so a caller's pattern can match full paths; at the root a key IS its
-// own path.
+// clone `value`, treating each entry `flag(key, value, path)` flags in one of two ways. By default
+// the entry's whole value becomes `mark`. With `taint` (`false` at the root — the caller's opt-in)
+// a flagged entry instead TAINTS what is beneath it: every non-empty string there, at any depth and
+// whatever its own key — an array element included — becomes `mark`, while numbers, booleans and
+// `null` stay readable. Walks arrays and objects — a class instance (a DTO, a model) by its own
+// enumerable fields, as `JSON.stringify` would — but not a `Date`, which has none and would come
+// out as `{}`. `path` is where in the tree `value` sits (`a.b[0].c`), so a caller's pattern can
+// match full paths; at the root a key IS its own path.
 function redactDeep(
     value: unknown,
     flag: (key: string, value: unknown, path: string) => boolean,
     mark: string,
     path?: string,
+    taint?: boolean,
 ): unknown {
+    if (typeof value === 'string') return taint && value ? mark : value;
     if (Array.isArray(value))
         return value.map((v, i) =>
-            redactDeep(v, flag, mark, `${path ?? ''}[${i}]`),
+            redactDeep(v, flag, mark, `${path ?? ''}[${i}]`, taint),
         );
     if (!isObj(value) || value instanceof Date) return value;
     return Object.fromEntries(
         Object.entries(value).map(([k, v]) => {
             const at = path === undefined ? k : `${path}.${k}`;
-            return [k, flag(k, v, at) ? mark : redactDeep(v, flag, mark, at)];
+            const hit = flag(k, v, at);
+            return [
+                k,
+                hit && taint === undefined
+                    ? mark
+                    : redactDeep(
+                          v,
+                          flag,
+                          mark,
+                          at,
+                          taint === undefined ? taint : taint || hit,
+                      ),
+            ];
         }),
     );
 }
@@ -1065,13 +1082,14 @@ function decodeKey(key: string): string {
  *   nested pairs are scanned as pairs (the first lets a secret value run through a raw `?`);
  * - a raw `/`, `?` or `#` in a userinfo password (base64), unless what follows the colon is a port
  *   (`host:8080/@pkg`) — so a password of only digits is not told from one and is left;
- * - `;` separators and a JSON-escaped `https:\/\/…`;
- * - the punctuation around a value: it ends at whitespace, a quote, a bracket, `,` or `;` — but not
- *   at a `.`, which a JWT holds, so a sentence's closing period goes with the secret.
+ * - `;` separators, a JSON-escaped `https:\/\/…` and the escaped ampersand Go's JSON encoder writes
+ *   (backslash, `u0026`) between pairs;
+ * - the punctuation around a value: it ends at whitespace, a quote, a bracket, `,`, `;` or `}`
+ *   (`{u: https://h/x?token=S}` keeps its brace), and a sentence's closing `.` stays outside it —
+ *   a `.` inside, as in a JWT, is part of the secret.
  * Not reached, each a known limit: a nested URL that is itself percent-encoded
- * (`next=https%3A%2F%2Fo%2F%3Ftoken%3D…`, which is how the engine re-serialises a query); a secret
- * that contains a raw `,` or `;`; the `&` that Go's JSON encoder writes for `&`. The bundle
- * budget is why the last and a kept closing period are not here yet.
+ * (`next=https%3A%2F%2Fo%2F%3Ftoken%3D…`, which is how the engine re-serialises a query), and a
+ * secret that contains a raw `,` or `;`.
  * Idempotent: a scrubbed string scrubs to itself.
  *
  * Linear on untrusted text (a transport's message, a vendor's error body): every pattern starts at a
@@ -1081,16 +1099,18 @@ function decodeKey(key: string): string {
  */
 export function scrubUrl(text: string): string {
     // One pair: a secret key keeps its name and loses its value. `{page,token}` has no `=` and
-    // never matches; a brace in the value is a template slot, not a literal credential.
+    // never matches; a `{` in the value opens a template slot, not a literal credential (a `}`
+    // alone is just the end of the text around the URL — a value stops at it). A sentence's
+    // closing `.` stays outside the secret; one inside (a JWT) is part of it.
     const scrubPair = (
         pair: string,
         sep: string,
         key: string,
         value: string,
     ): string =>
-        /[{}]/.test(value) || !isSecretKey(decodeKey(key))
+        value.includes('{') || !isSecretKey(decodeKey(key))
             ? pair
-            : `${sep}${key}=${URL_REDACTED}`;
+            : `${sep}${key}=${URL_REDACTED}${value.endsWith('.') ? '.' : ''}`;
     return (
         text
             // Userinfo, after a `//` that opens an authority (`://`, a leading `//`, JSON's
@@ -1103,16 +1123,17 @@ export function scrubUrl(text: string): string {
                 '$1',
             )
             // A `k=v` pair after `?`, `&`, `;`, `#` (a fragment carries an OAuth `#access_token=`)
-            // or JSON's `&`. A value ends at whitespace, a quote, a bracket, `,` or `;`. This
-            // pass lets a value run through `?`, so a secret holding a raw `?` goes whole…
+            // or the six characters `\` `u` `0` `0` `2` `6` (how Go's JSON encoder writes `&`). A
+            // value ends at whitespace, a quote, a bracket, `,`, `;` or `}`. This pass lets a value
+            // run through `?`, so a secret holding a raw `?` goes whole…
             .replace(
-                /([?&#;])([^\s=&#?;{}\\]+)=([^\s&#;"'<>`\\),\]]*)/g,
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;"'<>`\\),\]}]*)/g,
                 scrubPair,
             )
             // …and this one stops at it, so a URL nested in a benign value (`next=https://o/?token=…`)
             // is scanned as the pairs it holds.
             .replace(
-                /([?&#;])([^\s=&#?;{}\\]+)=([^\s&#;?"'<>`\\),\]]*)/g,
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;?"'<>`\\),\]}]*)/g,
                 scrubPair,
             )
     );
@@ -1134,16 +1155,21 @@ export const SECRET_HEADERS = [
 // — the dashes defeat the `api_key` / `apikey` stems), one naming a session (`x-session-id`), or
 // anything {@link isSecretKey} catches (`x-auth-token`, `x-client-secret`, `x-amz-signature`, a
 // `secrets.register`ed name; a `-token` / `-secret` suffix needs no rule of its own — those are
-// stems). `@stitchapi/query-core` and `@stitchapi/swr` mirror this rule set (`secrets.has` is their
-// handle on the stems), each pinned by the same name table in its spec.
+// stems). A few `-key` headers are not credentials — `Idempotency-Key` (a dedupe token worth
+// reading while debugging), `Sec-WebSocket-Key` (a handshake nonce), `Surrogate-Key` and
+// `X-Cache-Key` (CDN tags) — and are exempt. `@stitchapi/query-core` and `@stitchapi/swr` mirror
+// this rule set (`secrets.has` is their handle on the stems), each pinned by the same name table
+// in its spec.
 const isSecretHeader = (name: string): boolean =>
-    /-key$|session/i.test(name) || isSecretKey(name);
+    /^(?!.*(?:idempotency|websocket|surrogate|cache)-key$).*-key$|session/i.test(
+        name,
+    ) || isSecretKey(name);
 
 // The exact names `isSecretKey` over-matches in a PAYLOAD — a status or entity `code`, a cache or
 // sort `key`, an `auth` block — and which stay secret in a URL query, where `code` / `key` /
 // `auth` ARE credentials. A string under a stem match (`next_page_token`, `tokenizer`) stays
 // redacted: over-matching a string is the safe direction, and a count or flag under one is spared
-// by `redactKeys`' string-only rule instead.
+// because only STRINGS are redacted.
 const PAYLOAD_EXEMPT = /^(code|key|auth)$/i;
 const isSecretPayloadKey = (key: string): boolean =>
     isSecretKey(key) && !PAYLOAD_EXEMPT.test(key);
@@ -1158,10 +1184,10 @@ const isSecretPayloadKey = (key: string): boolean =>
  *   is covered — whatever its value;
  * - a payload (`payload: true` — a request body, a response `data`, a streamed `chunk`, the whole
  *   trace record): a key {@link isSecretKey} catches, minus the over-matches in `PAYLOAD_EXEMPT`,
- *   and only a NON-EMPTY STRING under it is redacted — `usage.output_tokens: 12`,
- *   `max_tokens: 1000` and `signature_valid: true` are counts and flags, not secrets. A secret-named
- *   key holding an object or array is walked like any other: its own secret-named fields are
- *   redacted, the rest is kept.
+ *   taints what is beneath it, and every NON-EMPTY STRING there is redacted, at any depth and
+ *   whatever its own key — `api_keys: ['A1']`, `credentials: { pass: 'P1', key: 'K1' }` and
+ *   `apiKeys: [{ key: 'sk-…' }]` all go. Counts and flags under such a key are not secrets and
+ *   stay readable (`usage.output_tokens: 12`, `max_tokens: 1000`, `signature_valid: true`).
  *
  * `denylist` (lower-case names — {@link SECRET_HEADERS}, possibly widened by `redactHeaders`)
  * redacts a matching key in both. Non-mutating: the live value keeps its secrets; only the copy a
@@ -1178,8 +1204,9 @@ export function redactKeys(
         value,
         (k, v) =>
             (denylist.includes(k.toLowerCase()) || secretName(k)) &&
-            v !== '' &&
-            (!payload || typeof v === 'string'),
+            (payload || v !== ''),
         '[REDACTED]',
+        undefined,
+        payload ? false : undefined,
     );
 }

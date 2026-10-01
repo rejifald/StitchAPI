@@ -488,7 +488,7 @@ describe('the file sink payload walk', () => {
         at: new Date('2026-09-30T10:00:00.000Z'),
     };
 
-    async function run(): Promise<TraceRecord[]> {
+    async function run(data: unknown = BODY): Promise<TraceRecord[]> {
         const file = join(
             dir,
             `payload-${Math.random().toString(36).slice(2)}.jsonl`,
@@ -496,7 +496,7 @@ describe('the file sink payload walk', () => {
         const s = stitch({
             name: 'payload',
             url: 'https://h.test/p',
-            adapter: ok(BODY),
+            adapter: ok(data),
             trace: fileSink(file),
         });
         const since = new Date('2026-09-01T00:00:00.000Z');
@@ -519,11 +519,68 @@ describe('the file sink payload walk', () => {
             auth: 'basic',
             password: '', // an empty value holds no secret
             access_token: '[REDACTED]',
-            credentials: { user: 'svc', password: '[REDACTED]' },
+            credentials: { user: '[REDACTED]', password: '[REDACTED]' }, // everything beneath a secret name
             items: [{ refresh_token: '[REDACTED]', id: 7 }],
             at: '2026-09-30T10:00:00.000Z', // a Date is its ISO string, not `{}`
         });
         expect(JSON.stringify(result)).not.toContain(SECRET.body);
+    });
+
+    // A secret-NAMED key taints everything beneath it: every non-empty string, whatever its own key
+    // and however deep, an array element included. These five reached disk in the clear when only a
+    // string directly under the key was redacted.
+    test.each([
+        [
+            'an array of strings',
+            { api_keys: ['A1'] },
+            { api_keys: ['[REDACTED]'] },
+        ],
+        ['a plural token list', { tokens: ['T1'] }, { tokens: ['[REDACTED]'] }],
+        [
+            'refresh tokens',
+            { refresh_tokens: ['R1'] },
+            { refresh_tokens: ['[REDACTED]'] },
+        ],
+        [
+            'a bag whose own keys are innocuous',
+            { credentials: { pass: 'P1', key: 'K1' } },
+            { credentials: { pass: '[REDACTED]', key: '[REDACTED]' } },
+        ],
+        [
+            'an array of bags',
+            { apiKeys: [{ key: 'sk-live-abc123' }] },
+            { apiKeys: [{ key: '[REDACTED]' }] },
+        ],
+        [
+            'a deep tree',
+            { secrets: { a: { b: ['x', { c: 'y', n: 3 }] } } },
+            {
+                secrets: {
+                    a: { b: ['[REDACTED]', { c: '[REDACTED]', n: 3 }] },
+                },
+            },
+        ],
+    ])(
+        '%s under a secret-named key is redacted',
+        async (_name, data, expected) => {
+            const result = (await run(data)).find((r) => r.type === 'result')!;
+            expect(result.data).toEqual(expected);
+        },
+    );
+
+    test('counts, flags, null and empty strings beneath a secret-named key stay readable', async () => {
+        const result = (
+            await run({
+                tokens: [1, 2],
+                credentials: { ttl: 30, ok: true, none: null, blank: '' },
+                api_keys: [],
+            })
+        ).find((r) => r.type === 'result')!;
+        expect(result.data).toEqual({
+            tokens: [1, 2],
+            credentials: { ttl: 30, ok: true, none: null, blank: '' },
+            api_keys: [],
+        });
     });
 
     test('a query keeps `code` / `key` / `auth` as credentials and a Date as its ISO string', async () => {

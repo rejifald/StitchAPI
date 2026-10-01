@@ -187,7 +187,9 @@ Those five are the fixed list. The same redaction also covers a header whose nam
 `x-goog-api-key` — the dashes defeat the `api_key` stem), one that **names a
 session** (`x-session-id`), and one that carries a **secret stem**
 (`x-auth-token`, `x-csrf-token`, `x-client-secret`, `x-amz-signature`) or a name
-you `secrets.register`.
+you `secrets.register`. A few `-key` headers are not credentials and stay
+readable: `Idempotency-Key` (a dedupe token worth having when you debug a
+retry), `Sec-WebSocket-Key`, `Surrogate-Key` and `X-Cache-Key`.
 
 So a call carrying `authorization: 'Bearer …'` traces as
 `"authorization":"[REDACTED]"` — the raw secret never reaches disk. Redaction
@@ -205,10 +207,13 @@ password-grant body or a token response therefore reaches disk as
 
 A payload is not a headers map, so two rules differ from the header and URL ones:
 
-- **Only a non-empty string is redacted.** A token _count_ (`usage.output_tokens`,
-  `max_tokens`) or a flag (`signature_valid: true`) sits under a secret-looking
-  name but is not a secret, and stays readable. A key holding an object is walked
-  like any other.
+- **A secret name redacts every string beneath it, and only strings.** A key such
+  as `api_keys`, `tokens` or `credentials` taints its whole subtree, so
+  `api_keys: ["A1"]`, `credentials: { pass: "P1", key: "K1" }` and
+  `apiKeys: [{ key: "sk-…" }]` reach disk as `[REDACTED]` strings — at any depth,
+  whatever the inner keys are called. A token _count_ (`usage.output_tokens`,
+  `max_tokens`), a flag (`signature_valid: true`), a `null` or an empty string
+  sits under a secret-looking name but is not a secret, and stays readable.
 - **`code`, `key` and `auth` are ordinary fields in a payload** (a status `code`, a
   cache `key`) and stay readable there. In a URL query they are credentials, so
   `?code=…` and `?key=…` are redacted in the `url` and in the structured

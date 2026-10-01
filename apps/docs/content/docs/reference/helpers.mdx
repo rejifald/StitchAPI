@@ -352,8 +352,8 @@ secrets.has('session_ref'); // false — until you register it
     Query keys and header scrubbers are where the two meet. The key builders, the
     JSONL sink, the `serve` / `stitch run` stream and the public `__config` all
     check the header denylist, **then** two header-only rules — a name ending in
-    `-key` (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`) or naming a
-    session (`x-session-id`) — **and then** fall through to `secrets.has`, so a
+    `-key` (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`; not the
+    dedupe token `Idempotency-Key`) or naming a session (`x-session-id`) — **and then** fall through to `secrets.has`, so a
     secret-named header (`x-auth-token`) or a name you register is redacted there
     even though `secrets.has` is the wrong question to ask about a header on its
     own.

@@ -82,15 +82,18 @@ npm release are grouped under the in-development version that introduced them.
       (`//u:p@h/x?token=…`, `/v1?api_key=…`), a URL nested in a benign value
       (`next=https://o/?token=…`, rescanned), a raw `/`, `?` or `#` in a userinfo password (base64;
       a password of digits only reads as a port and is left), `;`-separated pairs, a JSON-escaped
-      `https:\/\/…`, and a secret value that ends at `) ] , ;`. It is idempotent, leaves non-URL
-      text alone, and is linear on hostile input. Known limits: a percent-encoded nested URL, and
-      Go's `&` for `&`.
+      `https:\/\/…` with Go's escaped ampersand between pairs, and a secret value that ends at
+      `) ] , ; }` (a `{` still opens a template slot; a closing `.` stays outside the secret). It
+      is idempotent, leaves non-URL text alone, and is linear on hostile input. Known limits: a
+      percent-encoded nested URL, and a secret that contains a raw `,` or `;`.
     - **The JSONL file sink scrubs secret-named payload fields.** It truncated bodies but never
       redacted them: a password-grant `password` / `client_secret` and a response `access_token`
       reached disk in full. Every key the shared `secrets` denylist matches — in the request body,
       GraphQL variables, the response `data` and each streamed `chunk` — is now `[REDACTED]`, before
-      the size cap cuts a `preview`. Over-matching is bounded: only a **non-empty string** under a
-      secret-named key is redacted, so token counts (`usage.output_tokens`, `max_tokens`) and flags
+      the size cap cuts a `preview`. A secret-named key redacts **every non-empty string beneath it**,
+      at any depth and whatever the inner keys are called (`api_keys: ["A1"]`,
+      `credentials: { pass: "P1", key: "K1" }`, `apiKeys: [{ key: "sk-…" }]`); over-matching is
+      bounded to strings, so token counts (`usage.output_tokens`, `max_tokens`) and flags
       (`signature_valid`) survive, and the exact names `code`, `key` and `auth` are ordinary payload
       fields (they stay credentials in a URL query, in `url` and in `input.query`). A string under
       a name that merely contains a stem (`next_page_token`) is still redacted. A `Date` passes
@@ -100,8 +103,9 @@ npm release are grouped under the in-development version that introduced them.
       frames and the `@stitchapi/query-core` / `@stitchapi/swr` query keys: any name ending in
       `-key` (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`, `x-goog-api-key`) and any
       naming a session (`x-session-id`), on top of the five-name denylist and the secret stems
-      (`x-auth-token`). A header such as `x-cache-key` that varies a response now keys it by a
-      constant until #880 hashes the redacted value.
+      (`x-auth-token`). `Idempotency-Key`, `Sec-WebSocket-Key`, `Surrogate-Key` and `X-Cache-Key`
+      are not credentials and stay readable. A `-key` header that varies a response (say
+      `x-partition-key`) now keys it by a constant until #880 hashes the redacted value.
     - **`stitch run` redacts its stdout the way `stitch serve` does.** It wrote the raw event, so an
       `--headers.authorization` or `--body.password` flag was echoed back on the `start` line. The
       response (`result`) is still printed as sent.

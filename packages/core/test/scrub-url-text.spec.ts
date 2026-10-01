@@ -109,7 +109,7 @@ describe('scrubUrl — free text that quotes URLs', () => {
                 'GET https://u:pw@a.test/x?token=t1 failed; retry http://b.test/y?page=2&api_key=k2.',
             ),
         ).toBe(
-            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED',
+            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED.',
         );
     });
 
@@ -328,6 +328,11 @@ describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other sep
                 '{"url":"https:\\/\\/h\\/x?a=1&token=REDACTED"}',
             ],
             [
+                "JSON-escaped slashes and Go's escaped ampersand (backslash, u0026)",
+                '{"url":"https:\\/\\/u:pw@h\\/x?a=1\\u0026token=T\\u0026b=2"}',
+                '{"url":"https:\\/\\/h\\/x?a=1\\u0026token=REDACTED\\u0026b=2"}',
+            ],
+            [
                 'a JSON-escaped protocol-relative URL',
                 '"\\/\\/u:pw@h\\/x"',
                 '"\\/\\/h\\/x"',
@@ -365,12 +370,54 @@ describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other sep
                 'https://h/y?token=REDACTED; retry',
             ],
             [
-                'a period does not end a value early: a JWT is redacted whole',
+                'a period inside the value (a JWT) is part of the secret',
                 'GET https://h/x?token=eyJhbGci.eyJzdWIi.sig, then',
                 'GET https://h/x?token=REDACTED, then',
             ],
+            [
+                "a sentence's closing period stays outside it",
+                'then https://h/z?sig=S.',
+                'then https://h/z?sig=REDACTED.',
+            ],
+            [
+                'a closing period after a JWT too',
+                'GET https://h/x?token=eyJhbGci.eyJzdWIi.sig.',
+                'GET https://h/x?token=REDACTED.',
+            ],
         ])('%s', (_name, input, expected) => {
             expect(scrubUrl(input)).toBe(expected);
+        });
+    });
+
+    describe('6. a `}` after a secret is text, not a template', () => {
+        test.each([
+            [
+                'a URL closing a JSON-ish bag',
+                '{u: https://h/x?token=S}',
+                '{u: https://h/x?token=REDACTED}',
+            ],
+            [
+                'a brace between pairs',
+                '/a?token=S}&b=1',
+                '/a?token=REDACTED}&b=1',
+            ],
+            [
+                'a secret then a brace then more text',
+                'see {https://h/x?api_key=K} and {https://h/y?sig=Z}',
+                'see {https://h/x?api_key=REDACTED} and {https://h/y?sig=REDACTED}',
+            ],
+        ])('%s', (_name, input, expected) => {
+            expect(scrubUrl(input)).toBe(expected);
+        });
+
+        test.each([
+            '/a?token={token}',
+            '/a?token={token}&x={x}',
+            '/a?token=pre{token}post',
+            '/a?token={a}}',
+            'https://h/{id}?api_key={apiKey}',
+        ])('a `{` still opens a template slot, left as written: %s', (tpl) => {
+            expect(scrubUrl(tpl)).toBe(tpl);
         });
     });
 
@@ -385,6 +432,9 @@ describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other sep
         'https://u:p@ss@h/x',
         '/a?x=1;token=T;y=2',
         '{"url":"https:\\/\\/u:pw@h\\/x?a=1&token=T"}',
+        '{"url":"https:\\/\\/h\\/x?a=1\\u0026token=T"}',
+        '{u: https://h/x?token=S}',
+        '/a?token=S}&b=1',
         'see (https://h/x?api_key=K) and [https://h/y?token=T], then https://h/z?sig=S.',
         'https://h/?api_key=ab?cd&x=1',
         'https://h/?a=?a=?a=?token=X',
@@ -444,6 +494,11 @@ const HEADER_NAME_TABLE: readonly (readonly [string, boolean])[] = [
     ['x-csrf-token', true],
     ['x-client-secret', true],
     ['x-amz-signature', true],
+    ['Idempotency-Key', false], // a dedupe token worth reading when debugging
+    ['x-idempotency-key', false],
+    ['Sec-WebSocket-Key', false], // a handshake nonce
+    ['Surrogate-Key', false], // a CDN purge tag
+    ['X-Cache-Key', false],
     ['accept', false],
     ['accept-language', false],
     ['content-type', false],
@@ -491,7 +546,59 @@ describe('redactKeys — two grammars', () => {
         });
     });
 
-    test('a payload: only a non-empty string under a secret-named key; code / key / auth are data', () => {
+    test('a payload: a secret name taints every string beneath it, however deep and whatever its key', () => {
+        expect(
+            redactKeys(
+                {
+                    api_keys: ['A1'],
+                    tokens: ['T1'],
+                    refresh_tokens: ['R1'],
+                    credentials: { pass: 'P1', key: 'K1' },
+                    apiKeys: [{ key: 'sk-live-abc' }],
+                    secrets: {
+                        a: { b: ['x', { c: 'y', n: 3, ok: true, no: null }] },
+                    },
+                    // not under a secret name: untouched
+                    items: [{ id: 'i1' }, 'plain'],
+                    profile: { name: 'Ada' },
+                },
+                undefined,
+                true,
+            ),
+        ).toEqual({
+            api_keys: ['[REDACTED]'],
+            tokens: ['[REDACTED]'],
+            refresh_tokens: ['[REDACTED]'],
+            credentials: { pass: '[REDACTED]', key: '[REDACTED]' },
+            apiKeys: [{ key: '[REDACTED]' }],
+            secrets: {
+                a: {
+                    b: [
+                        '[REDACTED]',
+                        { c: '[REDACTED]', n: 3, ok: true, no: null },
+                    ],
+                },
+            },
+            items: [{ id: 'i1' }, 'plain'],
+            profile: { name: 'Ada' },
+        });
+    });
+
+    test('a map is not tainted: a secret name redacts its own value only', () => {
+        expect(
+            redactKeys({
+                authorization: 'a',
+                'x-trace': 'b',
+                nested: { api_key: 'c' },
+            }),
+        ).toEqual({
+            authorization: '[REDACTED]',
+            'x-trace': 'b',
+            nested: { api_key: '[REDACTED]' },
+        });
+    });
+
+    test('a payload: only strings are redacted; code / key / auth are data', () => {
         expect(
             redactKeys(
                 {

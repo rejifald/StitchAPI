@@ -48,6 +48,13 @@ const RESPONSE_BODY = {
     token_type: 'bearer',
     access_token: SECRET.responseBody,
     nested: { refresh_token: SECRET.responseBody },
+    // A secret-NAMED key holding an array or a bag taints everything beneath it: every non-empty
+    // string goes, at any depth and whatever its own key (`key`, `pass` are not secret names here).
+    api_keys: [SECRET.responseBody],
+    tokens: [SECRET.responseBody],
+    refresh_tokens: [SECRET.responseBody],
+    credentials: { pass: SECRET.responseBody, key: SECRET.responseBody },
+    apiKeys: [{ key: SECRET.responseBody }],
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'stitch-873-'));
