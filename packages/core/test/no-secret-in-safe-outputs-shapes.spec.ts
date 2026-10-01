@@ -170,15 +170,34 @@ describe('endpoint shapes: every form of a literal secret is scrubbed from the c
         expect(sent).toEqual([`https://h.test/a?api_key=${SECRET.query}`]);
     });
 
-    test('the relative-URL config error quotes the endpoint scrubbed', async () => {
-        const s = stitch({ url: `/a?api_key=${SECRET.query}` }); // default transport: relative is refused
-        const out = await s.safe();
-        expect(out.ok).toBe(false);
-        const message = out.error?.message ?? '';
-        expect(message).toContain('is not absolute');
-        expect(message).not.toContain(SECRET.query);
-        expect(JSON.stringify(out.error)).not.toContain(SECRET.query);
-    });
+    // The engine's own "not absolute" error quotes the endpoint it refused: a relative URL, a
+    // protocol-relative one with userinfo, one whose password holds a raw `/` (base64). A scan
+    // anchored on `://` leaked every one of them. (A URL nested in a benign param reaches this
+    // message percent-encoded — the engine re-encodes the query — which `scrubUrl` does not decode.)
+    test.each([
+        ['relative', `/v1?api_key=${SECRET.query}`],
+        [
+            'protocol-relative with userinfo',
+            `//svc:${SECRET.userinfo}@h.test/v1?token=${SECRET.query}`,
+        ],
+        [
+            'a password with a raw slash',
+            `//svc:${SECRET.userinfo.slice(0, 3)}/${SECRET.userinfo.slice(3)}@h.test/v1`,
+        ],
+    ])(
+        'the %s config error quotes the endpoint scrubbed',
+        async (_name, url) => {
+            const s = stitch({ url }); // default transport: a non-absolute URL is refused
+            const out = await s.safe();
+            expect(out.ok).toBe(false);
+            const message = out.error?.message ?? '';
+            expect(message).toContain('is not absolute');
+            expect(message).not.toContain(SECRET.query);
+            const json = JSON.stringify(out.error);
+            expect(json).not.toContain(SECRET.query);
+            expect(json).not.toContain(SECRET.userinfo.slice(0, 3));
+        },
+    );
 });
 
 describe('RFC 6570 templates survive the scrub', () => {

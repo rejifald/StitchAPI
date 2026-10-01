@@ -1062,32 +1062,64 @@ function decodeKey(key: string): string {
  * config or an error message holds — absolute, protocol-relative (`//u:p@h/x`), relative
  * (`/a?api_key=K`), RFC 6570 templated (`/a{?page,token}`, `/a/{id}`), one the WHATWG parser
  * rejects (`Failed to parse URL from http://h:99999/?api_key=K`), or a whole sentence of prose or
- * JSON around any of those — and text with nothing to scrub comes back byte-for-byte. A URL ends at
- * whitespace, a quote, a bracket or a backslash, so the text around it stays intact. A `{template}`
+ * JSON around any of those — and text with nothing to scrub comes back byte-for-byte. A `{template}`
  * slot is a parameter name, never a literal credential, so a pair or a userinfo with a brace in it
  * is left alone: `paramNamesOf` and the OpenAPI path still read the slots.
  *
- * Both patterns are linear on untrusted text (a transport's message, a vendor's error body): each
- * starts at a fixed marker (`//` after a colon, a delimiter or the start, or `?` / `&` / `#`), and
- * its character class excludes every marker, so a scan runs to the next one and no further. They
- * never match a scheme — the quadratic shape a `/[a-z][a-z\d+.-]*:\/\/…/g` sweep has on a long run
- * of letters.
+ * What it reaches, beyond a well-formed `https://u:p@h/x?k=v`:
+ * - a schemeless URL (`//u:p@h/x`, `/v1?api_key=K`): nothing here keys on a `scheme://`;
+ * - a URL nested in a benign value (`next=https://o/?token=…`): a second pass stops at `?`, so the
+ *   nested pairs are scanned as pairs (the first lets a secret value run through a raw `?`);
+ * - a raw `/`, `?` or `#` in a userinfo password (base64), unless what follows the colon is a port
+ *   (`host:8080/@pkg`) — so a password of only digits is not told from one and is left;
+ * - `;` and `&amp;` separators, a JSON-escaped `https:\/\/…` and its `&`;
+ * - the punctuation around a value: it ends at whitespace, a quote, a bracket, `,` or `;`, and a
+ *   sentence's closing `.` stays outside it (a `.` inside, as in a JWT, is part of the secret).
+ * Not reached: a nested URL that is itself percent-encoded (`next=https%3A%2F%2Fo%2F%3Ftoken%3D…`,
+ * which is how the engine re-serialises a query), and a secret that contains a raw `,` or `;`.
+ * Idempotent: a scrubbed string scrubs to itself.
+ *
+ * Linear on untrusted text (a transport's message, a vendor's error body): every pattern starts at a
+ * fixed marker (`//` after a non-word character, or `?` `&` `#` `;`) and its character classes
+ * exclude the markers, so a scan runs to the next one and no further. None matches a scheme — the
+ * quadratic shape a `/[a-z][a-z\d+.-]*:\/\/…/g` sweep has on a long run of letters.
  */
 export function scrubUrl(text: string): string {
+    // One pair: a secret key keeps its name and loses its value. `{page,token}` has no `=` and
+    // never matches; a brace in the value is a template slot, not a literal credential.
+    const scrubPair = (
+        pair: string,
+        sep: string,
+        key: string,
+        value: string,
+    ): string =>
+        /[{}]/.test(value) || !isSecretKey(decodeKey(key))
+            ? pair
+            : // a sentence's closing `.` is not part of the secret; one inside (a JWT) is
+              `${sep}${key}=${URL_REDACTED}${value.endsWith('.') ? '.' : ''}`;
     return (
         text
-            // Userinfo runs to the LAST `@` of the authority, as the WHATWG parser reads it, and
-            // only an authority (`://` or a leading `//`) has one. A `{` ends the match: a templated
-            // userinfo is a param slot, not a literal credential.
-            .replace(/(^|[:\s"'<(])\/\/[^\s/?#\\{"'<>`]*@/g, '$1//')
-            // A `k=v` pair after `?`, `&` or `#` (a fragment can carry an OAuth `#access_token=`).
-            // `{page,token}` has no `=` and never matches.
+            // Userinfo, after a `//` that opens an authority (`://`, a leading `//`, JSON's
+            // `:\/\/`). Per the WHATWG parser it runs to the LAST `@` before the authority ends
+            // (`/ ? #`); failing that, a `user:password` whose password holds a raw `/ ? #` (base64)
+            // runs to the first `@` — unless the text after the colon is a port (`host:8080/@pkg`).
+            // A `{` ends the match: a templated userinfo is a param slot.
             .replace(
-                /([?&#])([^\s=&#?{}]+)=([^\s&#"'<>`\\]*)/g,
-                (pair, sep: string, key: string, value: string) =>
-                    /[{}]/.test(value) || !isSecretKey(decodeKey(key))
-                        ? pair
-                        : `${sep}${key}=${URL_REDACTED}`,
+                /((?:^|[^\w/])(?:\\?\/){2})(?:[^\s/?#\\{"'<>`]*|[^\s/?#\\{"'<>`@:]*:(?!\d+(?!\w))[^\s\\{"'<>`@:]*)@/g,
+                '$1',
+            )
+            // A `k=v` pair after `?`, `&`, `;`, `#` (a fragment carries an OAuth `#access_token=`)
+            // or JSON's `&`. A value ends at whitespace, a quote, a bracket, `,` or `;`. This
+            // pass lets a value run through `?`, so a secret holding a raw `?` goes whole…
+            .replace(
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;"'<>`\\),\]]*)/g,
+                scrubPair,
+            )
+            // …and this one stops at it, so a URL nested in a benign value (`next=https://o/?token=…`)
+            // is scanned as the pairs it holds.
+            .replace(
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;?"'<>`\\),\]]*)/g,
+                scrubPair,
             )
     );
 }

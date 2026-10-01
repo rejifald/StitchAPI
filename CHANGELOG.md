@@ -77,7 +77,13 @@ npm release are grouped under the in-development version that introduced them.
       which left a relative or protocol-relative URL untouched and re-encoded a templated one
       (`{?page,token}` became `%7B?page%2Ctoken%7D=REDACTED`). It now rewrites the string in place,
       so every shape above is scrubbed, a clean URL comes back byte-for-byte, a `#access_token=`
-      fragment pair is covered, and one function serves a config endpoint and an error message.
+      fragment pair is covered, and one function serves a config endpoint and an error message —
+      any URL in prose or JSON, not only one after a `://`. It also covers a schemeless URL
+      (`//u:p@h/x?token=…`, `/v1?api_key=…`), a URL nested in a benign value
+      (`next=https://o/?token=…`, rescanned), a raw `/`, `?` or `#` in a userinfo password (base64;
+      a password of digits only reads as a port and is left), `;`-separated pairs, JSON-escaped
+      `https:\/\/…` with `&`, and a secret value that ends at `) ] , ;` (a closing `.` stays
+      outside it). It is idempotent, leaves non-URL text alone, and is linear on hostile input.
     - **The JSONL file sink scrubs secret-named payload fields.** It truncated bodies but never
       redacted them: a password-grant `password` / `client_secret` and a response `access_token`
       reached disk in full. Every key the shared `secrets` denylist matches — in the request body,

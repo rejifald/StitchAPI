@@ -224,7 +224,9 @@ The same boundary scrubs **URLs**: a `start` event's resolved URL has any userin
 JSONL `url` field and the OTLP [`url.full`](/docs/guides/observability/otlp)
 attribute. The matching keys in the `start` event's structured `input.query` are
 redacted the same way, so the two views can't disagree; benign params (`page`,
-`sort`) survive for observability.
+`sort`) survive for observability. The scrub is textual, so it reaches a relative
+or protocol-relative URL, a URL nested in another param's value, `;`-separated
+pairs and a JSON-escaped URL too — not only a well-formed absolute one.
 
 Need to redact a header whose name none of those rules catches (say a partner's
 `x-acme-ref`)? Widen the denylist — you can extend it but never shrink it — with

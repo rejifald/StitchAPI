@@ -109,7 +109,7 @@ describe('scrubUrl — free text that quotes URLs', () => {
                 'GET https://u:pw@a.test/x?token=t1 failed; retry http://b.test/y?page=2&api_key=k2.',
             ),
         ).toBe(
-            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED',
+            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED.',
         );
     });
 
@@ -165,10 +165,269 @@ describe('scrubUrl — free text that quotes URLs', () => {
         ['pairs', '&a'.repeat(100_000)],
         ['userinfo-like', `//${'a'.repeat(200_000)}`],
         ['colons', ':'.repeat(200_000)],
+        // the shapes that make a careless userinfo / nested-pair scan quadratic
+        ['bare authorities', '://'.repeat(100_000)],
+        ['user:password openers', ' //a:'.repeat(60_000)],
+        ['password runs', `//u:${'/'.repeat(200_000)}`],
+        ['escaped authorities', '\\/\\/a:'.repeat(60_000)],
+        ['nested pairs', '?a='.repeat(130_000)],
+        ['semicolon pairs', ';a'.repeat(100_000)],
+        ['escaped ampersands', '\\u0026a'.repeat(60_000)],
+        ['userinfo markers', `http://${'@'.repeat(200_000)}`],
+        ['keys without a value', `http://a.test/?${'k'.repeat(200_000)}`],
+        ['dots', `?token=${'.'.repeat(200_000)}x`],
     ])('stays linear on a long run of %s', (_name, hostile) => {
         const started = performance.now();
-        expect(scrubUrl(hostile)).toBe(hostile);
+        scrubUrl(hostile);
         expect(performance.now() - started).toBeLessThan(1000);
+    });
+
+    test.each([
+        ['letters', `${'a'.repeat(200_000)}:/${'a'.repeat(200_000)}://`],
+        ['separators', '?'.repeat(200_000)],
+        ['colons', ':'.repeat(200_000)],
+    ])(
+        'text with nothing to scrub in a long run of %s comes back identical',
+        (_name, hostile) => {
+            expect(scrubUrl(hostile)).toBe(hostile);
+        },
+    );
+});
+
+// Gaps the independent review of #891's `://`-anchored free-text scan found. This is the ONE
+// scrubber (#891's `scrubUrls` is consolidated into it), so each is pinned here.
+describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other separators', () => {
+    describe('1. schemeless and relative URLs', () => {
+        test.each([
+            ['protocol-relative', '//u:p@h/x?token=T', '//h/x?token=REDACTED'],
+            ['relative', '/v1?api_key=K', '/v1?api_key=REDACTED'],
+            [
+                'relative without a slash',
+                'v1?api_key=K&page=2',
+                'v1?api_key=REDACTED&page=2',
+            ],
+            [
+                'quoted, as the engine prints it',
+                'request URL "/v1?api_key=K" is not absolute',
+                'request URL "/v1?api_key=REDACTED" is not absolute',
+            ],
+            [
+                'protocol-relative in prose',
+                'failed for //u:pw@h.test/x',
+                'failed for //h.test/x',
+            ],
+        ])('%s', (_name, input, expected) => {
+            expect(scrubUrl(input)).toBe(expected);
+        });
+    });
+
+    describe('2. a URL nested in a benign value is scanned', () => {
+        test.each([
+            [
+                'a secret query pair inside',
+                'next=https://o/?token=INNER',
+                'next=https://o/?token=REDACTED',
+            ],
+            [
+                'inside a query',
+                '/a?next=https://o/?token=INNER&x=1',
+                '/a?next=https://o/?token=REDACTED&x=1',
+            ],
+            [
+                'userinfo inside',
+                '/a?next=https://u:pw@o/',
+                '/a?next=https://o/',
+            ],
+            [
+                'protocol-relative userinfo inside',
+                '/a?next=//u:pw@o/&x=1',
+                '/a?next=//o/&x=1',
+            ],
+            [
+                'two levels deep',
+                '/a?n=https://o/?m=https://p/?token=DEEP',
+                '/a?n=https://o/?m=https://p/?token=REDACTED',
+            ],
+            [
+                'a nested fragment',
+                '/a?back=https://o/cb#access_token=INNER',
+                '/a?back=https://o/cb#access_token=REDACTED',
+            ],
+            [
+                'a secret value holding a raw `?`',
+                'https://h/?api_key=ab?cd&x=1',
+                'https://h/?api_key=REDACTED&x=1',
+            ],
+        ])('%s', (_name, input, expected) => {
+            expect(scrubUrl(input)).toBe(expected);
+        });
+    });
+
+    describe('3. a raw `/`, `?` or `#` in a userinfo password', () => {
+        test.each([
+            ['slash', 'https://u:ab/cd@h/x', 'https://h/x'],
+            ['question mark', 'https://u:ab?cd@h/x', 'https://h/x'],
+            ['hash', 'https://u:ab#cd@h/x', 'https://h/x'],
+            [
+                'base64 with `+`, `/` and `=`',
+                'https://u:Zm9v/YmFy+Zg==@h.test/x?a=1',
+                'https://h.test/x?a=1',
+            ],
+            ['protocol-relative', '//u:ab/cd@h/x', '//h/x'],
+            [
+                'in a message',
+                'Failed to parse URL from https://svc:p/w@api.test:99999/v1',
+                'Failed to parse URL from https://api.test:99999/v1',
+            ],
+        ])('%s', (_name, input, expected) => {
+            expect(scrubUrl(input)).toBe(expected);
+        });
+
+        test.each([
+            'https://h:8080/@scope/pkg', // a port, then a path that starts with `@`
+            'https://registry.test:4873/@scope%2fpkg',
+            'https://medium.com/@user/post',
+            'https://h/@user',
+            'https://h.test/a//b@c',
+            'https://h/a?mail=x@y.test#a@b',
+        ])('a `@` that starts a path is not userinfo: %s', (clean) => {
+            expect(scrubUrl(clean)).toBe(clean);
+        });
+
+        test('an ordinary userinfo still runs to the LAST `@` of the authority, and no further', () => {
+            expect(scrubUrl('https://u:p@h/a@b')).toBe('https://h/a@b');
+            expect(scrubUrl('https://u:p@ss@h/x')).toBe('https://h/x');
+        });
+    });
+
+    describe('4. `;`-separated pairs and JSON-escaped URLs', () => {
+        test.each([
+            [
+                'semicolon-separated pairs',
+                '/a?x=1;token=T;y=2',
+                '/a?x=1;token=REDACTED;y=2',
+            ],
+            [
+                'a matrix-style param',
+                '/a;api_key=K;v=2',
+                '/a;api_key=REDACTED;v=2',
+            ],
+            [
+                'an HTML-escaped ampersand',
+                '/a?x=1&amp;token=T',
+                '/a?x=1&amp;token=REDACTED',
+            ],
+            [
+                'JSON-escaped slashes and userinfo',
+                '{"url":"https:\\/\\/u:pw@h\\/x?a=1"}',
+                '{"url":"https:\\/\\/h\\/x?a=1"}',
+            ],
+            [
+                'JSON-escaped slashes, query and `\\u0026`',
+                '{"url":"https:\\/\\/u:pw@h\\/x?a=1\\u0026token=T"}',
+                '{"url":"https:\\/\\/h\\/x?a=1\\u0026token=REDACTED"}',
+            ],
+            [
+                'a JSON-escaped protocol-relative URL',
+                '"\\/\\/u:pw@h\\/x"',
+                '"\\/\\/h\\/x"',
+            ],
+        ])('%s', (_name, input, expected) => {
+            expect(scrubUrl(input)).toBe(expected);
+        });
+    });
+
+    describe('5. a secret value stops at the punctuation around it', () => {
+        test.each([
+            [
+                'a closing parenthesis',
+                'see (https://h/x?api_key=K) now',
+                'see (https://h/x?api_key=REDACTED) now',
+            ],
+            [
+                'a closing bracket',
+                '[https://h/y?token=T]',
+                '[https://h/y?token=REDACTED]',
+            ],
+            [
+                'a comma',
+                'https://h/y?token=T, then',
+                'https://h/y?token=REDACTED, then',
+            ],
+            [
+                'a list',
+                '[https://h/a?token=A,https://h/b?token=B]',
+                '[https://h/a?token=REDACTED,https://h/b?token=REDACTED]',
+            ],
+            [
+                'a semicolon',
+                'https://h/y?token=T; retry',
+                'https://h/y?token=REDACTED; retry',
+            ],
+            [
+                'a sentence-final period',
+                'then https://h/z?sig=S.',
+                'then https://h/z?sig=REDACTED.',
+            ],
+            [
+                'a period inside the value (a JWT) is part of the secret',
+                'GET https://h/x?token=eyJhbGci.eyJzdWIi.sig.',
+                'GET https://h/x?token=REDACTED.',
+            ],
+        ])('%s', (_name, input, expected) => {
+            expect(scrubUrl(input)).toBe(expected);
+        });
+    });
+
+    // The three properties every scrubbed form shares.
+    const CORPUS = [
+        '//u:p@h/x?token=T',
+        '/v1?api_key=K',
+        '/a?next=https://o/?token=INNER&x=1',
+        '/a?next=//u:pw@o/&x=1',
+        'https://u:ab/cd@h/x',
+        'https://u:Zm9v/YmFy+Zg==@h.test/x?a=1',
+        'https://u:p@ss@h/x',
+        '/a?x=1;token=T;y=2',
+        '{"url":"https:\\/\\/u:pw@h\\/x?a=1\\u0026token=T"}',
+        'see (https://h/x?api_key=K) and [https://h/y?token=T], then https://h/z?sig=S.',
+        'https://h/?api_key=ab?cd&x=1',
+        'https://h/?a=?a=?a=?token=X',
+        'https://h/cb#access_token=T&state=s',
+        'Failed to parse URL from http://ops:p@ss@api.test:99999/v1?api_key=k&page=1#frag',
+        '{"a":"https://x.test/?k=1&token=a&token=b","n":"https://y.test/?sig=z"}',
+        'https://h/a{?page,token}',
+        'https://h/a?token={token}&x={x}',
+    ];
+
+    test.each(CORPUS)(
+        'idempotent: scrubbing a scrubbed form changes nothing: %s',
+        (input) => {
+            const once = scrubUrl(input);
+            expect(scrubUrl(once)).toBe(once);
+        },
+    );
+
+    test.each(CORPUS)('no secret literal survives: %s', (input) => {
+        expect(scrubUrl(input)).not.toMatch(
+            /INNER|DEEP|pw|:p@|u:ab|Zm9v|YmFy|=T\b|=K\b|=a\b|=b\b|=S\b|ab\?cd|=k&|ss@|\bcd@/,
+        );
+    });
+
+    test.each([
+        'plain prose with no url at all',
+        'a == b && c@d // a comment, not a URL',
+        'ask bob@example.com about https://example.com/docs/a@b',
+        'select * from t where a=1 and b=2;',
+        'key=value; other=thing (see ?help) [1,2,3]',
+        'https://example.com/path;jsessionid=ABC123?page=2',
+        'C:\\Users\\me\\file.txt and http://localhost:3000/@me',
+        'the ratio 3:4 // and 12:30',
+        'foo?bar=baz&qux=1#frag',
+        '{"ok":true,"url":"https://a.test/x?page=2&sort=asc","n":3}',
+        '$ curl -H "Accept: */*" https://a.test/x?limit=10',
+    ])('non-URL text and benign URLs are not damaged: %s', (clean) => {
+        expect(scrubUrl(clean)).toBe(clean);
     });
 });
 
