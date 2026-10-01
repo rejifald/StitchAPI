@@ -5,7 +5,7 @@ import * as api from '../src';
 import { createStitchQuery, stitchKey, stitchQueryOptions } from '../src';
 import type { StitchCallResult, StitchLike } from '../src';
 
-import { secrets } from 'stitchapi';
+import { stitch as createStitch, secrets } from 'stitchapi';
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -499,6 +499,44 @@ describe('stitchKey.input()', () => {
         expect(out.headers['accept-language']).toBe('uk');
     });
 
+    // The parity pin against core. `isSecretHeader` here MIRRORS core's header rule set
+    // (`packages/core/src/util.ts` — internal, so not importable without a new public export), and
+    // core's `test/scrub-url-text.spec.ts` pins this SAME table. The `-key` suffix and `session`
+    // rows are the ones the old list (`-token` / `-api-key`) missed: Azure `api-key`,
+    // `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`, `x-session-id`.
+    test.each([
+        ['authorization', true],
+        ['Proxy-Authorization', true],
+        ['cookie', true],
+        ['Set-Cookie', true],
+        ['x-api-key', true],
+        ['api-key', true],
+        ['Ocp-Apim-Subscription-Key', true],
+        ['X-RapidAPI-Key', true],
+        ['x-goog-api-key', true],
+        ['x-session-id', true],
+        ['x-auth-token', true],
+        ['x-csrf-token', true],
+        ['x-client-secret', true],
+        ['x-amz-signature', true],
+        ['Idempotency-Key', false],
+        ['x-idempotency-key', false],
+        ['Sec-WebSocket-Key', false],
+        ['Surrogate-Key', false],
+        ['X-Cache-Key', false],
+        ['accept', false],
+        ['accept-language', false],
+        ['content-type', false],
+        ['user-agent', false],
+        ['x-request-id', false],
+        ['if-none-match', false],
+    ])('header name table (mirrors core): %s → secret: %s', (name, secret) => {
+        const out = stitchKey.input({ headers: { [name]: 'value' } }) as {
+            headers: Record<string, unknown>;
+        };
+        expect(out.headers[name]).toBe(secret ? '[redacted]' : 'value');
+    });
+
     test("reuses core's secrets.has: secrets.register widens header redaction", () => {
         // NEUTRAL by construction: `x-acme-cred` matches neither the static
         // `SECRET_HEADERS` list, nor the `-token` / `-api-key` suffix rules, nor any
@@ -517,6 +555,26 @@ describe('stitchKey.input()', () => {
 });
 
 describe('stitchKey.of() / stitchQueryOptions()', () => {
+    // #873: the name segment reads the stitch's redacted `__config`, so a literal URL secret never
+    // lands in a persisted / devtools-visible query key. (Two stitches differing ONLY by that secret
+    // now share a name segment — key derivation is #880's to fix, with the hashing it plans.)
+    test('the name segment of a string-form stitch carries no URL secret', () => {
+        const real = createStitch({
+            path: 'https://svc:pw873@h.test/x?page=1&api_key=key873',
+            adapter: async (req) => ({
+                status: 200,
+                headers: {},
+                body: {},
+                url: req.url,
+            }),
+        });
+        const [name] = stitchKey.of(real, {});
+        expect(name).toBe('https://h.test/x?page=1&api_key=REDACTED');
+        expect(JSON.stringify(stitchKey.of(real, {}))).not.toMatch(
+            /pw873|key873/,
+        );
+    });
+
     test('the key is [name, sanitised input]', () => {
         const stitch = Object.assign(
             unaryStitch<string>(async () => 'x'),

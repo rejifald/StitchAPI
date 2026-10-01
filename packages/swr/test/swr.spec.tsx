@@ -111,6 +111,43 @@ describe('swrKey — no secret leak in the cache key', () => {
         expect(headers['accept-language']).toBe('en-US');
     });
 
+    // The header-name table shared with core and query-core (`packages/core/test/
+    // scrub-url-text.spec.ts`, `packages/query-core/test/query.spec.ts` pin the same rows): this
+    // package forks the header rule set, so a row added there fails here until the fork follows.
+    test.each([
+        ['authorization', true],
+        ['Proxy-Authorization', true],
+        ['cookie', true],
+        ['Set-Cookie', true],
+        ['x-api-key', true],
+        ['api-key', true],
+        ['Ocp-Apim-Subscription-Key', true],
+        ['X-RapidAPI-Key', true],
+        ['x-goog-api-key', true],
+        ['x-session-id', true],
+        ['x-auth-token', true],
+        ['x-csrf-token', true],
+        ['x-client-secret', true],
+        ['x-amz-signature', true],
+        ['Idempotency-Key', false],
+        ['x-idempotency-key', false],
+        ['Sec-WebSocket-Key', false],
+        ['Surrogate-Key', false],
+        ['X-Cache-Key', false],
+        ['accept', false],
+        ['accept-language', false],
+        ['content-type', false],
+        ['user-agent', false],
+        ['x-request-id', false],
+        ['if-none-match', false],
+    ])('header name table (mirrors core): %s → secret: %s', (name, secret) => {
+        const getUser = unaryStitch(async () => 1, { name: 'getUser' });
+        const [, keyInput] = swrKey(getUser, { headers: { [name]: 'value' } });
+        const headers = (keyInput as { headers: Record<string, string> })
+            .headers;
+        expect(headers[name]).toBe(secret ? '[redacted]' : 'value');
+    });
+
     // The parity pin against `@stitchapi/query-core`. Its `isSecretHeader` ends in
     // `|| secrets.has(k)`, which pulls in core's secret STEMS and anything a host
     // widened via `secrets.register`; this package forks that helper (no query-core

@@ -57,7 +57,13 @@ to. The pair is self-explaining: a `coerced` finding at `role` plus
 
 `.inspect()` consumes one run with the raw body retained and surfaces it on a
 **non-enumerable** field. The other four fields are ordinary properties; `raw`
-alone is hidden, so it cannot leak into a log by accident.
+alone is hidden, so it cannot leak into a log by accident. On a failure `error`
+serializes through [`StitchError.toJSON()`](/docs/errors), which leaves the
+upstream body out and scrubs the URL, so the wrapper's JSON carries no response
+body there either. `.report()` returns the same wrapper plus run diagnostics;
+its `config` is the stitch's public config, with any secret written into a
+literal `url`, `baseUrl`, `path` or `headers` already replaced by `REDACTED` /
+`[REDACTED]`.
 
 <Callout type="warn">
     **Anti-pattern:** don't log the whole wrapper — `raw` is **unredacted**, so

@@ -36,6 +36,11 @@ Two routes serve the registry of named stitches:
 - `POST /stitch/:name` runs that stitch; the JSON request body is its input.
   Any other method returns `405`, and an unknown name returns `404`.
 
+`:name` is one of the names `GET /` lists: a registry key, which for
+`stitch serve` is the export name. A stitch's configured `name` labels its
+traces and does not route to it; a module's `default` export has no export name,
+so it is keyed by its configured `name`.
+
 The server binds to `127.0.0.1:8787` by default. Responses are the final
 validated result as JSON; send `Accept: text/event-stream` (or add `?stream=1`)
 to receive the live event stream as SSE instead.

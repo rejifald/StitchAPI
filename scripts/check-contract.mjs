@@ -351,9 +351,9 @@ function resolveRelative(spec, fromFile) {
 //
 // R5 used to read exactly ONE file per package, `src/index.ts`. That is the whole published
 // surface for 33 of the 34 published packages — and a fraction of core's, which publishes
-// SEVENTEEN entry points: the root barrel plus sixteen subpaths (`stitchapi/serve`,
+// EIGHTEEN entry points: the root barrel plus seventeen subpaths (`stitchapi/serve`,
 // `/mcp`, `/registry`, `/testing`, `/fingerprint`,
-// `/cache`, `/auth`, `/graphql`, `/sse`, `/sse-emit`, `/stream`, `/download`, `/postmessage`,
+// `/cache`, `/auth`, `/otlp`, `/graphql`, `/sse`, `/sse-emit`, `/stream`, `/download`, `/postmessage`,
 // `/llm`, `/pipe`, `/xhr`). Every identifier reachable only through a subpath — the whole
 // serve/mcp/auth/llm/pipe vocabulary — was therefore absent from the uniqueness map, so a
 // peer package could ship a clashing name against any of them and R5 would see one side only.

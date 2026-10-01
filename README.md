@@ -19,7 +19,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
-  <img alt="Bundle: ~25 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~25%20kB-2563EB" />
+  <img alt="Bundle: ~21 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~21%20kB-2563EB" />
   <a href="https://scorecard.dev/viewer/?uri=github.com/rejifald/StitchAPI"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/rejifald/StitchAPI/badge" /></a>
   <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm provenance: signed" src="https://img.shields.io/badge/provenance-signed-brightgreen" /></a>
 </p>
@@ -34,7 +34,7 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~25&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~22&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~21&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~18&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The cache engine and the OTLP exporter load lazily, on first use, so they are not in those figures. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 <p align="center">
@@ -164,7 +164,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
 - **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 - **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
-- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~25 kB min+gzip** for the whole entry, **~22 kB** for a typical `import { stitch }`.
+- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~21 kB min+gzip** for the whole entry, **~18 kB** for a typical `import { stitch }` (the cache engine and the OTLP exporter load lazily, on first use).
 
 ## Install
 
@@ -351,12 +351,14 @@ Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces?utm_source=
 
 The same typed unit is reachable four ways, so humans and agents call exactly the same validated, observable thing:
 
-| Front door              | How             | Example                   |
-| ----------------------- | --------------- | ------------------------- |
-| **In-process function** | import and call | `await listUsers()`       |
-| **CLI command**         | `stitch run`    | `$ stitch run list-users` |
-| **HTTP endpoint**       | `stitch serve`  | `GET /list-users`         |
-| **MCP / agent tool**    | `stitch mcp`    | `tool: list_users`        |
+| Front door              | How             | Example                              |
+| ----------------------- | --------------- | ------------------------------------ |
+| **In-process function** | import and call | `await listUsers()`                  |
+| **CLI command**         | `stitch run`    | `$ stitch run listUsers`             |
+| **HTTP endpoint**       | `stitch serve`  | `POST /stitch/listUsers`             |
+| **MCP / agent tool**    | `stitch mcp`    | `run_stitch { "name": "listUsers" }` |
+
+The three non-function doors address a stitch by its export name, the same name `list_stitches` and `GET /` list.
 
 `stitch run` streams every event as one JSON line on stdout (ready for `jq`); `stitch trace` summarizes the run log — runs, failures, retries, drift, and latency percentiles. Full guide: [Surfaces → CLI](https://stitchapi.dev/docs/surfaces/cli?utm_source=github).
 

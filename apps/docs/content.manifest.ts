@@ -421,7 +421,7 @@ export const pages: Page[] = [
         path: 'scenarios/pii-in-the-logs',
         title: "The customer data you didn't mean to log",
         description:
-            'Response bodies reach 13 destinations and metadata reaches 11 — with nothing in between. An output allowlist takes it to zero; sensitive: true does not, and only gates the cache.',
+            'Response bodies reach 12 destinations and metadata reaches 12 — with nothing in between. An output allowlist takes it to zero; sensitive: true does not, and only gates the cache.',
         kind: 'guide',
     },
     {
