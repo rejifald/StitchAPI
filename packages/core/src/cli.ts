@@ -462,7 +462,7 @@ Every event the stitch emits is printed as one line of JSON on stdout. Tracing i
 by default (no side effects) — opt in with --trace or the STITCH_TRACE_* env vars.
 
 diagram:
-  --name <name>   diagram only this stitch (by export name or configured name)
+  --name <name>   diagram only this stitch (by export name)
   Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
   retry, surface, pagination, validation, transform, pick, cache). Auth is redacted
   from a stitch's public config, so it is not shown.

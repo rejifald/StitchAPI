@@ -12,6 +12,7 @@
 // a password into a shared document. Add the surface here in the same PR that adds the surface.
 import { otlp, stitch } from '../src';
 import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
+import { createMcpServer } from '../src/mcp';
 import { toOpenApi } from '../src/openapi';
 import type { StitchRegistry } from '../src/registry';
 import { redactEventForTransport } from '../src/trace';
@@ -82,8 +83,32 @@ function otlpSpans(): OtelSpan[] {
 // scrub removed the credential, not the whole URL).
 interface Surface {
     name: string;
-    serialize: () => string;
+    serialize: () => string | Promise<string>;
     emitsHost: boolean;
+}
+
+// One MCP tool call against a registry holding a stitch on the poisoned endpoint, serialized as the
+// whole JSON-RPC response — everything the model would receive. The adapter fails the way a
+// `node-fetch`-shaped transport does on a DNS error: by quoting the request URL in its message.
+async function mcpToolCall(
+    tool: 'run_stitch' | 'describe_stitch',
+): Promise<string> {
+    const getUser = stitch({
+        url: POISONED_URL,
+        adapter: (request) =>
+            Promise.reject(
+                new Error(
+                    `request to ${request.url} failed, reason: getaddrinfo ENOTFOUND ${HOST}`,
+                ),
+            ),
+    });
+    const response = await createMcpServer({ getUser }).handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: tool, arguments: { name: 'getUser' } },
+    });
+    return JSON.stringify(response);
 }
 
 const SURFACES: Surface[] = [
@@ -114,6 +139,20 @@ const SURFACES: Surface[] = [
         serialize: () => JSON.stringify(otlpSpans()),
         emitsHost: true,
     },
+    {
+        // The model's context (#866): a transport error quoting the request URL, returned to the
+        // agent as a `run_stitch` tool error.
+        name: 'mcp run_stitch → tool error text',
+        serialize: () => mcpToolCall('run_stitch'),
+        emitsHost: true,
+    },
+    {
+        // The model's context again: `describe_stitch` quotes the configured endpoint in its
+        // `endpoint`, `pipeline` and Mermaid `diagram` fields.
+        name: 'mcp describe_stitch → endpoint, pipeline, diagram',
+        serialize: () => mcpToolCall('describe_stitch'),
+        emitsHost: true,
+    },
 ];
 
 describe('no credential leaks in emitted artifacts (class guard behind per-sink scrubUrl)', () => {
@@ -126,8 +165,8 @@ describe('no credential leaks in emitted artifacts (class guard behind per-sink 
         );
     });
 
-    test.each(SURFACES)('$name emits no credential', ({ serialize }) => {
-        const artifact = serialize();
+    test.each(SURFACES)('$name emits no credential', async ({ serialize }) => {
+        const artifact = await serialize();
         for (const marker of LEAK_MARKERS) {
             expect(artifact).not.toContain(marker);
         }
@@ -138,8 +177,8 @@ describe('no credential leaks in emitted artifacts (class guard behind per-sink 
     // assertion isn't guarded by a per-surface conditional).
     test.each(SURFACES.filter((s) => s.emitsHost))(
         '$name preserves the target host',
-        ({ serialize }) => {
-            expect(serialize()).toContain(HOST);
+        async ({ serialize }) => {
+            expect(await serialize()).toContain(HOST);
         },
     );
 });

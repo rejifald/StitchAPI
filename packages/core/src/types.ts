@@ -1704,7 +1704,11 @@ export type KnownMethod =
     'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'QUERY';
 
 export interface StitchConfig {
-    /** Label used in events and traces; defaults to `path` or `'stitch'`. */
+    /**
+     * Label used in events and traces; defaults to `path` or `'stitch'`. A label, not an address:
+     * `stitch run`, `stitch serve` and the MCP tools resolve a stitch by its registry key (the
+     * export name) only, so this never makes a stitch callable under a second name.
+     */
     name?: string;
     /**
      * Request style — a {@link Surface} plugin (ADR 0005 Decisions 1-2). Omitted = the built-in

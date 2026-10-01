@@ -285,27 +285,32 @@ export interface ApiKeyOptions {
 }
 
 /**
- * Set `name=value` on a request `Cookie` header, REPLACING any existing pair with the same name
+ * Set `name=value` on a request `Cookie` header, REPLACING every existing pair with the same name
  * (a duplicate cookie name is ambiguous — RFC 6265 §5.4 — and re-applying the strategy on a retry
- * must stay idempotent) while keeping the other pairs in place. Cookie names are case-sensitive, so
- * the match is exact.
+ * must stay idempotent) while keeping the other pairs in place. The pair lands where the first
+ * same-named one stood, and any later duplicate is dropped: replacing only the first would leave a
+ * second forged `SESSION=…` for a vendor that reads the last occurrence. Cookie names are
+ * case-sensitive, so the match is exact.
  */
 function setCookiePair(
     existing: string | undefined,
     name: string,
     value: string,
 ): string {
-    const parts = (existing ?? '')
-        .split(';')
-        .map((p) => p.trim())
-        .filter(Boolean);
-    const idx = parts.findIndex((p) => {
-        const eq = p.indexOf('=');
-        return (eq < 0 ? p : p.slice(0, eq)).trim() === name;
-    });
     const pair = `${name}=${value}`;
-    if (idx >= 0) parts[idx] = pair;
-    else parts.push(pair);
+    let placed = false;
+    const parts: string[] = [];
+    for (const raw of (existing ?? '').split(';')) {
+        const p = raw.trim();
+        const eq = p.indexOf('=');
+        if ((eq < 0 ? p : p.slice(0, eq)).trim() !== name) {
+            if (p) parts.push(p);
+        } else if (!placed) {
+            parts.push(pair);
+            placed = true;
+        }
+    }
+    if (!placed) parts.push(pair);
     return parts.join('; ');
 }
 
@@ -1048,15 +1053,21 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
                 );
                 stored = await ctx.vault.get(key);
             }
-            // Non-jar: a stored `name=value` string. Jar: a stored map → serialize all pairs.
-            const cookie = jarMode
-                ? serializeJar(stored as Record<string, string> | undefined)
-                : (stored as string | undefined);
-            if (cookie) {
-                req.headers['cookie'] = [req.headers['cookie'], cookie]
-                    .filter(Boolean)
-                    .join('; ');
-            }
+            // Non-jar: a stored `name=value` string (read back with the parser that captured its
+            // value). Jar: a stored map of every pair the login set.
+            // Each pair REPLACES a same-named one the request already carries — the `apiKey`
+            // cookie arm's rule. Joining instead sent a forged `SESSION=attacker` (an input header,
+            // on a stitch that declares an `input.headers` schema) AHEAD of the real session, so a
+            // vendor reading the first occurrence ran the call as the forger's session: fixation.
+            const jar = jarMode
+                ? ((stored as Record<string, string> | undefined) ?? {})
+                : parseCookieJar(stored as string | undefined);
+            for (const [name, value] of Object.entries(jar))
+                req.headers['cookie'] = setCookiePair(
+                    req.headers['cookie'],
+                    name,
+                    value,
+                );
         },
         shouldRefresh(res) {
             return refreshMatch(res.status) || !!refreshOpts.when?.(res);
@@ -1089,12 +1100,4 @@ function parseCookie(
     name: string,
 ): string | undefined {
     return parseCookieJar(setCookie)[name];
-}
-
-/** Serialize a captured jar back into a `name=value; name=value` Cookie header. */
-function serializeJar(jar: Record<string, string> | undefined): string {
-    if (!jar) return '';
-    return Object.entries(jar)
-        .map(([k, v]) => `${k}=${v}`)
-        .join('; ');
 }

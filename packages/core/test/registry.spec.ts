@@ -1,13 +1,14 @@
 // Direct unit tests for src/registry.ts — the stitch-discovery layer shared by the CLI,
 // HTTP serve, and MCP surfaces. cli.spec.ts already covers the happy paths (named +
-// nested + default-object collection, select-by-key/by-name, the populated unknown-name
+// nested + default-object collection, select-by-key, the populated unknown-name
 // error, and loadStitches' URL handling). These cover the branches it leaves open:
 //
 //   collectStitches  — a `default` export that is *itself* a stitch (keyed by its
 //                       configured name, else "default"), non-object module input,
 //                       and the "later entries win on name collision" rule.
-//   selectStitch     — export-key precedence over a configured name, and the *empty*
-//                       registry error path (a distinct message + the typed error name).
+//   selectStitch     — own-key-only resolution (no configured-name fallback, no inherited
+//                       `Object.prototype` keys — #866), and the *empty* registry error path
+//                       (a distinct message + the typed error name).
 //   resolveModulePath — has no direct test today: explicit-path resolution, default-
 //                       candidate probing order, and the ModuleNotFoundError throw.
 import { stitch } from '../src';
@@ -54,12 +55,35 @@ describe('collectStitches', () => {
 });
 
 describe('selectStitch', () => {
-    it('prefers an exact export-key match over a configured-name match', () => {
+    it('resolves the export key, even when another stitch is *named* that', () => {
         const byKey = mk({ name: 'other' });
         const byName = mk({ name: 'target' });
         const reg = { target: byKey, something: byName };
-        // 'target' matches the export key (byKey) directly, even though byName is *named* 'target'.
         expect(selectStitch(reg, 'target')).toBe(byKey);
+    });
+
+    // #866 — the callable identity is exactly what `list_stitches` / `GET /` show. A configured-name
+    // fallback kept a stitch the registry RENAMED (to hide it) answering to its original name.
+    it('does not fall back to a configured name', () => {
+        const reg = { safeAlias: mk({ name: 'dangerous' }) };
+        expect(() => selectStitch(reg, 'dangerous')).toThrow(
+            'unknown stitch "dangerous". Available: safeAlias',
+        );
+    });
+
+    it.each(['constructor', 'toString', 'hasOwnProperty', '__proto__'])(
+        'treats the inherited key %s as an unknown stitch',
+        (name) => {
+            const reg = { a: mk() };
+            expect(() => selectStitch(reg, name)).toThrow(
+                `unknown stitch "${name}". Available: a`,
+            );
+        },
+    );
+
+    it('resolves an own key that shadows an Object.prototype name', () => {
+        const own = mk();
+        expect(selectStitch({ constructor: own }, 'constructor')).toBe(own);
     });
 
     it('throws a typed, empty-registry error when nothing is registered', () => {

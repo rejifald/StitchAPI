@@ -5,9 +5,12 @@
 //   - a message split across chunks is buffered until its newline;
 //   - blank / whitespace-only lines are skipped;
 //   - close() detaches the listener (no further messages are processed), and is `async` — it
-//     returns a promise, like every other `close()` on the surface (CONTRACT.md P11).
+//     returns a promise, like every other `close()` on the surface (CONTRACT.md P11);
+//   - one bad message never stalls the rest (#866): a throw inside a tool call, or a line that is
+//     valid JSON but not a request, is answered, and the `ping` after it still is.
 import { serveStdio } from '../src/mcp';
 import type { JsonRpcMessage, StdioHandle } from '../src/mcp';
+import type { StitchRegistry } from '../src/registry';
 
 import { PassThrough } from 'node:stream';
 
@@ -18,11 +21,13 @@ const req = (method: string): JsonRpcMessage => ({
     method,
 });
 
-function setup(): StdioHandle & { input: PassThrough; output: PassThrough } {
+function setup(
+    registry: StitchRegistry = {},
+): StdioHandle & { input: PassThrough; output: PassThrough } {
     const input = new PassThrough();
     const output = new PassThrough();
     output.setEncoding('utf8');
-    const handle = serveStdio({}, { stdin: input, stdout: output });
+    const handle = serveStdio(registry, { stdin: input, stdout: output });
     return { ...handle, input, output };
 }
 
@@ -141,5 +146,96 @@ describe('serveStdio transport framing', () => {
         input.write(`${JSON.stringify(req('tools/list'))}\n`);
         await new Promise((r) => setTimeout(r, 30));
         expect(got).toBe(false);
+    });
+});
+
+// #866 — every stdio message runs on ONE promise chain. A rejection out of `handle()` used to
+// poison it: every later message (a `ping` included) went unanswered, and the unobserved rejection
+// could take the process down under Node's default `--unhandled-rejections=throw`.
+describe('one bad message never stalls the rest (#866)', () => {
+    // A registry entry whose `__config` cannot be read. `describe_stitch` reads it outside any
+    // other guard, so before the fix this throw escaped `callTool` and rejected `handle()`.
+    const unreadable = (): StitchRegistry => {
+        const fn = (): Promise<unknown> => Promise.resolve(null);
+        Object.defineProperty(fn, '__config', {
+            get(): never {
+                throw new Error(
+                    'config unreadable at https://ops:hunter2@internal.test/x?token=t0k3n',
+                );
+            },
+        });
+        return { broken: fn as unknown as StitchRegistry[string] };
+    };
+
+    test('a throw inside a tool call is a tool error, and the next ping still answers', async () => {
+        const { input, output, close } = setup(unreadable());
+        try {
+            const call: JsonRpcMessage = {
+                jsonrpc: '2.0',
+                id: ++nextId,
+                method: 'tools/call',
+                params: {
+                    name: 'describe_stitch',
+                    arguments: { name: 'broken' },
+                },
+            };
+            const ping = req('ping');
+            const p = collectLines(output, 2);
+            input.write(`${JSON.stringify(call)}\n${JSON.stringify(ping)}\n`);
+            const [failed, pong] = await p;
+            expect(failed?.id).toBe(call.id);
+            const result = failed?.result as {
+                content: { text: string }[];
+                isError?: boolean;
+            };
+            expect(result.isError).toBe(true);
+            // The error text crossed the boundary scrubbed, like every other one.
+            expect(result.content[0]!.text).toContain('config unreadable');
+            expect(result.content[0]!.text).not.toContain('hunter2');
+            expect(result.content[0]!.text).not.toContain('t0k3n');
+            expect(pong?.id).toBe(ping.id);
+            expect(pong?.result).toEqual({});
+        } finally {
+            await close();
+        }
+    });
+
+    test('valid JSON that is not a request is -32600, and the next ping still answers', async () => {
+        const { input, output, close } = setup();
+        try {
+            const ping = req('ping');
+            const p = collectLines(output, 4);
+            // `null` used to throw on destructuring inside `handle()`.
+            input.write(`null\n42\n[]\n${JSON.stringify(ping)}\n`);
+            const [a, b, c, pong] = await p;
+            for (const bad of [a, b, c]) {
+                expect(bad?.id).toBeNull();
+                expect(bad?.error?.code).toBe(-32600);
+            }
+            expect(pong?.id).toBe(ping.id);
+            expect(pong?.result).toEqual({});
+        } finally {
+            await close();
+        }
+    });
+
+    test('handle() resolves to a JSON-RPC error when even reading the message throws', async () => {
+        const { server, close } = setup();
+        try {
+            const hostile = new Proxy(
+                {},
+                {
+                    get() {
+                        throw new Error('no reads');
+                    },
+                },
+            ) as JsonRpcMessage;
+            await expect(server.handle(hostile)).resolves.toMatchObject({
+                id: null,
+                error: { code: -32603, message: 'internal error' },
+            });
+        } finally {
+            await close();
+        }
     });
 });

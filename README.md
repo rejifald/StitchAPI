@@ -351,12 +351,14 @@ Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces?utm_source=
 
 The same typed unit is reachable four ways, so humans and agents call exactly the same validated, observable thing:
 
-| Front door              | How             | Example                   |
-| ----------------------- | --------------- | ------------------------- |
-| **In-process function** | import and call | `await listUsers()`       |
-| **CLI command**         | `stitch run`    | `$ stitch run list-users` |
-| **HTTP endpoint**       | `stitch serve`  | `GET /list-users`         |
-| **MCP / agent tool**    | `stitch mcp`    | `tool: list_users`        |
+| Front door              | How             | Example                              |
+| ----------------------- | --------------- | ------------------------------------ |
+| **In-process function** | import and call | `await listUsers()`                  |
+| **CLI command**         | `stitch run`    | `$ stitch run listUsers`             |
+| **HTTP endpoint**       | `stitch serve`  | `POST /stitch/listUsers`             |
+| **MCP / agent tool**    | `stitch mcp`    | `run_stitch { "name": "listUsers" }` |
+
+The three non-function doors address a stitch by its export name, the same name `list_stitches` and `GET /` list.
 
 `stitch run` streams every event as one JSON line on stdout (ready for `jq`); `stitch trace` summarizes the run log — runs, failures, retries, drift, and latency percentiles. Full guide: [Surfaces → CLI](https://stitchapi.dev/docs/surfaces/cli?utm_source=github).
 

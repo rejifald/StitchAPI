@@ -1,6 +1,6 @@
 // Set the trace file before importing ../src so the JSONL sink is captured/quiet.
 import { stitch } from '../src';
-import { bearer } from '../src/auth';
+import { apiKey, bearer } from '../src/auth';
 import { createMcpServer, serveStdio } from '../src/mcp';
 import type { JsonRpcMessage } from '../src/mcp';
 import { startMockServer } from './support/mock-server';
@@ -30,7 +30,12 @@ process.env['STITCH_TRACE_FILE'] = join(
 
 // Minimal shapes for reading into the JSON-RPC results in assertions.
 interface ToolListResult {
-    tools: { name: string; description: string; inputSchema: unknown }[];
+    tools: {
+        name: string;
+        description: string;
+        inputSchema: unknown;
+        annotations?: Record<string, boolean>;
+    }[];
 }
 interface ToolCallResult {
     content: { type: string; text: string }[];
@@ -306,6 +311,187 @@ test('a notification (no id) gets no response', async () => {
 test('an unknown method (with id) is JSON-RPC error -32601', async () => {
     const res = await server.handle(req('does/not/exist'));
     expect(res?.error?.code).toBe(-32601);
+});
+
+// ---- tool annotations (#866) ----------------------------------------------
+
+test('tools/list annotates each tool so a host can decide whether to ask a human', async () => {
+    const res = await server.handle(req('tools/list'));
+    const tools = (res?.result as ToolListResult).tools;
+    const annotations = Object.fromEntries(
+        tools.map((t) => [t.name, t.annotations]),
+    );
+    // The two discovery tools read the in-process registry and make no request.
+    expect(annotations['list_stitches']).toEqual({
+        readOnlyHint: true,
+        openWorldHint: false,
+    });
+    expect(annotations['describe_stitch']).toEqual({
+        readOnlyHint: true,
+        openWorldHint: false,
+    });
+    // run_stitch fronts every registered stitch — a write included — so it promises nothing it
+    // cannot promise for all of them, and says so explicitly rather than leaning on spec defaults.
+    expect(annotations['run_stitch']).toEqual({
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+    });
+});
+
+// ---- error text crossing the boundary (#866) -------------------------------
+
+describe('error text that crosses the MCP boundary is URL-scrubbed (#866)', () => {
+    const KEY = 'ak_live_qry_8899aabbccddeeff';
+
+    const runText = async (
+        registry: Parameters<typeof createMcpServer>[0],
+        name: string,
+    ): Promise<string> => {
+        const res = await createMcpServer(registry).handle(
+            req('tools/call', { name: 'run_stitch', arguments: { name } }),
+        );
+        const result = res?.result as ToolCallResult;
+        expect(result.isError).toBe(true);
+        return result.content[0]!.text;
+    };
+
+    // The audit's reproduction, on the DEFAULT fetch adapter and zero lines of user code: a port the
+    // URL parser rejects makes the transport quote the whole request URL — key included.
+    test('apiKey({ in: "query" }) + a transport failure never puts the key in the tool result', async () => {
+        const metrics = stitch({
+            url: 'http://api.vendor.test:99999/v1/metrics',
+            auth: apiKey({ in: 'query', secret: KEY }),
+        });
+        const text = await runText({ metrics }, 'metrics');
+        expect(text).toContain('Failed to parse URL'); // still a useful message…
+        expect(text).toContain('api.vendor.test:99999/v1/metrics');
+        expect(text).toContain('api_key=REDACTED'); // …that names the parameter, not its value
+        expect(text).not.toContain(KEY);
+    });
+
+    // The node-fetch shape: a routine DNS failure, on a URL the parser accepts. A vendor-spelled
+    // param name is caught because `apiKey` registers its `name` with the scrubber.
+    test('a parseable URL in an adapter error is scrubbed too, under a custom param name', async () => {
+        const metrics = stitch({
+            url: 'https://api.vendor.test/v1/metrics?page=2',
+            auth: apiKey({ in: 'query', name: 'vk', secret: KEY }),
+            adapter: (request) =>
+                Promise.reject(
+                    new Error(
+                        `request to ${request.url} failed, reason: getaddrinfo ENOTFOUND api.vendor.test`,
+                    ),
+                ),
+        });
+        const text = await runText({ metrics }, 'metrics');
+        expect(text).toContain('getaddrinfo ENOTFOUND');
+        expect(text).toContain('page=2'); // a benign param survives for diagnosis
+        expect(text).toContain('vk=REDACTED');
+        expect(text).not.toContain(KEY);
+    });
+
+    test('URL userinfo is stripped, and a non-Error throw still reaches the model as text', async () => {
+        const leaky = stitch({
+            url: 'https://x.test/a',
+            adapter: () =>
+                Promise.reject(
+                    new Error(
+                        'upstream https://svc:hunter2@db.internal.test/q?access_token=tkn failed',
+                    ),
+                ),
+        });
+        const thrower = stitch({
+            url: 'https://x.test/b',
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the case under test
+            adapter: () => Promise.reject('plain string thrown'),
+        });
+        const text = await runText({ leaky }, 'leaky');
+        expect(text).toContain('db.internal.test');
+        expect(text).not.toContain('hunter2');
+        expect(text).not.toContain('tkn');
+        expect(await runText({ thrower }, 'thrower')).toContain(
+            'plain string thrown',
+        );
+    });
+});
+
+// ---- name resolution (#866, part of #863) -----------------------------------
+
+describe('a stitch is callable only under a key the listing shows (#866)', () => {
+    const callTool = async (
+        mcp: ReturnType<typeof createMcpServer>,
+        tool: 'run_stitch' | 'describe_stitch',
+        name: string,
+    ): Promise<ToolCallResult> => {
+        const res = await mcp.handle(
+            req('tools/call', { name: tool, arguments: { name } }),
+        );
+        return res?.result as ToolCallResult;
+    };
+
+    test.each(['constructor', 'toString', 'hasOwnProperty', '__proto__'])(
+        'the inherited key %s is an unknown stitch on both tools',
+        async (name) => {
+            for (const tool of ['run_stitch', 'describe_stitch'] as const) {
+                const result = await callTool(server, tool, name);
+                expect(result.isError).toBe(true);
+                expect(result.content[0]!.text).toContain(
+                    `unknown stitch "${name}". Available: getWidget, ping`,
+                );
+            }
+        },
+    );
+
+    test('a stitch renamed in the registry no longer answers to its configured name', async () => {
+        let calls = 0;
+        const refund = stitch({
+            name: 'issueRefund',
+            url: 'https://x.test/v1/refunds',
+            method: 'POST',
+            adapter: () => {
+                calls++;
+                return Promise.resolve({ status: 200, headers: {}, body: {} });
+            },
+        });
+        // The operator exposes it under another key — the listing shows only that key…
+        const mcp = createMcpServer({ approvedRefund: refund });
+        const listing = (
+            await mcp.handle(req('tools/call', { name: 'list_stitches' }))
+        )?.result as ToolCallResult;
+        const listed = JSON.parse(listing.content[0]!.text) as {
+            name: string;
+        }[];
+        expect(listed.map((s) => s.name)).toEqual(['approvedRefund']);
+        // …and the configured name is not a second, unlisted address.
+        for (const tool of ['run_stitch', 'describe_stitch'] as const) {
+            const result = await callTool(mcp, tool, 'issueRefund');
+            expect(result.isError).toBe(true);
+            expect(result.content[0]!.text).toContain(
+                'unknown stitch "issueRefund". Available: approvedRefund',
+            );
+        }
+        expect(calls).toBe(0);
+        // The listed key works.
+        expect(
+            (await callTool(mcp, 'run_stitch', 'approvedRefund')).isError,
+        ).toBeFalsy();
+        expect(calls).toBe(1);
+    });
+
+    test("describe_stitch's diagram draws only the stitch it resolved", async () => {
+        const hidden = stitch({ name: 'shown', url: 'https://x.test/hidden' });
+        const shown = stitch({ url: 'https://x.test/shown' });
+        const result = await callTool(
+            createMcpServer({ hidden, shown }),
+            'describe_stitch',
+            'shown',
+        );
+        const { diagram } = JSON.parse(result.content[0]!.text) as {
+            diagram: string;
+        };
+        expect(diagram).toContain('/shown');
+        expect(diagram).not.toContain('/hidden');
+    });
 });
 
 // ---- the stdio transport --------------------------------------------------

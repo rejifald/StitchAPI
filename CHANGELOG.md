@@ -11,6 +11,87 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **The MCP tools carry `annotations`.** ([#866](https://github.com/rejifald/StitchAPI/issues/866)
+  / [P22](docs/CONTRACT.md#p22--a-standards-interop-contract-uses-the-standards-field-names))
+  `list_stitches` and `describe_stitch` are `readOnlyHint: true, openWorldHint: false`: they read
+  the in-process registry and make no request. `run_stitch` is
+  `readOnlyHint: false, destructiveHint: true, openWorldHint: true`. It fronts every registered
+  stitch, a write included, so it claims nothing it cannot promise for all of them. `destructiveHint` is the spec's
+  own default and is set explicitly, so a host lands on the cautious side without having to know
+  the default. Additive: no existing field moves.
+
+### Changed
+
+- **BREAKING CHANGE: `stitch run`, `stitch serve`, `stitch diagram --name` and the MCP tools resolve
+  a stitch by its registry key only.** ([#866](https://github.com/rejifald/StitchAPI/issues/866),
+  part of [#863](https://github.com/rejifald/StitchAPI/issues/863); pre-GA hard break per
+  [D5](docs/CONTRACT.md#0-resolved-decisions)) `selectStitch` fell back from the key to each
+  stitch's configured `name`, so a registry that renamed a stitch to hide it
+  (`{ approvedRefund: issueRefund }`) still answered to `issueRefund`. The stitch was callable
+  and absent from `list_stitches` and `GET /` at the same time, which inverts the one allow-list
+  seam the MCP surface has. The lookup was also a plain `registry[name]`, so `constructor` and `toString`
+  resolved to `Object.prototype` members. Resolution is now `Object.hasOwn` on the registry, and the
+  callable identity is exactly what the listings show. The "unknown stitch … Available: …" error is
+  unchanged. `toMermaid`'s name filter, behind `stitch diagram --name` and `describe_stitch`'s
+  diagram, follows the same rule. `StitchConfig.name` stays what its JSDoc always called it: a label
+  for events and traces.
+
+    **Migration:** call a stitch by its export name (`stitch run getUser`, `POST /stitch/getUser`,
+    `run_stitch { "name": "getUser" }`), not by its configured `name`. Where the two differed, export
+    the stitch under the name your callers use.
+
+### Fixed
+
+- **An MCP server keeps answering after a tool throws.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) A throw outside `run_stitch`'s own
+  guard, such as a `describe_stitch` on an entry whose `__config` cannot be read, escaped
+  `handle()`. Over stdio every message runs on one promise chain, so that rejection stalled every
+  later message, a `ping` included. Unobserved, it could also end the process under Node's default
+  `--unhandled-rejections=throw`. Every tool now turns a throw into an `isError` result. A line that
+  is valid JSON but not a request object (`null`, `42`, `[]`) is a JSON-RPC `-32600`, and
+  `handle()` never rejects. The stdio chain also catches at each link, so a failed write cannot
+  stall the messages behind it.
+
+### Security
+
+- **MCP: an error message no longer carries a URL credential to the model.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) `run_stitch` returned
+  `(e as Error).message` verbatim. StitchAPI's own messages are request-free, but a message the
+  transport wrote quotes the request URL. With `apiKey({ in: 'query' })` on the default
+  `fetchAdapter` and a mistyped port, the model received
+  `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_…`, from zero
+  lines of user code. A `node-fetch`-shaped adapter does the same on any DNS failure. Every error
+  text that crosses the MCP boundary is now URL-scrubbed (a free-text companion to the trace
+  sinks' `scrubUrl`): each URL in the text loses its userinfo and the values of its secret-bearing
+  query parameters (`api_key=REDACTED`), using the same denylist as the trace sinks, names registered by `apiKey({ in: 'query', name })`
+  included. A URL the WHATWG parser rejects is exactly the one such a message quotes, so for those
+  the two scrubs run over its text. A `throw` of a non-`Error` value now reaches the model as its
+  string instead of `undefined`.
+
+    The same sweep found the success path leaking too: `describe_stitch` quoted the configured
+    endpoint verbatim in its `endpoint`, `pipeline` and `diagram` fields, so a `baseUrl` with
+    userinfo (`https://svc:pass@host`) or a secret query pair written into the URL reached the
+    model on a call that makes no request at all. Those fields are scrubbed the same way, and both
+    MCP tools are now cases in the `no-credential-leak` class guard that every URL-emitting surface
+    must join.
+
+- **`cookieSession` replaces a same-named cookie instead of joining it.**
+  ([#866](https://github.com/rejifald/StitchAPI/issues/866)) `apply` appended the session to any
+  `Cookie` header the request already carried. On a stitch that declares an `input.headers` schema,
+  a caller (on the MCP surface, the model) could send `SESSION=attacker`, and the vendor received
+  `SESSION=attacker; SESSION=sess_live_…`. A vendor that reads the first occurrence then ran the
+  call as the forger's session: session fixation. Each pair the session sets now replaces the
+  same-named pair through `setCookiePair`, the rule `apiKey({ in: 'cookie' })` already followed. In
+  jar mode (`cookie: '*'` / `jar: true`), every pair the login set replaces its twin. Unrelated
+  cookies keep their place.
+
+    `setCookiePair` itself replaced only the **first** same-named pair, so
+    `sid=forged; theme=dark; sid=forged2` kept a forged `sid` for a vendor that reads the last
+    occurrence. It now drops every later duplicate, for `apiKey({ in: 'cookie' })` and
+    `cookieSession` alike.
+
 ## [1.0.0-rc.8] — 2026-09-17
 
 ### Added

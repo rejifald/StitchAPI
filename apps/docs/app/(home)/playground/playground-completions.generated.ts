@@ -9,7 +9,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "name",
             type: "property",
             detail: "string",
-            info: "Label used in events and traces; defaults to `path` or `'stitch'`.",
+            info: "Label used in events and traces; defaults to `path` or `'stitch'`. A label, not an address: `stitch run`, `stitch serve` and the MCP tools resolve a stitch by its registry key (the export name) only, so this never makes a stitch callable under a second name.",
         },
         {
             label: "kind",

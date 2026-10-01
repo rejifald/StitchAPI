@@ -1,6 +1,6 @@
 # MCP: the error channel is an unfiltered pass-through, and two smaller agent-boundary traps
 
-**Status:** drafted, not filed
+**Status:** ✅ **FILED** as [#866](https://github.com/rejifald/StitchAPI/issues/866)
 **Scenario:** [agent-holds-the-tool](../agent-holds-the-tool.md)
 **Proofs:** `docs/scenarios/proofs/agent-holds-the-tool/` (8 scripts, 181 checks, offline)
 

@@ -1091,3 +1091,53 @@ export function scrubUrl(url: string): string {
     }
     return hadUserinfo || secretKeys.length > 0 ? u.toString() : url;
 }
+
+// An absolute URL quoted inside free text: a scheme, `://`, then everything up to the next
+// whitespace or a character that conventionally delimits a URL in prose or JSON. A backslash ends
+// it too, so an escaped quote in JSON-ish text is never swallowed into the URL and rewritten.
+const URL_IN_TEXT = /[a-z][a-z\d+.-]*:\/\/[^\s"'<>`\\]+/gi;
+
+/**
+ * {@link scrubUrl} for free text — an error message, a log line — that may quote URLs. Every
+ * embedded absolute URL loses its userinfo and its secret-bearing query values; the text around
+ * it is untouched. The URL a transport error quotes is often one the WHATWG parser rejects
+ * (`Failed to parse URL from http://host:99999/v1?api_key=…`), and {@link scrubUrl} hands such a
+ * URL back as-is, so for those the same two scrubs run over the URL's text instead.
+ */
+export function scrubUrls(text: string): string {
+    return text.replace(URL_IN_TEXT, (url) => {
+        const parsed = scrubUrl(url);
+        return parsed !== url ? parsed : scrubUrlText(url);
+    });
+}
+
+// The lexical half of `scrubUrls`, for a URL `new URL` refuses. Userinfo runs to the LAST `@`
+// before the authority ends, as the WHATWG parser reads it; a query pair whose (decoded) key is a
+// secret keeps its key and loses its value, so the message still says which parameter it was.
+function scrubUrlText(url: string): string {
+    const bare = url.replace(/^([a-z][a-z\d+.-]*:\/\/)[^/?#]*@/i, '$1');
+    const q = bare.indexOf('?');
+    if (q < 0) return bare;
+    const hash = bare.indexOf('#', q);
+    const end = hash < 0 ? bare.length : hash;
+    const query = bare
+        .slice(q + 1, end)
+        .split('&')
+        .map((pair) => {
+            const eq = pair.indexOf('=');
+            const key = pair.slice(0, eq);
+            return eq > 0 && isSecretKey(decodeQueryKey(key))
+                ? `${key}=${URL_REDACTED}`
+                : pair;
+        })
+        .join('&');
+    return bare.slice(0, q + 1) + query + bare.slice(end);
+}
+
+function decodeQueryKey(key: string): string {
+    try {
+        return decodeURIComponent(key);
+    } catch {
+        return key; // a stray `%` — match the raw spelling rather than give up on the pair
+    }
+}

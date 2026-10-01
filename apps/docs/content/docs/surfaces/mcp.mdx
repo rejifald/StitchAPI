@@ -51,6 +51,60 @@ headers }` object. This is code-mode: one tool, not one tool per path.
 stitch's `name`, `method`, and `path`, so the agent knows what to pass to
 `run_stitch`.
 
+### Which names a call resolves
+
+A tool call resolves `name` against the registry's **own keys** and nothing
+else. For `stitch mcp --module`, a key is the export name. The names
+`list_stitches` returns are exactly the names `run_stitch` and
+`describe_stitch` accept:
+
+- A stitch's configured `name` is a trace label, not an address. Expose
+  `export const approvedRefund = stitch({ name: 'issueRefund', … })` and the
+  agent can call `approvedRefund` but not `issueRefund`. Renaming a stitch in
+  the registry you hand over really hides the old name.
+- Inherited object keys are not stitches. `constructor` or `toString` is an
+  `unknown stitch` error like any other missing name.
+
+`stitch run` and `stitch serve` resolve names the same way.
+
+<Callout type="warn">
+    `stitch mcp --module ./stitches.ts` exposes **every** stitch the module
+    exports, including a login stitch or a write you only meant to call from
+    code. To expose fewer, build the registry yourself and pass it to
+    `serveStdio` (see [Programmatic API](#programmatic-api)). The object you
+    hand over is the allow-list.
+</Callout>
+
+### Errors the agent sees
+
+A failed call returns an `isError` tool result whose text is the error message.
+Before any message reaches the model, every URL in it loses its userinfo and the
+values of its secret-bearing query parameters. A transport error often quotes
+the request URL, and with `apiKey({ in: 'query' })` that URL carries the key.
+The model sees
+`Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=REDACTED`,
+never the key itself. The scrubber matches the same parameter names as the
+trace sinks, including any name `apiKey({ in: 'query', name })` registers.
+`describe_stitch` scrubs the endpoint it reports the same way, so a credential
+written into a `baseUrl` does not reach the model either. A key in a header is
+still the better choice: it is never part of a URL.
+
+### Tool annotations
+
+Each tool carries MCP `annotations`, so a host can decide whether to ask a human
+before a call:
+
+| Tool              | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
+| ----------------- | -------------- | ----------------- | --------------- |
+| `list_stitches`   | `true`         | —                 | `false`         |
+| `describe_stitch` | `true`         | —                 | `false`         |
+| `run_stitch`      | `false`        | `true`            | `true`          |
+
+`run_stitch` is one tool for every stitch you register, a write included, so it
+claims nothing that does not hold for all of them. A host reading these hints
+still cannot tell a read from a refund. To make that distinction, register only
+the stitches the agent may call.
+
 Why one tool beats one-per-path: a tool per registered stitch floods the agent's
 context — every name, description, and input schema is re-sent on each turn. Code
 mode keeps the tool list at two entries however many stitches you register, so
@@ -83,12 +137,12 @@ import { serveStdio } from 'stitchapi/mcp';
 const { close } = serveStdio(stitches);
 
 // later
-close();
+await close();
 ```
 
 `serveStdio(registry, options?)` wires the `run_stitch` / `list_stitches` server
 to stdio and returns a handle whose `close()` detaches the transport. Pass
-`{ input, output }` to bind a different stream pair instead of stdio, and
+`{ stdin, stdout }` to bind a different stream pair instead of stdio, and
 `server` to set the identity reported in the MCP `initialize` result — a bare
 string names it (`server: 'orders-api'` ≡ `server: { name: 'orders-api' }`).
 The `version` defaults to the package version baked in at build time, so it can
