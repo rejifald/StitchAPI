@@ -826,7 +826,7 @@ export const pages: Page[] = [
         path: 'agents/adopt-in-your-project',
         title: 'Adopt in your project',
         description:
-            'Drop a rule into your repo so any agent reaches for a typed stitch instead of a hand-rolled fetch — by hand, or with npx stitch init.',
+            'Drop a rule into your repo so any agent reaches for a typed stitch instead of a hand-rolled fetch — by hand, or with npx stitchapi init.',
         kind: 'guide',
     },
     {
