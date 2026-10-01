@@ -81,9 +81,10 @@ npm release are grouped under the in-development version that introduced them.
       any URL in prose or JSON, not only one after a `://`. It also covers a schemeless URL
       (`//u:p@h/x?token=…`, `/v1?api_key=…`), a URL nested in a benign value
       (`next=https://o/?token=…`, rescanned), a raw `/`, `?` or `#` in a userinfo password (base64;
-      a password of digits only reads as a port and is left), `;`-separated pairs, JSON-escaped
-      `https:\/\/…` with `&`, and a secret value that ends at `) ] , ;` (a closing `.` stays
-      outside it). It is idempotent, leaves non-URL text alone, and is linear on hostile input.
+      a password of digits only reads as a port and is left), `;`-separated pairs, a JSON-escaped
+      `https:\/\/…`, and a secret value that ends at `) ] , ;`. It is idempotent, leaves non-URL
+      text alone, and is linear on hostile input. Known limits: a percent-encoded nested URL, and
+      Go's `&` for `&`.
     - **The JSONL file sink scrubs secret-named payload fields.** It truncated bodies but never
       redacted them: a password-grant `password` / `client_secret` and a response `access_token`
       reached disk in full. Every key the shared `secrets` denylist matches — in the request body,

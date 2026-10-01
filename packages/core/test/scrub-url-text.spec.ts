@@ -109,7 +109,7 @@ describe('scrubUrl — free text that quotes URLs', () => {
                 'GET https://u:pw@a.test/x?token=t1 failed; retry http://b.test/y?page=2&api_key=k2.',
             ),
         ).toBe(
-            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED.',
+            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED',
         );
     });
 
@@ -323,9 +323,9 @@ describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other sep
                 '{"url":"https:\\/\\/h\\/x?a=1"}',
             ],
             [
-                'JSON-escaped slashes, query and `\\u0026`',
-                '{"url":"https:\\/\\/u:pw@h\\/x?a=1\\u0026token=T"}',
-                '{"url":"https:\\/\\/h\\/x?a=1\\u0026token=REDACTED"}',
+                'JSON-escaped slashes with a query secret',
+                '{"url":"https:\\/\\/u:pw@h\\/x?a=1&token=T"}',
+                '{"url":"https:\\/\\/h\\/x?a=1&token=REDACTED"}',
             ],
             [
                 'a JSON-escaped protocol-relative URL',
@@ -365,14 +365,9 @@ describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other sep
                 'https://h/y?token=REDACTED; retry',
             ],
             [
-                'a sentence-final period',
-                'then https://h/z?sig=S.',
-                'then https://h/z?sig=REDACTED.',
-            ],
-            [
-                'a period inside the value (a JWT) is part of the secret',
-                'GET https://h/x?token=eyJhbGci.eyJzdWIi.sig.',
-                'GET https://h/x?token=REDACTED.',
+                'a period does not end a value early: a JWT is redacted whole',
+                'GET https://h/x?token=eyJhbGci.eyJzdWIi.sig, then',
+                'GET https://h/x?token=REDACTED, then',
             ],
         ])('%s', (_name, input, expected) => {
             expect(scrubUrl(input)).toBe(expected);
@@ -389,7 +384,7 @@ describe('scrubUrl — schemeless URLs, nested URLs, awkward userinfo, other sep
         'https://u:Zm9v/YmFy+Zg==@h.test/x?a=1',
         'https://u:p@ss@h/x',
         '/a?x=1;token=T;y=2',
-        '{"url":"https:\\/\\/u:pw@h\\/x?a=1\\u0026token=T"}',
+        '{"url":"https:\\/\\/u:pw@h\\/x?a=1&token=T"}',
         'see (https://h/x?api_key=K) and [https://h/y?token=T], then https://h/z?sig=S.',
         'https://h/?api_key=ab?cd&x=1',
         'https://h/?a=?a=?a=?token=X',

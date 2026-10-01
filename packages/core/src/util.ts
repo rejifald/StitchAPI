@@ -838,25 +838,20 @@ export function appendQueryString(url: string, qs: string): string {
  * (pattern `data` matches `data[].id`).
  */
 export function matchPath(pattern: string, path: string): boolean {
-    if (pattern === path) return true;
-    if (path.startsWith(pattern + '.') || path.startsWith(pattern + '['))
-        return true;
-    if (pattern.includes('*')) {
-        const rx = new RegExp(
-            '^' +
-                pattern
-                    .split('.')
-                    .map((s) =>
-                        s === '*'
-                            ? '[^.]+'
-                            : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-                    )
-                    .join('\\.') +
-                '($|\\.|\\[)',
-        );
-        return rx.test(path);
-    }
-    return false;
+    // One anchored pattern for all three forms: the path IS the pattern (`$`), or continues it
+    // as a child (`.`) or an element (`[`). A bare `*` segment is the wildcard; the rest is literal.
+    return new RegExp(
+        '^' +
+            pattern
+                .split('.')
+                .map((s) =>
+                    s === '*'
+                        ? '[^.]+'
+                        : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                )
+                .join('\\.') +
+            '($|\\.|\\[)',
+    ).test(path);
 }
 
 export function matchAny(
@@ -975,8 +970,7 @@ export function redactSecretsDeep(value: unknown, extra?: string[]): unknown {
     return redactDeep(
         value,
         (k, _v, path) =>
-            isSecretKey(k) ||
-            !!extra?.some((p) => matchPath(p, k) || matchPath(p, path)),
+            isSecretKey(k) || matchAny(extra, k) || matchAny(extra, path),
         URL_REDACTED,
     );
 }
@@ -997,8 +991,7 @@ function redactDeep(
         return value.map((v, i) =>
             redactDeep(v, flag, mark, `${path ?? ''}[${i}]`),
         );
-    if (value === null || typeof value !== 'object' || value instanceof Date)
-        return value;
+    if (!isObj(value) || value instanceof Date) return value;
     return Object.fromEntries(
         Object.entries(value).map(([k, v]) => {
             const at = path === undefined ? k : `${path}.${k}`;
@@ -1072,11 +1065,13 @@ function decodeKey(key: string): string {
  *   nested pairs are scanned as pairs (the first lets a secret value run through a raw `?`);
  * - a raw `/`, `?` or `#` in a userinfo password (base64), unless what follows the colon is a port
  *   (`host:8080/@pkg`) — so a password of only digits is not told from one and is left;
- * - `;` and `&amp;` separators, a JSON-escaped `https:\/\/…` and its `&`;
- * - the punctuation around a value: it ends at whitespace, a quote, a bracket, `,` or `;`, and a
- *   sentence's closing `.` stays outside it (a `.` inside, as in a JWT, is part of the secret).
- * Not reached: a nested URL that is itself percent-encoded (`next=https%3A%2F%2Fo%2F%3Ftoken%3D…`,
- * which is how the engine re-serialises a query), and a secret that contains a raw `,` or `;`.
+ * - `;` separators and a JSON-escaped `https:\/\/…`;
+ * - the punctuation around a value: it ends at whitespace, a quote, a bracket, `,` or `;` — but not
+ *   at a `.`, which a JWT holds, so a sentence's closing period goes with the secret.
+ * Not reached, each a known limit: a nested URL that is itself percent-encoded
+ * (`next=https%3A%2F%2Fo%2F%3Ftoken%3D…`, which is how the engine re-serialises a query); a secret
+ * that contains a raw `,` or `;`; the `&` that Go's JSON encoder writes for `&`. The bundle
+ * budget is why the last and a kept closing period are not here yet.
  * Idempotent: a scrubbed string scrubs to itself.
  *
  * Linear on untrusted text (a transport's message, a vendor's error body): every pattern starts at a
@@ -1095,8 +1090,7 @@ export function scrubUrl(text: string): string {
     ): string =>
         /[{}]/.test(value) || !isSecretKey(decodeKey(key))
             ? pair
-            : // a sentence's closing `.` is not part of the secret; one inside (a JWT) is
-              `${sep}${key}=${URL_REDACTED}${value.endsWith('.') ? '.' : ''}`;
+            : `${sep}${key}=${URL_REDACTED}`;
     return (
         text
             // Userinfo, after a `//` that opens an authority (`://`, a leading `//`, JSON's
@@ -1112,13 +1106,13 @@ export function scrubUrl(text: string): string {
             // or JSON's `&`. A value ends at whitespace, a quote, a bracket, `,` or `;`. This
             // pass lets a value run through `?`, so a secret holding a raw `?` goes whole…
             .replace(
-                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;"'<>`\\),\]]*)/g,
+                /([?&#;])([^\s=&#?;{}\\]+)=([^\s&#;"'<>`\\),\]]*)/g,
                 scrubPair,
             )
             // …and this one stops at it, so a URL nested in a benign value (`next=https://o/?token=…`)
             // is scanned as the pairs it holds.
             .replace(
-                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=([^\s&#;?"'<>`\\),\]]*)/g,
+                /([?&#;])([^\s=&#?;{}\\]+)=([^\s&#;?"'<>`\\),\]]*)/g,
                 scrubPair,
             )
     );
