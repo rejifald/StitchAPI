@@ -15,6 +15,7 @@ import { parseBytes } from './util';
 
 import {
     type IncomingMessage,
+    STATUS_CODES,
     type Server,
     type ServerResponse,
     createServer,
@@ -30,6 +31,16 @@ export interface ServeOptions {
      * the memory a single request can buffer. Default {@link MAX_REQUEST_BODY_BYTES}.
      */
     body?: number | string | AtLeastOne<ServeBodyOptions>;
+    /**
+     * Send a failed run's raw message to the caller. **Default `false`**: the JSON error body
+     * carries the reason phrase for the response status (`{ error: 'Bad Gateway', status }`) and
+     * an SSE `error` frame's `message` is that same phrase. The raw message can disclose internal
+     * topology (a transport failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or
+     * an upstream's own wording to an untrusted client, so it is withheld by default, as every
+     * `@stitchapi/*` host adapter withholds it. Turn it on when the callers are trusted (local
+     * development, an internal network). CLI: `stitch serve --expose`.
+     */
+    expose?: boolean;
 }
 
 /**
@@ -73,10 +84,30 @@ class PayloadTooLargeError extends Error {
     }
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-    res.writeHead(status, { 'content-type': 'application/json' });
+function sendJson(
+    res: ServerResponse,
+    status: number,
+    body: unknown,
+    headers?: Record<string, string>,
+): void {
+    res.writeHead(status, { 'content-type': 'application/json', ...headers });
     res.end(JSON.stringify(body));
 }
+
+// The HTTP status a failed run answers with. Unchanged by the disclosure default: a failure that
+// carries an error status passes through and everything else is a 502 (the mapping itself is
+// #707's open decision).
+const failureStatus = (status: number | undefined): number =>
+    status && status >= 400 ? status : 502;
+
+// What the caller is told about a failure: the raw message only when `expose` is on, otherwise
+// the standard reason phrase for the status it is answered with — `Bad Gateway`, `Too Many
+// Requests` — so an internal hostname or an upstream's own wording never leaves the process.
+const failureText = (
+    message: string,
+    status: number,
+    expose: boolean | undefined,
+): string => (expose ? message : (STATUS_CODES[status] ?? 'Error'));
 
 // Read the request body, enforcing a byte cap. Rejects with a `PayloadTooLargeError` — before
 // reading anything when `Content-Length` already declares an over-cap body, and mid-stream the
@@ -137,9 +168,14 @@ const wantsSse = (req: IncomingMessage, url: URL): boolean =>
 // completes), and we iterate manually here — checking `writableEnded`/`destroyed` before each write
 // and calling `iterator.return()` in `finally` to run the generator's cleanup, releasing the
 // upstream. This mirrors the elysia/hono/fastify SSE bridges' `iterator.return()`-on-abort teardown.
+//
+// A failure's raw message is withheld unless `expose` is on, on both paths a failure reaches the
+// client: the run's own `error` event (its `message` becomes the reason phrase JSON mode would
+// answer with) and the catch frame for an unexpected throw (`Internal Server Error`).
 async function streamSse(
     res: ServerResponse,
     stream: AsyncIterable<StitchEvent>,
+    expose: boolean | undefined,
 ): Promise<void> {
     res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -151,7 +187,17 @@ async function streamSse(
         while (!res.writableEnded && !res.destroyed) {
             const result = await iterator.next();
             if (result.done) break;
-            const ev = result.value;
+            const ev =
+                result.value.type === 'error'
+                    ? {
+                          ...result.value,
+                          message: failureText(
+                              result.value.message,
+                              failureStatus(result.value.status),
+                              expose,
+                          ),
+                      }
+                    : result.value;
             // `serve` is unauthenticated (loopback by default; DESIGN.md §10) and the SSE consumer
             // is remote, so scrub credential-bearing metadata a `start` frame would otherwise echo
             // — URL credentials and `authorization`/`cookie` headers — before it leaves the
@@ -164,7 +210,7 @@ async function streamSse(
     } catch (e) {
         if (!res.writableEnded && !res.destroyed)
             res.write(
-                `event: error\ndata: ${JSON.stringify({ message: (e as Error).message })}\n\n`,
+                `event: error\ndata: ${JSON.stringify({ message: failureText((e as Error).message, 500, expose) })}\n\n`,
             );
     } finally {
         // Release the upstream: runs the generator's `finally` (which aborts the in-flight call and
@@ -174,27 +220,38 @@ async function streamSse(
     }
 }
 
-// Consume the stream and return the final result as JSON (or a leveled error).
+// Consume the stream and return the final result as JSON (or a leveled error). A failure's body is
+// `{ error, status }`: `error` is the reason phrase for the response status unless `expose` is on,
+// and a delegate-backoff `RateLimitError` (its `error` event carries `retryAfter`, in ms) also
+// answers with a `Retry-After` header, so a caller backs off for as long as the upstream asked.
 async function runJson(
     res: ServerResponse,
     stream: AsyncIterable<StitchEvent>,
+    expose: boolean | undefined,
 ): Promise<void> {
     let value: unknown;
-    let failure: { message: string; status?: number } | undefined;
+    let failure: Extract<StitchEvent, { type: 'error' }> | undefined;
     for await (const ev of stream) {
         if (ev.type === 'result') value = ev.data;
-        else if (ev.type === 'error') {
-            failure = { message: ev.message };
-            if (ev.status !== undefined) failure.status = ev.status;
-        }
+        else if (ev.type === 'error') failure = ev;
     }
     if (failure) {
-        const status =
-            failure.status && failure.status >= 400 ? failure.status : 502;
-        sendJson(res, status, {
-            error: failure.message,
-            status: failure.status,
-        });
+        const status = failureStatus(failure.status);
+        sendJson(
+            res,
+            status,
+            {
+                error: failureText(failure.message, status, expose),
+                status: failure.status,
+            },
+            failure.retryAfter === undefined
+                ? undefined
+                : {
+                      'retry-after': String(
+                          Math.max(0, Math.ceil(failure.retryAfter / 1000)),
+                      ),
+                  },
+        );
         return;
     }
     sendJson(res, 200, value ?? null);
@@ -202,10 +259,11 @@ async function runJson(
 
 // A framework-free request handler. Exposed so it can be mounted in an existing
 // server or driven directly in tests. `body` caps the request body (413 past it) — the
-// scalar or the `{ max }` envelope; defaults to {@link MAX_REQUEST_BODY_BYTES}.
+// scalar or the `{ max }` envelope; defaults to {@link MAX_REQUEST_BODY_BYTES}. `expose`
+// sends a failure's raw message instead of the status's reason phrase (default off).
 export function createServeHandler(
     registry: StitchRegistry,
-    { body }: { body?: ServeOptions['body'] } = {},
+    { body, expose }: Pick<ServeOptions, 'body' | 'expose'> = {},
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
     // Fold the P12 scalar and parse the cap ONCE here, not per request. An unparseable token
     // resolves to `undefined` and lands on the default cap — a typo can never widen this to
@@ -269,8 +327,8 @@ export function createServeHandler(
                 ...input,
                 signal: controller.signal,
             }) as AsyncIterable<StitchEvent>;
-            if (wantsSse(req, url)) await streamSse(res, stream);
-            else await runJson(res, stream);
+            if (wantsSse(req, url)) await streamSse(res, stream, expose);
+            else await runJson(res, stream, expose);
         } finally {
             req.off('close', onClose);
             res.off('close', onClose);
@@ -285,12 +343,19 @@ export function serve(
     opts: ServeOptions = {},
 ): Promise<ServeHandle> {
     const host = opts.host ?? '127.0.0.1';
-    const handle = createServeHandler(registry, compact({ body: opts.body }));
+    const handle = createServeHandler(
+        registry,
+        compact({ body: opts.body, expose: opts.expose }),
+    );
     const server = createServer((req, res) => {
         handle(req, res).catch((e: unknown) => {
             if (!res.headersSent)
                 res.writeHead(500, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ error: (e as Error).message }));
+            res.end(
+                JSON.stringify({
+                    error: failureText((e as Error).message, 500, opts.expose),
+                }),
+            );
         });
     });
 

@@ -11,6 +11,59 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **`isStitchError(err)` — one check for "is this a stitch failure?".**
+  ([#867](https://github.com/rejifald/StitchAPI/issues/867)) Exported from the root. It is true
+  for `StitchError` and every subclass (`RateLimitError` today, and any class that extends it
+  later), and it also matches an error raised by a second copy of `stitchapi` in the process.
+  Under CommonJS each `stitchapi/*` subpath bundles its own copy of the class, so an error from
+  `stitchapi/graphql` is not an `instanceof` the root's `StitchError`; two installed versions do
+  the same. The constructor now sets a non-enumerable `Symbol.for('stitchapi.error')` brand, and
+  the guard checks it after an `instanceof` fast path. A spread or JSON copy does not carry the
+  brand, and neither does a plain `Error` that only sets `name = 'StitchError'`.
+
+- **`stitch serve` sends `Retry-After` for a delegate-backoff rate limit.**
+  ([#867](https://github.com/rejifald/StitchAPI/issues/867)) When the failure is a
+  `RateLimitError` whose upstream gave a usable `Retry-After`, the JSON response carries a
+  `Retry-After` header in whole seconds (the parsed `retryAfter`, rounded up). Before, the 429
+  passed through and the backoff hint was dropped.
+
+### Fixed
+
+- **A `StitchError` from another copy of `stitchapi` keeps its identity in `stitchapi/testing` and
+  `@stitchapi/download`.** ([#867](https://github.com/rejifald/StitchAPI/issues/867))
+  `failStitch(err)`, the stub's error coercion and `@stitchapi/download`'s `toStitchError` passed
+  a `StitchError` through only on `instanceof`. Under CommonJS each entry has its own class, so a
+  root-built `RateLimitError` was flattened into a base `StitchError` and lost `retryAfter`. All
+  three now use `isStitchError`.
+
+### Security
+
+- **The six host adapters no longer send a `RateLimitError`'s raw message to the client.**
+  ([#867](https://github.com/rejifald/StitchAPI/issues/867)) `@stitchapi/express`, `fastify`,
+  `hono`, `next`, `nest` and `elysia` recognised a stitch failure with
+  `err.name === 'StitchError'`. `RateLimitError` extends `StitchError` but keeps its own `name`
+  (CONTRACT.md P10), so it was never mapped. On Fastify the audit probe got a 429 carrying the raw
+  upstream message from the framework's default handler, which is the disclosure the generic
+  `{ error: 'Bad Gateway' }` default exists to prevent. The other five likewise handed it to the
+  framework's own error handling. Every host's `stitchError.is` now delegates to core's `isStitchError`, so every
+  subclass gets the host's generic default body. Status codes and body shapes are unchanged. A
+  plain `Error` with a borrowed `name: 'StitchError'` no longer matches; build test fixtures with
+  `new StitchError(…)`.
+
+- **BREAKING CHANGE: `stitch serve` withholds a failure's raw message by default — opt back in
+  with `expose`.** ([#867](https://github.com/rejifald/StitchAPI/issues/867)) The JSON error body
+  was `{ error: failure.message, status }`, the raw upstream message the host adapters withhold.
+  `error` is now the standard reason phrase for the response status (`'Bad Gateway'`,
+  `'Too Many Requests'`). The same rule covers an SSE `error` frame's `message`, the SSE frame for
+  a stream that throws, and the last-resort `500` body. The status mapping is unchanged (#707).
+  `ServeOptions.expose` (a boolean, default `false`) and `stitch serve --expose` restore the raw
+  message for trusted callers.
+
+    Migration — a caller that read the upstream message from `error`: start the server with
+    `serve(registry, { expose: true })` or `stitch serve --expose`.
+
 ## [1.0.0-rc.8] — 2026-09-17
 
 ### Added

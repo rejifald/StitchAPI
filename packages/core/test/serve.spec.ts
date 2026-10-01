@@ -4,6 +4,7 @@ import type { StitchRegistry } from '../src/registry';
 import { createServeHandler, serve } from '../src/serve';
 import type { ServeHandle } from '../src/serve';
 import { sse } from '../src/sse';
+import { stubStitch } from '../src/test-stub';
 import type { Stitch, StitchEvent } from '../src/types';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -205,6 +206,45 @@ test('an upstream failure surfaces as a non-2xx JSON error', async () => {
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
     await expect(res.json()).resolves.toHaveProperty('error');
+});
+
+// #867: an unexpected throw in JSON mode escapes the handler to `serve`'s own last-resort 500,
+// which echoed `e.message` — the same disclosure the failure body withholds. It follows `expose`.
+describe('serve withholds the message of an unexpected throw unless `expose` is on', () => {
+    const LEAK = 'getaddrinfo ENOTFOUND payments.internal.corp';
+    const throws = stubStitch('ignored', {
+        events: () => {
+            throw new Error(LEAK);
+        },
+    });
+    const run = async (expose?: boolean): Promise<Response> => {
+        const h = await serve(
+            { throws },
+            expose === undefined ? { port: 0 } : { port: 0, expose },
+        );
+        try {
+            return await fetch(`${h.url}/stitch/throws`, {
+                method: 'POST',
+                body: '{}',
+            });
+        } finally {
+            await h.close();
+        }
+    };
+
+    test('by default the 500 body is the reason phrase', async () => {
+        const res = await run();
+        expect(res.status).toBe(500);
+        await expect(res.json()).resolves.toEqual({
+            error: 'Internal Server Error',
+        });
+    });
+
+    test('`expose: true` sends the raw message', async () => {
+        const res = await run(true);
+        expect(res.status).toBe(500);
+        await expect(res.json()).resolves.toEqual({ error: LEAK });
+    });
 });
 
 describe('serve forwards a streaming surface as `event: delta` SSE frames', () => {

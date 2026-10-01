@@ -6,6 +6,7 @@
 //   - runJson clamps a sub-400 / missing error status to 502, and returns null when no result event;
 //   - a populated registry lists its names sorted.
 import type { StitchRegistry } from '../src/registry';
+import { RateLimitError } from '../src/resilience';
 import { createServeHandler } from '../src/serve';
 import { failStitch, stubStitch } from '../src/test-stub';
 
@@ -56,9 +57,10 @@ const makeReq = (o: {
 async function call(
     registry: StitchRegistry,
     reqOpts: Parameters<typeof makeReq>[0],
+    options?: Parameters<typeof createServeHandler>[1],
 ): Promise<FakeRes> {
     const res = new FakeRes();
-    await createServeHandler(registry)(
+    await createServeHandler(registry, options)(
         makeReq(reqOpts),
         res as unknown as ServerResponse,
     );
@@ -117,9 +119,8 @@ describe('createServeHandler SSE + JSON outcomes', () => {
             body: '{}',
         });
         expect(res.statusCode).toBe(502);
-        expect((JSON.parse(res.body) as { error: string }).error).toBe(
-            'kaboom',
-        );
+        // The reason phrase for the status, not the failure's own message (#867).
+        expect(JSON.parse(res.body)).toEqual({ error: 'Bad Gateway' });
     });
 
     test('a run with no result event returns null', async () => {
@@ -145,5 +146,102 @@ describe('createServeHandler SSE + JSON outcomes', () => {
         });
         expect(res.statusCode).toBe(200);
         expect(res.body).toBe('null');
+    });
+});
+
+// #867: serve answered a failure with `{ error: failure.message }` — the raw upstream message the
+// six host adapters withhold by default. It now answers with the status's reason phrase unless
+// `expose` is on, on every path a failure reaches the caller.
+describe('createServeHandler withholds a failure message unless `expose` is on', () => {
+    const LEAK = 'getaddrinfo ENOTFOUND payments.internal.corp';
+    const leaky = (): StitchRegistry => ({
+        down: failStitch(LEAK),
+        unauthorized: failStitch({ status: 401, message: 'HTTP 401' }),
+        // A stream that throws instead of yielding an `error` event (the SSE catch frame).
+        throws: stubStitch('ignored', {
+            events: () => {
+                throw new Error(LEAK);
+            },
+        }),
+    });
+    const post = (name: string, sse = false) => ({
+        method: 'POST',
+        url: `/stitch/${name}${sse ? '?stream=1' : ''}`,
+        body: '{}',
+    });
+
+    test('JSON: the body carries the reason phrase for the response status', async () => {
+        const down = await call(leaky(), post('down'));
+        expect(down.statusCode).toBe(502);
+        expect(JSON.parse(down.body)).toEqual({ error: 'Bad Gateway' });
+        expect(down.body).not.toContain('ENOTFOUND');
+
+        // The status mapping is unchanged (#707): a 401 still passes through, with its phrase.
+        const unauthorized = await call(leaky(), post('unauthorized'));
+        expect(unauthorized.statusCode).toBe(401);
+        expect(JSON.parse(unauthorized.body)).toEqual({
+            error: 'Unauthorized',
+            status: 401,
+        });
+    });
+
+    test('JSON: `expose: true` sends the raw message', async () => {
+        const res = await call(leaky(), post('down'), { expose: true });
+        expect(res.statusCode).toBe(502);
+        expect(JSON.parse(res.body)).toEqual({ error: LEAK });
+    });
+
+    test('SSE: the `error` frame carries the reason phrase, not the message', async () => {
+        const res = await call(leaky(), post('down', true));
+        expect(res.body).toContain('event: error');
+        expect(res.body).toContain('"message":"Bad Gateway"');
+        expect(res.body).not.toContain('ENOTFOUND');
+
+        const exposed = await call(leaky(), post('down', true), {
+            expose: true,
+        });
+        expect(exposed.body).toContain(LEAK);
+    });
+
+    test('SSE: the catch frame for a thrown stream is generic too', async () => {
+        const res = await call(leaky(), post('throws', true));
+        expect(res.body).toBe(
+            'event: error\ndata: {"message":"Internal Server Error"}\n\n',
+        );
+
+        const exposed = await call(leaky(), post('throws', true), {
+            expose: true,
+        });
+        expect(exposed.body).toContain(LEAK);
+    });
+});
+
+describe('createServeHandler sends Retry-After for a delegate-backoff RateLimitError', () => {
+    const limited = (retryAfter?: number): StitchRegistry => ({
+        limited: failStitch(
+            new RateLimitError({
+                status: 429,
+                retryAfter,
+                response: { status: 429, headers: {}, body: null },
+                message: 'quota exceeded for tenant acme',
+            }),
+        ),
+    });
+    const post = { method: 'POST', url: '/stitch/limited', body: '{}' };
+
+    test('the parsed `retryAfter` (ms) becomes a Retry-After header in whole seconds', async () => {
+        const res = await call(limited(1500), post);
+        expect(res.statusCode).toBe(429);
+        expect(res.headers['retry-after']).toBe('2');
+        expect(JSON.parse(res.body)).toEqual({
+            error: 'Too Many Requests',
+            status: 429,
+        });
+    });
+
+    test('no header when the upstream sent no usable Retry-After', async () => {
+        const res = await call(limited(undefined), post);
+        expect(res.statusCode).toBe(429);
+        expect(res.headers['retry-after']).toBeUndefined();
     });
 });

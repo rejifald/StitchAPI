@@ -56,6 +56,37 @@ the line falls and what the library still owns on the far side of it.
     [Capability, not credential](/docs/concepts/capability-not-credential).
 </Callout>
 
+## Failures
+
+A failed run answers with a non-2xx status and a JSON body of
+`{ error, status }`. An upstream error status passes through (`401`, `429`,
+`503`); a failure with no status, such as a timeout or a transport error,
+answers `502`. `status` in the body is the upstream's own status, when there
+was one.
+
+`error` is the standard reason phrase for the response status, not the
+failure's own message:
+
+```json
+{ "error": "Bad Gateway" }
+```
+
+The raw message can name an internal host (`getaddrinfo ENOTFOUND
+payments.internal.corp`) or repeat an upstream's wording to whoever called the
+server. Every `@stitchapi/*` host adapter withholds it by default, and `serve`
+does the same. SSE mode follows the same rule: an `event: error` frame's
+`message` is that reason phrase, and so is the frame sent when the stream
+throws.
+
+When the callers are trusted, such as in local development or on an internal
+network, turn the raw message on with `stitch serve --expose`, or
+`serve(registry, { expose: true })` in code.
+
+A delegate-backoff rate limit (a `RateLimitError` from
+[`throttle.delegate`](/docs/guides/resilience/delegate-backoff)) also sends a
+`Retry-After` header, in whole seconds, when the upstream gave one. A caller
+can then wait as long as the upstream asked.
+
 ## Programmatic API
 
 The CLI is a thin wrapper. To embed the same server in your own process, import
@@ -76,7 +107,9 @@ await handle.close();
 
 `serve(registry, options?)` returns a handle with the bound `url`, `port`, the
 underlying `server`, and a `close()` method. It binds `127.0.0.1:8787` by
-default; pass `{ port: 0 }` to let the OS pick an ephemeral port.
+default; pass `{ port: 0 }` to let the OS pick an ephemeral port, and
+`{ expose: true }` to send failure messages as described in
+[Failures](#failures).
 
 A served stitch is the same definition as the in-process
 [function surface](/docs/surfaces/function) and the
