@@ -946,10 +946,8 @@ const URL_REDACTED = 'REDACTED';
 // Process-wide, not module-local: the CJS build bundles one copy of this module per entry, and
 // `require('stitchapi/auth')` registers a key that `require('stitchapi')`'s engine and
 // `require('stitchapi/otlp')`'s sink must both honour (#898). See `processWide`.
-const REGISTERED_SECRET_KEYS = processWide(
-    'stitchapi.secretKeys',
-    () => new Set<string>(),
-);
+const registeredSecretKeys = (): Set<string> =>
+    processWide('stitchapi.secretKeys/1', Set<string>);
 
 /**
  * Widen half of {@link secrets}; the namespace carries the contract. Internal — the
@@ -961,7 +959,7 @@ const REGISTERED_SECRET_KEYS = processWide(
  * Idempotent — registering the same name twice is a no-op.
  */
 export function registerSecretKey(name: string): void {
-    REGISTERED_SECRET_KEYS.add(name.toLowerCase());
+    registeredSecretKeys().add(name.toLowerCase());
 }
 
 /**
@@ -978,7 +976,7 @@ export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
     return (
         SECRET_QUERY_KEYS.has(k) ||
-        REGISTERED_SECRET_KEYS.has(k) ||
+        registeredSecretKeys().has(k) ||
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
 }

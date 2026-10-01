@@ -56,8 +56,8 @@ npm release are grouped under the in-development version that introduced them.
   toggle needs no import and is unchanged: the exporter loads on first use, holds the events of a call
   that starts before it has loaded and sends them in order, and a load failure prints one warning
   rather than failing a call. Measured with the size gate's new accounting (the next entry):
-  whole entry 24.62 → 20.91 KB gzip, `import { stitch }` 21.83 → 18.10 KB (advertised
-  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 3.10 KB.
+  whole entry 24.62 → 20.93 KB gzip, `import { stitch }` 21.83 → 18.14 KB (advertised
+  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 3.17 KB.
 
     Migration — `import { otlp } from 'stitchapi'` → `import { otlp } from 'stitchapi/otlp'`, and the
     same for the types.
@@ -70,9 +70,9 @@ npm release are grouped under the in-development version that introduced them.
   above, the OTLP chunk too. Both root scenarios now name those chunks in `defer`, which keeps them
   external, as the async chunks a splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`)
   emits and downloads on first use. Each chunk is its own gated scenario (`stitchapi/cache` 3.44 KB,
-  `stitchapi/otlp` 3.10 KB), and the gate now fails if a `defer` names a chunk the build no longer
+  `stitchapi/otlp` 3.17 KB), and the gate now fails if a `defer` names a chunk the build no longer
   imports lazily or one it imports statically (a static edge would drop out of the measurement
-  instead of being counted). Whole entry 24.62 → 20.91 KB gzip, `import { stitch }` 21.83 → 18.10 KB;
+  instead of being counted). Whole entry 24.62 → 20.93 KB gzip, `import { stitch }` 21.83 → 18.14 KB;
   the advertised `~25 / ~22 kB` becomes `~21 / ~18 kB`. That is what `import { stitch }` ships up
   front: a bundler that does not split dynamic imports inlines both chunks (~26 / ~23 KB). The
   budgets drop from 24.80 / 22.00 to 21.45 / 18.65 KB; the headroom is ~0.5 KB on purpose, for the
@@ -108,8 +108,9 @@ npm release are grouped under the in-development version that introduced them.
 
     The attempt span's HTTP attributes follow the client conventions: a method semconv does not
     name (anything outside `CONNECT`, `DELETE`, `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT`,
-    `TRACE`; `QUERY` included) is `http.request.method = _OTHER` with the verb in the new
-    `http.request.method_original`, and the span is named `HTTP` or `HTTP {url.template}`;
+    `QUERY`, `TRACE` — the semconv 1.44 well-known set) is `http.request.method = _OTHER` with the
+    verb in the new `http.request.method_original`, and the span is named `HTTP` or
+    `HTTP {url.template}`; `OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS` (a comma list) replaces the set;
     `server.address` is the bare host (an IPv6 literal without its brackets); `server.port` defaults
     to 443 and 80 for `https:` and `http:` only, and is absent for another scheme with no port.
     `stitch.attempt` is the 1-based ordinal of the physical request within its page (or the run),
@@ -172,8 +173,11 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
   `@stitchapi/fingerprint-*` package registered through `stitchapi/fingerprint` was invisible to the
   cache engine inside `stitchapi` (every schema fell to `refuse`); `pool: 'host'` budgets and seam
   bucket ids were counted per entry, so a `stitchapi` stitch and a `stitchapi/graphql` stitch on one
-  host each had a budget of their own. These four now live on `globalThis` under `Symbol.for` keys
-  (`src/process-wide.ts`). ESM was never affected. Class identity across CJS entries (`instanceof`,
+  host each had a budget of their own. These four, and the two warn-once flags of the OTLP export,
+  now live on `globalThis` under `Symbol.for` keys (`src/process-wide.ts`). Every key ends in a layout
+  number (`/1`, bumped when the stored shape changes), and a slot is always a `Set` or a `Map`
+  that is checked before use: one holding anything else is replaced, never thrown on. ESM was never
+  affected. Class identity across CJS entries (`instanceof`,
   [#896](https://github.com/rejifald/StitchAPI/issues/896)) is a separate problem and is not
   changed here.
 

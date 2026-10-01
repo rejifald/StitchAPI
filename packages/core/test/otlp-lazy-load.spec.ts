@@ -22,6 +22,11 @@ async function freshStitch(): Promise<typeof import('../src').stitch> {
 }
 
 beforeEach(() => {
+    // The warn-once flag is process-wide (it survives `vi.resetModules`), so each case starts it afresh.
+    Reflect.deleteProperty(
+        globalThis,
+        Symbol.for('stitchapi.otlp.loadWarned/1'),
+    );
     vi.stubEnv('STITCH_EXPORT', 'otlp');
     vi.stubEnv('STITCH_TRACE_FILE', '');
     vi.stubEnv('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://collector.test');

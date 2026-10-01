@@ -24,6 +24,7 @@ import {
     makeRuntime,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
+import { processWide } from './process-wide';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface, httpSurface } from './surface';
@@ -512,10 +513,13 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 // per process, so a missing span tree has a reason on stderr.
 let otlpModule:
     Promise<{ otlp: { sink(): TraceSink } } | undefined> | undefined;
-let otlpWarned = false;
+// Process-wide, not per CJS entry: this module is bundled into several of them, and each would
+// otherwise warn once for the same missing chunk. See `processWide`.
+const otlpWarned = (): Set<string> =>
+    processWide('stitchapi.otlp.loadWarned/1', Set<string>);
 const warnOtlp = (what: string): void => {
-    if (otlpWarned) return;
-    otlpWarned = true;
+    if (otlpWarned().size) return;
+    otlpWarned().add(what);
     console.warn(`stitchapi: STITCH_EXPORT=otlp ${what}.`);
 };
 

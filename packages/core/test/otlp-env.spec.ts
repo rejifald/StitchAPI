@@ -41,10 +41,10 @@ afterEach(() => {
 });
 
 // The exporter warns once per process, so a case that reads the warning starts it afresh.
-const warned = (): { done: boolean } =>
-    (globalThis as Record<symbol, { done: boolean }>)[
-        Symbol.for('stitchapi.otlp.warned')
-    ]!;
+const warned = (): Set<string> => {
+    const slots = globalThis as Record<symbol, Set<string> | undefined>;
+    return (slots[Symbol.for('stitchapi.otlp.warned/1')] ??= new Set());
+};
 
 // Build the default exporter with `opts`, ship an empty batch, return the one request it made.
 async function post(
@@ -171,7 +171,7 @@ describe('headers', () => {
 
 describe('a send that fails is reported once', () => {
     beforeEach(() => {
-        warned().done = false;
+        warned().clear();
     });
 
     const send = (): Promise<void> =>

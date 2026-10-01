@@ -100,10 +100,8 @@ export interface SchemaFingerprinter {
 // `require('stitchapi/fingerprint')` (where `@stitchapi/fingerprint-*` registers) and the cache
 // engine inside `require('stitchapi')` would otherwise hold two registries, and every schema would
 // land on rung 5 (`refuse`) in the engine's copy. See `processWide`.
-const registry = processWide(
-    'stitchapi.fingerprinters',
-    () => new Map<string, SchemaFingerprinter>(),
-);
+const registry = (): Map<string, SchemaFingerprinter> =>
+    processWide('stitchapi.fingerprinters/1', Map<string, SchemaFingerprinter>);
 
 /**
  * Register half of {@link fingerprinters}; the namespace carries the contract. Internal —
@@ -112,7 +110,7 @@ const registry = processWide(
  * Register a per-vendor fingerprint strategy (last registration wins).
  */
 function registerFingerprinter(fp: SchemaFingerprinter): void {
-    registry.set(fp.vendor, fp);
+    registry().set(fp.vendor, fp);
 }
 
 /**
@@ -122,7 +120,7 @@ function registerFingerprinter(fp: SchemaFingerprinter): void {
  * The strategy registered for a `~standard.vendor`, if any.
  */
 function getFingerprinter(vendor: string): SchemaFingerprinter | undefined {
-    return registry.get(vendor);
+    return registry().get(vendor);
 }
 
 /**
@@ -132,7 +130,7 @@ function getFingerprinter(vendor: string): SchemaFingerprinter | undefined {
  * Every registered strategy (registration order not guaranteed).
  */
 function listFingerprinters(): readonly SchemaFingerprinter[] {
-    return [...registry.values()];
+    return [...registry().values()];
 }
 
 /**
@@ -142,7 +140,7 @@ function listFingerprinters(): readonly SchemaFingerprinter[] {
  * Drop all registrations — for tests.
  */
 function clearFingerprinters(): void {
-    registry.clear();
+    registry().clear();
 }
 
 /**

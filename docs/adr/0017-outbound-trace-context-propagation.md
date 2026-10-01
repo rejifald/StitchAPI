@@ -154,8 +154,9 @@ before the header exists:
   no `{…}` variable — the name is the bare `{method}` and `url.template` is absent. For a
   surface whose `execute` replaces the transport (ADR 0008 — `shell`, `postmessage`) it is
   INTERNAL with no `http.*`. The HTTP details a backend keys on follow the client conventions:
-  a method semconv does not name (anything outside `CONNECT`, `DELETE`, `GET`, `HEAD`,
-  `OPTIONS`, `PATCH`, `POST`, `PUT`, `TRACE`) is `http.request.method = _OTHER` with the verb in
+  a method semconv does not name (anything outside the 1.44 well-known set: `CONNECT`, `DELETE`,
+  `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT`, `QUERY`, `TRACE`; `OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS`
+  replaces it) is `http.request.method = _OTHER` with the verb in
   `http.request.method_original`, and the span is named `HTTP` / `HTTP {url.template}`;
   `server.address` is the bare host (an IPv6 literal without brackets); `server.port` defaults
   to 443/80 for `https:`/`http:` only. `stitch.attempt` is the 1-based **ordinal of the physical

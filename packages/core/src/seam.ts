@@ -38,7 +38,8 @@ import { envelope, systemClock } from './util';
 // Per-seam id so the shared bucket's store-counter key never collides across seams sharing a store.
 // Process-wide: the CJS build bundles `seam` into several entries (`stitchapi`, `/graphql`, `/sse`, …),
 // and a counter per copy would hand two seams that share a store the same id. See `processWide`.
-const seamIds = processWide('stitchapi.seamIds', () => ({ last: 0 }));
+const seamIds = (): Set<string> =>
+    processWide('stitchapi.seamIds/1', Set<string>);
 
 // The seam builds throttles from the RAW authoring config (before `compose` runs for the member),
 // so expand the P12 rate-string shorthand here: `'2/s'` ≡ `{ rate: '2/s' }`.
@@ -241,7 +242,8 @@ export function seam(options: SeamConfig = {}): Seam {
     // for a member, because the seam injects this on the shared runtime.
     const vault = vaultView(fragment.vault ?? store);
     const trace = resolveTrace(fragment.trace);
-    const seamId = `s${(seamIds.last += 1)}`;
+    const seamId = `s${seamIds().size + 1}`;
+    seamIds().add(seamId);
     const shared: SharedSeam = {
         fragment,
         store,

@@ -149,10 +149,11 @@ function otlpResource(resource?: SpanAttributes): SpanAttributes {
 // credential or an invalid header silent: every batch dropped and nothing said so. The first failure
 // is reported, the rest are not (one line, not one per call). Process-wide: the CJS build bundles
 // this module into `lib/otlp.js` and, for `STITCH_EXPORT=otlp`, into `lib/index.js` too.
-const warned = processWide('stitchapi.otlp.warned', () => ({ done: false }));
+const warned = (): Set<string> =>
+    processWide('stitchapi.otlp.warned/1', Set<string>);
 function warnOnce(where: string, why: unknown): void {
-    if (warned.done) return;
-    warned.done = true;
+    if (warned().size) return;
+    warned().add(where);
     console.warn(
         `stitchapi: the OTLP export to ${where} failed (${
             why instanceof Error ? why.message : String(why)
@@ -160,10 +161,12 @@ function warnOnce(where: string, why: unknown): void {
     );
 }
 
-// The methods HTTP semconv names (RFC 9110 plus PATCH). Any other verb is exported as `_OTHER` with
-// the original in `http.request.method_original`, so a free-form method cannot grow a backend's
-// cardinality, and the span is named `HTTP` rather than for the verb.
-const KNOWN_METHODS = new Set([
+// The methods HTTP semconv 1.44 lists as well-known for `http.request.method`: RFC 9110, PATCH
+// (RFC 5789) and QUERY (the safe method that carries a body, which core treats as first-class).
+// Any other verb is exported as `_OTHER` with the original in `http.request.method_original`, so a
+// free-form method cannot grow a backend's cardinality, and the span is named `HTTP` rather than
+// for the verb. `OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS` replaces the list (see `otlpSink`).
+const KNOWN_METHODS = [
     'CONNECT',
     'DELETE',
     'GET',
@@ -172,8 +175,9 @@ const KNOWN_METHODS = new Set([
     'PATCH',
     'POST',
     'PUT',
+    'QUERY',
     'TRACE',
-]);
+];
 const DEFAULT_PORTS: Record<string, number> = { 'http:': 80, 'https:': 443 };
 
 // One run's spans while its events stream in. Children are pushed as they OPEN (parent before
@@ -318,6 +322,13 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
             }),
         );
     const resource = otlpResource(opts.resource);
+    // The semconv knob for what counts as a known method: a comma list, case-sensitive, replacing
+    // the default. Read once with the sink, like the resource. An empty variable is unset.
+    const knownMethods = new Set(
+        envOf('OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS')
+            ?.split(',')
+            .map((method) => method.trim()) ?? KNOWN_METHODS,
+    );
     const runs = new Map<string, OpenRun[]>();
 
     // An export failure never breaks the event stream, but it is reported once (see `warnOnce`).
@@ -341,7 +352,7 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
             const stack = runs.get(key) ?? [];
             if (event.type === 'start') {
                 const http = (event.transport ?? 'http') === 'http';
-                const known = KNOWN_METHODS.has(event.method);
+                const known = knownMethods.has(event.method);
                 // `url.full` is OTLP's only secret-bearing attribute (it never exports headers or
                 // bodies): scrub userinfo + secret query values before export. Parsed once — every
                 // attempt of the run targets this URL.

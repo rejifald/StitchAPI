@@ -95,10 +95,8 @@ interface KeyState {
 // `stitchapi/graphql`, `/sse`, …), so a stitch from one and a stitch from another would otherwise
 // each draw from a budget of their own and together exceed the host's rate. `/1` is the layout
 // number of `KeyState`; bump it when that shape changes. See `processWide`.
-const hostStates = processWide(
-    'stitchapi.hostStates/1',
-    () => new Map<string, KeyState>(),
-);
+const hostStates = (): Map<string, KeyState> =>
+    processWide('stitchapi.hostStates/1', Map<string, KeyState>);
 
 /**
  * Proactive limiter. `rate` ("2/s") enforces a minimum spacing between successive
@@ -121,7 +119,7 @@ export function createThrottle(
     const paced = opts?.rate ? parseRate(opts.rate) : undefined;
     const spacing = paced ? paced.per / paced.count : 0; // ms between grants
     const hostPooled = opts?.pool === 'host';
-    const states = hostPooled ? hostStates : new Map<string, KeyState>();
+    const states = hostPooled ? hostStates() : new Map<string, KeyState>();
 
     const stateFor = (key: string): KeyState => {
         let s = states.get(key);

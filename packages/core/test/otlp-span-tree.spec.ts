@@ -947,6 +947,57 @@ test('a surface verdict failure (GraphQL errors on a 200): the run is ERROR, its
     `);
 });
 
+test('a QUERY call (a read that carries a body): a known method, named for itself', async () => {
+    const c = capture();
+    const ok: Adapter = (req) =>
+        Promise.resolve({ status: 200, headers: {}, body: [], url: req.url });
+    const search = stitch({
+        name: 'search',
+        method: 'QUERY',
+        baseUrl: 'https://api.example.com',
+        path: '/orgs/{org}/search',
+        adapter: ok,
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await search({ params: { org: 'acme' }, body: { q: 'x' } });
+
+    expect(tree(c.spans)).toMatchInlineSnapshot(`
+      {
+        "attributes": {
+          "stitch.name": "search",
+          "stitch.surface": "http",
+        },
+        "children": [
+          {
+            "attributes": {
+              "http.request.method": "QUERY",
+              "http.response.status_code": 200,
+              "server.address": "api.example.com",
+              "server.port": 443,
+              "stitch.attempt": 1,
+              "url.full": "https://api.example.com/orgs/acme/search",
+              "url.template": "/orgs/{org}/search",
+            },
+            "kind": "CLIENT",
+            "name": "QUERY /orgs/{org}/search",
+            "status": {
+              "code": "UNSET",
+            },
+          },
+        ],
+        "events": [
+          "request",
+        ],
+        "kind": "INTERNAL",
+        "name": "search",
+        "status": {
+          "code": "UNSET",
+        },
+      }
+    `);
+});
+
 test('a failed page: the page span carries the same error.type as its run', async () => {
     const c = capture();
     // Page 1 succeeds; page 2 is a 503 with no retry left.
@@ -1008,7 +1059,7 @@ describe('the attempt span, per HTTP semantic conventions', () => {
         return c.spans[1]!;
     }
 
-    test.each(['GET', 'POST', 'PATCH', 'TRACE'])(
+    test.each(['GET', 'POST', 'PATCH', 'QUERY', 'TRACE'])(
         'a method semconv names (%s) is exported as is',
         (method) => {
             const a = attemptOf(
@@ -1029,6 +1080,42 @@ describe('the attempt span, per HTTP semantic conventions', () => {
         expect(a.name).toBe('HTTP /u/{id}');
         expect(a.attributes['http.request.method']).toBe('_OTHER');
         expect(a.attributes['http.request.method_original']).toBe('PURGE');
+    });
+
+    describe('OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS', () => {
+        afterEach(() => {
+            vi.unstubAllEnvs();
+        });
+
+        test('replaces the known list: a method it names is known, one it omits is _OTHER', () => {
+            vi.stubEnv('OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS', 'GET, PURGE');
+
+            const purge = attemptOf('PURGE', 'https://api.example.com/x', '/x');
+            expect(purge.name).toBe('PURGE /x');
+            expect(purge.attributes['http.request.method']).toBe('PURGE');
+            expect(purge.attributes).not.toHaveProperty(
+                'http.request.method_original',
+            );
+
+            const post = attemptOf('POST', 'https://api.example.com/x', '/x');
+            expect(post.name).toBe('HTTP /x');
+            expect(post.attributes['http.request.method']).toBe('_OTHER');
+            expect(post.attributes['http.request.method_original']).toBe(
+                'POST',
+            );
+        });
+
+        test('is case-sensitive, like the method names it lists', () => {
+            vi.stubEnv('OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS', 'get');
+            const a = attemptOf('GET', 'https://api.example.com/x', '/x');
+            expect(a.attributes['http.request.method']).toBe('_OTHER');
+        });
+
+        test('an empty variable is unset: the default list applies', () => {
+            vi.stubEnv('OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS', '');
+            const a = attemptOf('QUERY', 'https://api.example.com/x', '/x');
+            expect(a.attributes['http.request.method']).toBe('QUERY');
+        });
     });
 
     test('with no template the span is named for HTTP alone', () => {

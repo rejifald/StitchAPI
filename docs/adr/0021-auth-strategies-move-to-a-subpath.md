@@ -375,8 +375,8 @@ dynamic import, so the lazy import alone left the root scenarios at 25.51 / 22.8
 each, [#709](https://github.com/rejifald/StitchAPI/issues/709)). The maintainer decided
 (2026-10-01) to defer it too, so the advertised size means what a code-splitting bundler ships
 up front: `defer: ['otlp', 'cache']` on both root scenarios, each chunk its own gated scenario
-(`stitchapi/otlp` 3.10 KB, `stitchapi/cache` 3.44 KB), and the gate fails if a `defer` names a
+(`stitchapi/otlp` 3.17 KB, `stitchapi/cache` 3.44 KB), and the gate fails if a `defer` names a
 chunk the build does not import lazily or imports statically. Measured: whole entry
-24.62 → 20.91 KB (budget 24.80 → 21.45), `import { stitch }` 21.83 → 18.10 KB (budget
+24.62 → 20.93 KB (budget 24.80 → 21.45), `import { stitch }` 21.83 → 18.14 KB (budget
 22.00 → 18.65). The advertised figures moved `~25 / ~22 kB` → `~21 / ~18 kB`. A bundler that does
 not split dynamic imports inlines both chunks and ships ~26 / ~23 KB.

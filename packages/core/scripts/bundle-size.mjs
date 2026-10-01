@@ -396,7 +396,7 @@ const KB = 1024;
 // The conventional ~0.2 KB step, not a minimum one: this is a new capability on the public
 // surface, not a fix squeezing past a ceiling. Headroom lands at 0.21 / 0.18.
 // Whole entry 24.80→21.45 / `import { stitch }` 22.00→18.65 KB — a DROP, not a raise, and a change
-// to what the two root scenarios COUNT (#871/#872 and #709; measured 20.91 / 18.10 against a `main`
+// to what the two root scenarios COUNT (#871/#872 and #709; measured 20.93 / 18.14 against a `main`
 // at 24.62 / 21.83). The OTLP pipeline was rewritten into the ADR 0017 D6 span tree: +0.63 KB on
 // both scenarios, which put them 0.45 / 0.46 KB over. It moved to `stitchapi/otlp` instead of the
 // budget moving: the root barrel no longer exports `otlp`, and the only edge from the core path is
@@ -416,20 +416,24 @@ const KB = 1024;
 // ceiling. Measured without any deferral the same build is ~26 / ~23 KB, which is what a
 // bundler that does NOT split dynamic imports ships (everything, eagerly).
 //
-// The ADVERTISED figures move: 20.91 rounds to 21 and 18.10 to 18, so every site quoting them goes
+// The ADVERTISED figures move: 20.93 rounds to 21 and 18.14 to 18, so every site quoting them goes
 // ~25 → ~21 and ~22 → ~18 kB — the six sites under the `bundle-advertised-size` tether. They state
 // what `import { stitch }` ships UP FRONT; cache and OTLP load lazily on first use.
 //
 // The measured figures include what review of this PR added to the core path: the process-wide
-// registries that make the CJS entries agree (#898: `processWide`, +0.07 / +0.04 KB) and the bounded,
-// warn-once `STITCH_EXPORT=otlp` loader in stitch.ts (+0.1 KB). Neither can move to a subpath: the
-// first is read by every scrubber and the engine, the second IS the lazy edge.
+// registries that make the CJS entries agree (#898: `processWide`, a shape-checked `Set`/`Map` slot
+// per registry, about +0.1 KB) and the bounded, warn-once `STITCH_EXPORT=otlp` loader in stitch.ts
+// (about +0.1 KB). Neither can move to a subpath: the first is read by every scrubber and the
+// engine, the second IS the lazy edge. `stitchapi/auth` carries `processWide` too (it registers
+// `apiKey` query names) and is the one scenario held to `main`'s ceiling, 5.35 KB, with 18 B left:
+// every registry reads through a function, never a module-level call, so an entry that merely
+// imports a module (`auth` imports `resilience` for two helpers) does not carry the registry.
 //
-// Headroom is 0.54 / 0.55 KB on purpose, not the ~0.2 KB this gate usually restores. The reset
+// Headroom is 0.52 / 0.51 KB on purpose, not the ~0.2 KB this gate usually restores. The reset
 // frees ~3 KB of room, and the PRs queued behind this one each need a few bytes of core path:
 // #891 ~+0.12, #892 ~+0.10, #895 ~+0.04, #897 ~+0.03 (~0.29 KB together). Sizing the ceiling at
 // the measured value + 0.5 KB lets all four land without a budget PR of their own and still leaves
-// ~0.25 KB, about the headroom the gate is meant to hold, once they have. Both ceilings sit below
+// ~0.2 KB, the headroom the gate is meant to hold, once they have. Both ceilings sit below
 // `main`'s (24.80 / 22.00): nothing here is a raise.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
@@ -459,8 +463,9 @@ const SCENARIOS = [
     // you pay if you `export *` from it; the root scenarios above are what you pay before either loads.
     //
     // `otlp`: the whole sink + serializer + exporter, paid only if you import it (or set
-    // `STITCH_EXPORT=otlp`). Measured 3.10 KB, 0.2 KB of headroom (a new scenario: it has no `main`
-    // ceiling to stay under).
+    // `STITCH_EXPORT=otlp`). Measured 3.17 KB, 0.13 KB of headroom (a new scenario: it has no `main`
+    // ceiling to stay under; the span details frozen for GA — method set, status description,
+    // `OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS`, the warn-once export — are most of its growth).
     {
         name: 'stitchapi/otlp — whole surface',
         code: `export * from './otlp.mjs';`,
