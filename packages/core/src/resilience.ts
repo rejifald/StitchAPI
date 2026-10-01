@@ -1,6 +1,7 @@
 // Resilience primitives: retry backoff math, Retry-After parsing, a proactive
 // throttle (rate + concurrency, per key), and a timeout wrapper. Dependency-free;
 // pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
+import { compact } from './compact';
 import type {
     AcquireOptions,
     AdapterResult,
@@ -9,12 +10,14 @@ import type {
     Clock,
     RetryOptions,
     StatusMatch,
+    StitchErrorResult,
     StitchStore,
     ThrottleOptions,
 } from './types';
 // The one VALUE import from `./types` (everything else above is type-only): `RateLimitError`
-// extends `StitchError` per CONTRACT.md P10. `types.ts` imports nothing at runtime — its own
-// imports are all type-only — so this edge adds no cycle.
+// extends `StitchError` per CONTRACT.md P10. `types.ts` imports only the leaf helpers `compact`
+// and `util` (for `toJSON`'s scrub) at runtime, and neither imports it back — so this edge adds
+// no cycle.
 import { StitchError } from './types';
 import { abortReason, parseDuration, parseRate, systemClock } from './util';
 
@@ -308,11 +311,17 @@ export class RateLimitError extends StitchError {
      * The base {@link StitchError.toJSON} view plus `retryAfter` — the one non-secret field this
      * subclass adds. The raw `response` (headers incl. `set-cookie`, body) stays off the JSON.
      */
-    override toJSON(): ReturnType<StitchError['toJSON']> & {
-        retryAfter: number | undefined;
-    } {
-        return { ...super.toJSON(), retryAfter: this.retryAfter };
+    override toJSON(): RateLimitErrorResult {
+        return compact({ ...super.toJSON(), retryAfter: this.retryAfter });
     }
+}
+
+/**
+ * The JSON view of a {@link RateLimitError}: the {@link StitchErrorResult} plus `retryAfter` (ms),
+ * absent from the JSON when the response carried no parseable `Retry-After`.
+ */
+export interface RateLimitErrorResult extends StitchErrorResult {
+    retryAfter?: number;
 }
 
 export type CircuitPhase = 'closed' | 'open' | 'half-open';

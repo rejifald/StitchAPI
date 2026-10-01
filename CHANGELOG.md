@@ -22,23 +22,51 @@ npm release are grouped under the in-development version that introduced them.
     - **`StitchError.toJSON()`** — `JSON.stringify(err)` was `{ status, attempts, body, url, name }`:
       `message` missing (an `Error`'s own `message` is non-enumerable), `body` the unredacted
       upstream payload, and a `RateLimitError` added its raw `response`, `set-cookie` included. It
-      is now `{ name, message, status, attempts, url }`, `url` scrubbed of userinfo and secret query
-      values; a `RateLimitError` adds `retryAfter`. `err.body`, `err.url` and `err.response` are
-      unchanged on the live error. **Migration:** read `err.body` directly.
+      is now a `StitchErrorResult`, `{ name, message, status?, attempts, url? }` (a
+      `RateLimitErrorResult` adds `retryAfter`): `url` and any URL quoted in `message` — a transport
+      error for a malformed URL quotes the whole request URL — are scrubbed of userinfo and secret
+      query values, and optional keys are absent rather than `undefined`. `err.body`, `err.url`,
+      `err.cause` and `err.response` are unchanged on the live error. **Migration:** read
+      `err.body` directly. Not covered: a non-URL secret an adapter put in `message`, and a logger
+      that bypasses `toJSON` (pino's `err` serializer).
     - **`__config` scrubs literal secrets.** `redactConfig` stripped live handles but kept literal
       values, so `headers: { authorization: 'Bearer …' }` and
       `url: 'https://user:pw@host/a?api_key=…'` reached `.report().config`, `stitch diagram`,
       `stitch export --openapi` and MCP `describe_stitch`. A string `url` / `baseUrl` / `path` now
-      loses its userinfo and secret query values (RFC 6570 `{param}` slots kept), and a secret
-      header value reads `[REDACTED]` — the sinks' header denylist plus any name `secrets.has`
-      matches (`x-auth-token`). The engine still sends the real values from `__rawConfig`. Query
-      keys that `@stitchapi/query-core` / `@stitchapi/swr` derive from `__config.url` now carry the
-      scrubbed form, so two stitches differing only by a secret in the URL share a key.
+      loses its userinfo and secret query values — whatever its shape: absolute, relative
+      (`/a?api_key=…`), protocol-relative (`//user:pw@host/…`) or an RFC 6570 template
+      (`{?page,token}`, `?api_key={apiKey}` keep their `{param}` slots) — and a secret header
+      value reads `[REDACTED]`. The engine still sends the real values from `__rawConfig`, and
+      `seam.invalidate(stitch)` reads its cache id from there too. `__config` is a snapshot taken
+      when the stitch is built, so `secrets.register` applies to it only when called first. Query
+      keys that `@stitchapi/query-core` / `@stitchapi/swr` derive from `__config` now carry the
+      scrubbed form, so two stitches differing only by a secret in the URL share a key (#880).
+    - **A nameless stitch's name no longer carries its URL secret.** `stitch('https://h/x?api_key=…')`
+      stores the URL as `path` and used it as the display name, so every trace record, hook
+      argument, console line, OTLP span name and `stitch run` line quoted it. The name is scrubbed
+      for display; the store key a cache, throttle or circuit derives from it is unchanged (#845).
+    - **`scrubUrl` is textual and also scrubs free text.** It rewrote a URL through `new URL`,
+      which left a relative or protocol-relative URL untouched and re-encoded a templated one
+      (`{?page,token}` became `%7B?page%2Ctoken%7D=REDACTED`). It now rewrites the string in place,
+      so every shape above is scrubbed, a clean URL comes back byte-for-byte, a `#access_token=`
+      fragment pair is covered, and one function serves a config endpoint and an error message.
     - **The JSONL file sink scrubs secret-named payload fields.** It truncated bodies but never
       redacted them: a password-grant `password` / `client_secret` and a response `access_token`
       reached disk in full. Every key the shared `secrets` denylist matches — in the request body,
       GraphQL variables, the response `data` and each streamed `chunk` — is now `[REDACTED]`, before
-      the size cap cuts a `preview`.
+      the size cap cuts a `preview`. Over-matching is bounded: only a **non-empty string** under a
+      secret-named key is redacted, so token counts (`usage.output_tokens`, `max_tokens`) and flags
+      (`signature_valid`) survive, and the exact names `code`, `key` and `auth` are ordinary payload
+      fields (they stay credentials in a URL query, in `url` and in `input.query`). A string under
+      a name that merely contains a stem (`next_page_token`) is still redacted. A `Date` passes
+      through as itself rather than `{}` — in this walker, in `secrets.redact` and in the `serve`
+      stream.
+    - **More header names are redacted** — in `__config`, the JSONL file, the `serve` / `stitch run`
+      frames and the `@stitchapi/query-core` / `@stitchapi/swr` query keys: any name ending in
+      `-key` (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`, `x-goog-api-key`) and any
+      naming a session (`x-session-id`), on top of the five-name denylist and the secret stems
+      (`x-auth-token`). A header such as `x-cache-key` that varies a response now keys it by a
+      constant until #880 hashes the redacted value.
     - **`stitch run` redacts its stdout the way `stitch serve` does.** It wrote the raw event, so an
       `--headers.authorization` or `--body.password` flag was echoed back on the `start` line. The
       response (`result`) is still printed as sent.

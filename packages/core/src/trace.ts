@@ -152,12 +152,17 @@ function capBody(value: unknown, max: number | false): unknown {
 
 // Build the final JSONL record for one event, on a fresh clone — the live event the engine
 // emitted is untouched:
-//   - `redactKeys` over the WHOLE record replaces the value of every secret-bearing key at any
-//     depth with `[REDACTED]`: a denylisted header (`authorization`, a `redactHeaders` name), and
-//     any key `isSecretKey` catches — a secret query param in `input.query` (what `scrubUrl` strips
-//     from `url`), and `password` / `client_secret` / `access_token` inside the request body,
-//     GraphQL variables, the response `data` or a streamed `chunk`. No event field of the spine's
-//     own is secret-named, so only payload keys can match;
+//   - `redactKeys` over the WHOLE record, as a payload, replaces the value of a secret-named
+//     field at any depth with `[REDACTED]` — `password` / `client_secret` / `access_token` inside
+//     the request body, GraphQL variables, the response `data` or a streamed `chunk` — and any
+//     denylisted header name (`authorization`, a `redactHeaders` name) wherever it sits. A payload
+//     walk redacts a NON-EMPTY STRING only, so token counts and flags survive. No event field of
+//     the spine's own is secret-named, so only payload keys can match;
+//   - a `start` event's `input.headers` and `input.query` are the two flat maps that are NOT
+//     payloads, so they are re-redacted from the live event as maps: the header rules
+//     (`api-key`, `x-session-id`, … — a superset of `isSecretKey`) apply whatever the value, so
+//     a query param named `code` or `key` is a credential here though it is data in a payload —
+//     what `scrubUrl` strips from `url`;
 //   - URL credential-scrubbing on `start`;
 //   - body/result truncation — AFTER the scrub, so a `preview` never holds a secret either.
 function prepareRecord(
@@ -166,7 +171,7 @@ function prepareRecord(
     denylist: readonly string[],
     maxBody: number | false,
 ): unknown {
-    const record = redactKeys({ name, ...event }, denylist) as Record<
+    const record = redactKeys({ name, ...event }, denylist, true) as Record<
         string,
         unknown
     >;
@@ -176,6 +181,9 @@ function prepareRecord(
         const input = record['input'];
         if (input !== null && typeof input === 'object') {
             const i = input as Record<string, unknown>;
+            const { headers, query } = event.input;
+            if (headers) i['headers'] = redactKeys(headers, denylist);
+            if (query) i['query'] = redactKeys(query, denylist);
             // Body: size-bound it (already scrubbed above).
             if ('body' in i) i['body'] = capBody(i['body'], maxBody);
         }

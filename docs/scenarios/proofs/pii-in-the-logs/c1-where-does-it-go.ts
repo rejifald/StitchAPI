@@ -366,21 +366,32 @@ async function main(): Promise<void> {
             'what a STRUCTURED logger serialises',
         );
         check(
-            'but JSON.stringify of the SAME error holds all 7',
+            'and, since #873, JSON.stringify of the SAME error holds none (it held all 7)',
             jsonRow.hits.size,
-            7,
+            0,
         );
         check(
-            'because `body` is an own ENUMERABLE property',
+            '`body` is still an own ENUMERABLE property of the live error',
             Object.keys(err ?? {}).includes('body'),
             true,
+        );
+        check(
+            'but `toJSON` keeps it off the JSON view',
+            Object.keys(JSON.parse(JSON.stringify(err)) as object).includes(
+                'body',
+            ),
+            false,
         );
         note(
             'the enumerable keys of a StitchError',
             Object.keys(err ?? {}).join(','),
         );
         note(
-            '→ the sharpest single row in the table. `err.stack` and `String(err)` are clean, so a `console.error(err)` is safe and a `logger.error({ err })` is not: `StitchError` assigns `this.body` in its constructor (types.ts:1790), which makes it an own enumerable property, and every structured logger reaches for `JSON.stringify`. The `message` is NON-enumerable (the `Error` base sets it), so the JSON is `{"name","status","attempts","body"}` — the payload survives and the human-readable part does not',
+            'the keys of JSON.stringify(err)',
+            Object.keys(JSON.parse(JSON.stringify(err)) as object).join(','),
+        );
+        note(
+            '→ MEASURED BEFORE #873, the sharpest single row in the table: `err.stack` and `String(err)` were clean but `JSON.stringify(err)` carried all 7, because `StitchError` assigns `this.body` in its constructor, which makes it an own enumerable property, and every structured logger reaches for `JSON.stringify`; the `message` is NON-enumerable (the `Error` base sets it), so the JSON was `{"name","status","attempts","body"}` — the payload survived and the human-readable part did not. `StitchError.toJSON` now emits `{ name, message, status?, attempts, url? }` with URL credentials scrubbed and no `body`. What it does not cover: a logger that never calls `toJSON` — pino\'s `err` serializer copies enumerable properties — still writes `err.body`; the live property stays, and #893 tracks making it non-enumerable',
         );
         const evt = sink.of('error') as StitchEvent | undefined;
         const evRow = leakRow(
@@ -536,7 +547,7 @@ async function main(): Promise<void> {
 
     finish(
         'C1',
-        'CONFIRMED, and the table is more binary than the capture drew it. The destinations split into two populations with NOTHING in between: payload destinations carry all 7 sentinels (the `result` event, fileSink at every non-zero cap, `.inspect().raw`, `.inspect().data`, `JSON.stringify(inspect())`, `.report()`, `StitchError.body`, `JSON.stringify(StitchError)`, the cache entry) and metadata destinations carry 0 of 7 (`start`/`progress`/`done`/`error` events, consoleSink, loggerSink, otlp.sink, `StitchError.message`, `String(err)` + `err.stack`). No destination is partially redacted. Exactly ONE event carries the response body — `result`, on `data` — so "the event spine leaks" is really "one event leaks". Three measurements the capture does not contain: (1) the default fileSink cap is a SIZE control that keeps a PREFIX, so on a 2.9KB body all 7 table sentinels still persisted into the `preview` and only an 8th, planted deliberately past character 2048, was absent; (2) `JSON.stringify(.inspect())` leaks all 7 through the ENUMERABLE `data` field, so ADR 0016 non-enumerability protects `raw` and nothing else — and the same pattern repeats on the error: `String(err)`/`err.stack` are clean but `JSON.stringify(err)` carries all 7, because `StitchError.body` is an own enumerable property while `message` is not, so `console.error(err)` is safe and `logger.error({ err })` is not; (3) the JSONL sink already ships a working deep key-name redactor — a body field named `cookie` is replaced with [REDACTED] while the identical value under `ssn` is not, and `redactHeaders` (documented as "header names") is the one config-reachable way to point it at a body key',
+        'CONFIRMED, and the table is more binary than the capture drew it. The destinations split into two populations with NOTHING in between: payload destinations carry all 7 sentinels (the `result` event, fileSink at every non-zero cap, `.inspect().raw`, `.inspect().data`, `JSON.stringify(inspect())`, `.report()`, `StitchError.body`, the cache entry) and metadata destinations carry 0 of 7 (`start`/`progress`/`done`/`error` events, consoleSink, loggerSink, otlp.sink, `StitchError.message`, `String(err)` + `err.stack`, and — since #873 — `JSON.stringify(StitchError)`). No destination is partially redacted. Exactly ONE event carries the response body — `result`, on `data` — so "the event spine leaks" is really "one event leaks". Three measurements the capture does not contain: (1) the default fileSink cap is a SIZE control that keeps a PREFIX, so on a 2.9KB body all 7 table sentinels still persisted into the `preview` and only an 8th, planted deliberately past character 2048, was absent; (2) `JSON.stringify(.inspect())` leaks all 7 through the ENUMERABLE `data` field, so ADR 0016 non-enumerability protects `raw` and nothing else — and the same pattern repeated on the error before #873: `String(err)`/`err.stack` were clean but `JSON.stringify(err)` carried all 7, because `StitchError.body` is an own enumerable property while `message` is not (`StitchError.toJSON` now leaves the body out, so a logger that serialises through `JSON.stringify` is safe; one that copies enumerable properties, like pino\'s `err` serializer, is not — #893); (3) the JSONL sink already ships a working deep key-name redactor — a body field named `cookie` is replaced with [REDACTED] while the identical value under `ssn` is not, and `redactHeaders` (documented as "header names") is the one config-reachable way to point it at a body key',
     );
 }
 

@@ -39,13 +39,20 @@ try {
     as a normal result instead of throwing.
 </Callout>
 
-A `StitchError` is safe to log as JSON. `JSON.stringify(err)` — and a logger
-that serializes through it — emits `{ name, message, status, attempts, url }`:
-`message` is included, `url` has its userinfo and secret query values
-(`api_key`, `access_token`, …) replaced with `REDACTED`, and `.body` is left
-out, because it is unredacted upstream data. A `RateLimitError` adds
-`retryAfter`; its raw `.response` (headers, `set-cookie` included) stays out too.
-Read `err.body` and `err.url` directly when you mean to.
+`JSON.stringify(err)` — and a logger that serializes through it — emits a
+`StitchErrorResult`, `{ name, message, status?, attempts, url? }`, built to be
+logged: `message` is included, and both it and `url` have URL credentials
+scrubbed — userinfo removed, secret query values (`api_key`, `access_token`, …)
+replaced with `REDACTED`. A transport error for a malformed URL quotes the whole
+request URL in its message, which is why the message is scrubbed too. `.body`,
+`.cause` and a `RateLimitError`'s raw `.response` (headers, `set-cookie`
+included) are left out, because they are unredacted upstream data; a
+`RateLimitError` adds `retryAfter`. Read `err.body` and `err.url` directly when
+you mean to.
+
+What that does **not** cover: a secret the upstream or an adapter wrote into
+`message` in a shape that is not a URL (a bare token in an error text), and any
+logger that does not call `toJSON`.
 
 <Callout type="warn">
     **Anti-pattern:** don't assume every logger goes through `JSON.stringify`.

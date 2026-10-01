@@ -286,6 +286,12 @@ emit, and the literal `url` and `headers` a stitch exposes on its public
 `__config` (what `.report().config`, `stitch diagram` and MCP `describe_stitch`
 show).
 
+**Register before you build the stitch.** A stitch's `__config` is a snapshot
+taken when the stitch is created, so a name registered afterwards reaches every
+sink, the `serve` / `stitch run` frames and the query keys, but not a `headers`
+value the earlier stitch already shows on `__config`. Register at start-up, ahead
+of the stitches that use the name.
+
 The **query bindings** read from it too. `@stitchapi/query-core` derives every
 cache key through the same predicate, so a registered name is redacted from the
 query keys built by [React](/docs/integrations/react),
@@ -345,7 +351,9 @@ secrets.has('session_ref'); // false — until you register it
 
     Query keys and header scrubbers are where the two meet. The key builders, the
     JSONL sink, the `serve` / `stitch run` stream and the public `__config` all
-    check the header denylist **and then** fall through to `secrets.has`, so a
+    check the header denylist, **then** two header-only rules — a name ending in
+    `-key` (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`) or naming a
+    session (`x-session-id`) — **and then** fall through to `secrets.has`, so a
     secret-named header (`x-auth-token`) or a name you register is redacted there
     even though `secrets.has` is the wrong question to ask about a header on its
     own.

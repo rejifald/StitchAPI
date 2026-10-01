@@ -194,9 +194,16 @@ function rootHandle(shared: SharedSeam): Seam {
         // cache engine is reached lazily — a seam with no cached members never loads it.
         async invalidate(stitch?: Stitch) {
             const m = await import('./cache');
+            // The id the engine namespaces this stitch's entries under comes from the RAW config
+            // (`cacheStitchId(cfg)` — a string-form stitch's id IS its URL, query secrets and
+            // all). The public `__config` scrubs that path for display, so reading it here would
+            // bump a generation no entry lives under and silently invalidate nothing. A stub
+            // (`test-stub`) has no `__rawConfig`; its `__config` is all there is.
+            const cfg = (stitch as { __rawConfig?: StitchConfig } | undefined)
+                ?.__rawConfig;
             await m.bumpCacheGeneration(
                 shared.store,
-                stitch ? m.cacheStitchId(stitch.__config) : undefined,
+                stitch ? m.cacheStitchId(cfg ?? stitch.__config) : undefined,
             );
         },
         async flush() {

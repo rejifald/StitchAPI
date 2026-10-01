@@ -257,7 +257,7 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
                 baseUrl: 'https://svc:pw873@api.example.test',
                 path: '/x',
             }).__config.baseUrl,
-        ).toBe('https://api.example.test/');
+        ).toBe('https://api.example.test');
         expect(
             stitch('https://api.example.test/x?api_key=key873').__config.path,
         ).toBe('https://api.example.test/x?api_key=REDACTED');

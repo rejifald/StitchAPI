@@ -22,6 +22,7 @@ import {
     executeRaw,
     executeRawTraced,
     makeRuntime,
+    nameOf,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpSink } from './otlp';
@@ -441,7 +442,7 @@ export function compose(config: ComposeInput): ResolvedStitchConfig {
 // gate the repo deliberately keeps tight. Behaviour is unchanged: the circuit nudge runs before the
 // idempotency guard, so it still fires for every surface, not just `http`.
 function warnConstruction(cfg: ResolvedStitchConfig): void {
-    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const name = nameOf(cfg);
     // `halfOpenAfter` is off the type now, so it is read back at its former `number | string`
     // shape — the only values a stale config can be carrying.
     const circuit = cfg.circuit as
@@ -1034,20 +1035,17 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // Literal secrets the author wrote straight into the config are scrubbed too — `__config` is
     // what `report().config`, `diagram`, `export --openapi`, MCP `describe_stitch` and the
     // query-core/swr keys echo, and they all call it safe to show. A string endpoint loses its
-    // userinfo and secret query values (`scrubUrl` — the trace sinks' URL scrubber; the
+    // userinfo and secret query values (`scrubUrl` — the trace sinks' URL scrubber, textual so a
+    // relative or `{template}` endpoint is scrubbed too and its param slots survive; the
     // `stitch('https://…')` string form lands on `path`, so `path` goes through it as well), and a
     // secret header value reads `[REDACTED]` (`redactKeys` — the sinks' header denylist plus any
-    // secret-named header). The engine never reads these off `__config`: it sends the real values
-    // from `__rawConfig`. `scrubUrl` re-serialises a URL it changes, which percent-encodes an
-    // RFC 6570 `{param}` slot, so the braces are put back for the template readers (CLI param
-    // routing, the OpenAPI path).
+    // secret-named header). Applied when the stitch is BUILT: a name registered with
+    // `secrets.register` afterwards reaches the sinks but not this snapshot. The engine never
+    // reads these off `__config`: it sends the real values from `__rawConfig`, and so do the
+    // readers that need the real thing (`seam.invalidate`'s cache id).
     for (const k of ENDPOINT_SLOTS) {
         const v = out[k];
-        const scrubbed = typeof v === 'string' ? scrubUrl(v) : v;
-        if (scrubbed !== v)
-            out[k] = (scrubbed as string)
-                .replace(/%7B/g, '{')
-                .replace(/%7D/g, '}');
+        if (typeof v === 'string') out[k] = scrubUrl(v);
     }
     if (cfg.headers)
         redacted.headers = redactKeys(cfg.headers) as Record<string, string>;
@@ -1103,7 +1101,7 @@ export function makeStitch<T = unknown>(
     if (shared?.vault) rtOpts.vault = shared.vault;
     if (shared?.principal !== undefined) rtOpts.principal = shared.principal;
     const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);
-    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const name = nameOf(cfg);
 
     // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
     // ROOT run per consumption; composition (`linked`/`all`, stitchapi/pipe) supplies a CHILD run via

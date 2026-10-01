@@ -62,10 +62,13 @@ must preserve it.
   ([`keyOf`](#p6--key-is-a-string-keyof-is-a-function)) — they are sugar, not a
   blessed `__config` exception.
 - Literal **secret values** are scrubbed on the way to `__config` as well, because every reader
-  above echoes it as safe to show: a string `url` / `baseUrl` / `path` loses its userinfo and
-  secret query values (RFC 6570 `{param}` slots preserved), and a secret header value in
-  `headers` reads `[REDACTED]` (#873). The data stays plain JSON; the engine sends the real
-  values from `__rawConfig`.
+  above echoes it as safe to show: a string `url` / `baseUrl` / `path` — absolute, relative,
+  protocol-relative or templated — loses its userinfo and secret query values (RFC 6570
+  `{param}` slots preserved: the scrub is textual, never a `new URL` round-trip), and a secret
+  header value in `headers` reads `[REDACTED]` (#873). The data stays plain JSON; the engine
+  sends the real values from `__rawConfig`, and so does any reader that needs the real thing
+  rather than a display (`seam.invalidate`'s cache id). `__config` is a snapshot taken when the
+  stitch is built: `secrets.register` applies to it only if called before.
 - **One exemption, and only one:** the schema slots `input` / `output` hold Standard
   Schema validators, whose `validate` sits at depth 2. They are **not** sugar —
   `export --openapi` reads them off `__config` to build its parameter and response
@@ -298,6 +301,14 @@ every other thrown class **MUST** extend it rather than re-declare its fields. A
 class adds only what is genuinely its own (`RateLimitError` adds `retryAfter` and
 `response`) and **MUST** keep `name` as its own discriminator — that is what the
 serialising hosts branch on once the instance is gone (rtk-query stores a plain object).
+
+The guaranteed field set is the _property_ view on the live instance. The **JSON** view —
+what `JSON.stringify(err)` and a logger that serialises through it emit, via `toJSON` — is a
+deliberate subset, a `StitchErrorResult` (a `RateLimitErrorResult` for the subclass; the
+produced-shape suffix of [P3](#p3--one-suffix-system)): `{ name, message, status?, attempts,
+url? }` with URL credentials scrubbed from `message` and `url`, and **no `body`** (nor the
+subclass's `response`, nor `cause`) — those are unredacted upstream data, read off the
+instance on purpose. Absent optional keys are absent from the JSON, not `undefined`.
 
 Two consequences the surface **MUST** hold to:
 

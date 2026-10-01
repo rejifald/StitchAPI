@@ -1,5 +1,6 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
+import { compact } from './compact';
 import type {
     NormalizedSlot,
     RedactedSlot,
@@ -1990,13 +1991,35 @@ export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
 };
 
 /**
+ * The JSON view of a {@link StitchError} — what `JSON.stringify(err)` emits, via
+ * {@link StitchError.toJSON}. Optional keys are ABSENT from the JSON rather than `undefined`:
+ * `status` and `url` appear only when the failure had them (a transport error has neither).
+ * Never carries the upstream `body`, a `RateLimitError`'s raw `response`, or the `cause`.
+ */
+export interface StitchErrorResult {
+    /** The error class's discriminator (`'StitchError'`, `'RateLimitError'`, …). */
+    name: string;
+    /** The message, with URL credentials scrubbed from any URL it quotes. */
+    message: string;
+    /** HTTP status, when the failure came from a response. */
+    status?: number;
+    /** Attempts made before giving up. */
+    attempts: number;
+    /** The final request URL, with userinfo and secret query values redacted. */
+    url?: string;
+}
+
+/**
  * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
  * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
  * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
  *
- * Safe to log as JSON: {@link StitchError.toJSON} serialises it to `{ name, message, status,
- * attempts, url }` with the URL scrubbed — the upstream `body` (and a `RateLimitError`'s raw
- * `response`) stay readable as properties but never ride `JSON.stringify(err)`.
+ * `JSON.stringify(err)` is {@link StitchError.toJSON}'s {@link StitchErrorResult}: `{ name, message,
+ * status?, attempts, url? }` with URL credentials scrubbed. The upstream `body`, a
+ * `RateLimitError`'s raw `response` and the `cause` stay readable as properties but never ride that
+ * JSON. What is NOT covered: a secret the upstream or an adapter put in `message` in a shape that is
+ * not a URL (an error text quoting a bare token), and a logger that bypasses `toJSON` (pino's `err`
+ * serializer copies enumerable properties — see the errors page).
  */
 export class StitchError extends Error {
     /** HTTP status when the failure came from a response; `undefined` for transport/internal errors. */
@@ -2041,25 +2064,21 @@ export class StitchError extends Error {
 
     /**
      * The log-safe JSON view `JSON.stringify(err)` (and any logger that serialises through it)
-     * emits: `{ name, message, status, attempts, url }`. `message` is included — an `Error`'s own
-     * `message` is non-enumerable and would otherwise vanish — and `url` is scrubbed of userinfo
-     * and secret query values. The upstream `body` and a `RateLimitError`'s `response` are left
-     * out: they are unredacted upstream data, read deliberately off the error itself.
+     * emits: a {@link StitchErrorResult}, `{ name, message, status?, attempts, url? }`. `message`
+     * is included — an `Error`'s own `message` is non-enumerable and would otherwise vanish — with
+     * userinfo and secret query values scrubbed from any URL it quotes (a transport error
+     * for a malformed URL quotes the whole request URL), and `url` is scrubbed the same way. The
+     * upstream `body`, a `RateLimitError`'s `response` and the `cause` are left out: they are
+     * unredacted upstream data, read deliberately off the error itself.
      */
-    toJSON(): {
-        name: string;
-        message: string;
-        status: number | undefined;
-        attempts: number;
-        url: string | undefined;
-    } {
-        return {
+    toJSON(): StitchErrorResult {
+        return compact({
             name: this.name,
-            message: this.message,
+            message: scrubUrl(this.message),
             status: this.status,
             attempts: this.attempts,
             url: this.url && scrubUrl(this.url),
-        };
+        });
     }
 }
 

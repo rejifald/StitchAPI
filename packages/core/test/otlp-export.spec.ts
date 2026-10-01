@@ -201,8 +201,9 @@ test('scrubUrl: clean URLs pass through, credentials are redacted', () => {
         expect(out).toContain('page=2');
     }
 
-    // Non-absolute / unparseable strings are returned unchanged.
+    // A relative URL is scrubbed too (the scrub is textual, not parsed) — `scrub-url-text.spec.ts`
+    // pins every shape.
     expect(scrubUrl('/relative/path?token=abc')).toBe(
-        '/relative/path?token=abc',
+        '/relative/path?token=REDACTED',
     );
 });
