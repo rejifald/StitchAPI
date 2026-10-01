@@ -22,7 +22,7 @@
         "check:size": "pnpm -r check:size",
         "check:docs-links": "node scripts/check-docs-links.mjs",
         "check:npx-bin": "node scripts/check-npx-bin.mjs",
-        "check:contract": "node scripts/check-contract.mjs",
+        "check:contract": "node scripts/check-contract.mjs && node scripts/check-contract-selftest.mjs",
         "check:unknown-keys": "node scripts/check-unknown-keys.mjs",
         "check:changelog": "node scripts/check-changelog.mjs",
         "check:format": "prettier --check .",

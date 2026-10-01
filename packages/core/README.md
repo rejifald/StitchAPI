@@ -331,6 +331,12 @@ const adminUsers = listUsers.with({ query: { role: 'admin' } });
 await adminUsers({ query: { q: 'ada' } }); // → /users?role=admin&q=ada
 ```
 
+### Composing stitches: `stitchapi/pipe`
+
+> **Experimental.** `stitchapi/pipe` ships in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+
+`stitchapi/pipe` combines stitches into flows you `await` like any function. `all`, `any` and `race` run independent stitches concurrently as sibling child runs: `all` resolves when every member succeeds, `any` on the first success, `race` on the first to settle, and each cancels the members that can no longer affect the result. `linked` runs a body of plain `await`s so every call is a child run of the one before it, and the sequence shares one trace chain.
+
 ## Validation & leveled drift
 
 Validation is not binary pass/fail. The declared `output` schema **is** the contract. Wrap it in `drift()` and a response is validated (returning the validated value — coerced, defaulted, unknown keys stripped), and the difference between the raw body and that validated value is reported as a leveled, non-fatal signal:
@@ -722,6 +728,8 @@ const { blob, filename } = await getReport({
 
 ### LLM and shell
 
+> **Experimental.** `stitchapi/llm` and `@stitchapi/shell` ship in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+
 Two non-HTTP surfaces speak the same engine. `llm` is a chat-completion over a provider _contract_ — the first-party `anthropic` and `openai` mappings are plain config, no SDK dependency, and the credential is the stitch's own `auth`:
 
 ```ts
@@ -750,6 +758,8 @@ const status = await git({ body: ['status', '--porcelain'] }); // stdout string
 ```
 
 ### postMessage
+
+> **Experimental.** `stitchapi/postmessage` ships in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
 
 `postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `origins` is the security gate, and a wildcard is forbidden by the type _and_ at construction — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
 

@@ -13,7 +13,11 @@
 
 // ---- OpenAPI structural subset (we read defensively; never trust the shape) ----
 
-/** A JSON-Schema-ish node as it appears in an OpenAPI document. Intentionally loose. */
+/**
+ * A JSON-Schema-ish node as it appears in an OpenAPI document. Intentionally loose.
+ *
+ * @experimental
+ */
 export interface SchemaNode {
     $ref?: string;
     type?: string | string[];
@@ -70,6 +74,12 @@ interface SecuritySchemeObject {
     name?: string; // header/query name (when type === 'apiKey')
 }
 
+/**
+ * The subset of an OpenAPI document {@link planGen} reads. Read defensively; the shape is not
+ * trusted.
+ *
+ * @experimental
+ */
 export interface OpenApiDoc {
     openapi?: string;
     info?: { title?: string; version?: string };
@@ -98,6 +108,12 @@ export const MANIFEST_FILE = '.stitch-gen.json';
 
 // ---- options & result -----------------------------------------------------
 
+/**
+ * Selection and output controls for {@link planGen}: which operations to eject, the validator
+ * tier, and the file layout.
+ *
+ * @experimental
+ */
 export interface GenOptions {
     /** ADR 0013 Q2: default `types-only` (no runtime validation; loud notice). */
     validator?: 'types-only' | 'valibot' | 'zod';
@@ -113,6 +129,11 @@ export interface GenOptions {
     all?: boolean;
 }
 
+/**
+ * One file {@link planGen} wants written, relative to the output directory.
+ *
+ * @experimental
+ */
 export interface GenFile {
     /** Path relative to the output directory. */
     path: string;
@@ -127,6 +148,12 @@ interface SelectedOp {
     op: OperationObject;
 }
 
+/**
+ * What {@link planGen} returns: the files to write, the ownership manifest, the selected
+ * operations, and any warnings or notices.
+ *
+ * @experimental
+ */
 export interface GenResult {
     files: GenFile[];
     /** `.stitch-gen.json` payload (ADR 0013 Decision 9). */
@@ -408,6 +435,12 @@ function directRefs(schema: SchemaNode | undefined, acc: Set<string>): void {
 
 // ---- planning -------------------------------------------------------------
 
+/**
+ * Plan the files `stitch-openapi` writes for a parsed OpenAPI document. Pure and deterministic: it
+ * reads the document and returns the files, and the caller does the I/O.
+ *
+ * @experimental
+ */
 export function planGen(doc: OpenApiDoc, opts: GenOptions = {}): GenResult {
     const warnings: string[] = [];
     const notices: string[] = [];

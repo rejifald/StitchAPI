@@ -16,14 +16,22 @@ import type { Stitch } from 'stitchapi';
 // The structural call contract
 // ---------------------------------------------------------------------------
 
-/** A callable returning an awaitable validated output. The real `Stitch` satisfies
- * it; so does a plain fake in a test. */
+/**
+ * A callable returning an awaitable validated output. The real `Stitch` satisfies
+ * it; so does a plain fake in a test.
+ *
+ * @experimental
+ */
 // The MINIMAL await-only stitch duck-type (CONTRACT.md P9): this adapter never calls `.stream()`,
 // so it accepts any `(input?) => PromiseLike<T>`. The RICH canonical `StitchLike` (awaitable +
 // streamable) lives in `@stitchapi/query-core`; a real stitch satisfies both.
 export type StitchLike<T, Input = unknown> = (input?: Input) => PromiseLike<T>;
 
-/** The validated output type of a stitch (or `StitchLike`). */
+/**
+ * The validated output type of a stitch (or `StitchLike`).
+ *
+ * @experimental
+ */
 export type QueryOutput<S> =
     S extends Stitch<infer O, infer _I>
         ? O
@@ -31,7 +39,11 @@ export type QueryOutput<S> =
           ? O2
           : unknown;
 
-/** The input type of a stitch (or `StitchLike`). */
+/**
+ * The input type of a stitch (or `StitchLike`).
+ *
+ * @experimental
+ */
 export type QueryInput<S> =
     S extends Stitch<infer _O, infer I>
         ? I
@@ -43,13 +55,21 @@ export type QueryInput<S> =
 // stitchExecute — the tool `execute`
 // ---------------------------------------------------------------------------
 
-/** The AI SDK tool-execution options (the subset this adapter reads). */
+/**
+ * The AI SDK tool-execution options (the subset this adapter reads).
+ *
+ * @experimental
+ */
 export interface ToolExecuteOptions {
     toolCallId?: string;
     abortSignal?: AbortSignal;
 }
 
-/** An AI SDK tool `execute` function: `(args, options) => Promise<result>`. */
+/**
+ * An AI SDK tool `execute` function: `(args, options) => Promise<result>`.
+ *
+ * @experimental
+ */
 export type ToolExecute<Args, Output> = (
     args: Args,
     options?: ToolExecuteOptions,
@@ -68,6 +88,8 @@ export type ToolExecute<Args, Output> = (
  *
  * The resolved value is the stitch's validated output — exactly what the model
  * should see. A failure rejects, so the AI SDK's tool-error handling reports it.
+ *
+ * @experimental
  */
 export function stitchExecute<
     S extends StitchLike<unknown, never>,
@@ -76,6 +98,12 @@ export function stitchExecute<
     stitch: S,
     toInput?: (args: Args) => QueryInput<S>,
 ): ToolExecute<Args, QueryOutput<S>>;
+/**
+ * The explicit-types form of {@link stitchExecute}: `stitch` is any `StitchLike<T, Input>`, and the
+ * output, input and tool-argument types are named as type arguments instead of read off `stitch`.
+ *
+ * @experimental
+ */
 export function stitchExecute<T, Input = unknown, Args = Input>(
     stitch: StitchLike<T, Input>,
     toInput?: (args: Args) => Input,
@@ -92,8 +120,12 @@ export function stitchExecute<T>(
 // stitchTool — the full tool object
 // ---------------------------------------------------------------------------
 
-/** A tool object compatible with the Vercel AI SDK's `tools` map, carrying both the
- * v4 (`parameters`) and v5 (`inputSchema`) schema keys. */
+/**
+ * A tool object compatible with the Vercel AI SDK's `tools` map, carrying both the
+ * v4 (`parameters`) and v5 (`inputSchema`) schema keys.
+ *
+ * @experimental
+ */
 export interface StitchTool<Args, Output> {
     description?: string;
     /** AI SDK v4 schema key. */
@@ -103,6 +135,12 @@ export interface StitchTool<Args, Output> {
     execute: ToolExecute<Args, Output>;
 }
 
+/**
+ * The envelope form of the second argument to {@link stitchTool}: the schema the model fills, an
+ * optional description, and an optional mapping onto the stitch input.
+ *
+ * @experimental
+ */
 export interface StitchToolOptions<Args, Input> {
     /** The tool description the model reads to decide when to call it. */
     description?: string;
@@ -117,6 +155,8 @@ export interface StitchToolOptions<Args, Input> {
  * schema, an AI SDK `Schema`, …) that does NOT carry an `inputSchema` key. An object
  * that DOES carry one is read as the {@link StitchToolOptions} envelope instead;
  * that key is what tells the two apart.
+ *
+ * @experimental
  */
 export type StitchToolSchema = object & { inputSchema?: never };
 
@@ -161,6 +201,8 @@ function isToolOptions(
  *
  * Works with AI SDK v4 (reads `parameters`) and v5 (reads `inputSchema`) — the tool
  * carries both.
+ *
+ * @experimental
  */
 export function stitchTool<
     S extends StitchLike<unknown, never>,
@@ -169,14 +211,33 @@ export function stitchTool<
     stitch: S,
     options: StitchToolOptions<Args, QueryInput<S>>,
 ): StitchTool<Args, QueryOutput<S>>;
+/**
+ * The explicit-types form of {@link stitchTool} with an options object: `stitch` is any
+ * `StitchLike<T, Input>`, and the output, input and tool-argument types are named as type
+ * arguments instead of read off `stitch`.
+ *
+ * @experimental
+ */
 export function stitchTool<T, Input = unknown, Args = Input>(
     stitch: StitchLike<T, Input>,
     options: StitchToolOptions<Args, Input>,
 ): StitchTool<Args, T>;
+/**
+ * The positional-schema shorthand of {@link stitchTool}: `stitchTool(stitch, schema)` is
+ * `stitchTool(stitch, { inputSchema: schema })`, with the tool's types read off `stitch`.
+ *
+ * @experimental
+ */
 export function stitchTool<S extends StitchLike<unknown, never>>(
     stitch: S,
     inputSchema: StitchToolSchema,
 ): StitchTool<QueryInput<S>, QueryOutput<S>>;
+/**
+ * The explicit-types form of the positional-schema shorthand of {@link stitchTool}:
+ * `stitchTool(stitch, schema)` over any `StitchLike<T, Input>`.
+ *
+ * @experimental
+ */
 export function stitchTool<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     inputSchema: StitchToolSchema,
