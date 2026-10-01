@@ -163,15 +163,28 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  * Internal — the entry exports the namespace, not this.
  *
  * Verify that a {@link StitchStore} implementation honors the store contract
- * the engine relies on for throttle counters and auth/session state:
+ * the engine relies on for throttle state, the response cache and auth/session
+ * state. The rules come in four groups, one per capability, and a group runs
+ * only when the store HAS that capability — only `get`/`set` are required, so
+ * a store passes by honoring the groups it implements (#882):
  *
- * - `set`/`get` round-trips a value; a missing key resolves to `undefined`;
- *   a second `set` overwrites; writes are isolated by key.
- * - `set(key, value, ttl)` expires the value after `ttl` ms; a `set` without
- *   `ttl` does not expire.
- * - `increment(key, ttl)` initializes a missing key to 1, increments an existing
- *    counter, is ATOMIC within a process (20 concurrent calls return
- *    1..20 exactly), and restarts at 1 once its TTL window lapses.
+ * - **base** (always) — `set`/`get` round-trips a value; a missing key
+ *   resolves to `undefined`; a second `set` overwrites; `set(key, undefined)`
+ *   deletes; writes are isolated by key. `set(key, value, ttl)` expires the
+ *   value after `ttl` ms; a `set` without `ttl` does not expire.
+ * - **counter** (`increment`) — initializes a missing key to 1, increments an
+ *   existing counter, is ATOMIC within a process (20 concurrent calls return
+ *   1..20 exactly), restarts at 1 once its TTL window lapses, and counters are
+ *   isolated by key.
+ * - **pacing** (`reserve`, ADR 0024) — the GCRA cell's arithmetic, atomicity
+ *   and key isolation.
+ * - **lease** (`lease` + `release`, ADR 0025) — the semaphore's cap, release,
+ *   renewal, expiry, idempotent release, atomicity and key isolation. Checked
+ *   only when BOTH verbs are present, since the contract pairs them.
+ *
+ * A missing group is not a violation, so the report alone does not tell you a
+ * verb went missing: a store that ships a capability should also assert it is
+ * there (`typeof store.increment === 'function'`) beside its conformance run.
  *
  * TTL rules use real timers with a small window (default 60ms); raise
  * `opts.ttl` for backends with coarser expiry. Keys are namespaced per run,
@@ -281,85 +294,100 @@ async function verifyStoreContract(
             },
         ],
         [
-            'increment: initializes a missing key to 1',
-            async () => {
-                const first = await store.increment(k('init'), 5_000);
-                if (first !== 1) {
-                    throw new Error(`expected 1, got ${show(first)}`);
-                }
-            },
-        ],
-        [
-            'increment: increments an existing counter',
-            async () => {
-                await store.increment(k('seq'), 5_000);
-                const second = await store.increment(k('seq'), 5_000);
-                if (second !== 2) {
-                    throw new Error(`expected 2, got ${show(second)}`);
-                }
-            },
-        ],
-        [
-            'increment: 20 concurrent calls net exactly +20',
-            async () => {
-                const results = await Promise.all(
-                    Array.from({ length: 20 }, () =>
-                        store.increment(k('atomic'), 5_000),
-                    ),
-                );
-                const sorted = [...results].sort((a, b) => a - b);
-                const wanted = Array.from({ length: 20 }, (_, i) => i + 1);
-                expectDeepEqual(
-                    sorted,
-                    wanted,
-                    'sorted results of 20 concurrent increments (non-atomic stores collide)',
-                );
-            },
-        ],
-        [
-            'increment: the counter expires after its ttl',
-            async () => {
-                await store.increment(k('window'), ttlMs);
-                await sleep(ttlMs + 50);
-                const restarted = await store.increment(k('window'), ttlMs);
-                if (restarted !== 1) {
-                    throw new Error(
-                        `expected a fresh window to restart at 1, got ${show(restarted)}`,
-                    );
-                }
-            },
-        ],
-        [
             'keys: writes are isolated by key',
             async () => {
                 await store.set(k('iso-a'), 'a');
                 await store.set(k('iso-b'), 'b');
-                // Counters live under their own keys, never a shared one:
-                // iso-n's first increment lands at 1, an increment on a different
-                // key (iso-m) must not advance it, so iso-n's next increment is 2.
-                const isoN = await store.increment(k('iso-n'), 5_000);
-                if (isoN !== 1) {
-                    throw new Error(
-                        `expected iso-n to start at 1, got ${show(isoN)}`,
-                    );
-                }
-                const isoM = await store.increment(k('iso-m'), 5_000);
-                if (isoM !== 1) {
-                    throw new Error(
-                        `expected iso-m to start at 1, got ${show(isoM)}`,
-                    );
-                }
-                const isoNAgain = await store.increment(k('iso-n'), 5_000);
-                if (isoNAgain !== 2) {
-                    throw new Error(
-                        `increment on iso-m leaked into iso-n: expected 2, got ${show(isoNAgain)}`,
-                    );
-                }
                 expectDeepEqual(await store.get(k('iso-a')), 'a', 'iso-a');
                 expectDeepEqual(await store.get(k('iso-b')), 'b', 'iso-b');
             },
         ],
     ];
+
+    // The counter is OPTIONAL too (#882): nothing in core needs it but the throttle's counter
+    // fallback, and a get/set-only backend (Workers KV) has no atomic read-modify-write to build
+    // one from. Same rule as the two capabilities below — checked only when the store claims it,
+    // and held to the same meaning by every store that does.
+    if (store.increment) {
+        const increment = store.increment.bind(store);
+        rules.push(
+            [
+                'increment: initializes a missing key to 1',
+                async () => {
+                    const first = await increment(k('init'), 5_000);
+                    if (first !== 1) {
+                        throw new Error(`expected 1, got ${show(first)}`);
+                    }
+                },
+            ],
+            [
+                'increment: increments an existing counter',
+                async () => {
+                    await increment(k('seq'), 5_000);
+                    const second = await increment(k('seq'), 5_000);
+                    if (second !== 2) {
+                        throw new Error(`expected 2, got ${show(second)}`);
+                    }
+                },
+            ],
+            [
+                'increment: 20 concurrent calls net exactly +20',
+                async () => {
+                    const results = await Promise.all(
+                        Array.from({ length: 20 }, () =>
+                            increment(k('atomic'), 5_000),
+                        ),
+                    );
+                    const sorted = [...results].sort((a, b) => a - b);
+                    const wanted = Array.from({ length: 20 }, (_, i) => i + 1);
+                    expectDeepEqual(
+                        sorted,
+                        wanted,
+                        'sorted results of 20 concurrent increments (non-atomic stores collide)',
+                    );
+                },
+            ],
+            [
+                'increment: the counter expires after its ttl',
+                async () => {
+                    await increment(k('window'), ttlMs);
+                    await sleep(ttlMs + 50);
+                    const restarted = await increment(k('window'), ttlMs);
+                    if (restarted !== 1) {
+                        throw new Error(
+                            `expected a fresh window to restart at 1, got ${show(restarted)}`,
+                        );
+                    }
+                },
+            ],
+            [
+                'increment: counters are isolated by key',
+                async () => {
+                    // Counters live under their own keys, never a shared one: iso-n's first
+                    // increment lands at 1, an increment on a different key (iso-m) must not
+                    // advance it, so iso-n's next increment is 2.
+                    const isoN = await increment(k('iso-n'), 5_000);
+                    if (isoN !== 1) {
+                        throw new Error(
+                            `expected iso-n to start at 1, got ${show(isoN)}`,
+                        );
+                    }
+                    const isoM = await increment(k('iso-m'), 5_000);
+                    if (isoM !== 1) {
+                        throw new Error(
+                            `expected iso-m to start at 1, got ${show(isoM)}`,
+                        );
+                    }
+                    const isoNAgain = await increment(k('iso-n'), 5_000);
+                    if (isoNAgain !== 2) {
+                        throw new Error(
+                            `increment on iso-m leaked into iso-n: expected 2, got ${show(isoNAgain)}`,
+                        );
+                    }
+                },
+            ],
+        );
+    }
 
     // `reserve` is OPTIONAL (ADR 0024) — an eventually-consistent backend has no atomic
     // read-compute-write to build the cell from, and a store without it is fully supported. So

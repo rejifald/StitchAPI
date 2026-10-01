@@ -2300,15 +2300,34 @@ export interface TraceSink {
     flush?(): void | Promise<void>;
 }
 
-// A pluggable state store for throttle counters + auth session/token state. Default is
-// in-memory (single process). A Redis/Postgres adapter makes throttle distributed and
-// sessions persistent/shared across workers — see DESIGN.md §13.
+// A pluggable state store for throttle state, the response cache + auth session/token state.
+// Default is in-memory (single process). A Redis/Postgres adapter makes throttle distributed and
+// sessions persistent/shared across workers — see DESIGN.md §13. Only `get`/`set` are required;
+// every other verb is a CAPABILITY a feature uses when the store has it (the table is on the
+// "Distributed stores" docs page).
 export interface StitchStore {
     get(key: string): Promise<unknown>;
-    /** Set a value. `ttl` (ms) is optional on both verbs — absent means no expiry. */
+    /** Set a value. `ttl` (ms) is optional here and on `increment` — absent means no expiry. */
     set(key: string, value: unknown, ttl?: number): Promise<void>;
-    /** Atomically increment a counter. Absent `ttl` means no window — the counter never expires. */
-    increment(key: string, ttl?: number): Promise<number>;
+    /**
+     * Atomically increment a counter and resolve to the new count — a missing (or lapsed) key
+     * starts at 1. `ttl` (ms) binds to the increment that CREATES the counter and never extends,
+     * so a busy fixed window still resets; absent `ttl` means no window — it never expires.
+     *
+     * **Optional**, like {@link StitchStore.reserve} and {@link StitchStore.lease}: a store is a
+     * first-class citizen with only `get`/`set`. What it buys is the throttle's counter fallback —
+     * on a store with no `reserve`, `rate` allocates fleet-shared slots from it (ADR 0023). What
+     * degrades without it: with neither `reserve` nor `increment`, `rate` paces **per process**
+     * (each process keeps the declared spacing, so N processes emit N×), and the throttle says so
+     * once with an `info` event, topic `throttle.per-process`. Nothing else in core needs it —
+     * bulk cache invalidation writes a fresh generation with `set`.
+     *
+     * Two reasons it is not required: an eventually-consistent backend (Cloudflare Workers KV) has
+     * no atomic read-modify-write to build a counter from, and `StitchStore` is a contract
+     * **consumers implement**, so every required member is one more thing a get/set backend has to
+     * fake. Callers reach it with `store.increment?.(…)` or a presence check.
+     */
+    increment?(key: string, ttl?: number): Promise<number>;
     /**
      * Atomically reserve the next slot on a shared **pacing cursor** and resolve to the instant
      * reserved (epoch ms). One read-compute-write, indivisible across every process on the store:
@@ -2325,10 +2344,11 @@ export interface StitchStore {
      *
      * **Optional**, and a store is a first-class citizen without it. `createStoreThrottle` falls
      * back to `increment` plus a per-process cursor, which paces each process correctly and lets a
-     * fleet drift to N× mid-window (ADR 0023). Two reasons it is not required: an
-     * eventually-consistent backend (Cloudflare KV) has no atomic read-compute-write to build it
-     * from, and `StitchStore` is a contract **consumers implement**, where adding a required member
-     * is a hard break in any channel
+     * fleet drift to N× mid-window (ADR 0023) — and, on a store with no `increment` either, to the
+     * per-process cursor alone, announced once (`throttle.per-process`). Two reasons it is not
+     * required: an eventually-consistent backend (Cloudflare KV) has no atomic read-compute-write
+     * to build it from, and `StitchStore` is a contract **consumers implement**, where adding a
+     * required member is a hard break in any channel
      * ([CONTRACT.md P19](../../../docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)).
      *
      * `now` is the CALLER's clock, not the store's, so the cursor stays deterministic under an
@@ -2378,7 +2398,8 @@ export interface StitchStore {
      * `concurrency`. Size `throttle.lease` above your slowest call.
      *
      * **Optional, and paired** with {@link StitchStore.release} — a store MUST implement both or
-     * neither. Without them `concurrency` stays per-process, exactly as it was before ADR 0025.
+     * neither. Without them `concurrency` stays per-process, exactly as it was before ADR 0025,
+     * and the throttle says so once with an `info` event, topic `throttle.per-process`.
      * Same two reasons as {@link StitchStore.reserve}: an eventually-consistent backend cannot make
      * this atomic, and a required member on a consumer-implemented contract is a hard break in any
      * channel ([CONTRACT.md P19](../../../docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)).

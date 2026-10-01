@@ -1,13 +1,14 @@
 ---
 title: 'The pluggable store'
-description: 'Swap the in-memory store for a shared one to back throttle and sessions with get/set/increment + TTL.'
+description: 'Swap the in-memory store for a shared one to back throttle, cache and sessions — get/set + TTL, plus the optional verbs that make a throttle fleet-wide.'
 prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 Swap the in-memory store for a shared one when you want throttle counters and
 auth sessions to live outside a single process — back them with Redis, Postgres,
-or anything else by implementing three async methods and attaching it via
-`store`.
+or anything else by implementing two async methods, `get` and `set`, and attaching
+it via `store`. A few more are optional capabilities you add when your backend can
+do them atomically.
 
 ## Example
 
@@ -15,7 +16,8 @@ or anything else by implementing three async methods and attaching it via
 import { stitch } from 'stitchapi';
 import type { StitchStore } from 'stitchapi';
 
-// A StitchStore is just three async methods + TTL — back it with anything.
+// A StitchStore is `get` + `set` with TTL — back it with anything. `increment`
+// is one of the optional capabilities: add it only if your backend has an atomic counter.
 const sharedStore: StitchStore = {
     async get(key) {
         /* read from your shared backend */
@@ -45,11 +47,21 @@ const getUser = stitch({
 
 ## Options
 
-A store is the `StitchStore` contract — three async methods: `get(key)` returns
-the value or `undefined`, `set(key, value, ttl?)` writes with an optional
-expiry, and `increment(key, ttl)` is an atomic counter scoped to a TTL window. The
-runtime holds two kinds of state behind this interface: throttle counters (the
-even-spaced rate counter) and auth session/token state (captured cookies and
+A store is the `StitchStore` contract. Two async methods are required: `get(key)`
+returns the value or `undefined`, and `set(key, value, ttl?)` writes with an
+optional expiry (`set(key, undefined)` deletes). Everything else is an optional
+**capability** the runtime uses when it's there:
+
+- `increment(key, ttl?)` — an atomic counter scoped to a TTL window, the throttle's
+  fallback for pacing `rate` across processes;
+- `reserve(...)` — the atomic pacing cursor that makes `rate` exact fleet-wide;
+- `lease(...)` / `release(...)` — a semaphore that makes `concurrency` fleet-wide.
+
+Leave out what your backend can't do atomically: the throttle falls back to
+per-process limits and emits one `throttle.per-process` `info` event saying so. The
+[capability table](/docs/integrations/stores#capabilities) shows what each store
+implements. The runtime keeps three kinds of state behind this interface: throttle
+state, the response cache, and auth session/token state (captured cookies and
 refreshed tokens).
 
 The default is `memoryStore()` — single process, in-memory. It works until you
@@ -63,8 +75,9 @@ and a captured session is written once and replayed everywhere, so workers don't
 each re-run the login — see [Shared sessions](/docs/guides/state/shared-sessions).
 
 <Callout type="info">
-    Concurrency limits stay in-process even with a shared store; only the rate
-    counter is distributed. See [throttle](/docs/guides/resilience/throttle).
+    Concurrency limits go fleet-wide only when the store implements the lease
+    pair; without it they stay in-process. See [Distributed
+    throttle](/docs/guides/state/distributed-throttle).
 </Callout>
 
 ## See also

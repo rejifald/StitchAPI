@@ -12,12 +12,15 @@
 // custom proxy is a drop-in. The package is Web-API only (no `node:*`), so it runs
 // in a Worker, in Pages Functions, and in any other edge runtime.
 //
-// !! THE atomic-increment GAP !! Workers KV has NO atomic increment — only
-// last-write-wins `get`/`put`/`delete`. Distributed throttle counters need an
-// atomic read-modify-write, which KV cannot provide, so {@link cloudflareKvStore}'s
-// `increment` THROWS (see below). Use a Durable Object-backed store for distributed
-// throttle; KV remains correct for cache + shared sessions/tokens, which is the
-// overwhelmingly common edge need.
+// A get/set-only store, on purpose. Workers KV is last-write-wins `get`/`put`/
+// `delete` with no atomic read-modify-write, so it cannot honestly offer any of the
+// StitchStore contract's OPTIONAL capabilities — the `increment` counter, the
+// `reserve` pacing cell or the `lease`/`release` semaphore — and this store omits
+// all three rather than fake them (#882). Every feature uses a capability only when
+// the store has it: cache (bulk invalidation included) and shared sessions/tokens
+// are fully supported; a `throttle` paces PER PROCESS and says so once with an
+// `info` event (topic `throttle.per-process`). For a fleet-wide throttle at the
+// edge, use a Durable Object-backed store or the Redis driver over Upstash.
 import type { StitchStore } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
@@ -58,16 +61,6 @@ export interface KVNamespaceLike {
 // 5s simply lives for 60s, which is harmless for caches and sessions.
 const KV_MIN_TTL_SECONDS = 60;
 
-// Surfaced when `increment` is called: Workers KV has no atomic counter, so honoring it
-// would silently undercount under concurrency and break rate limiting. Failing
-// loud (and pointing at the fix) is the only safe behavior.
-const INCREMENT_UNSUPPORTED =
-    'increment() is not supported on Cloudflare Workers KV: KV has no atomic ' +
-    'read-modify-write, so a distributed counter would undercount under ' +
-    'concurrency and silently break rate limiting. Back the throttle with a ' +
-    'Durable Object-based StitchStore instead; KV remains correct for cache ' +
-    'and shared sessions/tokens (get/set).';
-
 // ---------------------------------------------------------------------------
 // the store
 // ---------------------------------------------------------------------------
@@ -102,10 +95,10 @@ export interface CloudflareKvStoreOptions {
  * second-resolution `expirationTtl` and floored to KV's 60s minimum. `set(key,
  * undefined)` deletes the key (the cache's delete, ADR 0003 §8).
  *
- * **`increment` is unsupported and throws.** Workers KV offers no atomic increment, so
- * a distributed throttle counter cannot be implemented correctly on it — see the
- * module header. Use a Durable Object-backed store for distributed throttle; KV is
- * the right backend for the read-heavy halves (cache + shared sessions/tokens).
+ * **Only `get`/`set`.** KV has no atomic read-modify-write, so the store has no
+ * `increment`, `reserve` or `lease`/`release` — see the module header for what
+ * that means per feature. KV is also eventually consistent: a write (a cache
+ * bulk-invalidation included) can take ~60s to be visible in every location.
  *
  * The store owns no connection, so there is no `close()`.
  */
@@ -145,10 +138,6 @@ export function cloudflareKvStore(
                 Math.ceil(ttl / 1000),
             );
             await kv.put(k(key), body, { expirationTtl });
-        },
-        increment() {
-            // Fail loud, not silent: see INCREMENT_UNSUPPORTED.
-            return Promise.reject(new Error(INCREMENT_UNSUPPORTED));
         },
     };
 }

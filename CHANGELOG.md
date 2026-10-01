@@ -11,6 +11,68 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **A throttle that cannot be fleet-wide on its store says so, once — an `info` event, topic
+  `throttle.per-process`.** ([#725](https://github.com/rejifald/StitchAPI/issues/725)) A shared
+  store makes `rate` fleet-wide through `reserve` (or the `increment` counter fallback) and
+  `concurrency` through the `lease`/`release` pair. A store without those verbs degraded to
+  per-process limits in silence: no console line, no trace event, and `.report()` echoed the
+  declaration unchanged, so nothing answered "is my limiter fleet-wide right now?". Now the first
+  acquire of a store-backed throttle that falls back emits one `info` event naming the limit and the
+  missing verbs — `rate: the store has no reserve or increment`,
+  `concurrency: the store has no lease/release`, joined by `; ` when both apply. Once per throttle
+  (a seam bucket, a member's own throttle), never per call; a store with the verbs, and a stitch
+  with no `store` at all, emit nothing. `StitchEvent`'s `info.topic` is an open `string`, so this is
+  a new topic value, not a type change.
+
+### Changed
+
+- **BREAKING CHANGE: `StitchStore.increment` is optional — a store needs only `get` and `set`.**
+  ([#882](https://github.com/rejifald/StitchAPI/issues/882)) `increment` joins `reserve` and the
+  lease pair as a capability a feature uses when the store has it. It was required, yet
+  `@stitchapi/cloudflare-kv` could only reject it, because Workers KV has no atomic read-modify-write
+  — so throttle `rate` and bulk cache invalidation both failed at runtime on a first-party store.
+  Each feature now handles the absence:
+
+    - **Bulk cache invalidation needs no counter.** `cache.invalidate()` / `seam.invalidate()` write
+      a fresh random integer generation with `set` instead of incrementing it — a generation only
+      has to change. Generations a counter wrote before keep their numeric prefix, so no cached entry
+      is stranded before its next bump, and a process still on the counter version reads the new
+      value too.
+    - **Throttle `rate` falls back reserve → increment → in-process pacing.** With neither verb, each
+      process paces on its own cursor (the in-process limiter's spacing, so a fleet of N emits N×),
+      announced once by the `throttle.per-process` event above.
+    - **`vaultView` forwards `increment` only when the backend has it**, as it already did for
+      `reserve` and the lease pair, so a view never advertises a counter its backend lacks.
+
+    Migration: code that calls the verb directly on a `StitchStore`-typed value now needs
+    `store.increment?.(key, ttl)` or a presence check; stores that implement it are unaffected.
+
+- **BREAKING CHANGE (`@stitchapi/cloudflare-kv`): `cloudflareKvStore` has no `increment`.** The
+  rejecting stub and its `INCREMENT_UNSUPPORTED` message are gone: the store implements exactly
+  `get`/`set`, the two verbs Workers KV can honour. Cache (bulk invalidation included) and sessions
+  work fully; a `throttle` over it now paces per isolate and emits `throttle.per-process` instead of
+  throwing on the first rate-limited call. The package now runs `conformance.store` (base group) in
+  its own tests, and its README documents KV's ~60 s write propagation, which bounds how fast a cache
+  invalidation is seen elsewhere.
+
+- **`conformance.store` checks the capabilities a store has.** (`stitchapi/testing`) The rules are
+  four groups — **base** (`get`/`set`, always), **counter** (`increment`), **pacing** (`reserve`)
+  and **lease** (`lease` + `release`) — and a group runs only when the store implements its verbs,
+  so a `get`/`set` store passes on the base group. The entry name and signature are unchanged. One
+  rule moved: `keys: writes are isolated by key` now covers `set` only, and the counter half is the
+  new `increment: counters are isolated by key`. A missing group is not a violation, so a store that
+  ships a capability should also assert it is present beside its conformance run.
+
+### Fixed
+
+- **`nestBorrowStore` forwards every capability the store has.** (`@stitchapi/nest`) It hard-coded
+  `get`/`set`/`increment`, so a borrowed store lost `reserve` and the lease pair and a seam over it
+  ran `rate` on the counter fallback and `concurrency` per process — silently, since the app's store
+  did have the verbs. It now forwards `increment`, `reserve` and the `lease`/`release` pair only when
+  present (the pair together or not at all), and still omits `close`.
+
 ## [1.0.0-rc.8] — 2026-09-17
 
 ### Added

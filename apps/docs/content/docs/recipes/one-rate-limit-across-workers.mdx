@@ -38,11 +38,13 @@ the limit alone and the fleet runs at `10/s × workers`. Point `store` at one
 shared backend and the rate counter becomes a single fixed-window count every
 worker increments — one `10/s` budget across the fleet. `pool: 'host'` keys the
 budget by origin, so every stitch hitting the host pools into it; workers share
-only when they point at the same store and resolve to the same key. (Concurrency
-stays in-process; only the rate limit is distributed.) A
-[`StitchStore`](/docs/guides/state/pluggable-store) is three async methods —
-`get` / `set` / `increment` with TTL — backed by anything; the same store also gives
-you [shared auth sessions](/docs/guides/state/shared-sessions).
+only when they point at the same store and resolve to the same key. A
+[`StitchStore`](/docs/guides/state/pluggable-store) needs only `get` / `set` with
+TTL; the throttle goes fleet-wide through the optional verbs a store adds
+(`reserve`, `increment`, the lease pair — see the
+[capability table](/docs/integrations/stores#capabilities)), and says so once when
+it can't. The same store also gives you
+[shared auth sessions](/docs/guides/state/shared-sessions).
 
 ## See also
 

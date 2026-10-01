@@ -82,7 +82,7 @@ That single requirement decides the fit:
 
 For a fleet of **servers**, reach for Redis: it has a real atomic `INCR`, so the counters increment exactly once and the limiter paces evenly across the fleet. Deno KV gives the same guarantee through a compare-and-set loop, and on Deno Deploy the same handle is replicated globally — a natural fit at the edge.
 
-**Workers KV is the honest exception.** It's last-write-wins `get`/`put` with no atomic increment, so a throttle counter on it would undercount under concurrency and silently break the cap. Rather than pretend, `cloudflareKvStore(...).increment(...)` throws a documented error. KV stays the right backend for the read-heavy halves — **cache and shared sessions** — which is usually exactly what an edge handler needs. For a distributed _throttle_ at the edge, pair KV with a Cloudflare Durable Object (the single-writer counter an atomic increment requires) or run the Redis driver over Upstash's HTTP API.
+**Workers KV is the honest exception.** It's last-write-wins `get`/`put` with no atomic increment, so a throttle counter on it would undercount under concurrency and silently break the cap. Rather than pretend, `cloudflareKvStore` implements only `get`/`set`; a throttle over it holds per isolate and says so once with a `throttle.per-process` event. KV stays the right backend for the read-heavy halves — **cache and shared sessions** — which is usually exactly what an edge handler needs. For a distributed _throttle_ at the edge, pair KV with a Cloudflare Durable Object (the single-writer counter an atomic increment requires) or run the Redis driver over Upstash's HTTP API.
 
 <Callout type="info">
     The deciding question isn't "server or edge" — it's "do I need a shared

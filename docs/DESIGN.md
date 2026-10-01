@@ -488,7 +488,7 @@ The two gaps both audits flagged _critical_ — distributed rate limiting and pe
 interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
     set(key: string, value: unknown, ttl?: number): Promise<void>;
-    increment(key: string, ttl?: number): Promise<number>; // atomic — for rate windows
+    increment?(key: string, ttl?: number): Promise<number>; // optional atomic counter — rate fallback (#882)
 }
 
 const api = seam({

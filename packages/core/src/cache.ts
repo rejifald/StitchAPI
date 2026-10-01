@@ -286,7 +286,7 @@ export class InflightCoalescer<T> {
 // inherits no eviction obligation).
 
 const NS = 'cache:';
-const GEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // generation counters effectively never expire
+const GEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // generations effectively never expire
 const cacheGenKey = `${NS}gen`;
 const stitchGenKey = (id: string): string => `${NS}gen:${id}`;
 
@@ -297,13 +297,24 @@ export function cacheStitchId(cfg: { name?: string; path?: string }): string {
 
 /** Bulk invalidation primitive used by the seam surface: bump the cache-wide generation (no id)
  *  or one stitch's generation. Every prior-generation entry becomes unreachable and TTLs out —
- *  no key enumeration, no SCAN, no store-contract extension. */
+ *  no key enumeration, no SCAN, no store-contract extension.
+ *
+ *  A bump only has to CHANGE the generation, never count, so it is a plain `set` of a fresh random
+ *  integer (#882) — which works on every store, including a get/set-only one with no `increment`.
+ *  An integer, not a string token, on purpose: the read side below already folds a number into
+ *  the prefix, so generations a counter wrote before this keep their prefix (nothing stranded),
+ *  and a process still running the counter version reads the new value too. 2^53 values make a
+ *  repeat — the only way a bump could fail to move the bucket — not worth guarding.
+ *
+ *  On an eventually-consistent store the bump is only as fast as the store: Workers KV can take
+ *  ~60s to show it in every location, and until then a stale reader still serves the old bucket. */
 export async function bumpCacheGeneration(
     store: StitchStore,
     stitchId?: string,
 ): Promise<void> {
-    await store.increment(
+    await store.set(
         stitchId ? stitchGenKey(stitchId) : cacheGenKey,
+        Math.floor(Math.random() * 2 ** 53),
         GEN_TTL_MS,
     );
 }
@@ -395,8 +406,8 @@ export function createCache(opts: CacheControllerOptions): CacheController {
     // output/transform/pick + cache options: the GENERATION token (a changed output schema /
     // pick / versioned transform yields a new token → a new bucket → old entries unreachable),
     // the POLICY (fast / revalidate / refuse), and a human-readable REASON for traces. The token is
-    // folded into the namespace ALONGSIDE the per-stitch generation counter (decision 8) — it does
-    // not replace it: bulk-invalidate bumps the counter, a schema change bumps this token.
+    // folded into the namespace ALONGSIDE the per-stitch generation (decision 8) — it does not
+    // replace it: bulk-invalidate bumps the generation, a schema change bumps this token.
     const fp = resolveFingerprint({
         output: opts.output,
         transform: opts.transform,

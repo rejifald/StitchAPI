@@ -278,6 +278,18 @@ function upstashFacade(engine: FakeRedisEngine): UpstashLike {
 // --- the hermetic contract runs -------------------------------------------
 
 describe('@stitchapi/redis store contract', () => {
+    // The kit runs a capability group only when the store HAS the verb (#882), so a store that
+    // quietly lost one would still pass — pin the capabilities this store ships.
+    test('ships the capabilities it claims: increment, reserve, lease, release', () => {
+        const store = redisStore(
+            fromIoredis(ioredisFacade(new FakeRedisEngine())),
+        );
+        expect(typeof store.increment).toBe('function');
+        expect(typeof store.reserve).toBe('function');
+        expect(typeof store.lease).toBe('function');
+        expect(typeof store.release).toBe('function');
+    });
+
     test('redisStore(fromIoredis(...)) passes the store contract', async () => {
         conformance.assert(
             await conformance.store(() =>
@@ -336,11 +348,11 @@ describe('increment without a ttl never expires (no window)', () => {
     test.each(stores)('%s', async (_name, makeStore) => {
         const store = makeStore();
         // A windowed counter alongside proves the wait outlives a real window.
-        await store.increment('windowed', 40);
-        expect(await store.increment('unwindowed')).toBe(1);
+        await store.increment!('windowed', 40);
+        expect(await store.increment!('unwindowed')).toBe(1);
         await new Promise((resolve) => setTimeout(resolve, 90));
-        expect(await store.increment('windowed', 40)).toBe(1); // window expired → restart
-        expect(await store.increment('unwindowed')).toBe(2); // no window → still counting
+        expect(await store.increment!('windowed', 40)).toBe(1); // window expired → restart
+        expect(await store.increment!('unwindowed')).toBe(2); // no window → still counting
     });
 });
 
@@ -377,9 +389,9 @@ describe.skipIf(!REDIS_URL)('against a real Redis (REDIS_URL)', () => {
         const store = redisStore(fromIoredis(client));
         const key = `stitch-conformance:no-window-${Date.now().toString(36)}`;
         try {
-            await store.increment(key);
+            await store.increment!(key);
             await new Promise((resolve) => setTimeout(resolve, 90));
-            expect(await store.increment(key)).toBe(2); // no window → still counting
+            expect(await store.increment!(key)).toBe(2); // no window → still counting
         } finally {
             await store.set(key, undefined); // drop the immortal counter
             await client.quit();

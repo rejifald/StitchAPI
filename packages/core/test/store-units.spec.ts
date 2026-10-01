@@ -27,9 +27,9 @@ describe('memoryStore (key/value contract)', () => {
 
     test('increment starts at 1 and increments the same key atomically', async () => {
         const s = memoryStore();
-        expect(await s.increment('c', 1000)).toBe(1);
-        expect(await s.increment('c', 1000)).toBe(2);
-        expect(await s.increment('c', 1000)).toBe(3);
+        expect(await s.increment!('c', 1000)).toBe(1);
+        expect(await s.increment!('c', 1000)).toBe(2);
+        expect(await s.increment!('c', 1000)).toBe(3);
     });
 
     test('close() clears all state', async () => {
@@ -48,7 +48,7 @@ describe('vaultView (namespaced lens)', () => {
         expect(await backend.get('vault:token')).toBe('abc'); // stored under the prefix
         expect(await backend.get('token')).toBeUndefined(); // not under the bare key
         expect(await vault.get('token')).toBe('abc'); // read back through the lens
-        await vault.increment('count', 1000);
+        await vault.increment!('count', 1000);
         expect(await backend.get('vault:count')).toBe(1);
     });
 

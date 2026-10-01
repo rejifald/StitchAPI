@@ -119,6 +119,25 @@ describe('conformance.store', () => {
         }).not.toThrow();
     });
 
+    test('a get/set-only store passes on the base group alone (#882)', async () => {
+        // Only `get`/`set` are required; each capability group runs only when the store has
+        // the verbs, so a store without `increment`, `reserve` or the lease pair is conforming.
+        const report = await conformance.store(() => {
+            const base = memoryStore();
+            return {
+                get: (k) => base.get(k),
+                set: (k, v, ttl) => base.set(k, v, ttl),
+            };
+        });
+        expect(report.violations).toEqual([]);
+        expect(report.passed).toContain('keys: writes are isolated by key');
+        expect(
+            report.passed.filter((r) =>
+                /^(increment|reserve|lease|release):/.test(r),
+            ),
+        ).toEqual([]);
+    });
+
     test('a broken store yields the expected NAMED violations without throwing', async () => {
         const report = await conformance.store(brokenStore);
         expect(report.ok).toBe(false);

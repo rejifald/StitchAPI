@@ -161,7 +161,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Read-through caching** — opt-in response cache + in-process coalescing, keyed by a derived, principal-scoped key, loaded lazily from `stitchapi/cache`.
 - **Auth as a boundary** — `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login/re-login), `oauth2`; secrets resolve at call time and never reach the caller.
 - **Any request style** — `http` by default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer surfaces behind subpath imports.
-- **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
+- **Pluggable state store** — throttle state, cache and sessions behind a `get`/`set` store with optional atomic verbs; swap in Redis/Postgres to go distributed.
 - **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 - **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
 - **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~25 kB min+gzip** for the whole entry, **~22 kB** for a typical `import { stitch }`.

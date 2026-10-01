@@ -290,14 +290,22 @@ describe('generation helpers', () => {
         expect(cacheStitchId({})).toBe('stitch');
     });
 
-    test('bumpCacheGeneration increments the cache-wide and per-stitch counters', async () => {
+    test('bumpCacheGeneration moves the cache-wide and per-stitch generations independently', async () => {
+        // A bump only has to CHANGE the generation (#882): a fresh integer written with `set`,
+        // so it needs no `increment` and every store can do it.
         const store = memoryStore();
         await bumpCacheGeneration(store);
+        const first = await store.get('cache:gen');
         await bumpCacheGeneration(store);
-        expect(await store.get('cache:gen')).toBe(2);
+        const second = await store.get('cache:gen');
+        expect(Number.isSafeInteger(first)).toBe(true);
+        expect(Number.isSafeInteger(second)).toBe(true);
+        expect(second).not.toBe(first);
 
         await bumpCacheGeneration(store, 'users');
-        expect(await store.get('cache:gen:users')).toBe(1);
-        expect(await store.get('cache:gen')).toBe(2); // untouched
+        expect(Number.isSafeInteger(await store.get('cache:gen:users'))).toBe(
+            true,
+        );
+        expect(await store.get('cache:gen')).toBe(second); // untouched
     });
 });

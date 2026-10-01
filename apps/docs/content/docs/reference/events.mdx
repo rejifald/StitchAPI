@@ -27,9 +27,15 @@ fields. Every event carries an `at` field — a millisecond timestamp.
 - **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
   `ProgressPhase`), `attempt` (1-based), `detail?`, `waited?` (set when the
   phase involved a wait, e.g. `throttled` or `retry`), `at`.
-- **`info`** — an auth strategy announcing a decision it made (e.g. which env
-  var a `bearer` token resolved from, or that `oauth2` fetched a token); it
-  never carries the secret itself. Fields: `topic`, `detail?`, `at`.
+- **`info`** — an announcement, never carrying a secret. Fields: `topic`,
+  `detail?`, `at`. An auth strategy uses it for a decision it made (topic
+  `auth` — which env var a `bearer` token resolved from, or that `oauth2`
+  fetched a token). The engine uses it for a teaching note:
+  `adapter.upload-progress-unsupported` when the transport can't report upload
+  progress, and `throttle.per-process` — once per throttle — when a `rate` or
+  `concurrency` limit can't be fleet-wide because the store lacks the verbs
+  (see the [capability table](/docs/integrations/stores#capabilities)). `topic`
+  is an open string, so a sink should ignore topics it doesn't know.
 - **`drift`** — a single contract-drift observation against the response.
   Fields: `finding` (a `DriftFinding` with `level`, `path`, `change`,
   `detail?`), `at`.
