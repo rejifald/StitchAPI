@@ -16,6 +16,7 @@ import type {
     SchemaLike,
 } from './infer';
 import type { Surface } from './surface';
+import { scrubUrl } from './util';
 import type { Validator } from './validator';
 
 /**
@@ -1970,7 +1971,9 @@ export type ResolvedStitchConfig = Omit<StitchConfig, NormalizedSlot | 'kind'> &
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
  * (and a seam as its shared `__config`). {@link redactConfig} produces it: the live, secret-bearing
  * handles are stripped (`auth`, `store`, `adapter`), the surface is normalised to its `id` string
- * (`kind`), and the auth's non-secret {@link SecurityScheme} is projected onto `authScheme`. It
+ * (`kind`), and the auth's non-secret {@link SecurityScheme} is projected onto `authScheme`. Literal
+ * secrets written straight into the config are scrubbed too: a string `url` / `baseUrl` / `path`
+ * loses its userinfo and secret query values, and a secret header value reads `[REDACTED]`. It
  * therefore round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` /
  * `diagram` / `stitch export --openapi` read.
  *
@@ -1990,6 +1993,10 @@ export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
  * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
  * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
  * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
+ *
+ * Safe to log as JSON: {@link StitchError.toJSON} serialises it to `{ name, message, status,
+ * attempts, url }` with the URL scrubbed — the upstream `body` (and a `RateLimitError`'s raw
+ * `response`) stay readable as properties but never ride `JSON.stringify(err)`.
  */
 export class StitchError extends Error {
     /** HTTP status when the failure came from a response; `undefined` for transport/internal errors. */
@@ -2000,10 +2007,16 @@ export class StitchError extends Error {
      * The parsed response body of the failing response (an API's `{ error: "..." }` payload),
      * when the failure came from an HTTP response; `undefined` for transport/internal errors. Only
      * populated on the awaited / `.safe()` path — it is carried over the non-enumerable error
-     * channel and so never serialises into a trace sink.
+     * channel and so never serialises into a trace sink. It is UNREDACTED upstream data, so
+     * {@link StitchError.toJSON} leaves it out: read `err.body` deliberately, never via
+     * `JSON.stringify(err)`.
      */
     readonly body?: unknown;
-    /** The final request URL (after redirects) of the failing response, when the transport exposes it. */
+    /**
+     * The final request URL (after redirects) of the failing response, when the transport exposes
+     * it. The live value, unscrubbed — {@link StitchError.toJSON} emits it with userinfo and secret
+     * query values (`api_key`, `access_token`, …) redacted.
+     */
     readonly url?: string;
     constructor(
         message: string,
@@ -2024,6 +2037,29 @@ export class StitchError extends Error {
         this.attempts = opts.attempts ?? 0;
         if (opts.body !== undefined) this.body = opts.body;
         if (opts.url !== undefined) this.url = opts.url;
+    }
+
+    /**
+     * The log-safe JSON view `JSON.stringify(err)` (and any logger that serialises through it)
+     * emits: `{ name, message, status, attempts, url }`. `message` is included — an `Error`'s own
+     * `message` is non-enumerable and would otherwise vanish — and `url` is scrubbed of userinfo
+     * and secret query values. The upstream `body` and a `RateLimitError`'s `response` are left
+     * out: they are unredacted upstream data, read deliberately off the error itself.
+     */
+    toJSON(): {
+        name: string;
+        message: string;
+        status: number | undefined;
+        attempts: number;
+        url: string | undefined;
+    } {
+        return {
+            name: this.name,
+            message: this.message,
+            status: this.status,
+            attempts: this.attempts,
+            url: this.url && scrubUrl(this.url),
+        };
     }
 }
 
@@ -2121,8 +2157,11 @@ export type CacheOutcome =
  * _is_ an inspection (same `data` / `raw` / `findings` / `status` / `error` / `source`, same
  * never-throws contract and the same non-enumerable `raw`) extended with how the run actually went.
  * Every added field is secret-free and enumerable — a report is safe to log _except_ don't expand
- * `raw` (inherited non-enumerable, ADR 0018's `redact` applies). Per-attempt latency is deliberately
- * **absent** in v1 (deferred — the spine carries no per-attempt request spans).
+ * `raw` (inherited non-enumerable, ADR 0018's `redact` applies). `error` serialises through
+ * {@link StitchError.toJSON} (no upstream `body`, URL scrubbed) and `config` carries literal
+ * endpoints and headers already scrubbed. `data` is your validated payload, logged as-is — an
+ * `output` schema is the allowlist that keeps customer fields out of it. Per-attempt latency is
+ * deliberately **absent** in v1 (deferred — the spine carries no per-attempt request spans).
  */
 export interface RunReport<T> extends Inspection<T> {
     /** Total attempts made, including the first (1 = no retry). From the terminal event / `StitchError.attempts`. */
@@ -2134,7 +2173,10 @@ export interface RunReport<T> extends Inspection<T> {
     timing: { elapsed: number; waited?: number };
     /**
      * The **resolved, redacted** per-call config (ADR 0019 §5) — the stitch's existing redacted
-     * `__config`, never the secret-bearing `__rawConfig`. Safe to echo into a log or support ticket.
+     * `__config`, never the secret-bearing `__rawConfig`: live handles stripped, and a literal
+     * `url`/`baseUrl`/`path` scrubbed of userinfo and secret query values, a literal secret
+     * header value (`authorization`, `x-api-key`, …) replaced with `[REDACTED]`. Safe to echo into
+     * a log or support ticket.
      */
     config: RedactedStitchConfig;
     /** Fine-grained cache outcome — the detail behind {@link Inspection.source}. See {@link CacheOutcome}. */

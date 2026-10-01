@@ -1091,3 +1091,39 @@ export function scrubUrl(url: string): string {
     }
     return hadUserinfo || secretKeys.length > 0 ? u.toString() : url;
 }
+
+// Header names whose values are secrets — the built-in header denylist every output that echoes
+// headers applies (the JSONL/console sinks, the `serve` SSE `start` frame, `stitch run`, and the
+// literal `headers` on the public `__config`). Matched case-insensitively.
+export const SECRET_HEADERS = [
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+];
+
+/**
+ * Deep-clone `value`, replacing the value of every secret-bearing key with `[REDACTED]`: a key on
+ * `denylist` (lower-case header names — {@link SECRET_HEADERS}, possibly widened), or one
+ * {@link isSecretKey} catches (`password`, `client_secret`, `access_token`, `x-auth-token`, a
+ * `secrets.register`ed name …). Non-mutating: the live value keeps its secrets; only the copy a
+ * trace record / the public `__config` carries is scrubbed. Walks arrays and plain objects.
+ */
+export function redactKeys(
+    value: unknown,
+    denylist: readonly string[] = SECRET_HEADERS,
+): unknown {
+    if (Array.isArray(value)) return value.map((v) => redactKeys(v, denylist));
+    if (value !== null && typeof value === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            out[k] =
+                denylist.includes(k.toLowerCase()) || isSecretKey(k)
+                    ? '[REDACTED]'
+                    : redactKeys(v, denylist);
+        }
+        return out;
+    }
+    return value;
+}

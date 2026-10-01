@@ -11,6 +11,38 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Security
+
+- **Outputs documented as safe to log no longer carry literal secrets — `JSON.stringify(err)`,
+  `.report().config`, the JSONL file sink, `stitch run` stdout.**
+  ([#873](https://github.com/rejifald/StitchAPI/issues/873)) Each was measured carrying a secret
+  verbatim while its docs called it safe to log or echo. **Breaking** (`JSON.stringify(err)` loses
+  `body`, and `__config` reads scrubbed values); rc channel, so a hard break with no alias.
+
+    - **`StitchError.toJSON()`** — `JSON.stringify(err)` was `{ status, attempts, body, url, name }`:
+      `message` missing (an `Error`'s own `message` is non-enumerable), `body` the unredacted
+      upstream payload, and a `RateLimitError` added its raw `response`, `set-cookie` included. It
+      is now `{ name, message, status, attempts, url }`, `url` scrubbed of userinfo and secret query
+      values; a `RateLimitError` adds `retryAfter`. `err.body`, `err.url` and `err.response` are
+      unchanged on the live error. **Migration:** read `err.body` directly.
+    - **`__config` scrubs literal secrets.** `redactConfig` stripped live handles but kept literal
+      values, so `headers: { authorization: 'Bearer …' }` and
+      `url: 'https://user:pw@host/a?api_key=…'` reached `.report().config`, `stitch diagram`,
+      `stitch export --openapi` and MCP `describe_stitch`. A string `url` / `baseUrl` / `path` now
+      loses its userinfo and secret query values (RFC 6570 `{param}` slots kept), and a secret
+      header value reads `[REDACTED]` — the sinks' header denylist plus any name `secrets.has`
+      matches (`x-auth-token`). The engine still sends the real values from `__rawConfig`. Query
+      keys that `@stitchapi/query-core` / `@stitchapi/swr` derive from `__config.url` now carry the
+      scrubbed form, so two stitches differing only by a secret in the URL share a key.
+    - **The JSONL file sink scrubs secret-named payload fields.** It truncated bodies but never
+      redacted them: a password-grant `password` / `client_secret` and a response `access_token`
+      reached disk in full. Every key the shared `secrets` denylist matches — in the request body,
+      GraphQL variables, the response `data` and each streamed `chunk` — is now `[REDACTED]`, before
+      the size cap cuts a `preview`.
+    - **`stitch run` redacts its stdout the way `stitch serve` does.** It wrote the raw event, so an
+      `--headers.authorization` or `--body.password` flag was echoed back on the `start` line. The
+      response (`result`) is still printed as sent.
+
 ## [1.0.0-rc.8] — 2026-09-17
 
 ### Added

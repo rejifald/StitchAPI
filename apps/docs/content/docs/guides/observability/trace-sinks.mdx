@@ -187,6 +187,18 @@ So a call carrying `authorization: 'Bearer …'` traces as
 happens at the sink boundary, so the live request still sends the real header; only
 the trace copy is scrubbed.
 
+The JSONL sink applies the same `[REDACTED]` to any **secret-named key** at any
+depth of the record — the shared [`secrets`](/docs/reference/helpers) denylist
+(`password`, `client_secret`, `access_token`, `api_key`, `signature`, … and any
+name you `secrets.register`). That covers a header the five names above miss
+(`x-auth-token`), and the payloads too: the request body, GraphQL variables, the
+response `data` and every streamed `chunk`. An OAuth password-grant body or a
+token response therefore reaches disk as
+`{"grant_type":"password","password":"[REDACTED]"}` and
+`{"access_token":"[REDACTED]","expires_in":3600}`. The match is by key name
+only — a secret under an innocuous name, or inside a free-text string, is not
+caught.
+
 The same boundary scrubs **URLs**: a `start` event's resolved URL has any userinfo
 (`https://user:pass@host`) removed and the values of secret-bearing query params
 (`api_key`, `access_token`, `signature`, …) replaced with `REDACTED` — in both the
@@ -195,8 +207,9 @@ attribute. The matching keys in the `start` event's structured `input.query` are
 redacted the same way, so the two views can't disagree; benign params (`page`,
 `sort`) survive for observability.
 
-Need to redact a non-standard auth header (say `x-auth-token`)? Widen the
-denylist — you can extend it but never shrink it — with `redactHeaders`:
+Need to redact a non-standard auth header whose name carries no secret stem
+(say `x-session-id`)? Widen the denylist — you can extend it but never shrink
+it — with `redactHeaders`:
 
 ```ts twoslash
 import { fileSink, stitch } from 'stitchapi';
@@ -248,14 +261,14 @@ marker:
 { "truncated": true, "chars": 51234, "preview": "{\"items\":[{\"id\":1,…" }
 ```
 
-`preview` is the first `body.chars` characters of the (already header-redacted)
-JSON, so you keep a readable head of the payload without storing all of it. The
+`preview` is the first `body.chars` characters of the (already redacted) JSON,
+so you keep a readable head of the payload without storing all of it. The
 default cap is **2048 characters**; `0` keeps only the marker, no preview.
 
-Truncation bounds _size_ — it is not field-level redaction, and a preview can
-still contain a body-embedded secret. Header and URL secrets are redacted (above)
-regardless of the cap. Customer data in a response body is the case this leaves
-open: [the customer data you didn't mean to log](/docs/scenarios/pii-in-the-logs)
+Truncation bounds _size_ — it is not field-level redaction. Header, URL and
+secret-named body fields are redacted (above) _before_ the cap applies, so
+neither the stored body nor its `preview` holds one, at any cap — full capture
+included. Customer data in a response body is the case this leaves open: [the customer data you didn't mean to log](/docs/scenarios/pii-in-the-logs)
 counts which destinations carry a whole body and which carry none, and why there
 is nothing in between.
 

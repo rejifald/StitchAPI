@@ -61,6 +61,11 @@ must preserve it.
   `Surface` already do. This explicitly includes the key-derivation functions
   ([`keyOf`](#p6--key-is-a-string-keyof-is-a-function)) — they are sugar, not a
   blessed `__config` exception.
+- Literal **secret values** are scrubbed on the way to `__config` as well, because every reader
+  above echoes it as safe to show: a string `url` / `baseUrl` / `path` loses its userinfo and
+  secret query values (RFC 6570 `{param}` slots preserved), and a secret header value in
+  `headers` reads `[REDACTED]` (#873). The data stays plain JSON; the engine sends the real
+  values from `__rawConfig`.
 - **One exemption, and only one:** the schema slots `input` / `output` hold Standard
   Schema validators, whose `validate` sits at depth 2. They are **not** sugar —
   `export --openapi` reads them off `__config` to build its parameter and response

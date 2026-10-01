@@ -76,7 +76,9 @@ import {
     isSafeMethod,
     newRunContext,
     readEnv,
+    redactKeys,
     redactSecretsDeep,
+    scrubUrl,
     systemClock,
 } from './util';
 import { type Validator, toValidator } from './validator';
@@ -957,6 +959,8 @@ const REDACTED_IF_FN_SLOTS = [
     'url',
     'baseUrl',
 ] as const satisfies readonly RedactedIfFnSlot[];
+// The string-endpoint slots whose literal form is URL-scrubbed on the way to `__config`.
+const ENDPOINT_SLOTS = ['url', 'baseUrl', 'path'] as const;
 const FN_BEARING_SLOTS = [
     'paginate',
     'retry',
@@ -1027,6 +1031,26 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     for (const k of FN_BEARING_SLOTS) {
         if (cfg[k] !== undefined) out[k] = stripFns(cfg[k]);
     }
+    // Literal secrets the author wrote straight into the config are scrubbed too — `__config` is
+    // what `report().config`, `diagram`, `export --openapi`, MCP `describe_stitch` and the
+    // query-core/swr keys echo, and they all call it safe to show. A string endpoint loses its
+    // userinfo and secret query values (`scrubUrl` — the trace sinks' URL scrubber; the
+    // `stitch('https://…')` string form lands on `path`, so `path` goes through it as well), and a
+    // secret header value reads `[REDACTED]` (`redactKeys` — the sinks' header denylist plus any
+    // secret-named header). The engine never reads these off `__config`: it sends the real values
+    // from `__rawConfig`. `scrubUrl` re-serialises a URL it changes, which percent-encodes an
+    // RFC 6570 `{param}` slot, so the braces are put back for the template readers (CLI param
+    // routing, the OpenAPI path).
+    for (const k of ENDPOINT_SLOTS) {
+        const v = out[k];
+        const scrubbed = typeof v === 'string' ? scrubUrl(v) : v;
+        if (scrubbed !== v)
+            out[k] = (scrubbed as string)
+                .replace(/%7B/g, '{')
+                .replace(/%7D/g, '}');
+    }
+    if (cfg.headers)
+        redacted.headers = redactKeys(cfg.headers) as Record<string, string>;
     return redacted;
 }
 

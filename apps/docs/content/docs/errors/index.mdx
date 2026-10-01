@@ -39,6 +39,22 @@ try {
     as a normal result instead of throwing.
 </Callout>
 
+A `StitchError` is safe to log as JSON. `JSON.stringify(err)` — and a logger
+that serializes through it — emits `{ name, message, status, attempts, url }`:
+`message` is included, `url` has its userinfo and secret query values
+(`api_key`, `access_token`, …) replaced with `REDACTED`, and `.body` is left
+out, because it is unredacted upstream data. A `RateLimitError` adds
+`retryAfter`; its raw `.response` (headers, `set-cookie` included) stays out too.
+Read `err.body` and `err.url` directly when you mean to.
+
+<Callout type="warn">
+    **Anti-pattern:** don't assume every logger goes through `JSON.stringify`.
+    pino's `err` serializer copies each enumerable field of the error itself, so
+    `logger.error({ err })` there still writes `err.body`. Log the fields you
+    want — `logger.error({ err: err.toJSON() })` — when the body may carry
+    customer data or a token.
+</Callout>
+
 If you read the [event stream](/docs/concepts/event-stream) instead of awaiting,
 the same failure arrives as an `error` event carrying
 `{ name, message, status?, attempts, at }` — `attempts` is how many tries the

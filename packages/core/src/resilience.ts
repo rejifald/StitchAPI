@@ -259,8 +259,9 @@ export class CircuitOpenError extends Error {
  * signal that gate needs on top of what it inherits: the `retryAfter` parsed from `Retry-After`
  * (delta-seconds OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw
  * `response` so the host can read other rate headers (`X-RateLimit-*`, etc.). The full `response`
- * rides on the live instance only — never the serialized `error` event — so it cannot leak into a
- * trace sink.
+ * rides on the live instance only — never the serialized `error` event, nor `JSON.stringify(err)`
+ * ({@link RateLimitError.toJSON} adds only `retryAfter` to the base view) — so its `set-cookie` and
+ * body cannot leak into a trace sink or a log line.
  *
  * A **subclass of {@link StitchError}** (CONTRACT.md P10): `status`/`attempts`/`body`/`url` are the
  * inherited field set rather than a hand-kept copy, so the one identity survives every consumer —
@@ -301,6 +302,16 @@ export class RateLimitError extends StitchError {
         this.name = 'RateLimitError';
         this.retryAfter = opts.retryAfter;
         this.response = opts.response;
+    }
+
+    /**
+     * The base {@link StitchError.toJSON} view plus `retryAfter` — the one non-secret field this
+     * subclass adds. The raw `response` (headers incl. `set-cookie`, body) stays off the JSON.
+     */
+    override toJSON(): ReturnType<StitchError['toJSON']> & {
+        retryAfter: number | undefined;
+    } {
+        return { ...super.toJSON(), retryAfter: this.retryAfter };
     }
 }
 

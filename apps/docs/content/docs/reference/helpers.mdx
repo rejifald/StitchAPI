@@ -280,7 +280,11 @@ verb at the call site.
 
 Add one key name to the denylist. Every scrubber reads from it: the console and
 JSONL `start.url`, the OTLP `url.full` attribute, the structured `input.query`,
-and the traced request body.
+every payload the JSONL sink persists (request body, GraphQL variables, response
+`data`, streamed `chunk`), the `start` frame `stitch serve` and `stitch run`
+emit, and the literal `url` and `headers` a stitch exposes on its public
+`__config` (what `.report().config`, `stitch diagram` and MCP `describe_stitch`
+show).
 
 The **query bindings** read from it too. `@stitchapi/query-core` derives every
 cache key through the same predicate, so a registered name is redacted from the
@@ -339,10 +343,12 @@ secrets.has('session_ref'); // false — until you register it
     [`redactHeaders`](/docs/guides/observability/trace-sinks#default-secret-redaction),
     not with `secrets.register`.
 
-    Query keys are where the two meet. The key builders check their own header
-    denylist **and then** fall through to `secrets.has`, so a name you register is
-    redacted from a cache key even though `secrets.has` is the wrong question to
-    ask about a header on its own.
+    Query keys and header scrubbers are where the two meet. The key builders, the
+    JSONL sink, the `serve` / `stitch run` stream and the public `__config` all
+    check the header denylist **and then** fall through to `secrets.has`, so a
+    secret-named header (`x-auth-token`) or a name you register is redacted there
+    even though `secrets.has` is the wrong question to ask about a header on its
+    own.
 
 </Callout>
 
