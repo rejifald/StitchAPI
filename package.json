@@ -21,6 +21,7 @@
         "check:exports:companions": "node scripts/check-companion-exports.mjs",
         "check:size": "pnpm -r check:size",
         "check:docs-links": "node scripts/check-docs-links.mjs",
+        "check:npx-bin": "node scripts/check-npx-bin.mjs",
         "check:contract": "node scripts/check-contract.mjs",
         "check:unknown-keys": "node scripts/check-unknown-keys.mjs",
         "check:changelog": "node scripts/check-changelog.mjs",

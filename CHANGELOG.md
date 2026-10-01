@@ -11,6 +11,34 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The docs and the agent-rules template send you to `npx stitchapi …`, not `npx stitch …`.**
+  ([#861](https://github.com/rejifald/StitchAPI/issues/861)) The executable is `stitch`, but it
+  ships inside the `stitchapi` package, and the npm name `stitch` belongs to an unrelated package
+  (`stitch@0.3.3`, no bin). `npx stitch` reaches our bin only where `stitchapi` is already
+  installed; anywhere else npm downloads the other package, and the day that package publishes a
+  bin, everyone following our commands — and every agent following the rule we write into their
+  repo — would run third-party code. The agents docs and the blog now say `npx stitchapi …`
+  (25 occurrences), and so does `RULES_BODY`, the text `stitch init` writes into `AGENTS.md`,
+  `CLAUDE.md` and the other rule files.
+
+    **Existing adopters: `stitch init --check` reports the rule as stale until you refresh it.**
+    The shell line inside the rule text changed, so a committed rule no longer matches what the
+    installed `stitchapi` would write. Run `stitch init --force` (a plain `stitch init` skips a
+    rule that already exists) and commit the result; in the shared files only the marked block is
+    replaced. It is a one-time cost paid before 1.0, because the rule text is pinned by
+    `--check` and changing it after GA would turn every adopter's CI red.
+
+    The bare package name was chosen over `npx stitchapi@rc` on purpose. With no tag, `npx` runs the
+    `stitchapi` already installed in the project — no network, and the version you pinned, which
+    is also the version `--check` compares against — whereas a tag spec makes `npx` fetch that tag
+    and run it even when the project has an older release installed. The rule text therefore does
+    not change again when `latest` moves at GA. The new `pnpm check:npx-bin` gate fails the build
+    on a package runner (`npx`, `pnpx`, `bunx`, `pnpm dlx`, `yarn dlx`, `npm exec`) pointed at the
+    bare `stitch` name anywhere in the tracked docs, READMEs, source or workflows, and on
+    `stitchapi` ever losing its single `bin` — the property `npx stitchapi` relies on.
+
 ### Security
 
 - **Outputs documented as safe to log no longer carry literal secrets — `JSON.stringify(err)`,

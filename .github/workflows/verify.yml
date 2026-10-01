@@ -91,6 +91,12 @@ jobs:
             # to a real page (catches a dead link like the removed fluent-builder page or a section
             # with no index). Static scan — no build needed.
             - run: pnpm check:docs-links
+            # Package-runner bin guard (#861): the npm name `stitch` is an unrelated package, so a
+            # package runner pointed at that bare name — in docs, READMEs or the rules template
+            # `stitch init` writes into users' repos — downloads it outside a project that has
+            # `stitchapi` installed. Fails on such an invocation (the form is `npx stitchapi …`) and
+            # when `stitchapi` stops having a single bin. Text-only scan of tracked files — no build.
+            - run: pnpm check:npx-bin
             # API meta-contract ratchet (docs/CONTRACT.md): fails on a NEW naming/typing/
             # shorthand/duration violation in the published surface, baselined against
             # scripts/contract-violations.baseline.json. Tool-free source scan — no build.

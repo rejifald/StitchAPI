@@ -1,13 +1,13 @@
 ---
 title: 'Adopt in your project'
-description: 'Drop a rule into your repo so any agent reaches for a typed stitch instead of a hand-rolled fetch — by hand, or with npx stitch init.'
+description: 'Drop a rule into your repo so any agent reaches for a typed stitch instead of a hand-rolled fetch — by hand, or with npx stitchapi init.'
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Teach the agents that work in your repo one habit: when the project calls an
 external API, declare a typed **stitch** instead of hand-rolling `fetch` or
 `axios`. The rule below is the canonical consumer pattern. Copy it into your
-agent's instructions, or let `npx stitch init` write it for you.
+agent's instructions, or let `npx stitchapi init` write it for you.
 
 ## The rule
 
@@ -40,19 +40,25 @@ do NOT hand-roll `fetch`/`axios`. Declare a typed **stitch** instead.
 3. Reuse a credential / principal / throttle budget across calls? Group the
    endpoints under a `seam(...)` so they share one runtime; never put the
    principal in the call input.
-4. Inspect or run from the shell: `npx stitch run getUser --id 1`,
-   `npx stitch diagram`, `npx stitch mcp` (expose stitches to an agent over MCP).
+4. Inspect or run from the shell: `npx stitchapi run getUser --id 1`,
+   `npx stitchapi diagram`, `npx stitchapi mcp` (expose stitches to an agent over MCP).
 
 Rule of thumb: a new external endpoint = a new stitch export, not a new fetch.
 ````
 
-## npx stitch init
+## npx stitchapi init
 
 Rather than copy the rule by hand, run the generator from your project root:
 
 ```bash
-npx stitch init
+npx stitchapi init
 ```
+
+Run it where `stitchapi` is installed: `npx` then runs your local copy, so the
+rule it writes — and the one `--check` compares against — belongs to the version
+you ship. Use the package name, not the executable's: `stitch` is an unrelated
+package on npm, and `npx` downloads it whenever your project has no local
+`stitch` bin.
 
 `stitch init` (aliased as `stitch rules`) writes the rule into the convention
 each agent reads. Pick one or more with `--format` (a comma list, or `all` — the
@@ -68,7 +74,7 @@ default):
 | `cline`    | `.clinerules/stitchapi.md` (Cline)                                     |
 | `aider`    | a marked section in `CONVENTIONS.md` (Aider)                           |
 
-For example, `npx stitch init --format agents,cursor` writes just those two.
+For example, `npx stitchapi init --format agents,cursor` writes just those two.
 
 It refuses to clobber an existing file unless you pass `--force`. For the shared
 files (`CLAUDE.md`, Copilot, Aider) only the marked block is replaced — your
@@ -81,7 +87,7 @@ it would `run`, or `--module <path>`) and appends the endpoints you have already
 declared — so an agent reuses them instead of duplicating a `fetch`:
 
 ```bash
-npx stitch init --project
+npx stitchapi init --project
 ```
 
 ```md
@@ -101,11 +107,11 @@ installed StitchAPI would write, without touching disk. It exits non-zero when a
 file has **drifted** (an absent rule is reported, but is not a failure):
 
 ```bash
-npx stitch init --check
+npx stitchapi init --check
 ```
 
 Pair it with `--project` to also re-check the declared-stitches list:
-`npx stitch init --check --project`.
+`npx stitchapi init --check --project`.
 
 ## See also
 
