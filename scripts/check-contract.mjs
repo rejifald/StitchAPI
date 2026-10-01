@@ -645,7 +645,9 @@ function scanSource(src) {
 
 const DECL_KEYWORD =
     '(?:export\\s+)?(?:default\\s+)?(?:declare\\s+)?(?:abstract\\s+)?(?:async\\s+)?(?:function\\*?|class|interface|type|const|let|var|enum|namespace)\\s+';
-const escapeRe = (s) => s.replace(/[$]/g, '\\$&');
+// A complete regex escape (backslash included) — the names it guards are identifiers, where `$` is
+// the only metacharacter that can occur, but a half-escape is the pattern CodeQL rightly flags.
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // The experimental surface, as the tier's own view of it: every symbol each listed entry exports,
 // resolved to where it is DECLARED.
