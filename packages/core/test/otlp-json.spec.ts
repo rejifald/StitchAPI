@@ -26,7 +26,12 @@ interface OtlpSpan {
 interface OtlpDoc {
     resourceSpans: {
         resource: { attributes: OtlpAttr[] };
-        scopeSpans: { scope: { name: string }; spans: OtlpSpan[] }[];
+        schemaUrl: string;
+        scopeSpans: {
+            scope: { name: string; version: string };
+            schemaUrl: string;
+            spans: OtlpSpan[];
+        }[];
     }[];
 }
 
@@ -52,14 +57,66 @@ const attr = (attrs: OtlpAttr[], key: string): Record<string, unknown> =>
     attrs.find((a) => a.key === key)!.value;
 
 describe('toOtlpJson', () => {
-    it('wraps spans in the ResourceSpans envelope (service.name resource + scope + CLIENT kind)', () => {
-        const doc = toOtlpJson([baseSpan()]) as OtlpDoc;
+    it('wraps spans in the ResourceSpans envelope (resource + versioned scope + schemaUrl)', () => {
+        const doc = toOtlpJson([baseSpan()], {
+            'service.name': 'checkout',
+        }) as OtlpDoc;
         const rs = doc.resourceSpans[0]!;
-        expect(attr(rs.resource.attributes, 'service.name')).toEqual({
-            stringValue: 'stitchapi',
+        expect(rs.resource.attributes).toEqual([
+            { key: 'service.name', value: { stringValue: 'checkout' } },
+        ]);
+        const schema = /^https:\/\/opentelemetry\.io\/schemas\/\d+\.\d+\.\d+$/;
+        expect(rs.schemaUrl).toMatch(schema);
+        expect(rs.scopeSpans[0]!.schemaUrl).toBe(rs.schemaUrl);
+        expect(rs.scopeSpans[0]!.scope).toEqual({
+            name: 'stitchapi',
+            version: __PKG_VERSION__,
         });
-        expect(rs.scopeSpans[0]!.scope.name).toBe('stitchapi');
-        expect(rs.scopeSpans[0]!.spans[0]!.kind).toBe(3); // SPAN_KIND_CLIENT
+    });
+
+    it('defaults the resource to the environment: OTEL_SERVICE_NAME, else unknown_service', () => {
+        vi.stubEnv('OTEL_SERVICE_NAME', '');
+        vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', '');
+        try {
+            const rs = (toOtlpJson([baseSpan()]) as OtlpDoc).resourceSpans[0]!;
+            expect(attr(rs.resource.attributes, 'service.name')).toEqual({
+                stringValue: 'unknown_service',
+            });
+            expect(attr(rs.resource.attributes, 'telemetry.sdk.name')).toEqual({
+                stringValue: 'stitchapi',
+            });
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
+    it('maps every span kind to its OTLP enum value', () => {
+        const kinds = [
+            'INTERNAL',
+            'SERVER',
+            'CLIENT',
+            'PRODUCER',
+            'CONSUMER',
+        ] as const;
+        expect(
+            kinds.map((kind) => firstSpan([baseSpan({ kind })]).kind),
+        ).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('serializes an array attribute as an arrayValue of typed values', () => {
+        const span = firstSpan([
+            baseSpan({
+                attributes: { 'stitch.tags': ['a', 'b'], codes: [1, 2.5] },
+            }),
+        ]);
+        expect(attr(span.attributes, 'stitch.tags')).toEqual({
+            arrayValue: {
+                values: [{ stringValue: 'a' }, { stringValue: 'b' }],
+            },
+        });
+        expect(attr(span.attributes, 'codes')).toEqual({
+            arrayValue: { values: [{ intValue: '1' }, { doubleValue: 2.5 }] },
+        });
     });
 
     it('types attribute values as int / double / bool / string', () => {

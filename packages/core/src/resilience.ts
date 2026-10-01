@@ -18,7 +18,11 @@ import type {
 import { StitchError } from './types';
 import { abortReason, parseDuration, parseRate, systemClock } from './util';
 
-export class TimeoutError extends Error {}
+// Named so it identifies itself once minified (`class extends Error {}` would report `'Error'`): the
+// error event's `errorType` and the OTLP `error.type` read `name`, the CONTRACT.md P10 discriminator.
+export class TimeoutError extends Error {
+    override name = 'TimeoutError';
+}
 
 /**
  * Normalize a status-match field (a bare number, a number list, a predicate, or unset) into a

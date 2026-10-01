@@ -1,12 +1,18 @@
-// Opt-in OpenTelemetry/OTLP trace sink: maps a stitch's event stream to one CLIENT span per
-// logical call, using OTel HTTP semantic-convention attributes, and hands finished spans to a
-// SpanExporter. The default exporter POSTs OTLP/JSON to a collector; tests inject a stub
-// exporter (no running collector). It is a normal TraceSink, so it tees alongside console/JSONL.
+// Opt-in OpenTelemetry/OTLP trace sink: maps each stitch call's event stream to a span TREE (ADR
+// 0017 D6) — one INTERNAL run span, a page span per page when paginating, and one attempt span per
+// physical request (CLIENT with the OTel HTTP semantic-convention attributes, or INTERNAL for a
+// surface that replaces the HTTP transport) — and hands finished spans to a SpanExporter. The
+// default exporter POSTs OTLP/JSON to a collector; tests inject a stub exporter (no running
+// collector). It is a normal TraceSink, so it tees alongside console/JSONL.
 import { compact } from './compact';
 import type { StitchEvent, TraceContext, TraceSink } from './types';
 import { hex, readEnv, scrubUrl, stripTrailingSlashes } from './util';
 
-export type SpanAttributes = Record<string, string | number | boolean>;
+/** OTel attribute values: a scalar, or a homogeneous array of one. */
+export type SpanAttributes = Record<
+    string,
+    string | number | boolean | string[] | number[] | boolean[]
+>;
 
 export interface OtelSpanEvent {
     name: string;
@@ -16,10 +22,15 @@ export interface OtelSpanEvent {
 
 export interface OtelSpan {
     name: string;
-    kind: 'CLIENT';
+    /**
+     * The OTLP span kind. The sink emits `INTERNAL` (the run, a page, a non-HTTP attempt) and
+     * `CLIENT` (an HTTP attempt); the rest of the OTLP set is here for exporters that relay
+     * spans from elsewhere.
+     */
+    kind: 'INTERNAL' | 'SERVER' | 'CLIENT' | 'PRODUCER' | 'CONSUMER';
     traceId: string; // 32 hex chars
     spanId: string; // 16 hex chars
-    parentSpanId?: string; // 16 hex chars — the spawning run's spanId (ADR 0007), absent for a root
+    parentSpanId?: string; // 16 hex chars — the run's parent (ADR 0007), or the run/page above a child span
     startUnixMs: number;
     endUnixMs: number;
     attributes: SpanAttributes;
@@ -29,111 +40,176 @@ export interface OtelSpan {
 
 /** Receives finished spans. Implement this to ship spans anywhere; the default POSTs OTLP/JSON. */
 export interface SpanExporter {
-    export(spans: OtelSpan[]): void | Promise<void>;
+    /**
+     * `resource` is the sink's resolved resource (`service.name`, `telemetry.sdk.*`, the
+     * `OTEL_RESOURCE_ATTRIBUTES` entries, `OtlpOptions.resource`) — pass it to `otlp.json` so a
+     * custom transport ships the same resource the default exporter does.
+     */
+    export(spans: OtelSpan[], resource?: SpanAttributes): void | Promise<void>;
 }
 
 export interface OtlpOptions {
     exporter?: SpanExporter; // override the destination (e.g. a stub in tests)
     endpoint?: string; // OTLP/HTTP base URL (default: env OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4318)
     headers?: Record<string, string>; // extra headers for the OTLP POST (e.g. auth)
+    /**
+     * Resource attributes describing the process that emits the spans — set `service.name` here.
+     * Merged over the environment, which is read once when the sink is built: `service.name`
+     * defaults to `OTEL_SERVICE_NAME`, else `unknown_service`; `OTEL_RESOURCE_ATTRIBUTES`
+     * (`key=value,…`, percent-encoded) adds the rest; `telemetry.sdk.*` names this SDK.
+     */
+    resource?: SpanAttributes;
 }
 
-function serverAddress(url: string): string | undefined {
+/** The semantic-conventions version the exported attributes follow (`schemaUrl` on the batch). */
+const SCHEMA_URL = 'https://opentelemetry.io/schemas/1.44.0';
+
+// The package version, from the build-time `define` (src/version.d.ts). `typeof` rather than a bare
+// read because a workspace package's tests alias `stitchapi` to this source without the define, and
+// a bare read of an undefined global throws at import; the bundle folds the guard away.
+const VERSION = typeof __PKG_VERSION__ === 'string' ? __PKG_VERSION__ : '0.0.0';
+
+/**
+ * Internal — resolve the resource for a sink: the SDK's own attributes, then the environment
+ * (`OTEL_RESOURCE_ATTRIBUTES`, then `OTEL_SERVICE_NAME`, which wins over the former's
+ * `service.name`), then the caller's `resource`, each overriding the last.
+ */
+export function otlpResource(resource?: SpanAttributes): SpanAttributes {
+    let env: SpanAttributes;
     try {
-        return new URL(url).hostname;
+        env = Object.fromEntries(
+            (readEnv('OTEL_RESOURCE_ATTRIBUTES') ?? '')
+                .split(',')
+                .filter((pair) => pair.includes('='))
+                .map((pair) =>
+                    pair.split('=').map((s) => decodeURIComponent(s.trim())),
+                ),
+        ) as SpanAttributes;
     } catch {
-        return undefined;
+        env = {}; // a value that fails to decode is discarded whole (OTel resource SDK spec)
     }
+    return {
+        'telemetry.sdk.name': 'stitchapi',
+        'telemetry.sdk.language': (
+            globalThis as { process?: { versions?: { node?: string } } }
+        ).process?.versions?.node
+            ? 'nodejs'
+            : 'webjs',
+        'telemetry.sdk.version': VERSION,
+        ...env,
+        'service.name':
+            // `||`, not `??`: an empty variable is an unset one (OTel SDK environment spec).
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+            readEnv('OTEL_SERVICE_NAME') ||
+            (env['service.name'] ?? 'unknown_service'),
+        ...resource,
+    };
 }
 
-// Build the FLAT per-iteration CHILD spans of a finished run span (ADR 0007, piece 3) — what makes
-// the OTLP waterfall show "how each retry/page performed". Derived from the run's own span events
-// (the engine's `request`/`paginate`/`retry` progress markers): a paginated run yields one `page N`
-// child per completed page; a non-paginated run that retried yields one `attempt N` child per
-// request (the non-final ones marked ERROR with the retry reason). A single clean request yields
-// none — the run span IS the one operation. Children are flat (same traceId, parentSpanId = the run
-// span), per the review's "flat, context-appropriate" choice: a paginated run shows pages, and a
-// per-page retry stays a span event on the run, not a nested span.
-function buildChildSpans(run: OtelSpan): OtelSpan[] {
-    const child = (
-        name: string,
-        startUnixMs: number,
-        endUnixMs: number,
-        attributes: SpanAttributes,
-        status: OtelSpan['status'],
-    ): OtelSpan => ({
+// One run's spans while its events stream in. Children are pushed as they OPEN (parent before
+// child) and mutated as they close; all of them export with the run on `done`.
+interface OpenRun {
+    span: OtelSpan; // the run span
+    http: boolean; // attempts go out over HTTP (CLIENT + http.*), not a surface's own transport
+    name: string; // an attempt span's name: the method (HTTP) or the transport's id
+    base: SpanAttributes; // what every attempt carries (method, url.full, server.*)
+    kids: OtelSpan[];
+    attempt?: OtelSpan | undefined; // the attempt in flight
+    page?: OtelSpan | undefined; // the page in flight
+    pages: number; // pages completed
+    last: number; // when the previous page ended — the next page span starts there
+    sent: number; // requests sent in the current page (or the run) → `http.request.resend_count`
+}
+
+const span = (
+    name: string,
+    kind: OtelSpan['kind'],
+    traceId: string,
+    spanId: string,
+    parentSpanId: string | undefined,
+    at: number,
+    attributes: SpanAttributes,
+): OtelSpan =>
+    compact({
         name,
-        kind: 'CLIENT',
-        traceId: run.traceId,
-        spanId: hex(8),
-        parentSpanId: run.spanId,
-        startUnixMs,
-        endUnixMs,
+        kind,
+        traceId,
+        spanId,
+        parentSpanId,
+        startUnixMs: at,
+        endUnixMs: at,
         attributes,
-        status,
-        events: [],
+        status: { code: 'UNSET' },
+        // `compact`'s `const` generic would freeze `[]` to `readonly []`; pin the element type.
+        events: [] as OtelSpanEvent[],
     });
 
-    const pages = run.events.filter((e) => e.name === 'paginate');
-    if (pages.length > 0) {
-        let prev = run.startUnixMs;
-        return pages.map((p, i) => {
-            const span = child(
-                `page ${i + 1}`,
-                prev,
-                p.timeUnixMs,
-                { 'stitch.page': i + 1 },
-                { code: 'OK' }, // a page that emitted a paginate marker completed
-            );
-            prev = p.timeUnixMs;
-            return span;
-        });
-    }
+// Settle a span as failed: ERROR with the message, and a low-cardinality `error.type` — the error's
+// class when the engine named one, else (over HTTP) the status as a string, else semconv's `_OTHER`.
+function fail(
+    s: OtelSpan,
+    http: boolean,
+    status?: number,
+    type?: string,
+    message?: string,
+): void {
+    s.status = compact({ code: 'ERROR', message });
+    s.attributes['error.type'] =
+        type ?? (http && (status ?? 0) >= 400 ? String(status) : '_OTHER');
+}
 
-    const reqs = run.events.filter((e) => e.name === 'request');
-    if (reqs.length > 1) {
-        return reqs.map((r, i) => {
-            const next = reqs[i + 1];
-            const attempt = Number(r.attributes?.['stitch.attempt'] ?? i + 1);
-            // A non-final attempt was followed by another request → it failed and was retried;
-            // carry the retry reason. The final attempt's outcome IS the run's.
-            const retry = run.events.find(
-                (e) =>
-                    e.name === 'retry' &&
-                    e.timeUnixMs >= r.timeUnixMs &&
-                    (next === undefined || e.timeUnixMs <= next.timeUnixMs),
-            );
-            const detail = retry?.attributes?.['stitch.detail'];
-            const status: OtelSpan['status'] = next
-                ? compact({
-                      code: 'ERROR',
-                      message:
-                          detail !== undefined ? String(detail) : undefined,
-                  })
-                : run.status;
-            return child(
-                `attempt ${attempt}`,
-                r.timeUnixMs,
-                next ? next.timeUnixMs : run.endUnixMs,
-                { 'stitch.attempt': attempt },
-                status,
-            );
-        });
-    }
-    return [];
+// Close the attempt in flight at `at`. A received status becomes `http.response.status_code`. `ok`
+// says the attempt delivered the call's outcome; one that was resent (retry, auth refresh,
+// reconnect) or threw is an ERROR, and so — per HTTP semconv for a CLIENT span — is a 4xx/5xx.
+function endAttempt(
+    r: OpenRun,
+    at: number,
+    ok: boolean,
+    status?: number,
+    type?: string,
+    message?: string,
+): void {
+    const a = r.attempt;
+    if (!a) return;
+    r.attempt = undefined;
+    a.endUnixMs = at;
+    if (r.http && status !== undefined)
+        a.attributes['http.response.status_code'] = status;
+    if (!ok || (r.http && (status ?? 0) >= 400))
+        fail(a, r.http, status, type, message);
+}
+
+// Close the page in flight at `at`; a run that failed inside it (`failed`) fails the page too.
+function endPage(r: OpenRun, at: number, failed?: string): void {
+    const p = r.page;
+    if (!p) return;
+    r.page = undefined;
+    p.endUnixMs = r.last = at;
+    r.pages++;
+    if (failed !== undefined) fail(p, false, undefined, undefined, failed);
 }
 
 /**
  * Sink layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
  * exports the namespace, not this.
  *
- * A TraceSink that turns each stitch call's events (start → … → done) into a single OTel CLIENT
- * span, exported on `done`. Attributes follow the OTel HTTP semantic conventions
- * (`http.request.method`, `url.full`, `server.address`, `http.response.status_code`,
- * `error.type`); a future LLM-kind stitch would map to the gen_ai.* conventions the same way.
- * Spans are correlated by the run id on the {@link TraceContext} ctx (ADR 0007) — a real
- * `traceId`/`spanId`/`parentSpanId` tree — falling back to the stitch name (a tolerant stack) only
- * when a sink is fed events by hand without ids (e.g. synthetic test events).
+ * A TraceSink that turns each stitch call's events (start → … → done) into a span tree, exported
+ * on `done` (ADR 0017 D6):
+ *
+ * - the **run** span — INTERNAL, named for the stitch, carrying `stitch.name`/`stitch.surface`,
+ *   the progress/info/drift span events, and the run's status (UNSET on success, ERROR on
+ *   failure); never an `http.*` attribute;
+ * - a **page** span per page of a paginated run — INTERNAL, a child of the run;
+ * - an **attempt** span per physical request, always (a single clean request included) — a child
+ *   of its page, else of the run. Over HTTP it is a CLIENT span named `{method}` with the OTel HTTP
+ *   semantic-convention attributes (`http.request.method`, `url.full`, `server.address`,
+ *   `server.port`, `http.response.status_code`, `http.request.resend_count` on a resend,
+ *   `error.type`); for a surface that replaces the transport (`shell`, `postmessage`) it is an
+ *   INTERNAL span with none of them.
+ *
+ * Span ids come from the engine: the run's off the {@link TraceContext} ctx (ADR 0007), an attempt's
+ * and a page's off the `progress` events that open and close them. A sink fed events by hand
+ * without ids mints its own and correlates by stitch name (a tolerant stack).
  */
 export function otlpSink(opts: OtlpOptions = {}): TraceSink {
     const exporter =
@@ -144,20 +220,12 @@ export function otlpSink(opts: OtlpOptions = {}): TraceSink {
                 headers: opts.headers,
             }),
         );
-    const open = new Map<string, OtelSpan[]>();
-    const push = (name: string, span: OtelSpan): void => {
-        const stack = open.get(name) ?? [];
-        stack.push(span);
-        open.set(name, stack);
-    };
-    const top = (name: string): OtelSpan | undefined => {
-        const stack = open.get(name);
-        return stack?.[stack.length - 1];
-    };
+    const resource = otlpResource(opts.resource);
+    const runs = new Map<string, OpenRun[]>();
 
     const emit = (spans: OtelSpan[]): void => {
         try {
-            const r = exporter.export(spans) as unknown;
+            const r = exporter.export(spans, resource) as unknown;
             if (r instanceof Promise)
                 r.catch(() => {
                     /* swallow: an export failure must never break the stream */
@@ -169,74 +237,150 @@ export function otlpSink(opts: OtlpOptions = {}): TraceSink {
 
     const sink: TraceSink = {
         handle(event: StitchEvent, ctx: TraceContext): void {
-            const name = ctx.name;
             // Correlate by run id (ADR 0007) — each run is unique, so no name-stack is needed;
             // fall back to the name when a sink is fed events by hand without ids.
-            const key = ctx.spanId ?? name;
-            switch (event.type) {
-                case 'start': {
-                    // url.full is OTLP's only secret-bearing attribute (it never exports
-                    // headers/bodies): scrub userinfo + secret query values before export.
-                    const attributes: SpanAttributes = {
-                        'http.request.method': event.method,
-                        'url.full': scrubUrl(event.url),
-                    };
-                    const host = serverAddress(event.url);
-                    if (host) attributes['server.address'] = host;
-                    push(
-                        key,
-                        compact({
-                            name: `${event.method} ${name}`,
-                            kind: 'CLIENT',
-                            // Read the engine-minted ids off the ctx (real trace tree); fall back to
-                            // freshly-minted ids for a hand-fed sink with no run identity.
-                            traceId: ctx.traceId ?? hex(16),
-                            spanId: ctx.spanId ?? hex(8),
-                            parentSpanId: ctx.parentSpanId,
-                            startUnixMs: event.at,
-                            endUnixMs: event.at,
-                            attributes,
-                            status: { code: 'UNSET' },
-                            // `compact`'s `const` generic would freeze `[]` to `readonly []`;
-                            // OtelSpan.events is mutable, so pin the element type.
-                            events: [] as OtelSpanEvent[],
-                        }),
-                    );
-                    break;
+            const key = ctx.spanId ?? ctx.name;
+            const stack = runs.get(key) ?? [];
+            if (event.type === 'start') {
+                const http = (event.transport ?? 'http') === 'http';
+                // `url.full` is OTLP's only secret-bearing attribute (it never exports headers or
+                // bodies): scrub userinfo + secret query values before export. Parsed once — every
+                // attempt of the run targets this URL.
+                let u: URL | undefined;
+                try {
+                    u = new URL(event.url);
+                } catch {
+                    /* relative or opaque — no server.* attributes */
                 }
+                stack.push({
+                    // Read the engine-minted ids off the ctx (real trace tree), else off the
+                    // `start` event (a `.stream()` tap fed in by hand); mint fresh ones only for
+                    // events with no run identity at all.
+                    span: span(
+                        ctx.name,
+                        'INTERNAL',
+                        ctx.traceId ?? event.traceId ?? hex(16),
+                        ctx.spanId ?? event.spanId ?? hex(8),
+                        ctx.parentSpanId ?? event.parentSpanId,
+                        event.at,
+                        compact({
+                            'stitch.name': ctx.name,
+                            'stitch.surface': event.surface,
+                        }),
+                    ),
+                    http,
+                    name: http ? event.method : String(event.transport),
+                    base: http
+                        ? compact({
+                              'http.request.method': event.method,
+                              'url.full': scrubUrl(event.url),
+                              'server.address': u?.hostname,
+                              'server.port': u
+                                  ? Number(u.port) ||
+                                    (u.protocol === 'https:' ? 443 : 80)
+                                  : undefined,
+                          })
+                        : {},
+                    kids: [],
+                    pages: 0,
+                    last: event.at,
+                    sent: 0,
+                });
+                runs.set(key, stack);
+                return;
+            }
+            const r = stack[stack.length - 1];
+            if (!r) return;
+            const run = r.span;
+            const { at } = event;
+            switch (event.type) {
                 case 'progress': {
-                    top(key)?.events.push({
-                        name: event.phase,
-                        timeUnixMs: event.at,
-                        attributes: {
+                    const { phase } = event;
+                    run.events.push({
+                        name: phase,
+                        timeUnixMs: at,
+                        attributes: compact({
                             'stitch.attempt': event.attempt,
-                            ...(event.detail
-                                ? { 'stitch.detail': event.detail }
-                                : {}),
-                            ...(event.waited != null
-                                ? { 'stitch.waited_ms': event.waited }
-                                : {}),
-                        },
+                            'stitch.detail': event.detail,
+                            'stitch.waited': event.waited,
+                        }),
                     });
+                    if (phase === 'request') {
+                        // A request while one is still in flight means that one was resent.
+                        endAttempt(r, at, false);
+                        // An attempt parented to anything but the run lives in a page: the first
+                        // request under a new parent opens that page span, at the previous
+                        // page's end, and restarts the resend count.
+                        const parent = event.parentSpanId ?? run.spanId;
+                        if (
+                            parent !== run.spanId &&
+                            r.page?.spanId !== parent
+                        ) {
+                            r.kids.push(
+                                (r.page = span(
+                                    `page ${r.pages + 1}`,
+                                    'INTERNAL',
+                                    run.traceId,
+                                    parent,
+                                    run.spanId,
+                                    r.last,
+                                    { 'stitch.page': r.pages + 1 },
+                                )),
+                            );
+                            r.sent = 0;
+                        }
+                        r.kids.push(
+                            (r.attempt = span(
+                                r.name,
+                                r.http ? 'CLIENT' : 'INTERNAL',
+                                run.traceId,
+                                event.spanId ?? hex(8),
+                                parent,
+                                at,
+                                compact({
+                                    ...r.base,
+                                    'http.request.resend_count':
+                                        (r.http && r.sent) || undefined,
+                                    'stitch.attempt': event.attempt,
+                                }),
+                            )),
+                        );
+                        r.sent++;
+                    } else if (
+                        phase === 'retry' ||
+                        phase === 'auth' ||
+                        phase === 'reconnect'
+                    ) {
+                        // The attempt in flight is about to be resent: it ended here, failed.
+                        endAttempt(
+                            r,
+                            at,
+                            false,
+                            event.status,
+                            event.errorType,
+                            event.detail,
+                        );
+                    } else if (phase === 'paginate') {
+                        endAttempt(r, at, true, event.status);
+                        endPage(r, at);
+                    }
                     break;
                 }
                 case 'info': {
-                    top(key)?.events.push({
+                    run.events.push({
                         name: `info:${event.topic}`,
-                        timeUnixMs: event.at,
-                        attributes: {
+                        timeUnixMs: at,
+                        attributes: compact({
                             'stitch.info.topic': event.topic,
-                            ...(event.detail
-                                ? { 'stitch.info.detail': event.detail }
-                                : {}),
-                        },
+                            'stitch.info.detail': event.detail,
+                        }),
                     });
                     break;
                 }
                 case 'drift': {
-                    top(key)?.events.push({
+                    run.events.push({
                         name: 'drift',
-                        timeUnixMs: event.at,
+                        timeUnixMs: at,
                         attributes: {
                             'stitch.drift.level': event.finding.level,
                             'stitch.drift.path': event.finding.path,
@@ -246,41 +390,36 @@ export function otlpSink(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'result': {
-                    const span = top(key);
-                    if (span) {
-                        span.attributes['http.response.status_code'] =
-                            event.status;
-                        if (span.status.code === 'UNSET')
-                            span.status = { code: 'OK' };
-                    }
+                    // Success leaves the run UNSET (semconv); the attempt records the response.
+                    endAttempt(r, at, true, event.status);
                     break;
                 }
                 case 'error': {
-                    const span = top(key);
-                    if (span) {
-                        if (event.status != null)
-                            span.attributes['http.response.status_code'] =
-                                event.status;
-                        span.attributes['error.type'] =
-                            event.status != null
-                                ? String(event.status)
-                                : 'error';
-                        span.status = { code: 'ERROR', message: event.message };
-                    }
+                    const { status, errorType, message } = event;
+                    // The attempt failed only if its exchange did: no response (a throw) or an
+                    // error status. A response the run rejected afterwards (a contract violation,
+                    // a surface's verdict) leaves the attempt's HTTP exchange successful.
+                    endAttempt(
+                        r,
+                        at,
+                        (status ?? 500) < 400,
+                        status,
+                        errorType,
+                        message,
+                    );
+                    endPage(r, at, message);
+                    fail(run, r.http, status, errorType, message);
                     break;
                 }
                 case 'done': {
-                    const stack = open.get(key);
-                    const span = stack?.pop();
-                    // Drop the Map entry once its stack empties so `open` doesn't grow one entry
+                    stack.pop();
+                    // Drop the Map entry once its stack empties so `runs` doesn't grow one entry
                     // per unique run/span key over long uptime (each run id is seen once).
-                    if (stack?.length === 0) open.delete(key);
-                    if (span) {
-                        span.endUnixMs = event.at;
-                        // Export the run span PLUS its flat per-iteration child spans (attempts /
-                        // pages) so the operator's waterfall shows how each performed (ADR 0007).
-                        emit([span, ...buildChildSpans(span)]);
-                    }
+                    if (!stack.length) runs.delete(key);
+                    endAttempt(r, at, event.ok);
+                    endPage(r, at);
+                    run.endUnixMs = at;
+                    emit([run, ...r.kids]);
                     break;
                 }
             }
@@ -289,11 +428,11 @@ export function otlpSink(opts: OtlpOptions = {}): TraceSink {
             /* spans are exported eagerly on 'done'; nothing is buffered */
         },
     };
-    // Non-enumerable test probe for the internal `open` span map: lets the resource-leak suite
-    // assert the map drains to empty after a completed run without exposing it on the public
-    // TraceSink type (non-enumerable → never serialized into a trace, never part of the contract).
+    // Non-enumerable test probe for the internal run map: lets the resource-leak suite assert the
+    // map drains to empty after a completed run without exposing it on the public TraceSink type
+    // (non-enumerable → never serialized into a trace, never part of the contract).
     Object.defineProperty(sink, OPEN_SPANS, {
-        value: open,
+        value: runs,
         enumerable: false,
     });
     return sink;
@@ -303,20 +442,26 @@ export function otlpSink(opts: OtlpOptions = {}): TraceSink {
 export const OPEN_SPANS = Symbol('stitch.otlp.openSpans');
 
 const OTLP_STATUS = { UNSET: 0, OK: 1, ERROR: 2 } as const;
-const SPAN_KIND_CLIENT = 3;
+// OTLP's SpanKind enum, in wire order (SPAN_KIND_INTERNAL = 1 … SPAN_KIND_CONSUMER = 5).
+const KINDS = ['INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER'];
 const toNano = (ms: number): string => String(Math.round(ms * 1e6));
+
+// One attribute value as an OTLP `AnyValue`; an array becomes an `arrayValue` of them.
+const anyValue = (v: SpanAttributes[string]): unknown =>
+    Array.isArray(v)
+        ? { arrayValue: { values: v.map(anyValue) } }
+        : typeof v === 'number'
+          ? Number.isInteger(v)
+              ? { intValue: String(v) }
+              : { doubleValue: v }
+          : typeof v === 'boolean'
+            ? { boolValue: v }
+            : { stringValue: v };
 
 function toOtlpAttributes(attrs: SpanAttributes): unknown[] {
     return Object.entries(attrs).map(([key, v]) => ({
         key,
-        value:
-            typeof v === 'number'
-                ? Number.isInteger(v)
-                    ? { intValue: String(v) }
-                    : { doubleValue: v }
-                : typeof v === 'boolean'
-                  ? { boolValue: v }
-                  : { stringValue: v },
+        value: anyValue(v),
     }));
 }
 
@@ -325,19 +470,21 @@ function toOtlpAttributes(attrs: SpanAttributes): unknown[] {
  * exports the namespace, not this.
  *
  * Serialize spans to the OTLP/JSON `ResourceSpans` shape a collector accepts on `/v1/traces`.
+ * `resource` defaults to the one an `otlp.sink()` with no options would resolve from the
+ * environment; the scope is `stitchapi` at its package version, and both carry the `schemaUrl`
+ * of the semantic-conventions version the attributes follow.
  */
-export function toOtlpJson(spans: OtelSpan[]): unknown {
+export function toOtlpJson(
+    spans: OtelSpan[],
+    resource: SpanAttributes = otlpResource(),
+): unknown {
     return {
         resourceSpans: [
             {
-                resource: {
-                    attributes: toOtlpAttributes({
-                        'service.name': 'stitchapi',
-                    }),
-                },
+                resource: { attributes: toOtlpAttributes(resource) },
                 scopeSpans: [
                     {
-                        scope: { name: 'stitchapi' },
+                        scope: { name: 'stitchapi', version: VERSION },
                         spans: spans.map((s) => ({
                             traceId: s.traceId,
                             spanId: s.spanId,
@@ -345,7 +492,7 @@ export function toOtlpJson(spans: OtelSpan[]): unknown {
                                 ? { parentSpanId: s.parentSpanId }
                                 : {}),
                             name: s.name,
-                            kind: SPAN_KIND_CLIENT,
+                            kind: KINDS.indexOf(s.kind) + 1,
                             startTimeUnixNano: toNano(s.startUnixMs),
                             endTimeUnixNano: toNano(s.endUnixMs),
                             attributes: toOtlpAttributes(s.attributes),
@@ -363,23 +510,28 @@ export function toOtlpJson(spans: OtelSpan[]): unknown {
                                 ),
                             })),
                         })),
+                        schemaUrl: SCHEMA_URL,
                     },
                 ],
+                schemaUrl: SCHEMA_URL,
             },
         ],
     };
 }
 
-/** Options for `otlp.exporter` — {@link OtlpOptions} minus the exporter it builds. */
-export type OtlpExporterOptions = Omit<OtlpOptions, 'exporter'>;
+/**
+ * Options for `otlp.exporter` — {@link OtlpOptions} minus the exporter it builds and the
+ * `resource`, which the sink resolves and hands to `export` with every batch.
+ */
+export type OtlpExporterOptions = Omit<OtlpOptions, 'exporter' | 'resource'>;
 
 /**
  * Exporter layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
  * exports the namespace, not this.
  *
  * Default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces` (endpoint defaults to
- * `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`). Fire-and-forget — failures are
- * swallowed so a missing collector never breaks a stitch call.
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`), with the resource the sink hands it.
+ * Fire-and-forget — failures are swallowed so a missing collector never breaks a stitch call.
  */
 export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
     const base =
@@ -388,7 +540,7 @@ export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
         'http://localhost:4318';
     const url = stripTrailingSlashes(base) + '/v1/traces';
     return {
-        async export(spans: OtelSpan[]): Promise<void> {
+        async export(spans, resource): Promise<void> {
             try {
                 await fetch(url, {
                     method: 'POST',
@@ -396,7 +548,7 @@ export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
                         'content-type': 'application/json',
                         ...(opts.headers ?? {}),
                     },
-                    body: JSON.stringify(toOtlpJson(spans)),
+                    body: JSON.stringify(toOtlpJson(spans, resource)),
                 });
             } catch {
                 /* no collector / network error — drop the batch, never throw */
@@ -414,14 +566,17 @@ export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
  * better as one name — each is the input to the next:
  *
  * - `otlp.sink(opts?)` is the {@link TraceSink} you pass to `trace`. It maps each stitch call's
- *   events (start → … → done) to one OTel CLIENT span with HTTP semantic-convention attributes
- *   and hands finished spans to an exporter — `opts.exporter`, or `otlp.exporter()` by default.
+ *   events (start → … → done) to a span tree — an INTERNAL run span, page spans, and a CLIENT span
+ *   per HTTP request with OTel HTTP semantic-convention attributes (ADR 0017 D6) — and hands
+ *   finished spans to an exporter — `opts.exporter`, or `otlp.exporter()` by default — together
+ *   with the resource it resolved (`opts.resource` over `OTEL_SERVICE_NAME` /
+ *   `OTEL_RESOURCE_ATTRIBUTES`).
  * - `otlp.exporter(opts?)` is that default {@link SpanExporter}: it POSTs to
  *   `${endpoint}/v1/traces`, fire-and-forget, so a missing collector never breaks a call.
- * - `otlp.json(spans)` is the serializer underneath both — the OTLP/JSON `ResourceSpans` shape a
- *   collector ingests. Public because it is the seam for a transport core does not ship: build
- *   your own exporter around gRPC, a queue, or a file, and serialize with the same mapper the
- *   HTTP one uses rather than re-deriving the wire shape and drifting from it.
+ * - `otlp.json(spans, resource?)` is the serializer underneath both — the OTLP/JSON
+ *   `ResourceSpans` shape a collector ingests. Public because it is the seam for a transport core
+ *   does not ship: build your own exporter around gRPC, a queue, or a file, and serialize with the
+ *   same mapper the HTTP one uses rather than re-deriving the wire shape and drifting from it.
  *
  * Reach for the layer you actually need: `otlp.sink()` alone for the common case, `otlp.exporter`
  * to point a sink at a second collector, `otlp.json` only when you are writing a transport.

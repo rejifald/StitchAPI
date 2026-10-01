@@ -66,6 +66,11 @@ function otlpSpans(): OtelSpan[] {
     const sink = otlp.sink({ exporter });
     const name = 'getUser';
     sink.handle(startEvent(), { name });
+    // The request opens the attempt span — the one that carries `url.full` (ADR 0017 D6).
+    sink.handle(
+        { type: 'progress', phase: 'request', attempt: 1, at: 1 },
+        { name },
+    );
     sink.handle(
         { type: 'result', data: {}, status: 200, attempts: 1, at: 2 },
         { name },

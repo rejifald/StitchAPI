@@ -11,6 +11,63 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **The OTLP sink resolves a resource: `otlp.sink({ resource })`, `OTEL_SERVICE_NAME` and
+  `OTEL_RESOURCE_ATTRIBUTES`.** ([#872](https://github.com/rejifald/StitchAPI/issues/872)) Each
+  exported batch now carries `telemetry.sdk.name`/`language`/`version`, then the
+  `OTEL_RESOURCE_ATTRIBUTES` pairs (percent-decoded; a value that fails to decode is discarded
+  whole), then `service.name` from `OTEL_SERVICE_NAME` (else `unknown_service`), then the sink's
+  `resource` option over all of it. The instrumentation scope carries the package version, and the
+  batch carries the `schemaUrl` of the semantic-conventions release it follows (1.44.0).
+  `SpanExporter.export` receives the resolved resource as a second argument and `otlp.json` takes
+  it as one, so a custom transport ships the same resource the default exporter does.
+
+- **`StitchEvent` gains the fields the span tree is built from — all optional, all additive.**
+  ([ADR 0017](docs/adr/0017-outbound-trace-context-propagation.md) D6) `start.surface` (the surface
+  id) and `start.transport` (`'http'`, or the id of a surface that replaces the transport);
+  `progress.spanId`/`parentSpanId` on a `request` step (the engine-minted id of that physical
+  request, and its run or page) and on a `paginate` step (the page it closes); `progress.status`
+  on a `retry`, an `auth` refresh and a `paginate` step; `errorType` on an `error` event and on a
+  `retry` that re-attempts a throw — the failing error's class (`TimeoutError`, `RateLimitError`),
+  omitted for a plain `Error`. `TimeoutError` now sets its `name`, so it reads `'TimeoutError'`
+  in a minified build instead of `'Error'`.
+
+### Changed
+
+- **BREAKING CHANGE (dashboards): the OTLP export is a span tree — an INTERNAL run span over one
+  CLIENT span per physical request.** ([#871](https://github.com/rejifald/StitchAPI/issues/871),
+  [ADR 0017](docs/adr/0017-outbound-trace-context-propagation.md) D6) The sink exported one CLIENT
+  span per call, named `{method} {stitch}`, carrying every `http.*` attribute, with child spans
+  only for a retried or paginated call and ids minted at export. Attributes, kinds and names
+  move between spans, so it is fixed before 1.0, after which a dashboard or alert keyed on them
+  would break on every change:
+
+    | Span    | Kind     | Name              | Carries                                                                                                                                    |
+    | ------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+    | run     | INTERNAL | the stitch's name | `stitch.name`, `stitch.surface`, the progress/info/drift span events, the run's status                                                     |
+    | page    | INTERNAL | `page N`          | `stitch.page` — a child of the run, one per page                                                                                           |
+    | attempt | CLIENT   | `{method}`        | `http.request.method`, `url.full`, `server.address`, `server.port`, `http.response.status_code`, `http.request.resend_count`, `error.type` |
+
+    An attempt span exists for **every** request, a clean single call included (one span → two),
+    and nests under its page. A surface that replaces the HTTP transport (`shell`, `postmessage`)
+    exports an INTERNAL attempt named for the surface with no `http.*` — `url.full` no longer reads
+    `shell:git`. Ids are minted by the engine at request time and read off the `progress` events,
+    never invented at export. Status follows the OTel conventions: a success stays **UNSET** (was
+    `OK`); a failure is ERROR with `error.type` set to the error class, else the HTTP status, else
+    `_OTHER` (was the literal `'error'`). An attempt answered with a 4xx/5xx is ERROR even when the
+    run recovers. `server.port` is new; the span-event attribute `stitch.waited_ms` is now
+    `stitch.waited` ([P17](docs/CONTRACT.md#p17--one-canonical-duration-form)); `service.name` is no
+    longer `stitchapi` (see Added). The public types widen to match: `OtelSpan.kind` is the OTLP
+    span-kind set rather than the `'CLIENT'` literal, and `SpanAttributes` values may be
+    homogeneous arrays — a consumer that implements `SpanExporter` and switches on `kind` must
+    handle `'INTERNAL'`.
+
+    Migration — re-key HTTP panels and alerts from the run span to its CLIENT child (`kind =
+CLIENT`, name `{method}`), key per-stitch panels on `stitch.name`, rename `stitch.waited_ms` to
+    `stitch.waited`, set `OTEL_SERVICE_NAME` (or `resource`) for the service you used to find under
+    `stitchapi`, and stop filtering on `status = OK`.
+
 ## [1.0.0-rc.8] — 2026-09-17
 
 ### Added

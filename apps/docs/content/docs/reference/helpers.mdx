@@ -213,14 +213,20 @@ const sink = loggerSink(console, { levels: { result: 'debug' } });
 
 ### otlp.sink
 
-An opt-in OpenTelemetry sink: it maps each stitch call's events to a single OTel
-`CLIENT` span and hands finished spans to a `SpanExporter`. With no exporter
-supplied it builds `otlp.exporter()`. Configured by `OtlpOptions` (below).
+An opt-in OpenTelemetry sink: it maps each stitch call's events to a span tree
+— an `INTERNAL` run span, a page span per page, and a `CLIENT` span per HTTP
+request — and hands finished spans to a `SpanExporter`, together with the
+resource it resolved. With no exporter supplied it builds `otlp.exporter()`.
+Configured by `OtlpOptions` (below). The tree and its attributes are on
+[OTLP export](/docs/guides/observability/otlp#the-span-tree).
 
 ```ts twoslash
 import { otlp } from 'stitchapi';
 
-const sink = otlp.sink({ endpoint: 'https://api.example.com:4318' });
+const sink = otlp.sink({
+    endpoint: 'https://api.example.com:4318',
+    resource: { 'service.name': 'checkout' },
+});
 ```
 
 `otlp` groups the three layers of one export path the same way
@@ -233,7 +239,9 @@ one you actually need. `otlp.sink()` alone covers the common case.
 
 The default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces`. The
 endpoint defaults to `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`.
-Fire-and-forget — a missing collector never breaks a stitch call.
+It serializes each batch with the resource the sink hands it, so the resource
+is set on the sink, not here. Fire-and-forget — a missing collector never
+breaks a stitch call.
 
 ```ts twoslash
 import { otlp } from 'stitchapi';
@@ -249,12 +257,18 @@ const exporter = otlp.exporter({
 Serialize finished spans to the OTLP/JSON `ResourceSpans` shape a collector
 accepts on `/v1/traces`. This is the seam for a transport core doesn't ship —
 gRPC, a queue, a file — so a custom `SpanExporter` reuses the same wire mapping
-rather than re-deriving it.
+rather than re-deriving it. Pass it the `resource` your exporter's `export`
+receives; without one it resolves the resource from the environment.
 
 ```ts twoslash
 import { otlp } from 'stitchapi';
+import type { SpanExporter } from 'stitchapi';
 
-const body = otlp.json([]);
+const fileExporter: SpanExporter = {
+    export(spans, resource) {
+        console.log(JSON.stringify(otlp.json(spans, resource)));
+    },
+};
 ```
 
 #### OtlpOptions

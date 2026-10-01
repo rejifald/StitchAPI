@@ -190,9 +190,19 @@ test('end-to-end: a real call feeds the OTLP sink the same ids it stamped on `st
     await ping();
 
     const start = seen.find((s) => s.ev.type === 'start')!.ev as StartEvent;
-    expect(spans).toHaveLength(1);
-    expect(spans[0]!.traceId).toBe(start.traceId);
-    expect(spans[0]!.spanId).toBe(start.spanId); // the span IS the run
+    expect(spans).toHaveLength(2); // the run + its one request (ADR 0017 D6)
+    const [run, attempt] = spans as [OtelSpan, OtelSpan];
+    expect(run.traceId).toBe(start.traceId);
+    expect(run.spanId).toBe(start.spanId); // the run span IS the run
+    // …and the attempt's id is the one the engine stamped on `progress{request}`, not re-minted.
+    const request = seen.find(
+        (s) => s.ev.type === 'progress' && s.ev.phase === 'request',
+    )!.ev as Extract<StitchEvent, { type: 'progress' }>;
+    expect(request.spanId).toMatch(/^[0-9a-f]{16}$/);
+    expect(request.parentSpanId).toBe(start.spanId);
+    expect(attempt.spanId).toBe(request.spanId);
+    expect(attempt.parentSpanId).toBe(run.spanId);
+    expect(attempt.traceId).toBe(run.traceId);
 });
 
 test('a hand-fed OTLP sink (no ctx ids) still mints a valid span — back-compat', () => {
@@ -266,7 +276,7 @@ test('cookieSession runs its login as a traced CHILD of the call that triggered 
     ).toBe(true);
 });
 
-test('OTLP: a retried call emits flat per-attempt child spans parented to the run', async () => {
+test('OTLP: a retried call emits one attempt span per request, parented to the run', async () => {
     server.route('GET', '/flaky', { statuses: [503, 200], body: { ok: true } });
     const { exporter, spans } = stubExporter();
     const flaky = stitch({
@@ -280,20 +290,22 @@ test('OTLP: a retried call emits flat per-attempt child spans parented to the ru
     await flaky();
 
     const run = spans.find((s) => s.parentSpanId === undefined)!;
-    const attempts = spans.filter((s) => s.name.startsWith('attempt '));
+    const attempts = spans.filter((s) => s.kind === 'CLIENT');
     expect(attempts).toHaveLength(2); // 503, then 200
-    // Flat children of the run span — same trace, parented to the run, not nested in each other.
+    // Children of the run span — same trace, parented to the run, not nested in each other.
     expect(
         attempts.every(
             (a) => a.parentSpanId === run.spanId && a.traceId === run.traceId,
         ),
     ).toBe(true);
+    expect(new Set(attempts.map((a) => a.spanId)).size).toBe(2); // a fresh id per request
     // The first attempt failed and was retried; the second is the run's successful outcome.
     expect(attempts[0]!.status.code).toBe('ERROR');
-    expect(attempts[1]!.status.code).toBe('OK');
+    expect(attempts[1]!.status.code).toBe('UNSET');
+    expect(attempts[1]!.attributes['http.request.resend_count']).toBe(1);
 });
 
-test('OTLP: a paginated call emits flat per-page child spans parented to the run', async () => {
+test('OTLP: a paginated call nests the attempts under their page spans', async () => {
     server.route('GET', '/list', { body: [1, 2] });
     const { exporter, spans } = stubExporter();
     const list = stitch({
@@ -317,6 +329,9 @@ test('OTLP: a paginated call emits flat per-page child spans parented to the run
             (p) => p.parentSpanId === run.spanId && p.traceId === run.traceId,
         ),
     ).toBe(true);
-    // A non-paginated path would have produced `attempt` children — a paginated one shows pages.
-    expect(spans.some((s) => s.name.startsWith('attempt '))).toBe(false);
+    // Pages and attempts are no longer exclusive: each page holds the request that fetched it.
+    const attempts = spans.filter((s) => s.kind === 'CLIENT');
+    expect(attempts.map((a) => a.parentSpanId)).toEqual(
+        pages.map((p) => p.spanId),
+    );
 });

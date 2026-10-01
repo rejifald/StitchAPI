@@ -5,10 +5,11 @@ prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/event-stream']
 ---
 
 Reach for OTLP export when you want a stitch's events as OpenTelemetry spans in
-the observability stack you already run — each call's event stream maps to one
-CLIENT span, so a stitch drops into your existing OTel collector with no new
-plumbing. It is just another [trace sink](/docs/guides/observability/trace-sinks),
-teed alongside the console/JSONL sink rather than replacing it.
+the observability stack you already run — each call's event stream maps to a
+small span tree (a run span over one CLIENT span per HTTP request), so a stitch
+drops into your existing OTel collector with no new plumbing. It is just another
+[trace sink](/docs/guides/observability/trace-sinks), teed alongside the
+console/JSONL sink rather than replacing it.
 
 ## Example
 
@@ -17,11 +18,13 @@ also fans its events to an OTLP collector (default
 `http://localhost:4318/v1/traces`, or `OTEL_EXPORTER_OTLP_ENDPOINT`).
 
 ```bash
-STITCH_EXPORT=otlp OTEL_EXPORTER_OTLP_ENDPOINT=https://api.example.com node app.js
+STITCH_EXPORT=otlp OTEL_SERVICE_NAME=checkout \
+  OTEL_EXPORTER_OTLP_ENDPOINT=https://api.example.com node app.js
 ```
 
-To wire it yourself — to set headers, or to tee OTLP next to your own sink —
-build the sink with `otlp.sink()` and combine sinks with `multiplex`:
+To wire it yourself — to set headers or the resource, or to tee OTLP next to
+your own sink — build the sink with `otlp.sink()` and combine sinks with
+`multiplex`:
 
 ```ts twoslash
 import { createTrace, multiplex, otlp } from 'stitchapi';
@@ -31,31 +34,117 @@ const trace = multiplex(
     otlp.sink({
         endpoint: 'https://api.example.com',
         headers: { authorization: 'Bearer token' },
+        resource: { 'service.name': 'checkout' },
     }),
 );
 ```
 
+## The span tree
+
+Every call exports one **run** span. Under it sits one **attempt** span per
+physical request — always, so a clean call exports two spans — and a
+paginated call puts a **page** span between the two:
+
+```
+getUser                 INTERNAL  run: stitch.name, stitch.surface, span events
+ ├─ GET                 CLIENT    attempt 1: 503 → ERROR, error.type "503"
+ └─ GET                 CLIENT    attempt 2: 200, http.request.resend_count 1
+
+listUsers               INTERNAL  run
+ ├─ page 1              INTERNAL  stitch.page 1
+ │   └─ GET             CLIENT    the request that fetched page 1
+ └─ page 2              INTERNAL  stitch.page 2
+     ├─ GET             CLIENT    503 → ERROR
+     └─ GET             CLIENT    200, http.request.resend_count 1
+```
+
+The run span is named for the stitch and never carries an `http.*` attribute:
+it is the call, not the wire. Each attempt span is named for the request's
+method, per the OTel HTTP conventions. A retry, an auth refresh and an SSE
+reconnect each send a new request, so each is its own attempt span, and the
+one it replaced ends in `ERROR`.
+
+A surface that replaces the HTTP transport — `shell`, `postmessage` — still gets
+an attempt span per request, but an `INTERNAL` one named for the surface, with
+no `http.*` attributes. A cache hit makes no request, so it exports the run span
+alone.
+
+**Status.** A successful span stays `UNSET`, as the OTel conventions ask. A
+failed one is `ERROR`, with the error message and an `error.type`. An attempt
+whose response was 4xx or 5xx is `ERROR` even when the run recovers on a retry.
+A run that fails after a good response (a contract violation, a GraphQL
+`errors` payload) is `ERROR` while its attempt stays `UNSET`.
+
+**Ids.** The run span is the call's [run identity](/docs/concepts/run-identity).
+The engine mints each attempt's and each page's span id when it happens and
+stamps it on the `progress` event that opens it (`phase: 'request'`) or closes
+it (`phase: 'paginate'`), so the exporter never invents one.
+
+## Attributes
+
+| Attribute                   | On                 | Value                                                                                |
+| --------------------------- | ------------------ | ------------------------------------------------------------------------------------ |
+| `stitch.name`               | run                | The stitch's name                                                                    |
+| `stitch.surface`            | run                | The surface id: `http`, `graphql`, `sse`, `shell`, …                                 |
+| `error.type`                | run, page, attempt | On failure: the error class (`TimeoutError`), else the HTTP status, else `_OTHER`    |
+| `stitch.page`               | page               | The page number, from 1                                                              |
+| `stitch.attempt`            | attempt            | The engine's attempt number                                                          |
+| `http.request.method`       | HTTP attempt       | The request method                                                                   |
+| `url.full`                  | HTTP attempt       | The request URL, scrubbed (below)                                                    |
+| `server.address`            | HTTP attempt       | The URL's host                                                                       |
+| `server.port`               | HTTP attempt       | The URL's port, or the scheme's default (`443`, `80`)                                |
+| `http.response.status_code` | HTTP attempt       | The response status, when a response arrived                                         |
+| `http.request.resend_count` | HTTP attempt       | On a resend only: how many times this request was sent before (per page when paging) |
+
+The run span also carries the call's `progress`, `info` and `drift` events as
+span events. A `progress` event's `attempt`, `detail` and `waited` become
+`stitch.attempt`, `stitch.detail` and `stitch.waited` (milliseconds); an `info`
+event becomes `info:<topic>` with `stitch.info.topic`/`stitch.info.detail`; a
+`drift` event carries `stitch.drift.level`, `stitch.drift.path` and
+`stitch.drift.change`.
+
+No span carries request headers or bodies. `url.full` is the only attribute
+that can hold a secret, so it is scrubbed before export: userinfo is stripped
+and the values of secret-bearing query params (`api_key`, `access_token`,
+`signature`, …) become `REDACTED`.
+
+## The resource
+
+Each batch carries a resource that says which process emitted it. The sink
+resolves it once, when it is built, from four layers — each overriding the one
+before:
+
+1. `telemetry.sdk.name` (`stitchapi`), `telemetry.sdk.language` (`nodejs` or
+   `webjs`) and `telemetry.sdk.version` (the package version).
+2. `OTEL_RESOURCE_ATTRIBUTES` — `key=value` pairs separated by commas, with `,`
+   and `=` inside a value percent-encoded. A value that fails to decode is
+   discarded whole.
+3. `service.name` from `OTEL_SERVICE_NAME`, else the one in
+   `OTEL_RESOURCE_ATTRIBUTES`, else `unknown_service`.
+4. The sink's `resource` option.
+
+The batch's instrumentation scope is `stitchapi` at the package version, and
+both carry the `schemaUrl` of the semantic-conventions release the attributes
+follow.
+
 ## Options
 
 `STITCH_EXPORT=otlp` is the toggle (a comma list, e.g. `console,otlp`);
-`OTEL_EXPORTER_OTLP_ENDPOINT` sets the collector base URL.
+`OTEL_EXPORTER_OTLP_ENDPOINT` sets the collector base URL; `OTEL_SERVICE_NAME`
+and `OTEL_RESOURCE_ATTRIBUTES` set the resource.
 
 The pipeline is one namespace, `otlp`, with a member per layer.
 
 `otlp.sink(opts?)` returns a sink. `OtlpOptions` carries `endpoint` (OTLP/HTTP
-base URL), `headers` (extra headers on the POST, e.g. auth), and `exporter` (a
-custom `SpanExporter` destination, defaulting to the built-in HTTP exporter).
+base URL), `headers` (extra headers on the POST, e.g. auth), `resource` (resource
+attributes, e.g. `service.name`), and `exporter` (a custom `SpanExporter`
+destination, defaulting to the built-in HTTP exporter). A custom exporter
+receives the resolved resource as the second argument to `export`.
 
 `otlp.exporter({ endpoint?, headers? })` is that default exporter — it POSTs
-OTLP/JSON to `${endpoint}/v1/traces`. `otlp.json(spans)` serializes collected
-spans to the OTLP/JSON `ResourceSpans` shape a collector accepts, if you ship
-them some other way.
-
-A span carries method, `url.full`, `server.address`, status, and timings — never
-request headers or bodies. `url.full` is the only attribute that can hold a
-secret, so it is scrubbed before export: userinfo is stripped and the values of
-secret-bearing query params (`api_key`, `access_token`, `signature`, …) become
-`REDACTED`.
+OTLP/JSON to `${endpoint}/v1/traces`. `otlp.json(spans, resource?)` serializes
+collected spans to the OTLP/JSON `ResourceSpans` shape a collector accepts, if
+you ship them some other way.
 
 See [Reference → Helpers](/docs/reference/helpers) for the helper signatures and
 [Reference → Events](/docs/reference/events) for the event types each span is

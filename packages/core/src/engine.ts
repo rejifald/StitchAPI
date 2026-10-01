@@ -45,6 +45,7 @@ import {
     buildQuery,
     expandPath,
     getPath,
+    hex,
     isSafeMethod,
     newRunContext,
     now,
@@ -377,15 +378,25 @@ function contractViolationEvt(
     return evt;
 }
 
+// The failing error's class discriminator for the `errorType` event field: its `name` (CONTRACT.md
+// P10 — what `StitchError` subclasses set), so a sink can tell a `TimeoutError` from a socket
+// `TypeError` without parsing the message. A plain `Error` names nothing — an HTTP status failure
+// is one, and it carries `status` instead — so it yields `undefined` and the field is omitted.
+const errorType = (err: unknown): string | undefined => {
+    const n = (err as Error | undefined)?.name;
+    return n === 'Error' ? undefined : n;
+};
+
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
-    const evt: Extract<StitchEvent, { type: 'error' }> = {
+    const evt: Extract<StitchEvent, { type: 'error' }> = compact({
         type: 'error',
         name,
         message: e.message ?? String(err),
+        errorType: errorType(err),
         attempts,
         at: now(),
-    };
+    });
     if (e.status !== undefined) evt.status = e.status;
     // Delegate-backoff signal: the structured `retryAfter` is stamped onto the EVENT so `.stream()`
     // consumers see it; the live instance itself rides ERROR_SOURCE below for the awaited path.
@@ -680,7 +691,17 @@ async function* attemptLoop(
                 yield* infos;
             }
             await cfg.hooks?.onRequest?.({ name: nameOf(cfg), attempt, req });
-            yield { type: 'progress', phase: 'request', attempt, at: now() };
+            // One span per PHYSICAL request (ADR 0017 D6): its id is minted HERE, at request time,
+            // and parented to the run — or to the page when paginating (`run` is then the page's
+            // context). A resend (retry, auth refresh) is a new request, so it mints a new id.
+            yield {
+                type: 'progress',
+                phase: 'request',
+                attempt,
+                spanId: hex(8),
+                parentSpanId: run.spanId,
+                at: now(),
+            };
 
             // Clamp this attempt's abort to whatever is left of the total budget.
             const attemptMs =
@@ -712,13 +733,14 @@ async function* attemptLoop(
                 // `retry` event, no onRetry, no backoff — the run ends here with the abort error.
                 if (baseReq.signal?.aborted) throw err;
                 if (attempt < max) {
-                    yield {
+                    yield compact({
                         type: 'progress',
                         phase: 'retry',
                         attempt,
                         detail: String((err as Error)?.message ?? err),
+                        errorType: errorType(err),
                         at: now(),
-                    };
+                    });
                     await cfg.hooks?.onRetry?.({
                         name: nameOf(cfg),
                         attempt,
@@ -748,6 +770,7 @@ async function* attemptLoop(
                     phase: 'auth',
                     attempt,
                     detail: 'refresh',
+                    status: res.status,
                     at: now(),
                 };
                 const infos: StitchEvent[] = [];
@@ -787,6 +810,7 @@ async function* attemptLoop(
                     phase: 'retry',
                     attempt,
                     detail: `status ${res.status}`,
+                    status: res.status,
                     at: now(),
                 };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
@@ -821,6 +845,7 @@ async function* attemptLoop(
                     phase: 'retry',
                     attempt,
                     detail: `interpret: ${outcome.message}`,
+                    status: res.status,
                     at: now(),
                 };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
@@ -963,14 +988,18 @@ async function* paginated(
     const max = pg.pages ?? 50;
     const acc: unknown[] = [];
     let pageInput = input;
-    let page = 0;
+    let pages = 0;
     let lastStatus: number;
 
     const first = buildRequest(cfg, pageInput);
-    yield startEvt(name, first, input, run);
+    yield startEvt(cfg, name, first, input, run);
 
     for (;;) {
         const req = buildRequest(cfg, pageInput);
+        // Each page is its own span, a child of the run, and its attempts nest under it (ADR 0017
+        // D6): the page's context — same trace, a fresh span id, parented to the run — is what the
+        // attempt loop parents its requests to. Its id rides the page's closing `paginate` event.
+        const page = newRunContext(run);
         let res: AdapterResult;
         let outcome: SurfaceOutcome;
         try {
@@ -980,7 +1009,7 @@ async function* paginated(
                 rt,
                 req,
                 state,
-                run,
+                page,
                 budget,
             ));
         } catch (e) {
@@ -1005,17 +1034,20 @@ async function* paginated(
               ? value
               : [value];
         acc.push(...items);
-        page += 1;
+        pages += 1;
         yield {
             type: 'progress',
             phase: 'paginate',
             attempt: state.attempts,
-            detail: `page ${page} (+${items.length}, total ${acc.length})`,
+            detail: `page ${pages} (+${items.length}, total ${acc.length})`,
+            status: res.status,
+            spanId: page.spanId,
+            parentSpanId: run.spanId,
             at: now(),
         };
 
-        if (items.length === 0 || page >= max) break;
-        const nextPartial = pg.next(res.body, page);
+        if (items.length === 0 || pages >= max) break;
+        const nextPartial = pg.next(res.body, pages);
         if (!nextPartial) break;
         pageInput = mergeInput(input, nextPartial);
     }
@@ -1103,6 +1135,7 @@ type RunOutcome =
     { ok: true; value: unknown; status: number; vary?: string } | { ok: false };
 
 const startEvt = (
+    cfg: ResolvedStitchConfig,
     name: string,
     baseReq: AdapterRequest,
     input: StitchInput,
@@ -1114,6 +1147,11 @@ const startEvt = (
         method: baseReq.method,
         url: baseReq.url,
         input,
+        // Which surface shaped the call, and what carried it: the HTTP adapter, or the surface
+        // itself when its `execute` replaces the transport (ADR 0008 — shell, postmessage). The
+        // OTLP sink reads the latter to export an attempt as a CLIENT HTTP span or an INTERNAL one.
+        surface: cfg.kind.id,
+        transport: cfg.kind.execute ? cfg.kind.id : 'http',
         at: now(),
         spanId: run.spanId,
         traceId: run.traceId,
@@ -1321,7 +1359,7 @@ async function* runStreaming(
     }
     // Ask the transport for the live body — un-buffered, un-parsed (ADR 0005 Q1).
     baseReq = { ...baseReq, stream: true };
-    yield startEvt(name, baseReq, input, run);
+    yield startEvt(cfg, name, baseReq, input, run);
     state.attempts = 1;
 
     // Resumability is a GENERIC decision the engine makes from surface capability + config — never
@@ -1396,7 +1434,14 @@ async function* runStreaming(
                 applyResume?.(req, lastToken);
             if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
             await cfg.hooks?.onRequest?.({ name, attempt, req });
-            yield { type: 'progress', phase: 'request', attempt, at: now() };
+            yield {
+                type: 'progress',
+                phase: 'request',
+                attempt,
+                spanId: hex(8),
+                parentSpanId: run.spanId,
+                at: now(),
+            };
             // A surface that replaces the transport (ADR 0008) runs here too, so a future non-HTTP
             // streaming surface gets the same treatment as the buffered path.
             res = await (cfg.kind.execute ?? rt.adapter)(req);
@@ -1624,7 +1669,7 @@ async function* runOnce(
         yield doneEvt(false, t0, 0);
         return { ok: false };
     }
-    yield startEvt(name, baseReq, input, run);
+    yield startEvt(rt.cfg, name, baseReq, input, run);
     return yield* runFrom(rt, baseReq, name, state, t0, run, budget);
 }
 
@@ -1650,7 +1695,7 @@ async function* runCached(
         yield doneEvt(false, t0, 0);
         return;
     }
-    yield startEvt(name, baseReq, input, run);
+    yield startEvt(cfg, name, baseReq, input, run);
 
     // 'refuse' (ADR 0004): the output contract can't be soundly fingerprinted (no strategy for the
     // vendor / a non-Standard-Schema validator / an opaque un-versioned transform) and the caller
@@ -1934,7 +1979,7 @@ export async function executeRawTraced(
         parentSpanId: run.parentSpanId,
     });
     const baseReq = buildRequest(cfg, input);
-    sink.handle(startEvt(name, baseReq, input, run), ctx);
+    sink.handle(startEvt(cfg, name, baseReq, input, run), ctx);
     try {
         const gen = attemptLoop(rt, baseReq, state, run, totalBudget(cfg, t0));
         let step = await gen.next();

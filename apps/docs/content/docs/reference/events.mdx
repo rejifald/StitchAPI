@@ -23,10 +23,20 @@ A union table can render sparsely, so here is each of the eight variants and its
 fields. Every event carries an `at` field — a millisecond timestamp.
 
 - **`start`** — the request is about to go out. Fields: `name` (the stitch
-  label), `method`, `url`, `input` (the `StitchInput` for this call), `at`.
+  label), `method`, `url`, `input` (the `StitchInput` for this call),
+  `surface?` (the surface id: `http`, `graphql`, `shell`, …), `transport?`
+  (`http` when the HTTP adapter carries the request, else the id of the
+  surface that replaces it), the run identity (`spanId?`, `traceId?`,
+  `parentSpanId?`), `at`.
 - **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
   `ProgressPhase`), `attempt` (1-based), `detail?`, `waited?` (set when the
-  phase involved a wait, e.g. `throttled` or `retry`), `at`.
+  phase involved a wait, e.g. `throttled` or `retry`), `status?` (the response
+  status behind a `retry`, an `auth` refresh or a `paginate` step),
+  `errorType?` (the class of the error a `retry` re-attempts), `at`. A
+  `request` step carries `spanId?`/`parentSpanId?` — the id the engine minted
+  for that physical request and its parent (the run, or the page) — and a
+  `paginate` step carries the id of the page it closes. The OTLP sink builds its
+  [span tree](/docs/guides/observability/otlp#the-span-tree) from them.
 - **`info`** — an auth strategy announcing a decision it made (e.g. which env
   var a `bearer` token resolved from, or that `oauth2` fetched a token); it
   never carries the secret itself. Fields: `topic`, `detail?`, `at`.
@@ -37,8 +47,10 @@ fields. Every event carries an `at` field — a millisecond timestamp.
   (`unknown`), `at`.
 - **`result`** — the call succeeded and produced a value. Fields: `data` (the
   `T`), `status` (HTTP status), `attempts` (how many it took), `at`.
-- **`error`** — the call failed. Fields: `name`, `message`, `status?`,
-  `attempts`, `at`.
+- **`error`** — the call failed. Fields: `name`, `message`, `errorType?` (the
+  failing error's class — `TimeoutError`, `RateLimitError`, `TypeError` — omitted
+  for a plain `Error`, such as an HTTP status failure), `status?`, `attempts`,
+  `at`.
 - **`done`** — the stream is finished, success or failure. Fields: `ok`, `elapsed`
   (total duration), `attempts`, `at`.
 

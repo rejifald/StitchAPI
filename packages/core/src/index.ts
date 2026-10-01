@@ -37,9 +37,10 @@ export {
 } from './trace';
 export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
 // The OTLP trace pipeline, one namespace over one export path. `otlp.sink(opts?)` is the
-// TraceSink you hand to `trace` — it maps a stitch's events to one OTel CLIENT span;
-// `otlp.exporter(opts?)` is the default destination it builds, POSTing OTLP/JSON to
-// `${endpoint}/v1/traces`; `otlp.json(spans)` is the serializer underneath both, public as the
+// TraceSink you hand to `trace` — it maps a stitch's events to an OTel span tree (an INTERNAL run
+// span, a CLIENT span per HTTP request — ADR 0017 D6); `otlp.exporter(opts?)` is the default
+// destination it builds, POSTing OTLP/JSON to `${endpoint}/v1/traces`;
+// `otlp.json(spans, resource?)` is the serializer underneath both, public as the
 // seam for a transport core does not ship (gRPC, a queue, a file) so a hand-rolled exporter uses
 // the same wire mapping rather than re-deriving it.
 //
