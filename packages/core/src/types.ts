@@ -1578,6 +1578,16 @@ export type ProgressPhase =
     | 'paginate'
     | 'circuit'
     | 'cache';
+/**
+ * One thing that happened during a call. Every call is a stream of these, from `start` to `done`.
+ *
+ * **Span ids (ADR 0017 D6).** Wherever an event carries `spanId`, it is the id of the span the event
+ * BELONGS TO, and `parentSpanId` is that span's parent. Which span that is depends on the event:
+ * the RUN on `start`, the ATTEMPT (one physical request) on a `progress` step with `phase:
+ * 'request'`, the PAGE that just completed on `phase: 'paginate'`. Only those carry ids today; the
+ * meaning is the same wherever one is added, so a later change that stamps ids on every event
+ * (#874) fills in fields that already exist rather than renaming any.
+ */
 export type StitchEvent<T = unknown> =
     | {
           type: 'start';
@@ -1607,8 +1617,10 @@ export type StitchEvent<T = unknown> =
           // Run identity (ADR 0007) — also delivered on the {@link TraceContext} ctx. Stamped
           // here too so a non-sink `.stream()` consumer can read a run's identity off its first
           // event. Optional: a `start` event built by hand (tests) may omit them.
+          /** The span this event belongs to: the RUN (see {@link StitchEvent}). */
           spanId?: string;
           traceId?: string;
+          /** The run's parent: the run that spawned this one (a `cookieSession` login, a `linked` step). */
           parentSpanId?: string;
       }
     | {
@@ -1627,9 +1639,10 @@ export type StitchEvent<T = unknown> =
           /** The thrown error's class (its `name`) behind a `retry`, omitted for a plain `Error`. */
           errorType?: string;
           /**
-           * The span this step opens or closes (ADR 0017 D6), minted by the engine when it happens.
-           * On `request` it is the attempt — one per physical request, retries and refreshes
-           * included; on `paginate`, the page that just completed. Absent on every other phase.
+           * The span this step belongs to (ADR 0017 D6; see {@link StitchEvent}), minted by the
+           * engine when it happens. On `request` it is the ATTEMPT — one per physical request,
+           * retries and refreshes included; on `paginate`, the PAGE that just completed. Absent on
+           * every other phase.
            */
           spanId?: string;
           /** That span's parent: the run's `spanId`, or the page's for an attempt inside a page. */

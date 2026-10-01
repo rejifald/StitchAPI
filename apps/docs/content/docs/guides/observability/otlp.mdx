@@ -75,10 +75,17 @@ no `http.*` attributes. A cache hit makes no request, so it exports the run span
 alone.
 
 **Status.** A successful span stays `UNSET`, as the OTel conventions ask. A
-failed one is `ERROR`, with the error message and an `error.type`. An attempt
-whose response was 4xx or 5xx is `ERROR` even when the run recovers on a retry.
-A run that fails after a good response (a contract violation, a GraphQL
-`errors` payload) is `ERROR` while its attempt stays `UNSET`.
+failed one is `ERROR`, with an `error.type` and, where it adds something, a
+description. An attempt whose response was 4xx or 5xx is `ERROR` even when the
+run recovers on a retry. A run that fails after a good response (a contract
+violation, a GraphQL `errors` payload) is `ERROR` while its attempt stays
+`UNSET`.
+
+The description is left off when the span already says it: a 4xx/5xx is on
+`error.type` (and, on an attempt, `http.response.status_code`), so the engine's
+`HTTP 503` / `status 503` / `refresh` messages are not repeated. A timeout's
+text, a contract violation's message or a surface's `interpret:` reason stay.
+A failed page span carries the same `error.type` and description as its run.
 
 **Ids.** The run span is the call's [run identity](/docs/concepts/run-identity).
 The engine mints each attempt's and each page's span id when it happens and
@@ -103,7 +110,8 @@ It is derived from the config, never from a call's input:
 | `url: 'https://api.example.com/users/42'` (no `{…}` variable) | `GET`                     |
 | `url: () => …`, or `baseUrl: () => …`                         | `GET`                     |
 
-- **Path only.** The scheme and authority (userinfo, host, port) are dropped,
+- **Path only.** The scheme and authority (userinfo, host, port) are dropped —
+  a scheme-relative `//user:pass@host/x` is authority too —
   and so is the query — a literal `?…` and a `{?q}` or `{&q}` operator alike —
   and the fragment. A query string, an expanded value or a credential in the
   URL's userinfo or query can therefore never reach a span name or
@@ -118,25 +126,36 @@ It is derived from the config, never from a call's input:
   Write the endpoint as `baseUrl` plus `path`, or give the absolute `url` its
   variables, to get a template. The full URL is still on `url.full`.
 
+A method the OTel conventions do not name (anything outside `CONNECT`,
+`DELETE`, `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT`, `TRACE`) is exported
+as `http.request.method = "_OTHER"` with the real verb in
+`http.request.method_original`, and the span is named `HTTP` (or
+`HTTP {url.template}`) so a free-form verb cannot grow a backend's cardinality.
+
 A surface that replaces the HTTP transport (`shell`, `postmessage`) has no
 template: its attempt span is named for the surface.
 
 ## Attributes
 
-| Attribute                   | On                 | Value                                                                                |
-| --------------------------- | ------------------ | ------------------------------------------------------------------------------------ |
-| `stitch.name`               | run                | The stitch's name                                                                    |
-| `stitch.surface`            | run                | The surface id: `http`, `graphql`, `sse`, `shell`, …                                 |
-| `error.type`                | run, page, attempt | On failure: the error class (`TimeoutError`), else the HTTP status, else `_OTHER`    |
-| `stitch.page`               | page               | The page number, from 1                                                              |
-| `stitch.attempt`            | attempt            | The engine's attempt number                                                          |
-| `http.request.method`       | HTTP attempt       | The request method                                                                   |
-| `url.template`              | HTTP attempt       | The stitch's path template, `/users/{id}`, when one is known ([above](#span-names))  |
-| `url.full`                  | HTTP attempt       | The request URL, scrubbed (below)                                                    |
-| `server.address`            | HTTP attempt       | The URL's host                                                                       |
-| `server.port`               | HTTP attempt       | The URL's port, or the scheme's default (`443`, `80`)                                |
-| `http.response.status_code` | HTTP attempt       | The response status, when a response arrived                                         |
-| `http.request.resend_count` | HTTP attempt       | On a resend only: how many times this request was sent before (per page when paging) |
+| Attribute                      | On                 | Value                                                                                 |
+| ------------------------------ | ------------------ | ------------------------------------------------------------------------------------- |
+| `stitch.name`                  | run                | The stitch's name                                                                     |
+| `stitch.surface`               | run                | The surface id: `http`, `graphql`, `sse`, `shell`, …                                  |
+| `error.type`                   | run, page, attempt | On failure: the error class (`TimeoutError`), else the HTTP status, else `_OTHER`     |
+| `stitch.page`                  | page               | The page number, from 1                                                               |
+| `stitch.attempt`               | attempt            | The request's 1-based ordinal within its page (or the run)\*                          |
+| `http.request.method`          | HTTP attempt       | The request method, or `_OTHER` for one semconv does not name ([above](#span-names))  |
+| `http.request.method_original` | HTTP attempt       | The real verb, only when `http.request.method` is `_OTHER`                            |
+| `url.template`                 | HTTP attempt       | The stitch's path template, `/users/{id}`, when one is known ([above](#span-names))   |
+| `url.full`                     | HTTP attempt       | The request URL, scrubbed (below)                                                     |
+| `server.address`               | HTTP attempt       | The URL's host (an IPv6 literal without its brackets)                                 |
+| `server.port`                  | HTTP attempt       | The URL's port, else `443` for `https:` and `80` for `http:` (none for other schemes) |
+| `http.response.status_code`    | HTTP attempt       | The response status, when a response arrived                                          |
+| `http.request.resend_count`    | HTTP attempt       | On a resend only: how many times this request was sent before (per page when paging)  |
+
+\* Not the engine's attempt counter: an auth refresh resends without counting
+against `retry.attempts`, so the request before it and the one after it would
+both read `1`. The ordinal counts physical requests, so they read `1` and `2`.
 
 The run span also carries the call's `progress`, `info` and `drift` events as
 span events. A `progress` event's `attempt`, `detail` and `waited` become
@@ -160,9 +179,11 @@ before:
    `webjs`) and `telemetry.sdk.version` (the package version).
 2. `OTEL_RESOURCE_ATTRIBUTES` — `key=value` pairs separated by commas, with `,`
    inside a value percent-encoded (a bare `=` in a value is fine: the pair splits
-   on the first one). A value that fails to decode discards the whole variable.
+   on the first one). A value that fails to decode discards the whole variable,
+   and an entry whose key is empty or only whitespace is skipped.
 3. `service.name` from `OTEL_SERVICE_NAME`, else the one in
-   `OTEL_RESOURCE_ATTRIBUTES`, else `unknown_service`.
+   `OTEL_RESOURCE_ATTRIBUTES`, else `unknown_service` (an empty name counts as
+   none).
 4. The sink's `resource` option.
 
 The batch's instrumentation scope is `stitchapi` at the package version, and
@@ -184,10 +205,21 @@ other OTel SDK works unchanged:
 | `OTEL_SERVICE_NAME`                  | The resource's `service.name`.                                                                                                    |
 | `OTEL_RESOURCE_ATTRIBUTES`           | The rest of the resource ([above](#the-resource)).                                                                                |
 
-An empty variable counts as unset. The `endpoint` option, when you pass one,
+An empty variable counts as unset, and a header whose name is empty or only
+whitespace is skipped (`fetch` rejects an empty header name, which would drop
+every batch). The `endpoint` option, when you pass one,
 beats both endpoint variables and stays a base URL (`/v1/traces` is still
 appended); an explicit header beats an environment one of the same name, in any
 case.
+
+**When spans cannot be delivered.** An export never breaks a call, and it is
+not silent either: the first failure in a process — the collector refusing the
+POST, a network error, a header `fetch` rejects, a custom exporter that throws —
+prints one `console.warn` naming the endpoint (credentials scrubbed) and the
+reason; later failures are not reported. With `STITCH_EXPORT=otlp` the exporter
+loads on first use. Until it has, a sink holds up to 1000 events and then drops
+the oldest, and a chunk that does not load, an exporter that fails to start, or
+that overflow each warn once the same way.
 
 The pipeline is one namespace, `otlp`, with a member per layer. It lives on its
 own subpath — `import { otlp } from 'stitchapi/otlp'` — rather than the root

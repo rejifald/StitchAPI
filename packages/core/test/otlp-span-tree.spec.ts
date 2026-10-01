@@ -8,11 +8,17 @@
 // are asserted structurally instead), the mock server's random port masked, and the package
 // version masked so a release doesn't churn the golden.
 import { stitch } from '../src';
-import type { Adapter, Surface } from '../src';
+import type { Adapter, AuthStrategy, Surface } from '../src';
+import { graphql } from '../src/graphql';
 import { otlp } from '../src/otlp';
 import type { OtelSpan, SpanAttributes, SpanExporter } from '../src/otlp';
+import { sse } from '../src/sse';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+import { asValidator } from './support/schema';
+import { streamOf, streamThenError } from './support/streams';
+
+import { z } from 'zod';
 
 interface Capture {
     exporter: SpanExporter;
@@ -339,7 +345,6 @@ test('a retried call: one attempt span per request, the resend carrying its coun
             "name": "GET /flaky",
             "status": {
               "code": "ERROR",
-              "message": "status 503",
             },
           },
           {
@@ -450,7 +455,6 @@ test('a paginated call: attempts nest under their page, the resend count restart
                 "name": "GET /list",
                 "status": {
                   "code": "ERROR",
-                  "message": "status 503",
                 },
               },
               {
@@ -561,7 +565,6 @@ test('a failed call: ERROR on the attempt and the run, error.type the status', a
             "name": "POST /things",
             "status": {
               "code": "ERROR",
-              "message": "HTTP 500",
             },
           },
         ],
@@ -572,7 +575,6 @@ test('a failed call: ERROR on the attempt and the run, error.type the status', a
         "name": "createThing",
         "status": {
           "code": "ERROR",
-          "message": "HTTP 500",
         },
       }
     `);
@@ -678,6 +680,377 @@ test('a shell-surface call: the attempt is INTERNAL with no http.* attributes', 
         },
       }
     `);
+});
+
+test('an auth refresh: the 401 attempt ends in ERROR and the resend is a distinct attempt', async () => {
+    const c = capture();
+    server.route('GET', '/guarded', {
+        statuses: [401, 200],
+        body: { ok: true },
+    });
+    // A strategy that refreshes once on a 401. The engine redoes that request WITHOUT counting it
+    // against `retry.attempts`, so its own `attempt` number stays 1 for both requests; the spans
+    // must still tell them apart.
+    const auth: AuthStrategy = {
+        apply: () => undefined,
+        shouldRefresh: (res) => res.status === 401,
+        refresh: () => undefined,
+    };
+    const guarded = stitch({
+        name: 'guarded',
+        baseUrl: server.url,
+        path: '/guarded',
+        auth,
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await guarded();
+
+    expect(tree(c.spans)).toMatchInlineSnapshot(`
+      {
+        "attributes": {
+          "stitch.name": "guarded",
+          "stitch.surface": "http",
+        },
+        "children": [
+          {
+            "attributes": {
+              "error.type": "401",
+              "http.request.method": "GET",
+              "http.response.status_code": 401,
+              "server.address": "127.0.0.1",
+              "server.port": "<port>",
+              "stitch.attempt": 1,
+              "url.full": "http://127.0.0.1:<port>/guarded",
+              "url.template": "/guarded",
+            },
+            "kind": "CLIENT",
+            "name": "GET /guarded",
+            "status": {
+              "code": "ERROR",
+            },
+          },
+          {
+            "attributes": {
+              "http.request.method": "GET",
+              "http.request.resend_count": 1,
+              "http.response.status_code": 200,
+              "server.address": "127.0.0.1",
+              "server.port": "<port>",
+              "stitch.attempt": 2,
+              "url.full": "http://127.0.0.1:<port>/guarded",
+              "url.template": "/guarded",
+            },
+            "kind": "CLIENT",
+            "name": "GET /guarded",
+            "status": {
+              "code": "UNSET",
+            },
+          },
+        ],
+        "events": [
+          "request",
+          "auth",
+          "request",
+        ],
+        "kind": "INTERNAL",
+        "name": "guarded",
+        "status": {
+          "code": "UNSET",
+        },
+      }
+    `);
+});
+
+test('an SSE reconnect: the dropped connection is an ERROR attempt, the reopen a resend', async () => {
+    const c = capture();
+    let opens = 0;
+    const adapter: Adapter = () => {
+        opens++;
+        return Promise.resolve({
+            status: 200,
+            headers: {},
+            body:
+                opens === 1
+                    ? streamThenError(['id: 1\ndata: a\n\n'])
+                    : streamOf(['id: 2\ndata: b\n\n']),
+        });
+    };
+    const events = sse({
+        name: 'events',
+        baseUrl: 'https://events.example.com',
+        path: '/stream',
+        sse: { reconnect: { attempts: 1, delay: 1 } },
+        adapter,
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await events();
+
+    expect(tree(c.spans)).toMatchInlineSnapshot(`
+      {
+        "attributes": {
+          "stitch.name": "events",
+          "stitch.surface": "sse",
+        },
+        "children": [
+          {
+            "attributes": {
+              "error.type": "_OTHER",
+              "http.request.method": "GET",
+              "server.address": "events.example.com",
+              "server.port": 443,
+              "stitch.attempt": 1,
+              "url.full": "https://events.example.com/stream",
+              "url.template": "/stream",
+            },
+            "kind": "CLIENT",
+            "name": "GET /stream",
+            "status": {
+              "code": "ERROR",
+            },
+          },
+          {
+            "attributes": {
+              "http.request.method": "GET",
+              "http.request.resend_count": 1,
+              "http.response.status_code": 200,
+              "server.address": "events.example.com",
+              "server.port": 443,
+              "stitch.attempt": 2,
+              "url.full": "https://events.example.com/stream",
+              "url.template": "/stream",
+            },
+            "kind": "CLIENT",
+            "name": "GET /stream",
+            "status": {
+              "code": "UNSET",
+            },
+          },
+        ],
+        "events": [
+          "request",
+          "reconnect",
+          "request",
+        ],
+        "kind": "INTERNAL",
+        "name": "events",
+        "status": {
+          "code": "UNSET",
+        },
+      }
+    `);
+});
+
+test('a contract violation: the run is ERROR, its attempt (a good response) stays UNSET', async () => {
+    const c = capture();
+    server.route('GET', '/user', { body: { id: 'not-a-number' } });
+    const getUser = stitch({
+        name: 'getUser',
+        baseUrl: server.url,
+        path: '/user',
+        output: asValidator(z.object({ id: z.number() })),
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await expect(getUser()).rejects.toThrow();
+
+    expect(tree(c.spans)).toMatchInlineSnapshot(`
+      {
+        "attributes": {
+          "error.type": "_OTHER",
+          "stitch.name": "getUser",
+          "stitch.surface": "http",
+        },
+        "children": [
+          {
+            "attributes": {
+              "http.request.method": "GET",
+              "http.response.status_code": 200,
+              "server.address": "127.0.0.1",
+              "server.port": "<port>",
+              "stitch.attempt": 1,
+              "url.full": "http://127.0.0.1:<port>/user",
+              "url.template": "/user",
+            },
+            "kind": "CLIENT",
+            "name": "GET /user",
+            "status": {
+              "code": "UNSET",
+            },
+          },
+        ],
+        "events": [
+          "request",
+          "drift",
+        ],
+        "kind": "INTERNAL",
+        "name": "getUser",
+        "status": {
+          "code": "ERROR",
+          "message": "contract violation (drift)",
+        },
+      }
+    `);
+});
+
+test('a surface verdict failure (GraphQL errors on a 200): the run is ERROR, its attempt stays UNSET', async () => {
+    const c = capture();
+    server.route('POST', '/graphql', {
+        body: { data: null, errors: [{ message: 'no such user' }] },
+    });
+    const getUser = graphql({
+        name: 'getUser',
+        baseUrl: server.url,
+        path: '/graphql',
+        document: '{ user { id } }',
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await expect(getUser()).rejects.toThrow();
+
+    expect(tree(c.spans)).toMatchInlineSnapshot(`
+      {
+        "attributes": {
+          "error.type": "_OTHER",
+          "stitch.name": "getUser",
+          "stitch.surface": "graphql",
+        },
+        "children": [
+          {
+            "attributes": {
+              "http.request.method": "POST",
+              "http.response.status_code": 200,
+              "server.address": "127.0.0.1",
+              "server.port": "<port>",
+              "stitch.attempt": 1,
+              "url.full": "http://127.0.0.1:<port>/graphql",
+              "url.template": "/graphql",
+            },
+            "kind": "CLIENT",
+            "name": "POST /graphql",
+            "status": {
+              "code": "UNSET",
+            },
+          },
+        ],
+        "events": [
+          "request",
+        ],
+        "kind": "INTERNAL",
+        "name": "getUser",
+        "status": {
+          "code": "ERROR",
+          "message": "GraphQL: no such user",
+        },
+      }
+    `);
+});
+
+test('a failed page: the page span carries the same error.type as its run', async () => {
+    const c = capture();
+    // Page 1 succeeds; page 2 is a 503 with no retry left.
+    server.route('GET', '/pages', { statuses: [200, 503], body: [1] });
+    const pages = stitch({
+        name: 'pages',
+        baseUrl: server.url,
+        path: '/pages',
+        paginate: {
+            next: (_body, page) =>
+                page < 3 ? { query: { page: page + 1 } } : undefined,
+        },
+        trace: otlp.sink({ exporter: c.exporter }),
+    });
+
+    await expect(pages()).rejects.toThrow();
+
+    const run = c.spans.find((x) => x.parentSpanId === undefined)!;
+    const failedPage = c.spans.find((x) => x.name === 'page 2')!;
+    expect(run.attributes['error.type']).toBe('503');
+    expect(failedPage.attributes['error.type']).toBe('503');
+    expect(failedPage.status.message).toBeUndefined(); // `HTTP 503` restates the status
+});
+
+describe('the attempt span, per HTTP semantic conventions', () => {
+    // Hand-fed events, so the URL and method can be anything a stitch could be configured with.
+    function attemptOf(
+        method: string,
+        url: string,
+        template?: string,
+    ): OtelSpan {
+        const c = capture();
+        const sink = otlp.sink({ exporter: c.exporter });
+        const ctx = { name: 'x' };
+        sink.handle(
+            {
+                type: 'start',
+                name: 'x',
+                method,
+                url,
+                input: {},
+                ...(template ? { template } : {}),
+                at: 1,
+            },
+            ctx,
+        );
+        sink.handle(
+            { type: 'progress', phase: 'request', attempt: 1, at: 2 },
+            ctx,
+        );
+        sink.handle(
+            { type: 'result', data: 1, status: 200, attempts: 1, at: 3 },
+            ctx,
+        );
+        sink.handle(
+            { type: 'done', ok: true, elapsed: 2, attempts: 1, at: 3 },
+            ctx,
+        );
+        return c.spans[1]!;
+    }
+
+    test.each(['GET', 'POST', 'PATCH', 'TRACE'])(
+        'a method semconv names (%s) is exported as is',
+        (method) => {
+            const a = attemptOf(
+                method,
+                'https://api.example.com/u/1',
+                '/u/{id}',
+            );
+            expect(a.name).toBe(`${method} /u/{id}`);
+            expect(a.attributes['http.request.method']).toBe(method);
+            expect(a.attributes).not.toHaveProperty(
+                'http.request.method_original',
+            );
+        },
+    );
+
+    test('a method it does not name is _OTHER with the original kept, and the span is named HTTP', () => {
+        const a = attemptOf('PURGE', 'https://api.example.com/u/1', '/u/{id}');
+        expect(a.name).toBe('HTTP /u/{id}');
+        expect(a.attributes['http.request.method']).toBe('_OTHER');
+        expect(a.attributes['http.request.method_original']).toBe('PURGE');
+    });
+
+    test('with no template the span is named for HTTP alone', () => {
+        const a = attemptOf('PURGE', 'https://api.example.com/u/1');
+        expect(a.name).toBe('HTTP');
+    });
+
+    test('an IPv6 host loses its brackets, and keeps its explicit port', () => {
+        const a = attemptOf('GET', 'http://[::1]:8080/x');
+        expect(a.attributes['server.address']).toBe('::1');
+        expect(a.attributes['server.port']).toBe(8080);
+    });
+
+    test.each([
+        ['https://api.example.com/x', 443],
+        ['http://api.example.com/x', 80],
+        ['ws://api.example.com/x', undefined],
+        ['custom://api.example.com/x', undefined],
+    ])('server.port for %s with no explicit port is %s', (url, port) => {
+        const a = attemptOf('GET', url);
+        expect(a.attributes['server.port']).toBe(port);
+    });
 });
 
 describe('the resource', () => {

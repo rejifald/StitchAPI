@@ -506,16 +506,29 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 // arrive first are held, then forwarded IN ORDER once the module resolves, and straight through
 // after. One load per process: the memoised promise warns once if it fails (a missing chunk must
 // not take the run down) and resolves to nothing, and a sink whose load failed drops its events.
+//
+// Nothing here may fail a call, and nothing here may fail silently: every way the export can be lost
+// (the chunk does not load, `otlp.sink()` throws, the replay throws, the hold overflows) warns once
+// per process, so a missing span tree has a reason on stderr.
 let otlpModule:
     Promise<{ otlp: { sink(): TraceSink } } | undefined> | undefined;
+let otlpWarned = false;
+const warnOtlp = (what: string): void => {
+    if (otlpWarned) return;
+    otlpWarned = true;
+    console.warn(`stitchapi: STITCH_EXPORT=otlp ${what}.`);
+};
+
+// How many events a sink holds while the module loads (a few runs' worth). Past it the OLDEST are
+// dropped: a load that never resolves must not grow memory with every call.
+const OTLP_HELD_MAX = 1000;
 
 function lazyOtlpSink(): TraceSink {
     let sink: TraceSink | undefined;
     let held: [StitchEvent, TraceContext][] | undefined = [];
     otlpModule ??= import('./otlp').catch((error: unknown) => {
-        console.warn(
-            `stitchapi: STITCH_EXPORT=otlp could not load \`stitchapi/otlp\`, so spans are not ` +
-                `exported (${error instanceof Error ? error.message : String(error)}).`,
+        warnOtlp(
+            `could not load \`stitchapi/otlp\`, so spans are not exported (${String(error)})`,
         );
         return undefined;
     });
@@ -523,15 +536,27 @@ function lazyOtlpSink(): TraceSink {
         .then((m) => {
             sink = m?.otlp.sink();
             for (const [event, ctx] of held ?? []) sink?.handle(event, ctx);
-            held = undefined;
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+            warnOtlp(
+                `could not start its exporter, so spans may be lost (${String(error)})`,
+            );
+        })
+        .finally(() => {
             held = undefined;
         });
     return {
         handle(event, ctx): void {
             if (sink) sink.handle(event, ctx);
-            else held?.push([event, ctx]);
+            else if (held) {
+                held.push([event, ctx]);
+                if (held.length > OTLP_HELD_MAX) {
+                    held.shift();
+                    warnOtlp(
+                        `is still loading and holds ${OTLP_HELD_MAX} events at most; the oldest are dropped`,
+                    );
+                }
+            }
         },
         flush: () => ready.then(() => sink?.flush?.()),
     };

@@ -56,8 +56,8 @@ npm release are grouped under the in-development version that introduced them.
   toggle needs no import and is unchanged: the exporter loads on first use, holds the events of a call
   that starts before it has loaded and sends them in order, and a load failure prints one warning
   rather than failing a call. Measured with the size gate's new accounting (the next entry):
-  whole entry 24.62 → 20.67 KB gzip, `import { stitch }` 21.83 → 17.95 KB (advertised
-  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 2.73 KB.
+  whole entry 24.62 → 20.91 KB gzip, `import { stitch }` 21.83 → 18.10 KB (advertised
+  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 3.09 KB.
 
     Migration — `import { otlp } from 'stitchapi'` → `import { otlp } from 'stitchapi/otlp'`, and the
     same for the types.
@@ -69,13 +69,13 @@ npm release are grouped under the in-development version that introduced them.
   a lazy `import('./cache')` that `tsup`'s ESM build keeps in its own chunk) and, after the move
   above, the OTLP chunk too. Both root scenarios now name those chunks in `defer`, which keeps them
   external, as the async chunks a splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`)
-  emits and downloads on first use. Each chunk is its own gated scenario (`stitchapi/cache` 3.38 KB,
-  `stitchapi/otlp` 2.73 KB), and the gate now fails if a `defer` names a chunk the build no longer
+  emits and downloads on first use. Each chunk is its own gated scenario (`stitchapi/cache` 3.44 KB,
+  `stitchapi/otlp` 3.09 KB), and the gate now fails if a `defer` names a chunk the build no longer
   imports lazily or one it imports statically (a static edge would drop out of the measurement
-  instead of being counted). Whole entry 24.62 → 20.67 KB gzip, `import { stitch }` 21.83 → 17.95 KB;
+  instead of being counted). Whole entry 24.62 → 20.91 KB gzip, `import { stitch }` 21.83 → 18.10 KB;
   the advertised `~25 / ~22 kB` becomes `~21 / ~18 kB`. That is what `import { stitch }` ships up
-  front: a bundler that does not split dynamic imports inlines both chunks (25.70 / 22.97 KB). The
-  budgets drop from 24.80 / 22.00 to 21.20 / 18.45 KB; the headroom is ~0.5 KB on purpose, for the
+  front: a bundler that does not split dynamic imports inlines both chunks (~26 / ~23 KB). The
+  budgets drop from 24.80 / 22.00 to 21.45 / 18.65 KB; the headroom is ~0.5 KB on purpose, for the
   PRs queued behind this one.
 
 - **BREAKING CHANGE (dashboards): the OTLP export is a span tree — an INTERNAL run span over one
@@ -102,7 +102,19 @@ npm release are grouped under the in-development version that introduced them.
     known the name is the bare method and `url.template` is absent: a function `url` or `baseUrl`
     (computed per call), and an absolute `url` with no `{…}` variable (a single literal URL whose
     path may be an id or a secret). Fixed before 1.0 because adding the template later would rename
-    every HTTP span. The `start` event carries it as the new optional `template` field.
+    every HTTP span. The `start` event carries it as the new optional `template` field. A
+    scheme-relative `url` (`//user:pass@host/x/{id}`) is authority too: the template is
+    `/x/{id}`, never the userinfo.
+
+    The attempt span's HTTP attributes follow the client conventions: a method semconv does not
+    name (anything outside `CONNECT`, `DELETE`, `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT`,
+    `TRACE`; `QUERY` included) is `http.request.method = _OTHER` with the verb in the new
+    `http.request.method_original`, and the span is named `HTTP` or `HTTP {url.template}`;
+    `server.address` is the bare host (an IPv6 literal without its brackets); `server.port` defaults
+    to 443 and 80 for `https:` and `http:` only, and is absent for another scheme with no port.
+    `stitch.attempt` is the 1-based ordinal of the physical request within its page (or the run),
+    not the engine's counter: an auth refresh resends without counting against `retry.attempts`, so
+    two attempts used to both read `1`.
 
     An attempt span exists for **every** request, a clean single call included (one span → two),
     and nests under its page. A surface that replaces the HTTP transport (`shell`, `postmessage`)
@@ -111,7 +123,11 @@ npm release are grouped under the in-development version that introduced them.
     never invented at export. Status follows the OTel conventions: a success stays **UNSET** (was
     `OK`); a failure is ERROR with `error.type` set to the error class, else the HTTP status, else
     `_OTHER` (was the literal `'error'`). An attempt answered with a 4xx/5xx is ERROR even when the
-    run recovers. `server.port` is new; the span-event attribute `stitch.waited_ms` is now
+    run recovers. The status description is kept only where it adds something: a 4xx/5xx is already
+    on `error.type` (and, on an attempt, `http.response.status_code`), so the engine's `HTTP 503`,
+    `status 503` and `refresh` messages are not repeated, while a timeout's text or a contract
+    violation's message stays; a failed page span carries the same `error.type` and description as
+    its run. `server.port` is new; the span-event attribute `stitch.waited_ms` is now
     `stitch.waited` ([P17](docs/CONTRACT.md#p17--one-canonical-duration-form)); `service.name` is no
     longer `stitchapi` (see Added). The public types widen to match: `OtelSpan.kind` is the OTLP
     span-kind set rather than the `'CLIENT'` literal, and `SpanAttributes` values may be
@@ -125,6 +141,25 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
     `stitchapi`, and stop filtering on `status = OK`.
 
 ### Fixed
+
+- **An OTLP export that fails says so once, and the OTel environment lists ignore a blank name.**
+  ([#872](https://github.com/rejifald/StitchAPI/issues/872)) Every export path swallowed its
+  failure, so a wrong endpoint, a refused credential or a header `fetch` rejects dropped every
+  batch silently. The first failure in a process — a network error, a non-2xx answer, a custom
+  exporter that throws — now prints one `console.warn` naming the endpoint (userinfo scrubbed) and
+  the reason; later ones are not reported. `STITCH_EXPORT=otlp` follows the same rule: while the
+  lazily loaded module is pending a sink holds at most 1000 events (the oldest are dropped, with
+  one warning, so a load that never resolves cannot grow memory), and a chunk that does not load, an
+  exporter that fails to start or a sink that throws on replay is reported once instead of swallowed.
+  `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_EXPORTER_OTLP_HEADERS`/`_TRACES_HEADERS` skip an entry whose
+  name is empty or only whitespace (an empty header name makes `fetch` throw), and an empty
+  `service.name` (`service.name=`) falls back to `unknown_service`.
+
+- **`spanId` on a `StitchEvent` is documented as "the span this event belongs to".**
+  ([#874](https://github.com/rejifald/StitchAPI/issues/874)) The run on `start`, the attempt on
+  `progress{request}`, the page on `progress{paginate}`, with `parentSpanId` as its parent: stated in
+  the types' JSDoc and the events reference so that stamping ids on every record later fills in
+  existing fields instead of renaming any. No behaviour change.
 
 - **Under CommonJS, the secret-key denylist, the fingerprinter registry, the host-pooled rate budget
   and the seam-id counter are one object per process, not one per entry.**

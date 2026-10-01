@@ -141,3 +141,111 @@ test('a module that fails to load warns once, drops the events, and leaves the r
     expect(message).toContain('could not load `stitchapi/otlp`');
     expect(message).toMatch(/\(.+\)\.$/);
 });
+
+test('an exporter that fails to start warns once, and the run is unharmed', async () => {
+    vi.doMock('../src/otlp', () => ({
+        otlp: {
+            sink: () => {
+                throw new Error('bad endpoint');
+            },
+        },
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const stitch = await freshStitch();
+    const a = stitch({
+        name: 'a',
+        url: 'http://api.example.com/a',
+        adapter: ok,
+    });
+    const b = stitch({
+        name: 'b',
+        url: 'http://api.example.com/b',
+        adapter: ok,
+    });
+
+    await expect(a()).resolves.toEqual({ ok: true });
+    await expect(b()).resolves.toEqual({ ok: true });
+    await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalled();
+    });
+    await expect(a()).resolves.toEqual({ ok: true });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0]![0]);
+    expect(message).toContain('could not start its exporter');
+    expect(message).toContain('bad endpoint');
+});
+
+test('a sink that throws on replay is reported once, and later events still reach it', async () => {
+    const seen: StitchEvent[] = [];
+    let first = true;
+    vi.doMock('../src/otlp', () => ({
+        otlp: {
+            sink: () => ({
+                handle: (event: StitchEvent) => {
+                    if (first) {
+                        first = false;
+                        throw new Error('sink exploded');
+                    }
+                    seen.push(event);
+                },
+            }),
+        },
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const stitch = await freshStitch();
+    const getThing = stitch({
+        name: 'thing',
+        url: 'http://api.example.com/thing',
+        adapter: ok,
+    });
+
+    await getThing();
+    await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalled();
+    });
+    await expect(getThing()).resolves.toEqual({ ok: true });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain('sink exploded');
+    expect(seen.length).toBeGreaterThan(0); // the sink was set before the throw: later calls reach it
+});
+
+test('while the module loads, a sink holds a bounded number of events: the oldest are dropped, once reported', async () => {
+    let release!: () => void;
+    const loaded = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const seen: StitchEvent[] = [];
+    vi.doMock('../src/otlp', async () => {
+        await loaded;
+        return {
+            otlp: {
+                sink: () => ({
+                    handle: (event: StitchEvent) => {
+                        seen.push(event);
+                    },
+                }),
+            },
+        };
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const stitch = await freshStitch();
+    const getThing = stitch({
+        name: 'busy',
+        url: 'http://api.example.com/thing',
+        adapter: ok,
+    });
+
+    // Far more events than the hold keeps: a load that never finishes must not grow without bound.
+    for (let i = 0; i < 400; i++) await getThing();
+    expect(warn).toHaveBeenCalledTimes(1); // once, not once per dropped event
+    expect(String(warn.mock.calls[0]![0])).toContain('1000');
+
+    release();
+    await vi.waitFor(() => {
+        expect(seen.length).toBeGreaterThan(0);
+    });
+    expect(seen).toHaveLength(1000); // the newest 1000; the oldest were dropped
+    expect(seen[seen.length - 1]!.type).toBe('done');
+});

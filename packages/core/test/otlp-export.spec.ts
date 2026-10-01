@@ -136,10 +136,11 @@ test('maps an error to an ERROR run and attempt with error.type and status_code'
 
     expect(spans).toHaveLength(2);
     const [run, attempt] = spans as [OtelSpan, OtelSpan];
-    expect(run.status).toEqual({ code: 'ERROR', message: 'HTTP 500' });
+    // `HTTP 500` restates the status `error.type` already carries, so there is no description.
+    expect(run.status).toEqual({ code: 'ERROR' });
     expect(run.attributes['error.type']).toBe('500');
     expect(run.attributes['http.response.status_code']).toBeUndefined();
-    expect(attempt.status).toEqual({ code: 'ERROR', message: 'HTTP 500' });
+    expect(attempt.status).toEqual({ code: 'ERROR' });
     expect(attempt.attributes['http.response.status_code']).toBe(500);
     expect(attempt.attributes['error.type']).toBe('500');
     expect(attempt.attributes['server.port']).toBe(8443); // an explicit port survives

@@ -166,13 +166,14 @@ function joinUrl(base: string, path: string): string {
 //   2. the endpoint is `url`, else `baseUrl` + `path` (joined as `buildRequest` joins them);
 //   3. every query (a literal `?…`, a `{?q}`/`{&q}` operator) and fragment is dropped, so a secret
 //      riding the query never reaches a span name;
-//   4. scheme and authority (userinfo, host, port) are dropped, leaving the path;
+//   4. scheme and authority (userinfo, host, port) are dropped, leaving the path — the scheme is
+//      optional, so a scheme-relative `//user:pass@host/x` is authority too;
 //   5. an absolute `url` that carries no `{…}` variable is a single literal URL, whose path may be an
 //      instance id (`/users/42`) or a secret, so it is no template either. A relative `path` — the
 //      stitch's declared route — is a template even with no variable (`/users`).
 // An expression body never contains `{` (RFC 6570), so both patterns exclude it: a stray `{#…` with
 // no closing brace then fails in one scan instead of re-scanning to the end from every `{`.
-const ORIGIN = /^[a-z][a-z\d+.-]*:\/\/(?:[^/{]|\{[^/{}][^{}]*\})*/i;
+const ORIGIN = /^(?:[a-z][a-z\d+.-]*:)?\/\/(?:[^/{]|\{[^/{}][^{}]*\})*/i;
 function urlTemplate(cfg: ResolvedStitchConfig): string | undefined {
     const { url, baseUrl, path = '' } = cfg;
     const base = url === undefined ? baseUrl : '';

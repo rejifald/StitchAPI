@@ -10,6 +10,7 @@
 // default exporter POSTs OTLP/JSON to a collector; tests inject a stub exporter (no running
 // collector). It is a normal TraceSink, so it tees alongside console/JSONL.
 import { compact } from './compact';
+import { processWide } from './process-wide';
 import type { StitchEvent, TraceContext, TraceSink } from './types';
 import { hex, readEnv, scrubUrl, stripTrailingSlashes } from './util';
 
@@ -91,20 +92,21 @@ const VERSION = typeof __PKG_VERSION__ === 'string' ? __PKG_VERSION__ : '0.0.0';
 
 // An OTel `key=value,key=value` environment list (the W3C Baggage shape `OTEL_RESOURCE_ATTRIBUTES`
 // and `OTEL_EXPORTER_OTLP_HEADERS` share): split on the FIRST `=`, so a value may carry one itself
-// (base64 padding), trim, percent-decode both sides, skip an entry with no key. A variable with a
-// value that fails to decode is discarded whole (the OTel resource SDK spec), never thrown.
+// (base64 padding), trim, percent-decode both sides, skip an entry whose key is empty or only
+// whitespace (before or after decoding: `%20=v` is no key either) — an empty header name makes
+// `fetch` throw, which would drop every batch. A variable with a value that fails to decode is
+// discarded whole (the OTel resource SDK spec), never thrown.
 function envPairs(name: string): Record<string, string> {
     try {
         return Object.fromEntries(
             (readEnv(name) ?? '').split(',').flatMap((pair) => {
                 const eq = pair.indexOf('=');
-                return eq > 0
-                    ? [
-                          [
-                              decodeURIComponent(pair.slice(0, eq).trim()),
-                              decodeURIComponent(pair.slice(eq + 1).trim()),
-                          ],
-                      ]
+                const key =
+                    eq > 0
+                        ? decodeURIComponent(pair.slice(0, eq).trim()).trim()
+                        : '';
+                return key
+                    ? [[key, decodeURIComponent(pair.slice(eq + 1).trim())]]
                     : [];
             }),
         );
@@ -133,13 +135,46 @@ function otlpResource(resource?: SpanAttributes): SpanAttributes {
             : 'webjs',
         'telemetry.sdk.version': VERSION,
         ...env,
+        // An empty name is no name (`service.name=`, `OTEL_SERVICE_NAME=`): each falls through.
         'service.name':
             envOf('OTEL_SERVICE_NAME') ??
-            env['service.name'] ??
+            (env['service.name'] === '' ? undefined : env['service.name']) ??
             'unknown_service',
         ...resource,
     };
 }
+
+// One warning per process when spans cannot be delivered. Every export path swallows its failure (a
+// collector that is down must never break a stitch call), which left a wrong endpoint, a refused
+// credential or an invalid header silent: every batch dropped and nothing said so. The first failure
+// is reported, the rest are not (one line, not one per call). Process-wide: the CJS build bundles
+// this module into `lib/otlp.js` and, for `STITCH_EXPORT=otlp`, into `lib/index.js` too.
+const warned = processWide('stitchapi.otlp.warned', () => ({ done: false }));
+function warnOnce(where: string, why: unknown): void {
+    if (warned.done) return;
+    warned.done = true;
+    console.warn(
+        `stitchapi: the OTLP export to ${where} failed (${
+            why instanceof Error ? why.message : String(why)
+        }), so spans are dropped. Later failures are not reported.`,
+    );
+}
+
+// The methods HTTP semconv names (RFC 9110 plus PATCH). Any other verb is exported as `_OTHER` with
+// the original in `http.request.method_original`, so a free-form method cannot grow a backend's
+// cardinality, and the span is named `HTTP` rather than for the verb.
+const KNOWN_METHODS = new Set([
+    'CONNECT',
+    'DELETE',
+    'GET',
+    'HEAD',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+    'TRACE',
+]);
+const DEFAULT_PORTS: Record<string, number> = { 'http:': 80, 'https:': 443 };
 
 // One run's spans while its events stream in. Children are pushed as they OPEN (parent before
 // child) and mutated as they close; all of them export with the run on `done`.
@@ -179,8 +214,15 @@ const span = (
         events: [] as OtelSpanEvent[],
     });
 
-// Settle a span as failed: ERROR with the message, and a low-cardinality `error.type` — the error's
-// class when the engine named one, else (over HTTP) the status as a string, else semconv's `_OTHER`.
+// Settle a span as failed: ERROR, and a low-cardinality `error.type` — the error's class when the
+// engine named one, else (over HTTP) the status as a string, else semconv's `_OTHER`.
+//
+// The status description keeps only what the span's own attributes do not already say. Over HTTP a
+// 4xx/5xx rides `error.type` (and, on an attempt, `http.response.status_code`), so a message that
+// merely restates it — the engine's `HTTP 503` on a failure, `status 503` on a retry, `refresh` on a
+// 401 that triggered an auth refresh — is dropped (the semconv rule: omit a description that is
+// inferable from the status code). A message that says something else (a timeout's text, a contract
+// violation, a surface's `interpret:` reason) is kept.
 function fail(
     s: OtelSpan,
     http: boolean,
@@ -188,7 +230,16 @@ function fail(
     type?: string,
     message?: string,
 ): void {
-    s.status = compact({ code: 'ERROR', message });
+    const restated =
+        http &&
+        (status ?? 0) >= 400 &&
+        (message === `HTTP ${status}` ||
+            message === `status ${status}` ||
+            message === 'refresh');
+    s.status = compact({
+        code: 'ERROR',
+        message: restated ? undefined : message,
+    });
     s.attributes['error.type'] =
         type ?? (http && (status ?? 0) >= 400 ? String(status) : '_OTHER');
 }
@@ -214,14 +265,24 @@ function endAttempt(
         fail(a, r.http, status, type, message);
 }
 
-// Close the page in flight at `at`; a run that failed inside it (`failed`) fails the page too.
-function endPage(r: OpenRun, at: number, failed?: string): void {
+// Close the page in flight at `at`. A run that failed inside it (`failed`) fails the page the same
+// way — the same `error.type` and description as the run span, so a dashboard grouping by either
+// sees one failure rather than `503` on the run and `_OTHER` on its page.
+function endPage(
+    r: OpenRun,
+    at: number,
+    failed?: {
+        status?: number | undefined;
+        type?: string | undefined;
+        message: string;
+    },
+): void {
     const p = r.page;
     if (!p) return;
     r.page = undefined;
     p.endUnixMs = r.last = at;
     r.pages++;
-    if (failed !== undefined) fail(p, false, undefined, undefined, failed);
+    if (failed) fail(p, r.http, failed.status, failed.type, failed.message);
 }
 
 /**
@@ -259,15 +320,16 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
     const resource = otlpResource(opts.resource);
     const runs = new Map<string, OpenRun[]>();
 
+    // An export failure never breaks the event stream, but it is reported once (see `warnOnce`).
     const emit = (spans: OtelSpan[]): void => {
         try {
             const r = exporter.export(spans, resource) as unknown;
             if (r instanceof Promise)
-                r.catch(() => {
-                    /* swallow: an export failure must never break the stream */
+                r.catch((error: unknown) => {
+                    warnOnce('a custom exporter', error);
                 });
-        } catch {
-            /* an exporter failure must never break the event stream */
+        } catch (error) {
+            warnOnce('a custom exporter', error);
         }
     };
 
@@ -279,6 +341,7 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
             const stack = runs.get(key) ?? [];
             if (event.type === 'start') {
                 const http = (event.transport ?? 'http') === 'http';
+                const known = KNOWN_METHODS.has(event.method);
                 // `url.full` is OTLP's only secret-bearing attribute (it never exports headers or
                 // bodies): scrub userinfo + secret query values before export. Parsed once — every
                 // attempt of the run targets this URL.
@@ -306,20 +369,31 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
                     ),
                     http,
                     // HTTP client semconv: `{method} {url.template}`, the method alone when no
-                    // low-cardinality template is known.
+                    // low-cardinality template is known, and `HTTP` standing in for a method
+                    // semconv does not name (`HTTP {url.template}`, or bare `HTTP`).
                     name: http
-                        ? event.method +
+                        ? (known ? event.method : 'HTTP') +
                           (event.template ? ` ${event.template}` : '')
                         : String(event.transport),
                     base: http
                         ? compact({
-                              'http.request.method': event.method,
+                              'http.request.method': known
+                                  ? event.method
+                                  : '_OTHER',
+                              'http.request.method_original': known
+                                  ? undefined
+                                  : event.method,
                               'url.template': event.template,
                               'url.full': scrubUrl(event.url),
-                              'server.address': u?.hostname,
+                              // semconv wants the bare host: `new URL` keeps an IPv6 literal's brackets.
+                              'server.address': u?.hostname.replace(
+                                  /^\[|\]$/g,
+                                  '',
+                              ),
+                              // The port the URL names, else the scheme's default — only http(s) has one
+                              // to assume; a `ws:` or custom scheme with no port reports none.
                               'server.port': u
-                                  ? Number(u.port) ||
-                                    (u.protocol === 'https:' ? 443 : 80)
+                                  ? Number(u.port) || DEFAULT_PORTS[u.protocol]
                                   : undefined,
                           })
                         : {},
@@ -383,7 +457,11 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
                                     ...r.base,
                                     'http.request.resend_count':
                                         (r.http && r.sent) || undefined,
-                                    'stitch.attempt': event.attempt,
+                                    // The ordinal of this physical request within its page (or the
+                                    // run). Not the engine's `attempt`: an auth refresh resends
+                                    // without counting against `retry.attempts`, so two requests
+                                    // would both read `1`.
+                                    'stitch.attempt': r.sent + 1,
                                 }),
                             )),
                         );
@@ -449,7 +527,7 @@ function otlpSink(opts: OtlpOptions = {}): TraceSink {
                         errorType,
                         message,
                     );
-                    endPage(r, at, message);
+                    endPage(r, at, { status, type: errorType, message });
                     fail(run, r.http, status, errorType, message);
                     break;
                 }
@@ -580,8 +658,8 @@ const lowerKeys = (h: Record<string, string> = {}): Record<string, string> =>
  * `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (the full URL, used as-is), else `OTEL_EXPORTER_OTLP_ENDPOINT`
  * (a base URL, `/v1/traces` appended), else `http://localhost:4318`. Headers are
  * `OTEL_EXPORTER_OTLP_HEADERS`, then `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, then `opts.headers`,
- * each overriding the last. Fire-and-forget — failures are swallowed so a missing collector never
- * breaks a stitch call.
+ * each overriding the last. Fire-and-forget — a failure drops the batch and never breaks a stitch
+ * call, and the first one in the process is reported with a single `console.warn`.
  */
 function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
     const url =
@@ -602,13 +680,16 @@ function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
     return {
         async export(spans, resource): Promise<void> {
             try {
-                await fetch(url, {
+                const res = await fetch(url, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify(toOtlpJson(spans, resource)),
                 });
-            } catch {
-                /* no collector / network error — drop the batch, never throw */
+                if (!res.ok) warnOnce(scrubUrl(url), `HTTP ${res.status}`);
+            } catch (error) {
+                // No collector / network error / a header `fetch` refuses: drop the batch, never
+                // throw, say so once.
+                warnOnce(scrubUrl(url), error);
             }
         },
     };

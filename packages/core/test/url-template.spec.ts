@@ -106,6 +106,16 @@ describe('derived from url', () => {
             'https://api.example.com/orgs/{org}{?q}',
             '/orgs/{org}',
         ],
+        [
+            'a scheme-relative url: userinfo, host and port are authority too',
+            '//u:hunter2@api.example.com:8443/orgs/{org}',
+            '/orgs/{org}',
+        ],
+        [
+            'a scheme-relative url with a templated host',
+            '//{tenant}.example.com/orgs/{org}',
+            '/orgs/{org}',
+        ],
     ])('%s', async (_label, url, expected) => {
         expect(await templateOf(stitch({ name: 't', adapter, url }))).toBe(
             expected,
@@ -122,6 +132,10 @@ describe('no template is known', () => {
         [
             'an absolute literal url with only a query',
             { url: `${BASE}/users?q={q}` },
+        ],
+        [
+            'a scheme-relative literal url (one URL, whose path may be an id)',
+            { url: '//u:hunter2@api.example.com/users/42' },
         ],
         [
             'a function url, even one returning a template',
@@ -145,6 +159,18 @@ describe('no template is known', () => {
         });
         expect(await templateOf(shell)).toBeUndefined();
     });
+});
+
+test('a scheme-relative url never lets its userinfo into the template', async () => {
+    const template = await templateOf(
+        stitch({
+            name: 't',
+            adapter,
+            url: '//u:hunter2@api.example.com/orgs/{org}',
+        }),
+    );
+    expect(template).not.toContain('hunter2');
+    expect(template).not.toContain('@');
 });
 
 test('only the config is read: an expanded value never reaches the template', async () => {

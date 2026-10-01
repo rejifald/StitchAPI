@@ -148,17 +148,32 @@ before the header exists:
   `http.request.method`, `url.template`, `url.full` (scrubbed), `server.address`,
   `server.port`, `http.response.status_code`, `http.request.resend_count` (on a resend) and
   `error.type`. The template is the stitch's unexpanded **path** template (`path` under a
-  static `baseUrl`'s path, or a templated `url`; scheme, authority, query and fragment
-  removed), stamped by the engine on `start.template`; with none known — a function `url` or
-  `baseUrl`, or an absolute `url` with no `{…}` variable — the name is the bare `{method}` and
-  `url.template` is absent. For a surface whose `execute` replaces the transport (ADR 0008 —
-  `shell`, `postmessage`) it is INTERNAL with no `http.*`.
+  static `baseUrl`'s path, or a templated `url`; scheme, authority — a scheme-relative
+  `//user:pass@host/x` included — query and fragment removed), stamped by the engine on
+  `start.template`; with none known — a function `url` or `baseUrl`, or an absolute `url` with
+  no `{…}` variable — the name is the bare `{method}` and `url.template` is absent. For a
+  surface whose `execute` replaces the transport (ADR 0008 — `shell`, `postmessage`) it is
+  INTERNAL with no `http.*`. The HTTP details a backend keys on follow the client conventions:
+  a method semconv does not name (anything outside `CONNECT`, `DELETE`, `GET`, `HEAD`,
+  `OPTIONS`, `PATCH`, `POST`, `PUT`, `TRACE`) is `http.request.method = _OTHER` with the verb in
+  `http.request.method_original`, and the span is named `HTTP` / `HTTP {url.template}`;
+  `server.address` is the bare host (an IPv6 literal without brackets); `server.port` defaults
+  to 443/80 for `https:`/`http:` only. `stitch.attempt` is the 1-based **ordinal of the physical
+  request** within its page (or the run), not the engine's counter: an auth refresh resends
+  without counting against `retry.attempts`, so that counter reads `1` on both requests.
 - **Ids are engine-minted at request time** — an attempt's on `progress{phase: 'request'}`
   (`spanId`, `parentSpanId`), a page's on the `progress{phase: 'paginate'}` that closes it —
   never at export. The same ids are what a future per-record stamp
   ([#874](https://github.com/rejifald/StitchAPI/issues/874)) and the outbound header read.
+- **`spanId` on an event means "the span this event belongs to"** — the run on `start`, the
+  attempt on `progress{request}`, the page on `progress{paginate}` — and `parentSpanId` is that
+  span's parent. Fixed now, in the types' JSDoc and the events reference, so #874 stamps ids on
+  every record by filling in fields that already exist rather than renaming any.
 - **Status follows the conventions** — UNSET on success, ERROR on failure with an
-  `error.type` (the error class, else the HTTP status, else `_OTHER`).
+  `error.type` (the error class, else the HTTP status, else `_OTHER`). The description is
+  omitted where the span already says it (a 4xx/5xx is on `error.type` and
+  `http.response.status_code`, so `HTTP 503` / `status 503` / `refresh` are not repeated); a
+  failed page carries its run's `error.type` and description.
 
 Implemented in `otlp.ts` — shipped as the `stitchapi/otlp` subpath, off the root entry
 ([ADR 0021](./0021-auth-strategies-move-to-a-subpath.md), addendum) — with golden tests of the

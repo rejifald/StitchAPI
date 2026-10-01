@@ -37,7 +37,14 @@ beforeEach(() => {
 afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
 });
+
+// The exporter warns once per process, so a case that reads the warning starts it afresh.
+const warned = (): { done: boolean } =>
+    (globalThis as Record<symbol, { done: boolean }>)[
+        Symbol.for('stitchapi.otlp.warned')
+    ]!;
 
 // Build the default exporter with `opts`, ship an empty batch, return the one request it made.
 async function post(
@@ -148,6 +155,121 @@ describe('headers', () => {
             'content-type': 'application/json',
         });
     });
+
+    it('an entry whose name is empty or only whitespace is skipped (fetch rejects an empty header name)', async () => {
+        vi.stubEnv(
+            'OTEL_EXPORTER_OTLP_HEADERS',
+            // an empty name, a whitespace-only name, an encoded-whitespace name, and one good pair
+            '=v1, =v2,%20%20=v3,x-ok=1',
+        );
+        expect((await post()).headers).toEqual({
+            'content-type': 'application/json',
+            'x-ok': '1',
+        });
+    });
+});
+
+describe('a send that fails is reported once', () => {
+    beforeEach(() => {
+        warned().done = false;
+    });
+
+    const send = (): Promise<void> =>
+        otlp.exporter().export([]) as Promise<void>;
+
+    it('a network error warns once, naming the endpoint and the reason, and never throws', async () => {
+        vi.stubEnv(
+            'OTEL_EXPORTER_OTLP_ENDPOINT',
+            'http://u:hunter2@collector.test',
+        );
+        const warn = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => undefined);
+        vi.stubGlobal('fetch', () =>
+            Promise.reject(new TypeError('fetch failed')),
+        );
+
+        await expect(send()).resolves.toBeUndefined();
+        await expect(send()).resolves.toBeUndefined();
+
+        expect(warn).toHaveBeenCalledTimes(1); // the second failure is not reported
+        const message = String(warn.mock.calls[0]![0]);
+        expect(message).toContain('collector.test/v1/traces');
+        expect(message).toContain('fetch failed');
+        expect(message).not.toContain('hunter2'); // userinfo is scrubbed from the endpoint
+    });
+
+    it('a refused POST (a non-2xx answer) warns with its status', async () => {
+        const warn = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => undefined);
+        vi.stubGlobal('fetch', () =>
+            Promise.resolve({ ok: false, status: 401 }),
+        );
+
+        await send();
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0]![0])).toContain('HTTP 401');
+    });
+
+    it('a header fetch refuses is reported rather than silently dropping every batch', async () => {
+        const warn = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => undefined);
+        vi.stubGlobal('fetch', () => {
+            throw new TypeError('invalid header value');
+        });
+
+        await send();
+
+        expect(String(warn.mock.calls[0]![0])).toContain(
+            'invalid header value',
+        );
+    });
+
+    it('a throwing custom exporter is reported once too', () => {
+        const warn = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => undefined);
+        const sink = otlp.sink({
+            exporter: {
+                export: () => {
+                    throw new Error('queue full');
+                },
+            },
+        });
+        const run = (name: string): void => {
+            for (const event of [
+                {
+                    type: 'start',
+                    name,
+                    method: 'GET',
+                    url: 'http://x.test/',
+                    input: {},
+                    at: 1,
+                },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 },
+            ] as const)
+                sink.handle(event, { name });
+        };
+
+        run('a');
+        run('b');
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0]![0])).toContain('queue full');
+    });
+
+    it('a successful send says nothing', async () => {
+        const warn = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => undefined);
+
+        await send();
+
+        expect(warn).not.toHaveBeenCalled();
+    });
 });
 
 describe('OTEL_RESOURCE_ATTRIBUTES shares the parser', () => {
@@ -178,5 +300,44 @@ describe('OTEL_RESOURCE_ATTRIBUTES shares the parser', () => {
         );
         expect(attrs['deployment.token']).toBe('abc==');
         expect(attrs['team']).toBe('pay');
+    });
+
+    const resourceOf = (): Record<string, string> => {
+        const doc = otlp.json([]) as {
+            resourceSpans: [
+                {
+                    resource: {
+                        attributes: {
+                            key: string;
+                            value: { stringValue: string };
+                        }[];
+                    };
+                },
+            ];
+        };
+        return Object.fromEntries(
+            doc.resourceSpans[0].resource.attributes.map((a) => [
+                a.key,
+                a.value.stringValue,
+            ]),
+        );
+    };
+
+    it('skips an entry whose name is empty or only whitespace', () => {
+        vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', '=v1, =v2,%20=v3,team=pay');
+        const attrs = resourceOf();
+        expect(attrs['team']).toBe('pay');
+        expect(Object.keys(attrs).filter((k) => k.trim() === '')).toEqual([]);
+    });
+
+    it('an empty service.name is no name: it falls back to unknown_service', () => {
+        vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'service.name=');
+        expect(resourceOf()['service.name']).toBe('unknown_service');
+    });
+
+    it('an empty OTEL_SERVICE_NAME falls through to the one in OTEL_RESOURCE_ATTRIBUTES', () => {
+        vi.stubEnv('OTEL_SERVICE_NAME', '');
+        vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'service.name=checkout');
+        expect(resourceOf()['service.name']).toBe('checkout');
     });
 });

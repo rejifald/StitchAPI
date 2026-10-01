@@ -55,6 +55,23 @@ fields. Every event carries an `at` field — a millisecond timestamp.
 - **`done`** — the stream is finished, success or failure. Fields: `ok`, `elapsed`
   (total duration), `attempts`, `at`.
 
+### Span ids
+
+Wherever an event carries `spanId`, it is the id of **the span the event belongs
+to**, and `parentSpanId` is that span's parent. Which span depends on the event:
+
+| Event                   | `spanId` is                      | `parentSpanId` is                         |
+| ----------------------- | -------------------------------- | ----------------------------------------- |
+| `start`                 | the **run**                      | the run that spawned this one, if any     |
+| `progress` · `request`  | the **attempt** (one request)    | the run, or the page for a paginated call |
+| `progress` · `paginate` | the **page** that just completed | the run                                   |
+
+Only those carry ids today. The meaning does not change when more events do: a
+later change that stamps ids on every event
+([#874](https://github.com/rejifald/StitchAPI/issues/874)) fills in fields that
+already exist, so a consumer that reads `spanId` as "the span this event belongs
+to" keeps working without a rename.
+
 `ProgressPhase` is one of `'auth'`, `'request'`, `'throttled'`, `'retry'`,
 `'paginate'`, or `'circuit'`.
 
