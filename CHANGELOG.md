@@ -40,9 +40,11 @@ npm release are grouped under the in-development version that introduced them.
       has to change. Generations a counter wrote before keep their numeric prefix, so no cached entry
       is stranded before its next bump, and a process still on the counter version reads the new
       value too.
-    - **Throttle `rate` falls back reserve → increment → in-process pacing.** With neither verb, each
-      process paces on its own cursor (the in-process limiter's spacing, so a fleet of N emits N×),
-      announced once by the `throttle.per-process` event above.
+    - **Throttle `rate` falls back reserve → increment → in-process pacing.** With neither verb, the
+      in-process limiter paces the call (its spacing, so a fleet of N emits N×), announced once by
+      the `throttle.per-process` event above. It is the very limiter a store-less stitch runs, so
+      `pool: 'host'` still pools across stitches in one process — attaching a get/set store for
+      caching does not undo it.
     - **`vaultView` forwards `increment` only when the backend has it**, as it already did for
       `reserve` and the lease pair, so a view never advertises a counter its backend lacks.
 
@@ -63,7 +65,11 @@ npm release are grouped under the in-development version that introduced them.
   so a `get`/`set` store passes on the base group. The entry name and signature are unchanged. One
   rule moved: `keys: writes are isolated by key` now covers `set` only, and the counter half is the
   new `increment: counters are isolated by key`. A missing group is not a violation, so a store that
-  ships a capability should also assert it is present beside its conformance run.
+  ships a capability should also assert it is present beside its conformance run. Two rules are
+  new: a safe integer must round-trip through `set`/`get` as a `number` (cache invalidation stores
+  its generation that way, and a store that stringifies it turns `invalidate()` into a silent
+  no-op), and `lease` without `release` — or the reverse — is a violation, since the throttle
+  ignores half a pair.
 
 ### Fixed
 

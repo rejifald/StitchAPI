@@ -738,7 +738,7 @@ export const pages: Page[] = [
         path: 'guides/state/pluggable-store',
         title: 'The pluggable store',
         description:
-            'Swap the in-memory store for a shared one to back throttle and sessions with get/set/increment + TTL.',
+            'Swap the in-memory store for a shared one to back throttle, cache and sessions — get/set + TTL, plus the optional verbs that make a throttle fleet-wide.',
         kind: 'guide',
     },
     {

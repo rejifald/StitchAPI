@@ -337,8 +337,8 @@ export function compose(config: ComposeInput): ResolvedStitchConfig {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
         // The vault backend is a store too, and takes the same atomic treatment for the same
-        // reason `auth` does below: a `StitchStore`'s capability methods (`reserve`, the
-        // `lease`/`release` pair, `close`) are OPTIONAL, so deep-merging two backends would
+        // reason `auth` does below: a `StitchStore`'s capability methods (`increment`, `reserve`,
+        // the `lease`/`release` pair, `close`) are OPTIONAL, so deep-merging two backends would
         // splice one's onto the other and advertise a capability the winner does not have.
         if (layer.vault) vault = layer.vault;
         // The surface is an atomic value (last-writer-wins), never deep-merged — merging two

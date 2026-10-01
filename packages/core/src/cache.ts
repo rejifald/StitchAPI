@@ -303,8 +303,12 @@ export function cacheStitchId(cfg: { name?: string; path?: string }): string {
  *  integer (#882) — which works on every store, including a get/set-only one with no `increment`.
  *  An integer, not a string token, on purpose: the read side below already folds a number into
  *  the prefix, so generations a counter wrote before this keep their prefix (nothing stranded),
- *  and a process still running the counter version reads the new value too. 2^53 values make a
- *  repeat — the only way a bump could fail to move the bucket — not worth guarding.
+ *  and a process still running the counter version reads the new value too. The draw starts at 1:
+ *  `asNum` reads an unset (or non-number) generation as 0, so a bump to 0 would not move the
+ *  bucket. 2^52 values make a repeat — the only other way a bump could fail to — not worth guarding.
+ *
+ *  The integer must round-trip as a number: a store that stringifies it reads back as 0 and the
+ *  bump silently does nothing (`conformance.store` checks this).
  *
  *  On an eventually-consistent store the bump is only as fast as the store: Workers KV can take
  *  ~60s to show it in every location, and until then a stale reader still serves the old bucket. */
@@ -314,7 +318,7 @@ export async function bumpCacheGeneration(
 ): Promise<void> {
     await store.set(
         stitchId ? stitchGenKey(stitchId) : cacheGenKey,
-        Math.floor(Math.random() * 2 ** 53),
+        1 + Math.floor(Math.random() * 2 ** 52),
         GEN_TTL_MS,
     );
 }

@@ -1,6 +1,7 @@
 // The default in-memory state store + a store-backed throttle. Swapping the store for a
 // Redis/Postgres adapter makes throttle distributed and sessions persistent/shared across
 // workers, with no change to the call site (DESIGN.md §13).
+import { createThrottle } from './resilience';
 import type {
     AcquireOptions,
     Clock,
@@ -227,11 +228,12 @@ export interface Throttle {
  *
  * The fallback is not deprecated and is not going away: `reserve` is optional, and so is the
  * counter (#882). On a store with NEITHER — a get/set-only backend such as Cloudflare Workers KV,
- * which has no atomic read-modify-write to build either from — `rate` paces on the local cursor
- * alone: exactly the in-process limiter, so N processes emit N×. The same is true of `concurrency`
- * without the lease pair. Neither degrades in silence: the first acquire carries a `note` naming
- * what is per-process and why, which the engine emits once as an `info` event (topic
- * `throttle.per-process`) — the "is my limiter fleet-wide?" answer #725 asked for.
+ * which has no atomic read-modify-write to build either from — `rate` is paced by the in-process
+ * limiter itself ({@link createThrottle}, `pool: 'host'` pooling included), so N processes emit
+ * N×. The same is true of `concurrency` without the lease pair. Neither degrades in silence: the
+ * first acquire carries a `note` naming what is per-process and why, which the engine emits once as
+ * an `info` event (topic `throttle.per-process`) — the "is my limiter fleet-wide?" answer #725
+ * asked for.
  */
 export function createStoreThrottle(
     opts: ThrottleOptions | undefined,
@@ -263,6 +265,11 @@ export function createStoreThrottle(
     ]
         .filter(Boolean)
         .join('; ');
+    // With neither `reserve` nor `increment` there is no shared slot to pace on, so `rate` takes
+    // its step from the very limiter a store-less stitch runs: same arithmetic, and `pool: 'host'`
+    // pools through the same in-process registry instead of a per-throttle copy. Built on first
+    // use and kept, so a closure-local (`pool: 'stitch'`) cursor lives as long as this throttle.
+    let inProcess: ReturnType<typeof createThrottle> | undefined;
     const local = new Map<
         string,
         {
@@ -356,7 +363,7 @@ export function createStoreThrottle(
         }
         if (paced) {
             const spacing = paced.per / paced.count; // ms between grants
-            let at: number;
+            let at: number | undefined;
             if (store.reserve) {
                 // The GCRA cell (ADR 0024). One atomic read-compute-write over a shared cursor
                 // gives the fleet what neither half of the fallback below can: the cursor carries
@@ -373,12 +380,10 @@ export function createStoreThrottle(
                     clock.now(),
                     paced.per + 100,
                 );
-            } else {
+            } else if (store.increment) {
                 // Fallback for a store with no `reserve` — an eventually-consistent backend, or any
                 // implementation predating ADR 0024. Correct per process and bounded, but a fleet
-                // drifts to N× mid-window; the comments below are the full account of why. With no
-                // `increment` either, there is no shared slot at all and only the local cursor
-                // paces: the in-process limiter, announced once through `note`.
+                // drifts to N× mid-window; the comments below are the full account of why.
                 //
                 // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
                 // the atomic increment hands each caller a unique slot N in the window, and slot N
@@ -392,25 +397,14 @@ export function createStoreThrottle(
                 // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
                 // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves
                 // a dead key per window in the backend until something else happens to evict it.
-                // `lastWindow` is kept even with no counter: `release` reads it as "this key is
-                // still pacing", so the local cursor survives an idle moment instead of resetting
-                // to a burst.
                 const s = stateFor(key);
-                if (
-                    store.increment &&
-                    s.lastWindow !== undefined &&
-                    s.lastWindow < windowStart
-                )
+                if (s.lastWindow !== undefined && s.lastWindow < windowStart)
                     await store.set(`rl:${key}:${s.lastWindow}`, undefined);
                 s.lastWindow = windowStart;
-                // Slot 1 is the window's start, which is never after `now` — so with no counter the
-                // floor below vanishes and the local cursor alone decides.
-                const n = store.increment
-                    ? await store.increment(
-                          `rl:${key}:${windowStart}`,
-                          paced.per + 100,
-                      )
-                    : 1;
+                const n = await store.increment(
+                    `rl:${key}:${windowStart}`,
+                    paced.per + 100,
+                );
                 // The slot is a FLOOR on the grant, not the grant time itself. A process that joins
                 // mid-window finds every slot up to `n` already scheduled in the PAST, and granting
                 // each of those the moment it is claimed drains them in one tick — a burst of up to
@@ -433,8 +427,17 @@ export function createStoreThrottle(
                     windowStart + (n - 1) * spacing,
                 );
                 s.nextGrantAt = at + spacing;
+            } else {
+                // Neither verb (#882): no shared slot exists, so there is nothing to floor on and
+                // no `rl:` key to mint. The limiter a store-less stitch runs does the pacing and
+                // sleeps itself — rate-only, so it never takes the concurrency slot that was
+                // handled above even though it was handed the same options — and the result is
+                // announced once through `note`.
+                inProcess ??= createThrottle(opts, clock);
+                waited += (await inProcess.acquire(key, { rateOnly: true }))
+                    .waited;
             }
-            const wait = at - clock.now();
+            const wait = at === undefined ? 0 : at - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
                 waited += wait;

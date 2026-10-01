@@ -168,9 +168,10 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  * only when the store HAS that capability — only `get`/`set` are required, so
  * a store passes by honoring the groups it implements (#882):
  *
- * - **base** (always) — `set`/`get` round-trips a value; a missing key
- *   resolves to `undefined`; a second `set` overwrites; `set(key, undefined)`
- *   deletes; writes are isolated by key. `set(key, value, ttl)` expires the
+ * - **base** (always) — `set`/`get` round-trips a value, a safe integer
+ *   included (it must come back as a `number`); a missing key resolves to
+ *   `undefined`; a second `set` overwrites; `set(key, undefined)` deletes;
+ *   writes are isolated by key. `set(key, value, ttl)` expires the
  *   value after `ttl` ms; a `set` without `ttl` does not expire.
  * - **counter** (`increment`) — initializes a missing key to 1, increments an
  *   existing counter, is ATOMIC within a process (20 concurrent calls return
@@ -180,7 +181,8 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  *   and key isolation.
  * - **lease** (`lease` + `release`, ADR 0025) — the semaphore's cap, release,
  *   renewal, expiry, idempotent release, atomicity and key isolation. Checked
- *   only when BOTH verbs are present, since the contract pairs them.
+ *   only when BOTH verbs are present, since the contract pairs them — a store
+ *   with just one of the two is itself a violation.
  *
  * A missing group is not a violation, so the report alone does not tell you a
  * verb went missing: a store that ships a capability should also assert it is
@@ -219,6 +221,22 @@ async function verifyStoreContract(
                     { kit: 'stitchapi', n: 7 },
                     'get after set',
                 );
+            },
+        ],
+        [
+            // Bulk cache invalidation (cache.ts `bumpCacheGeneration`) writes a plain integer with
+            // `set` and `asNum` reads it back, treating anything that is not a number as 0. A
+            // store that stringifies numbers therefore turns `invalidate()` into a silent no-op,
+            // so the value must come back as the number it went in as — not as `'4503599627370497'`.
+            'set/get: a safe integer round-trips as a number',
+            async () => {
+                const wanted = 4_503_599_627_370_497; // 2^52 + 1, the top of a generation draw
+                await store.set(k('int'), wanted);
+                const got = await store.get(k('int'));
+                if (got !== wanted)
+                    throw new Error(
+                        `expected the number ${wanted}, got ${show(got)} (${typeof got})`,
+                    );
             },
         ],
         [
@@ -472,6 +490,22 @@ async function verifyStoreContract(
     // The semaphore pair (ADR 0025) — optional, and checked only when BOTH are present, since the
     // contract says implement both or neither. A store that leases must mean the same thing by it
     // as everyone else, or a fleet-wide concurrency cap is worse than the per-process one.
+    //
+    // Half a pair is itself a violation, and the one the group below would never see: the
+    // throttle needs both verbs and quietly falls back to a per-process semaphore without them,
+    // so a store shipping only one would pass every other rule while never being fleet-wide.
+    if (!store.lease !== !store.release)
+        rules.push([
+            'lease/release: the pair is implemented together or not at all',
+            () => {
+                const [has, lacks] = store.lease
+                    ? ['lease', 'release']
+                    : ['release', 'lease'];
+                throw new Error(
+                    `the store implements \`${has}\` without \`${lacks}\`; the throttle ignores a half pair`,
+                );
+            },
+        ]);
     if (store.lease && store.release) {
         const lease = store.lease.bind(store);
         const free = store.release.bind(store);

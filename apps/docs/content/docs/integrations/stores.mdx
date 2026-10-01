@@ -71,7 +71,10 @@ A limit that ends up per-process says so. On its first call the throttle emits o
 `info` event, topic `throttle.per-process`, naming the limit and the missing verbs
 — for example `rate: the store has no reserve or increment`. Route events to a
 [trace sink](/docs/guides/observability/trace-sinks) to see it; it fires once per
-throttle, not per call.
+throttle, not per call. `loggerSink` logs `info` events at `debug` (and
+`@stitchapi/pino` and `@stitchapi/nest` leave them out), so to see this one at the
+usual log level
+[raise its topic to `warn`](/docs/guides/observability/trace-sinks#logging-to-a-host-logger).
 
 ## Redis — `@stitchapi/redis`
 
@@ -157,6 +160,11 @@ every location. That includes a cache bulk invalidation (`stitch.cache.invalidat
 `seam.invalidate()`), so for up to a minute a reader elsewhere may still serve the
 entries you just invalidated. Exact invalidation (`stitch.invalidate(input)`) is a
 `set` too, with the same lag.
+
+Workers KV also allows **one write per second to the same key**. A bulk
+invalidation writes one generation key, so rapid back-to-back `invalidate()` calls
+(a loop, a webhook burst) can be rejected with a `429` — invalidate once per
+change, or debounce.
 
 KV's `expirationTtl` is in **seconds** with a **60-second minimum**; the store
 reconciles that with the contract's millisecond TTLs (`ttl` →

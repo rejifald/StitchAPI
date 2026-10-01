@@ -75,10 +75,12 @@ are required, so the rules come in four groups, one per capability, and a group
 runs only when the store has that capability. A store passes by honouring the
 groups it implements:
 
-- **base** (always) — `set`/`get` round-trips a value; a missing key resolves to
-  `undefined`; a second `set` overwrites; `set(key, undefined)` deletes; writes
-  are isolated by key. A `set` with `ttl` expires; a `set` without `ttl` does
-  not.
+- **base** (always) — `set`/`get` round-trips a value, and a safe integer comes
+  back as a `number` (the cache's bulk invalidation stores its generation that
+  way, and a store that returns `'123'` makes `invalidate()` a silent no-op); a
+  missing key resolves to `undefined`; a second `set` overwrites;
+  `set(key, undefined)` deletes; writes are isolated by key. A `set` with `ttl`
+  expires; a `set` without `ttl` does not.
 - **counter** (`increment`) — initializes a missing key to 1, increments an
   existing counter, restarts at 1 once its TTL window lapses, keeps counters
   isolated by key, and is atomic within a process: 20 concurrent calls must
@@ -86,7 +88,9 @@ groups it implements:
 - **pacing** (`reserve`) — a cold cursor grants at `now`, successive grants
   advance by exactly one spacing, an idle cursor resets to `now`, 20 concurrent
   grants are 20 distinct evenly-spaced instants, and cursors are isolated by key.
-- **lease** (`lease` + `release`, checked only when both are present) — fills to
+- **lease** (`lease` + `release`, checked only when both are present; a store
+  with just one of the two fails a `lease/release` rule, because the throttle
+  ignores a half pair and quietly stays per-process) — fills to
   the cap then refuses, a release frees a slot, re-leasing renews rather than
   taking a second slot, a lapsed holder's slot comes back, releasing an unheld
   token is a no-op, 20 concurrent callers on 5 slots yield exactly 5 winners, and

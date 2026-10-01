@@ -87,8 +87,9 @@ For a fleet of **servers**, reach for Redis: it has a real atomic `INCR`, so the
 <Callout type="info">
     The deciding question isn't "server or edge" — it's "do I need a shared
     *throttle*, or just shared cache and sessions?" Cache and sessions work on
-    any of the three; a distributed throttle needs atomic `increment`, which is
-    what splits Workers KV off from the other two.
+    any of the three; a distributed throttle needs an atomic verb (`increment`,
+    or the `reserve` pacing cell), which is what splits Workers KV off from the
+    other two.
 </Callout>
 
 ## Start in-memory — reach for a shared store when you scale out
@@ -101,7 +102,7 @@ Reach for a shared store the moment any of these are true:
 - **You autoscale.** Ephemeral instances spin up with no memory of what the others have already sent. The store is the one line that turns N independent limiters back into one.
 - **The upstream enforces per-account, not per-IP.** One account, many servers — the limit applies across all of them, so the counter has to live somewhere they all reach.
 
-A few trade-offs to account for when you cross that line: the store adds a network hop on every throttle check (latency on the hot path), and under contention the cap is "close to N/s across the fleet" rather than exact — keep a little headroom below the upstream's real ceiling. Workers KV is looser still (eventually-consistent reads, 60-second TTL floor), which is why `increment` throws there. And namespace staging vs. production with `keyPrefix` — one store, no collision.
+A few trade-offs to account for when you cross that line: the store adds a network hop on every throttle check (latency on the hot path), and under contention the cap is "close to N/s across the fleet" rather than exact — keep a little headroom below the upstream's real ceiling. Workers KV is looser still (eventually-consistent reads, 60-second TTL floor), which is one more reason a throttle over it stays per-process. And namespace staging vs. production with `keyPrefix` — one store, no collision.
 
 It's a config change, not a rewrite. The call sites don't move.
 

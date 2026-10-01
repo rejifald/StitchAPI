@@ -215,6 +215,77 @@ describe('throttle rate — reserve, else increment, else in-process', () => {
         );
     });
 
+    // Two stitches, two calls each, on one host: the in-process limiter pools them through its
+    // module-level host registry, so attaching a get/set-only store (say, for caching) must not
+    // change that. Each test owns a host so the registry never carries a cursor between tests.
+    const grantTimes = async (
+        host: string,
+        pool: 'host' | 'stitch',
+    ): Promise<number[]> => {
+        const clock = manualClock(0);
+        const at: number[] = [];
+        const adapter: Adapter = async () => {
+            at.push(clock.now());
+            return { status: 200, headers: {}, body: {} };
+        };
+        const make = () =>
+            stitch({
+                url: `https://${host}/r`,
+                adapter,
+                trace: false,
+                clock,
+                store: getSetOnly(),
+                throttle: { rate: '4/s', pool },
+            });
+        const [a, b] = [make(), make()];
+        const all = [a.safe(), b.safe(), a.safe(), b.safe()];
+        await clock.advance(10_000);
+        await Promise.all(all);
+        return at.sort((x, y) => x - y);
+    };
+
+    test('`pool: "host"` still pools across stitches on a get/set-only store', async () => {
+        expect(await grantTimes('pooled-gs.test', 'host')).toEqual([
+            0, 250, 500, 750,
+        ]);
+    });
+
+    test('without `pool: "host"` each stitch paces on its own — the control', async () => {
+        expect(await grantTimes('unpooled-gs.test', 'stitch')).toEqual([
+            0, 0, 250, 250,
+        ]);
+    });
+
+    test('`pool: "host"` pools a get/set-only stitch with a store-less one', async () => {
+        // One registry, one budget: the store only decides which limiter runs, not whose cursor.
+        const clock = manualClock(0);
+        const at: number[] = [];
+        const adapter: Adapter = async () => {
+            at.push(clock.now());
+            return { status: 200, headers: {}, body: {} };
+        };
+        const throttle = { rate: '4/s', pool: 'host' } as const;
+        const url = 'https://mixed-gs.test/r';
+        const withStore = stitch({
+            url,
+            adapter,
+            trace: false,
+            clock,
+            store: getSetOnly(),
+            throttle,
+        });
+        const bare = stitch({ url, adapter, trace: false, clock, throttle });
+        const all = [
+            withStore.safe(),
+            bare.safe(),
+            withStore.safe(),
+            bare.safe(),
+        ];
+        await clock.advance(10_000);
+        await Promise.all(all);
+        expect(at.sort((x, y) => x - y)).toEqual([0, 250, 500, 750]);
+    });
+
     test('with only `increment`, the counter fallback paces — and says nothing', async () => {
         const clock = manualClock(0);
         const store = withCounter();

@@ -61,6 +61,11 @@ KV is eventually consistent: a write can take **about 60 seconds** to reach ever
 location. A cache invalidation is a write, so for up to a minute a reader in
 another location may still serve the entries you just invalidated.
 
+Workers KV also allows **one write per second to the same key**. A bulk
+invalidation (`cache.invalidate()`, `seam.invalidate()`) writes one generation
+key, so rapid back-to-back calls can be rejected with a `429` — invalidate once
+per change, or debounce.
+
 ## TTL semantics
 
 KV's `expirationTtl` is in **seconds** and has a **60-second minimum**. The store
