@@ -18,8 +18,8 @@ import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type AtLeastOne,
+    type ConfigError,
     type DriftFinding,
-    type NoRequestShapeOnLlm,
     type NoUnknownKeys,
     type NoUnknownNestedKeys,
     type Seam,
@@ -320,6 +320,63 @@ function llmConfig(config: LlmOptions): Partial<StitchConfig> {
         ...rest,
         kind: makeLlmSurface(defaults),
         ...(urlless ? { url: provider.url } : {}),
+    };
+}
+
+/**
+ * Compile-time guard: the `llm` surface OWNS how it frames a chat completion. The live surface's
+ * `buildRequest` forces `method: 'POST'` and a JSON body unconditionally and replaces the body with
+ * `provider.buildBody(...)`, so either field authored on an `llm()` config is never read. Same
+ * class as `NoWireBodyOnGraphql` (`wire.body`) and `NoRequestShapeOnDownload` (`method`) — this
+ * surface simply fixes one of each.
+ *
+ * As on graphql, this makes `WireOptions.multipart` unreachable for free:
+ * `MultipartOnlyOnMultipartBody` requires `wire.body: 'multipart'` first, and that spelling is
+ * exactly what this rejects. `WireOptions.response` is deliberately NOT guarded — `buildRequest`
+ * leaves it alone, so it still reaches the adapter and is a live knob here. That is also why the
+ * `wire` arm names `body` alone rather than replacing the envelope: the other three members stay
+ * authorable.
+ *
+ * There is no `…FixedByLlm<C>` sibling keyed off `kind`, and that asymmetry is deliberate: the
+ * exported `llmSurface` is only the redaction/inspection IDENTITY (ADR 0005 Decision 11) and carries
+ * no `buildRequest`. A `stitch({ kind: llmSurface, method: 'PUT' })` therefore keeps its `PUT` — the
+ * field is live on that path, and guarding it off the `id` would reject config that is honoured. The
+ * overriding surface is built per stitch by `makeLlmSurface`, reachable only through `llm()` /
+ * `llm.bind(seam).stitch`, which is exactly where this guard is applied.
+ *
+ * Unlike its graphql/download siblings this is a plain object type, not a conditional over `C`, and
+ * that difference is load-bearing rather than cosmetic. Those two guard authoring helpers that
+ * capture a `const C` to infer the call-argument type from `config.input` (`InputOf<C>`), so the
+ * guard has to be conditional to stay a no-op on the configs it does not touch. `llm()` infers
+ * nothing — it returns a flat `Stitch<LlmResult>` — so its parameter can stay NON-generic, and
+ * keeping it that way is what preserves excess-property checking on the object literal. That check
+ * is load-bearing here: it is what makes the removed `maxTokens` spelling a compile error (P4,
+ * pinned by a test in llm.spec.ts). Making the parameter generic to fit the conditional idiom would
+ * have silently traded that guarantee away for this one.
+ *
+ * Only the AUTHORING slot moves under `wire`. `makeLlmSurface`'s `buildRequest` still sets a flat
+ * `bodyType: 'json'` on its `AdapterRequest`, which is the transport contract and is unchanged.
+ *
+ * NOT converted to the `AnyLayer`/`Layers` composed read its siblings use, and there is nothing here
+ * to convert: those guards are conditionals over a captured `C`, and the layer walk is what lets
+ * them ask "is this slot set ANYWHERE in the chain?". This one has no `C` — the parameter is
+ * non-generic, for the excess-property reason above — so it intersects UNCONDITIONALLY and rejects
+ * the literal slot every time, which is strictly stronger than a conditional at the literal level.
+ * What it cannot do is see a violation living entirely inside an `extends` fragment
+ * (`llm({ provider, extends: [{ wire: { body: 'form' } }] })` compiles). That is the SAME fail-open
+ * the composed guards document as their first residual limit — the literal-level case, which is
+ * the one people write, errors precisely — so converting would buy nothing and cost the
+ * `maxTokens` guarantee. Pinned as a tsd expectation so it stays a decision on record.
+ *
+ * Declared here, not in `types.ts`: only `llm` uses it, and a type in the stable root barrel that
+ * only an experimental surface reads would freeze that surface's shape from the stable side.
+ *
+ * @experimental
+ */
+export interface NoRequestShapeOnLlm {
+    method?: ConfigError<'the `llm` surface always POSTs to the provider — `method` is ignored'>;
+    wire?: {
+        body?: ConfigError<'the `llm` surface always sends a JSON body built by the provider — `wire.body` is ignored'>;
     };
 }
 

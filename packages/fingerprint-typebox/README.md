@@ -2,9 +2,9 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/fingerprint-typebox?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/fingerprint-typebox)
 
-> **Experimental.** `@stitchapi/fingerprint-typebox` ships in the 1.x line but may change shape in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+> **Experimental.** `@stitchapi/fingerprint-typebox` ships in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
 
-Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
+A [Standard Schema](https://standardschema.dev) fingerprint strategy for
 **TypeBox**, for StitchAPI's response-cache invalidation (ADR 0004).
 
 A TypeBox schema _is_ a JSON Schema object, so this strategy canonical-hashes it

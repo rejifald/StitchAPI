@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/vercel-ai?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/vercel-ai)
 
-> **Experimental.** `@stitchapi/vercel-ai` ships in the 1.x line but may change shape in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+> **Experimental.** `@stitchapi/vercel-ai` ships in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
 
 [Vercel AI SDK](https://sdk.vercel.ai) adapter for [StitchAPI](https://stitchapi.dev). Expose a stitch as a `tool()` the model can call inside `generateText` / `streamText`: the stitch runs as the tool's `execute`, so the model gets **typed, validated** data back — and the credential stays behind the boundary (a capability, not the credential).
 

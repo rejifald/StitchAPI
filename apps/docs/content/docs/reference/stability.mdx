@@ -3,7 +3,7 @@ title: Stability
 description: Which StitchAPI surfaces are experimental, what that changes when you upgrade, and the three conditions for one to graduate to the stable 1.x promise.
 ---
 
-Seven StitchAPI surfaces are **experimental**: they ship in the same version as everything else, but a minor release may change their shape. Read this page before you build on one.
+Seven StitchAPI surfaces are **experimental**: they ship in the same version as everything else, but a minor release may change their shape or behaviour. Read this page before you build on one.
 
 {/* #842 extends this page with the full compatibility policy — what counts as a breaking change, the TypeScript and Node floors, the deprecation window. Add each as a sibling `##` section. "Experimental surfaces" below is self-contained and stays as it is. */}
 
@@ -13,23 +13,29 @@ Seven StitchAPI surfaces are **experimental**: they ship in the same version as 
 
 **A minor release can change it, with a migration line instead of a deprecation cycle.** A stable surface renames behind a `@deprecated` alias and drops the old name in the next major. An experimental surface changes in place, in a minor release, and the changelog lists each change with a one-line migration.
 
-**Same version, narrower promise.** An experimental surface ships at the same version as the rest — no `0.x` line, no prerelease tag — so installing it looks like installing anything else. The promise is what differs. If you build on one, pin the package that ships it to a patch range such as `~1.0.0`; for `stitchapi/llm`, `stitchapi/postmessage` and `stitchapi/pipe` that package is `stitchapi`.
+**A patch release never does.** A patch release does not change an experimental surface's shape or behaviour, and that includes a bug fix that alters what a documented call returns: such a fix ships in a minor. So if you build on one, pin the package that ships it to a patch range such as `~1.0.0` and you stay on exactly what you built against until you choose to move. For `stitchapi/llm`, `stitchapi/postmessage` and `stitchapi/pipe` that package is `stitchapi`.
+
+**Same version, narrower promise.** An experimental surface ships at the same version as the rest — no `0.x` line, no prerelease tag — so installing it looks like installing anything else. The promise is what differs.
 
 **The rest of the contract still applies.** Naming, typing, and config shape follow the same rules as the stable surface. The tier changes how a change ships, not what a surface may look like.
 
-**Marked in three places.** Every symbol an experimental surface exports carries an `@experimental` JSDoc tag, so your editor shows it on hover. The surface's docs page — or its README, where no page exists yet — opens with an _Experimental_ banner. And the surface is on the list below. A stable API never names an experimental type in its signatures, so staying on stable surfaces never ties your code to an experimental shape.
+**A package's command line is part of it.** `@stitchapi/openapi` ships a CLI, `stitch-openapi`. Its flags, exit codes and output are covered by the same rules as the package's exports.
+
+**Marked in three places, and wherever a page teaches it.** Every symbol an experimental surface exports carries an `@experimental` JSDoc tag, on every overload signature, so your editor shows it on hover. The surface's docs page — or its README, where no page exists yet — opens with an _Experimental_ banner, and any other docs page whose code uses the surface carries a short note of its own. And the surface is on the list below. A stable entry point never re-exports or names an experimental symbol, so staying on stable surfaces never ties your code to an experimental shape.
 
 ### The surfaces
 
-| Surface                          | Why it is experimental                                                                                                                                                                                                                                         |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stitchapi/llm`                  | A truncated completion reads as a success ([#699](https://github.com/rejifald/StitchAPI/issues/699)), and the provider contract you implement — `LlmProvider`, `LlmMessage` — is unfinished.                                                                   |
-| `stitchapi/postmessage`          | No docs-site page yet; the README and ADR 0009 describe it.                                                                                                                                                                                                    |
-| `stitchapi/pipe`                 | The combinators broadcast one input to every member ([#643](https://github.com/rejifald/StitchAPI/issues/643)).                                                                                                                                                |
-| `@stitchapi/openapi`             | The generated code does not compile against current core ([#885](https://github.com/rejifald/StitchAPI/issues/885)), and the eject contract — manifest, ownership, generated names — is unfinished ([#876](https://github.com/rejifald/StitchAPI/issues/876)). |
-| `@stitchapi/vercel-ai`           | The documented usage does not type-check against `ai@6` ([#887](https://github.com/rejifald/StitchAPI/issues/887)). See the [Vercel AI SDK page](/docs/integrations/vercel-ai).                                                                                |
-| `@stitchapi/fingerprint-typebox` | It cannot dispatch a TypeBox 0.34 schema.                                                                                                                                                                                                                      |
-| `@stitchapi/shell`               | No docs-site page yet.                                                                                                                                                                                                                                         |
+| Surface                          | Since | Why it is experimental                                                                                                                                                                                                                                                                                    |
+| -------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stitchapi/llm`                  | 1.0.0 | A truncated completion reads as a success ([#699](https://github.com/rejifald/StitchAPI/issues/699)), the provider contract you implement — `LlmProvider`, `LlmMessage` — is unfinished, and some config the types accept the runtime ignores ([#849](https://github.com/rejifald/StitchAPI/issues/849)). |
+| `stitchapi/postmessage`          | 1.0.0 | No docs-site page yet; the README and ADR 0009 describe it.                                                                                                                                                                                                                                               |
+| `stitchapi/pipe`                 | 1.0.0 | The combinators broadcast one input to every member ([#643](https://github.com/rejifald/StitchAPI/issues/643)).                                                                                                                                                                                           |
+| `@stitchapi/openapi`             | 1.0.0 | The generated code does not compile against current core ([#885](https://github.com/rejifald/StitchAPI/issues/885)), and the eject contract — manifest, ownership, generated names — is unfinished ([#876](https://github.com/rejifald/StitchAPI/issues/876)).                                            |
+| `@stitchapi/vercel-ai`           | 1.0.0 | The documented usage does not type-check against `ai@6` ([#887](https://github.com/rejifald/StitchAPI/issues/887)). See the [Vercel AI SDK page](/docs/integrations/vercel-ai).                                                                                                                           |
+| `@stitchapi/fingerprint-typebox` | 1.0.0 | It cannot dispatch a TypeBox 0.34 schema ([#884](https://github.com/rejifald/StitchAPI/issues/884)).                                                                                                                                                                                                      |
+| `@stitchapi/shell`               | 1.0.0 | No docs-site page yet, and its options type accepts config the runtime ignores ([#849](https://github.com/rejifald/StitchAPI/issues/849)).                                                                                                                                                                |
+
+`Since` is the version in which the surface entered the tier.
 
 `toOpenApi` in `stitchapi/registry`, which exports a stitch as an OpenAPI document, is not on the list: it keeps the full 1.x promise. `@stitchapi/openapi`, the generator that ejects stitch source from a document, is on it — ejected code is yours, so changing what the generator writes breaks nobody who already ran it.
 
@@ -37,13 +43,13 @@ Seven StitchAPI surfaces are **experimental**: they ship in the same version as 
 
 A surface graduates when its tag comes off, in a minor release. All three conditions have to hold:
 
-1. **A docs-site page exists** for it.
-2. **No open `v1.0 release` contract issue touches it.**
-3. **One minor release has shipped** with no breaking change to it.
+1. **A dedicated docs-site page exists** for it. A README, or a note on another page, does not count.
+2. **No open issue proposes a change to its public shape.**
+3. **One minor release has shipped since its `Since` version** with no breaking changelog entry for it: nothing marked **BREAKING CHANGE** that names the surface or one of its exports.
 
 The changelog records the graduation, and from that release the surface carries the full 1.x promise. The reverse direction is a major: moving a stable surface into this tier withdraws a promise already made, so it never happens in a minor.
 
-The rule is [P26 of the API contract](https://github.com/rejifald/StitchAPI/blob/main/docs/CONTRACT.md#p26--an-experimental-tier-sits-outside-the-freeze); a lint reads its member list and fails the build if an exported symbol of a listed surface is missing its tag.
+The rule is [P26 of the API contract](https://github.com/rejifald/StitchAPI/blob/main/docs/CONTRACT.md#p26--an-experimental-tier-sits-outside-the-freeze); a lint reads its member list and fails the build if an exported symbol of a listed surface is missing its tag, or if a stable file imports one.
 
 ## See also
 

@@ -23,19 +23,42 @@ npm release are grouped under the in-development version that introduced them.
   obligation at once — including seven surfaces whose shape is not settled. Those seven now ship in
   the lockstep version with a narrower promise: a **minor** release may change their shape or
   behaviour, each such change is listed in this file with a one-line migration, and no `@deprecated`
-  alias is owed. Every other contract rule still applies to them. Not a breaking change: no symbol,
-  field or behaviour moves.
+  alias is owed. A **patch** release never changes one of them, so a `~1.0.0` pin stays on what you
+  built against. Every other contract rule still applies to them. Apart from the one type moved
+  under Changed, no symbol, field or behaviour moves.
 
-    The tier is marked in three places. Each of the 52 symbols the seven surfaces export carries an
-    `@experimental` JSDoc tag (so an editor shows it on hover); each surface's docs page or README
-    opens with an _Experimental_ banner; and a new
-    [Stability](https://stitchapi.dev/docs/reference/stability) page in the Reference section lists
-    the members and says how a surface graduates — a docs-site page, no open `v1.0 release` contract
-    issue touching it, and one minor release with no breaking change to it. A new ratchet rule,
-    **R12**, reads the member table in P26 and fails the gate when an exported symbol of a listed
-    surface lacks its tag, or a tag appears anywhere else, so the table stays the one list. It
-    enters at zero. The full compatibility policy — what counts as breaking, the TypeScript and Node
-    floors — is [#842](https://github.com/rejifald/StitchAPI/issues/842) and extends the same page.
+    The tier is marked in three places. Each of the 53 symbols the seven surfaces export carries an
+    `@experimental` JSDoc tag, on every overload signature (so an editor shows it on hover whichever
+    form of `all` or `stitchTool` you call); each surface's docs page or README opens with an
+    _Experimental_ banner, and a docs page that teaches a surface carries a short note of its own;
+    and a new [Stability](https://stitchapi.dev/docs/reference/stability) page in the Reference
+    section lists the members, with the version each entered the tier, and says how a surface
+    graduates — a dedicated docs-site page, no open issue proposing a change to its public shape,
+    and one minor release with no breaking changelog entry for it. A package's CLI
+    (`stitch-openapi`) is part of its surface. No stable entry point re-exports or names an
+    experimental symbol. A new ratchet rule, **R12**, reads the member table in P26 and fails the
+    gate when an exported symbol of a listed surface lacks its tag (on every entry point of a member
+    package), when a tag appears anywhere else, or when a published file outside the tier imports a
+    member, so the table stays the one list. It enters at zero, it is the one rule that cannot be
+    baselined, and a self-test that mutates a miniature repository runs with it. The full
+    compatibility policy — what counts as breaking, the TypeScript and Node floors — is
+    [#842](https://github.com/rejifald/StitchAPI/issues/842) and extends the same page.
+
+### Changed
+
+- **BREAKING CHANGE: `NoRequestShapeOnLlm` moves from `stitchapi` to `stitchapi/llm`.**
+  ([P26](docs/CONTRACT.md#p26--an-experimental-tier-sits-outside-the-freeze),
+  [D5](docs/CONTRACT.md#0-resolved-decisions)) The type rejects `method` and `wire.body` on an
+  `llm()` config and nothing else reads it, but it sat in the stable root barrel, where the 1.0
+  promise would have frozen the shape of an experimental surface. A stable entry point may not
+  name an experimental type, so the type moves into the surface that uses it. A hard break with no
+  alias, which D5 allows before 1.0 GA. Only code that named the guard itself changes; `llm()`
+  applies it for you.
+
+    ```ts
+    -import type { NoRequestShapeOnLlm } from 'stitchapi';
+    +import type { NoRequestShapeOnLlm } from 'stitchapi/llm';
+    ```
 
 ## [1.0.0-rc.8] — 2026-09-17
 
