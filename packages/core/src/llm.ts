@@ -30,13 +30,21 @@ import {
     isSeam,
 } from './types';
 
-/** A chat message in the normalised request. */
+/**
+ * A chat message in the normalised request.
+ *
+ * @experimental
+ */
 export interface LlmMessage {
     role: 'user' | 'assistant' | 'system';
     content: string;
 }
 
-/** The normalised LLM request a provider maps to its wire body. */
+/**
+ * The normalised LLM request a provider maps to its wire body.
+ *
+ * @experimental
+ */
 export interface LlmRequest {
     model: string;
     messages: LlmMessage[];
@@ -49,7 +57,11 @@ export interface LlmRequest {
     temperature?: number;
 }
 
-/** The normalised result a provider lifts out of its response. `raw` keeps the provider's full body. */
+/**
+ * The normalised result a provider lifts out of its response. `raw` keeps the provider's full body.
+ *
+ * @experimental
+ */
 export interface LlmResult {
     text: string;
     model?: string;
@@ -123,6 +135,8 @@ const truncationFinding = (reason: string | undefined): DriftFinding => ({
  * non-secret headers, maps a {@link LlmRequest} to its HTTP body, and lifts an {@link LlmResult} out
  * of the response. First-party {@link anthropic} / {@link openai} implement it; BYO any other by
  * writing one. The CREDENTIAL is the stitch's `auth` (`bearer`/`apiKey`), never the provider.
+ *
+ * @experimental
  */
 export interface LlmProvider {
     id: string;
@@ -138,9 +152,13 @@ export interface LlmProvider {
     parse: (body: unknown) => LlmResult;
 }
 
-/** Per-stitch llm defaults baked into the surface (the call may override via `body`). Exported
+/**
+ * Per-stitch llm defaults baked into the surface (the call may override via `body`). Exported
  *  alongside {@link makeLlmSurface}, whose argument it is — a public factory taking a private
- *  parameter type is not actually constructible by a consumer. */
+ *  parameter type is not actually constructible by a consumer.
+ *
+ * @experimental
+ */
 export interface LlmDefaults {
     provider: LlmProvider;
     model?: string;
@@ -176,6 +194,8 @@ function toRequest(d: LlmDefaults, input: StitchInput): LlmRequest {
  * built per stitch — it closes over the provider + defaults ({@link makeLlmSurface}) — so this
  * exported identity is the redaction/inspection anchor: an llm stitch exposes `kind: 'llm'` on
  * `__config`, round-tripping as JSON.
+ *
+ * @experimental
  */
 export const llmSurface: Surface = { id: 'llm' };
 
@@ -209,6 +229,8 @@ export const llmSurface: Surface = { id: 'llm' };
  *
  * That example is deliberate: making truncation FATAL is a caller-side policy this surface does not
  * impose, and exporting the factory is what makes it a five-line wrapper instead of a fork.
+ *
+ * @experimental
  */
 // `method` and the body encoding are the surface's, not the caller's — `NoRequestShapeOnLlm` makes
 // authoring `method` or `wire.body` a compile error so the override is never silent. `headers` and
@@ -268,8 +290,12 @@ export function makeLlmSurface(
     };
 }
 
-/** Config for {@link llm}: the shared {@link StitchConfig} keys (minus `kind` — the surface owns
- *  it) plus the llm defaults. */
+/**
+ * Config for {@link llm}: the shared {@link StitchConfig} keys (minus `kind` — the surface owns
+ *  it) plus the llm defaults.
+ *
+ * @experimental
+ */
 export type LlmOptions = Partial<Omit<StitchConfig, 'kind'>> & {
     provider: LlmProvider;
     model?: string;
@@ -335,8 +361,12 @@ const llmStitch = <const C extends LlmOptions = LlmOptions>(
         InputOf<C>
     >;
 
-/** llm members bound to a seam. `stitch(config)` creates an llm member of `seam`; `seam` is the
- *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
+/**
+ * llm members bound to a seam. `stitch(config)` creates an llm member of `seam`; `seam` is the
+ *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`).
+ *
+ * @experimental
+ */
 export interface LlmSeamApi {
     readonly stitch: <const C extends LlmOptions = LlmOptions>(
         config: C &
@@ -366,6 +396,8 @@ function bindSeam(s: Seam): LlmSeamApi {
  * - `llm.bind(options)` — a new seam, configured by `options`, whose members default to llm.
  * - `llm.bind(seam())` — the all-defaults new seam (the opaque `bind({})` is a compile error, P20).
  * - `llm.surface` — the llm {@link Surface} identity.
+ *
+ * @experimental
  */
 export const llm = Object.assign(llmStitch, {
     surface: llmSurface,
@@ -390,6 +422,8 @@ export const llm = Object.assign(llmStitch, {
  * Anthropic Messages API (`/v1/messages`). System prompts ride the top-level `system` param (not a
  * message), `max_tokens` is required (default 1024). Auth is the user's `apiKey({ name: 'x-api-key',
  * … })`; this only sets the non-secret `anthropic-version`. Defaults to the current `claude-opus-4-8`.
+ *
+ * @experimental
  */
 export const anthropic: LlmProvider = {
     id: 'anthropic',
@@ -442,6 +476,8 @@ export const anthropic: LlmProvider = {
 /**
  * OpenAI Chat Completions (`/v1/chat/completions`). A system prompt is prepended as a `system`
  * message. Auth is the user's `bearer(env('OPENAI_API_KEY'))`. Defaults to `gpt-4o`.
+ *
+ * @experimental
  */
 export const openai: LlmProvider = {
     id: 'openai',

@@ -135,6 +135,8 @@ function shellSurface(d: ShellDefaults): Surface {
  * is only one thing here to measure (P1), and it bounds a **magnitude**, which is the case P4
  * leaves `max`. Bytes are the house size unit (P25) — the `Chars` family is the marked exception
  * — and a subprocess buffer is natively bytes, as `execFile`'s own `maxBuffer` is.
+ *
+ * @experimental
  */
 export interface ShellBufferOptions {
     /** Ceiling on the buffered stdout/stderr; exceeding it fails the call. A raw byte count or a
@@ -169,6 +171,8 @@ export interface ShellBufferOptions {
  * (then `portChannel`) dropped `allowedOrigins` for exactly this reason in #795: a flat shape is never a licence to let
  * inert config type-check (CONTRACT.md P24 carve-out (b)). The other resilience keys stay — `retry`
  * / `throttle` / `circuit` / `timeout` / `trace` all wrap `execute` and genuinely apply.
+ *
+ * @experimental
  */
 export interface ShellOptions extends Partial<
     Omit<StitchConfig, 'kind' | 'wire' | 'adapter'>
@@ -207,6 +211,8 @@ export interface ShellOptions extends Partial<
  * const git = shell('git', { env: { PATH: process.env.PATH! } });
  * const status = await git({ body: ['status', '--porcelain'] }); // stdout string
  * ```
+ *
+ * @experimental
  */
 export function shell<T = string>(
     command: string,

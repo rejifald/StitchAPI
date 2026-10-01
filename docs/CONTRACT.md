@@ -645,6 +645,11 @@ contract the rename exists to state and lets an implementation satisfy the type 
 providing neither. For these, a rename is a hard break in **any** channel — post-GA it is
 a major-version change, not an aliasable one.
 
+_Exemption — the experimental tier._ A surface in [P26](#p26--an-experimental-tier-sits-outside-the-freeze)'s
+member table is outside this obligation: its renames, narrowings and removals ship as hard
+breaks in a **minor** release, with a CHANGELOG line and no alias. P19 binds it from the
+release that graduates it.
+
 ### P20 · No empty-object config; enable-with-defaults is a scalar
 
 The empty object `{}` **MUST NOT** be a valid value at a config slot. Where `{}` would
@@ -1105,6 +1110,92 @@ Enforced by lint **R9** (§7), together with P17 — one rule, one gate, both di
 seen from either end. R9 pins the **type**; the other half of the rule — that the value
 reaches `size.parse`/`duration.parse` before it is compared or slept on — is dataflow, and
 is pinned by test instead.
+
+### P26 · An experimental tier sits outside the freeze
+
+Versions are lockstep: one `$TAG` publishes every package, so `1.0.0` puts all of them, and
+every core entry point, under [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel)'s
+deprecation obligation at the same instant — including surfaces whose shape is not settled. A
+surface listed in the **member table** below is **experimental**: it ships in that same
+version and stays outside the freeze until it graduates.
+
+**A surface is experimental only if all three hold:**
+
+1. **It is listed** in the member table. The table is the single source of truth; a tag or a
+   banner alone makes nothing experimental.
+2. **Every symbol exported from it carries an `@experimental` JSDoc tag** — values and types,
+   at every entry point the surface publishes, through every `export *` chain, placed on the
+   declaration.
+3. **Its docs page opens with the experimental banner** — its README, where no page exists (for
+   a core subpath, the section of `packages/core/README.md` that documents it). On the docs
+   site the banner is a `<Callout type="warn" title="Experimental">`; in a README it is a
+   blockquote opening **Experimental.** Either one names the surface, says it may change shape
+   in a minor release, and links the Stability page.
+
+Holding two of the three leaves a surface experimental in one place and promised in another.
+
+- **Re-exports.** An experimental symbol stays experimental wherever it is re-exported. The
+  tag sits on the declaration, so every barrel that republishes the symbol, under any name,
+  republishes the tag with it.
+- **Stable surfaces may not leak it.** A stable surface MUST NOT name an experimental type in
+  its public signatures — a parameter, a return, a field, a constraint or a base type. A stable
+  signature that needs the shape takes a structural type of its own, or waits for the shape to
+  graduate; reading an experimental type through a stable function freezes it by the back
+  door.
+- **Change policy.** An experimental surface ships in the lockstep version — `1.0.0`, not a
+  `0.x` line and not a prerelease tag — and MAY change shape or behaviour in a **minor**
+  release. Every such change is listed in `CHANGELOG.md` with a one-line migration. The
+  surface is **exempt from [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel)'s
+  deprecation obligation** (no `@deprecated` alias is owed) and will be exempt from the
+  API-report break check (#854). **Every other rule in this contract still applies to it**:
+  naming (P1–P4, P24), typing, shorthands and envelopes bind an experimental surface exactly as
+  they bind a stable one, and the ratchet in [§7](#7-enforcement) gates it identically. The
+  tier relaxes how a change ships, never what the surface may look like.
+- **Graduation** means removing the tag in a minor release, and it requires all three of: a
+  docs-site page exists for the surface; no open `v1.0 release`-class contract issue touches it;
+  and one minor release has shipped with no breaking change to it. The graduating change
+  deletes the member-table row, every `@experimental` tag and the banner, and records the
+  graduation in `CHANGELOG.md`. From that release P19 binds the surface.
+- **Demotion.** Moving a stable surface into the tier is a **major**: it withdraws a promise
+  already made, which is a removal in P19's sense.
+
+**Member table** (adopted 2026-10-01, #841). The ratchet reads the first column of this table —
+one backticked specifier per row — so a row is added or removed here and nowhere else:
+
+<!-- R12 members: scripts/check-contract.mjs reads the backticked first column between these markers -->
+
+| Surface                          | Why it is in the tier                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| `stitchapi/llm`                  | P0 #699; the consumer-implemented `LlmProvider`/`LlmMessage` contract is unfinished. |
+| `stitchapi/postmessage`          | No docs page.                                                                        |
+| `stitchapi/pipe`                 | #643: the combinators broadcast one input to every member.                           |
+| `@stitchapi/openapi`             | #885, #876.                                                                          |
+| `@stitchapi/vercel-ai`           | #887.                                                                                |
+| `@stitchapi/fingerprint-typebox` | Cannot dispatch TypeBox 0.34 schemas.                                                |
+| `@stitchapi/shell`               | No docs page; #849.                                                                  |
+
+<!-- /R12 members -->
+
+_Why a tier and not a version split:_ keeping some packages at `0.x` or on an `rc` tag would
+need changes to yakir's `release-version` tether (set to `block`), to `npm-publish.yml` (one
+`$TAG` for every package) and to `check-release`. A documented tier costs a table row, a tag
+per symbol and a banner, and it has an exit. _Why the tag, the banner and the table are all
+required:_ each reaches a different reader — the tag the editor and the API report, the banner
+the person reading the page, the table the maintainer deciding what to freeze — and a tier any
+one of them could contradict is a tier nobody can trust. _What the tier is not:_ a parking lot
+(membership has a written exit above), or a licence to ship defects. The tier removes the
+**compatibility** obligation, not the correctness one; a P0 inside an experimental surface is
+still a P0.
+
+_Canonical case:_ the table above, and what is deliberately **not** in it. `toOpenApi` (the
+OpenAPI **export** in `stitchapi/registry`) keeps the full promise, while `@stitchapi/openapi`,
+the code generator, is a member: ejected code is user-owned, so changing what the generator
+emits breaks nobody who already ejected. The OTLP span structure is not a member either (#871
+settles it on its own terms), and `@stitchapi/download` is a separate decision (#843).
+
+Enforced by lint **R12** (§7), which reads the member table and holds the tags to it, in both
+directions. The banner and the no-leak clause are review obligations: R12 reads declarations,
+not prose or signatures.
 
 ---
 
@@ -1960,7 +2051,9 @@ reconciliation_.
   hand, so it is a regression guard, not a fix. **R11** (2026-09-04) makes it three of four:
   its one match, `BatchProgress.ratePerSec`, was found by a by-hand census days earlier and
   fixed in the very commit that adds the rule, so R11 too enters at **zero** — but as the
-  guard for a defect the surface had actually shipped, not a hypothetical one. The ratchet
+  guard for a defect the surface had actually shipped, not a hypothetical one. **R12**
+  (2026-10-01) enters at **zero** for a different reason: the tier it gates is new, so the
+  tags land in the same change as the rule. The ratchet
   mechanics
   stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
   guarantee: the surface can only get more consistent, never less.
@@ -2033,8 +2126,40 @@ reconciliation_.
   the dimension. `Min`/`Mins` are deliberately left out (`poolMin` is a minimum, not minutes);
   OTLP's `*UnixNano`/`*UnixSeconds` instants take R2's carve-out. One allow-list entry today:
   `retryAfterSeconds`, the `Retry-After` delta-seconds P17's unit-hazard clause already names.
+  **R12** the experimental tier (P26), held to its member table in both directions. The table is
+  **this file's**: the script reads the backticked first column between the two marker comments
+  in P26, so there is no second list to drift — a surface joins or leaves the tier by editing
+  that table and nowhere else. Each row resolves to its entry point (`stitchapi/<subpath>`
+  through core's `exports` map, `@stitchapi/<name>` through that package's), and then:
+    - **(a)** every symbol the entry exports carries `@experimental` at tag position in the
+      JSDoc above its **first** declaration. The set is followed through direct declarations,
+      `export { … }` lists (taking the post-`as` name) and relative `export *` /
+      `export { … } from` chains to where each symbol is declared, so a barrel cannot hide an
+      untagged symbol. An overload carries the tag once, on its first signature — the
+      implementation signature is not a public one. A re-export of **another package's**
+      symbol is a finding, because the tag cannot ride it.
+    - **(b)** an `@experimental` tag anywhere in a published package's `src` that is not on a
+      declaration of a listed surface is a finding — on a stable symbol, on a member or
+      parameter, or on a helper no entry exports. That is the half that keeps the table the
+      only way into the tier.
+
+    A table that yields no rows, or a row that resolves to no entry point, is itself a finding,
+    so a typo cannot turn the rule vacuous. Like the rest it is source-text: comments, strings
+    and regex literals are blanked before any pattern runs (a JSDoc example in `postmessage.ts`
+    and the code a generator emits in `gen-openapi.ts` both spell `export const …`), and a
+    file whose braces do not balance after blanking is reported as a scanner fault rather than
+    trusted. What it does **not** see is stated in P26: the banner is prose, and a stable
+    signature naming an experimental type needs the type-aware phase below. R12 enters at
+    **zero** — the tier is new, so it is a guard written with the rule, and it was verified
+    non-vacuous by mutation: removing a tag, tagging a stable symbol or a member, dropping or
+    mistyping a table row, removing the markers, and hiding an untagged symbol behind
+    `export *` each fail the gate.
+
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
-  same-name-different-**shape** detection, default-value inversion (P8), and the
+  same-name-different-**shape** detection, default-value inversion (P8), the **no-leak
+  clause** of P26 (a stable signature naming an experimental type — it needs the checker to
+  see a type through an alias or an inferred return; at adoption the tree was swept by hand
+  and no stable signature names one), and the
   **parse half** of P17/P25 — R9 pins the type, but whether the widened value actually
   reaches `duration.parse`/`size.parse` before a sleep or comparison is dataflow, and a
   widened type over an unparsed read site is the silent-collapse bug (#609); the parse
