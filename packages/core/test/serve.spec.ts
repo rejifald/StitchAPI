@@ -249,12 +249,57 @@ describe('serve withholds the message of an unexpected throw unless `disclose` i
 
 // #867: the SSE stream is the other door a failure's text leaves by. With `retry` on, each retried
 // attempt's `progress.detail` is the raw transport error; a strategy's `info.detail` is free text;
+// a `drift` finding's `detail` is a validator's issue message, which can echo the received value;
 // and the `start` frame names the upstream URL. All of it follows `disclose`, like the `error`
 // frame. The frames and their types stay either way.
 describe('serve SSE withholds the trace fields that name the upstream unless `disclose` is on', () => {
     const HOST = 'payments.internal.corp';
     const LEAK = `getaddrinfo ENOTFOUND ${HOST}`;
+    const SECRET = 'UPSTREAM-SECRET-VALUE-42';
+    // A validator whose issue message echoes the value it received (valibot does, and so does
+    // zod for an enum), so the hard `drift` finding's `detail` carries upstream data.
+    const echoing = {
+        '~standard': {
+            version: 1 as const,
+            vendor: 'test',
+            validate: (v: unknown) => ({
+                issues: [
+                    {
+                        message: `expected number, received ${String((v as { id: unknown }).id)}`,
+                        path: ['id'],
+                    },
+                ],
+            }),
+        },
+    };
     const registry = {
+        // A response the output schema rejects: a hard `drift` finding whose `detail` echoes it.
+        drifts: stitch({
+            url: `https://${HOST}/x`,
+            adapter: () =>
+                Promise.resolve({
+                    status: 200,
+                    headers: {},
+                    body: { id: SECRET },
+                }),
+            output: asValidator(echoing),
+        }),
+        // A soft finding with every field set: only `detail` is withheld.
+        softDrift: stubStitch('ok', {
+            events: () => [
+                {
+                    type: 'drift',
+                    finding: {
+                        level: 'warn',
+                        path: 'items[].id',
+                        change: 'coerced',
+                        detail: `all 2 elements: string -> number (${SECRET})`,
+                        sample: 'items[3].id',
+                    },
+                    at: 1,
+                },
+            ],
+        }),
         // A transport that throws, retried once: `progress.detail` carries the raw error text.
         flaky: stitch({
             url: `https://${HOST}/x`,
@@ -310,6 +355,59 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
         expect(body).toContain('"topic":"auth.refresh"');
         expect(body).not.toContain(HOST);
         expect(body).not.toContain('"detail"');
+    });
+
+    // Splits the stream into frames and returns the parsed `data` of every frame of one type.
+    const framesOf = (body: string, type: string): Record<string, unknown>[] =>
+        body
+            .split('\n\n')
+            .filter((block) => block.startsWith(`event: ${type}\n`))
+            .map(
+                (block) =>
+                    JSON.parse(block.split('\ndata: ')[1] ?? '{}') as Record<
+                        string,
+                        unknown
+                    >,
+            );
+
+    test('by default a `drift` finding keeps its level, path and change and drops its detail', async () => {
+        const body = await stream('drifts');
+        expect(body).not.toContain(SECRET);
+        expect(framesOf(body, 'drift')).toEqual([
+            expect.objectContaining({
+                type: 'drift',
+                finding: { level: 'error', path: 'id', change: 'invalid' },
+            }),
+        ]);
+    });
+
+    test('by default a soft `drift` finding keeps every field but `detail`', async () => {
+        const body = await stream('softDrift');
+        expect(body).not.toContain(SECRET);
+        expect(framesOf(body, 'drift')).toEqual([
+            expect.objectContaining({
+                finding: {
+                    level: 'warn',
+                    path: 'items[].id',
+                    change: 'coerced',
+                    sample: 'items[3].id',
+                },
+            }),
+        ]);
+    });
+
+    test('`disclose: true` sends the `drift` detail with the echoed upstream value', async () => {
+        const body = await stream('drifts', true);
+        expect(framesOf(body, 'drift')).toEqual([
+            expect.objectContaining({
+                finding: {
+                    level: 'error',
+                    path: 'id',
+                    change: 'invalid',
+                    detail: `expected number, received ${SECRET}`,
+                },
+            }),
+        ]);
     });
 
     test('`disclose: true` sends the upstream url, the retry detail and the raw message', async () => {

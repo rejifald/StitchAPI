@@ -35,12 +35,14 @@ export interface ServeOptions {
      * Disclose a failed run's raw detail to the caller. **Default `false`**: the JSON error body
      * carries the reason phrase for the response status (`{ error: 'Bad Gateway', status }`), and
      * in SSE mode an `error` frame's `message` is that same phrase, a `start` frame omits the
-     * upstream `url`, and `progress` / `info` frames omit their `detail`. The raw message can
-     * reveal internal topology (a transport failure reads like
+     * upstream `url`, and `progress` / `info` frames and a `drift` finding omit their `detail`
+     * (a finding keeps its `level`, `path`, `change` and `sample`). The raw message can reveal
+     * internal topology (a transport failure reads like
      * `getaddrinfo ENOTFOUND payments.internal.corp`) or an upstream's own wording to an untrusted
-     * client, and the `url` and a retry's `detail` name the same hosts, so all of it is withheld
-     * by default, as every `@stitchapi/*` host adapter withholds the message. The frames and event
-     * types stay; only those fields are dropped. Turn it on when the callers are trusted (local
+     * client, the `url` and a retry's `detail` name the same hosts, and a validator's issue
+     * message in a finding can echo the received value, so all of it is withheld by default, as
+     * every `@stitchapi/*` host adapter withholds the message. The frames and event types stay;
+     * only those fields are dropped. Turn it on when the callers are trusted (local
      * development, an internal network). CLI: `stitch serve --disclose`.
      */
     disclose?: boolean;
@@ -137,9 +139,11 @@ const retryAfterHeader = (
 //
 // Unless `disclose` is on, also drop what names the upstream: a `start` frame's `url` (its host),
 // the raw transport error text a retry's `progress.detail` carries (the engine's
-// `String(err.message)`), a strategy's `info.detail`, and an `error` frame's `message` (which
-// becomes the reason phrase JSON mode would answer with). The frame types stay, so a client keyed
-// on them is unaffected.
+// `String(err.message)`), a strategy's `info.detail`, a `drift` finding's `detail` (a validator's
+// issue message, which can echo the received value), and an `error` frame's `message` (which
+// becomes the reason phrase JSON mode would answer with). A finding keeps its `level`, `path`,
+// `change` and `sample`: those are structural coordinates (`items[3].x`), not values. The frame
+// types stay, so a client keyed on them is unaffected.
 function frameBody(ev: StitchEvent, disclose: boolean | undefined): object {
     const safe = redactEventForTransport(ev);
     if (disclose) return safe;
@@ -149,6 +153,11 @@ function frameBody(ev: StitchEvent, disclose: boolean | undefined): object {
         case 'progress':
         case 'info':
             return compact({ ...safe, detail: undefined });
+        case 'drift':
+            return {
+                ...safe,
+                finding: compact({ ...safe.finding, detail: undefined }),
+            };
         case 'error':
             return {
                 ...safe,

@@ -83,7 +83,11 @@ these fields are dropped:
   frame sent when the stream throws;
 - an `event: start` frame has no `url`, which names the upstream host;
 - an `event: progress` or `event: info` frame has no `detail`. On a retry
-  `progress` frame that field is the raw transport error text.
+  `progress` frame that field is the raw transport error text;
+- an `event: drift` frame's `finding` has no `detail`. For a failed output
+  validation that field is the validator's issue message, which can repeat the
+  value the upstream sent. The finding keeps its `level`, `path`, `change` and
+  `sample`.
 
 Anything else a stream carries, such as `delta` and `result` payloads and the
 request input echoed on `start`, is unchanged.

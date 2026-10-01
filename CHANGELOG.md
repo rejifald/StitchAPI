@@ -40,11 +40,13 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
-- **The host adapters and `@stitchapi/download` need `stitchapi` `^1.0.0-rc.8`.**
+- **The host adapters and `@stitchapi/download` need a `stitchapi` that ships `isStitchError`.**
   ([#867](https://github.com/rejifald/StitchAPI/issues/867)) `@stitchapi/express`, `fastify`,
   `hono`, `next`, `nest`, `elysia` and `download` import `isStitchError` at runtime, so their
-  `stitchapi` peer floor moved up from `^1.0.0-rc.1`. With an older core installed they would fail
-  at link time.
+  `stitchapi` peer floor is raised from `^1.0.0-rc.1` to the release that first ships it. The
+  published rc.8 core does not have it, and `check:release` only requires the floor to admit the
+  in-repo version, so the real minimum is set when that release is published (the release PR).
+  With an older core installed they would fail at link time.
 
 ### Fixed
 
@@ -102,9 +104,11 @@ npm release are grouped under the in-development version that introduced them.
   withhold. `error` is now the standard reason phrase for the response status (`'Bad Gateway'`,
   `'Too Many Requests'`). The same rule covers the SSE stream and the last-resort `500` body: an
   `error` frame's `message` and the frame for a stream that throws carry the reason phrase, a
-  `start` frame has no `url` (it names the upstream host), and a `progress` or `info` frame has no
-  `detail` (on a retry it is the raw transport error text). The frames and event types are
-  unchanged, and so is everything else the stream carries, including `delta` and `result`
+  `start` frame has no `url` (it names the upstream host), a `progress` or `info` frame has no
+  `detail` (on a retry it is the raw transport error text), and a `drift` finding has no `detail`
+  (for a failed output validation it is the validator's issue message, which can echo the value
+  the upstream sent) but keeps its `level`, `path`, `change` and `sample`. The frames and event
+  types are unchanged, and so is everything else the stream carries, including `delta` and `result`
   payloads. The status mapping is unchanged (#707). `ServeOptions.disclose` (a boolean, default
   `false`) and `stitch serve --disclose` restore all of it for trusted callers.
 
