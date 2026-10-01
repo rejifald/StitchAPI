@@ -459,7 +459,7 @@ const SCENARIOS = [
     // you pay if you `export *` from it; the root scenarios above are what you pay before either loads.
     //
     // `otlp`: the whole sink + serializer + exporter, paid only if you import it (or set
-    // `STITCH_EXPORT=otlp`). Measured 3.09 KB, 0.2 KB of headroom (a new scenario: it has no `main`
+    // `STITCH_EXPORT=otlp`). Measured 3.10 KB, 0.2 KB of headroom (a new scenario: it has no `main`
     // ceiling to stay under).
     {
         name: 'stitchapi/otlp — whole surface',

@@ -57,7 +57,7 @@ npm release are grouped under the in-development version that introduced them.
   that starts before it has loaded and sends them in order, and a load failure prints one warning
   rather than failing a call. Measured with the size gate's new accounting (the next entry):
   whole entry 24.62 → 20.91 KB gzip, `import { stitch }` 21.83 → 18.10 KB (advertised
-  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 3.09 KB.
+  `~25 / ~22 kB` → `~21 / ~18 kB`), the subpath 3.10 KB.
 
     Migration — `import { otlp } from 'stitchapi'` → `import { otlp } from 'stitchapi/otlp'`, and the
     same for the types.
@@ -70,7 +70,7 @@ npm release are grouped under the in-development version that introduced them.
   above, the OTLP chunk too. Both root scenarios now name those chunks in `defer`, which keeps them
   external, as the async chunks a splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`)
   emits and downloads on first use. Each chunk is its own gated scenario (`stitchapi/cache` 3.44 KB,
-  `stitchapi/otlp` 3.09 KB), and the gate now fails if a `defer` names a chunk the build no longer
+  `stitchapi/otlp` 3.10 KB), and the gate now fails if a `defer` names a chunk the build no longer
   imports lazily or one it imports statically (a static edge would drop out of the measurement
   instead of being counted). Whole entry 24.62 → 20.91 KB gzip, `import { stitch }` 21.83 → 18.10 KB;
   the advertised `~25 / ~22 kB` becomes `~21 / ~18 kB`. That is what `import { stitch }` ships up
