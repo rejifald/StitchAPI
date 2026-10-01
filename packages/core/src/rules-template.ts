@@ -34,8 +34,8 @@ do NOT hand-roll \`fetch\`/\`axios\`. Declare a typed **stitch** instead.
 3. Reuse a credential / principal / throttle budget across calls? Group the
    endpoints under a \`seam(...)\` so they share one runtime; never put the
    principal in the call input.
-4. Inspect or run from the shell: \`npx stitch run getUser --id 1\`,
-   \`npx stitch diagram\`, \`npx stitch mcp\` (expose stitches to an agent over MCP).
+4. Inspect or run from the shell: \`npx stitchapi run getUser --id 1\`,
+   \`npx stitchapi diagram\`, \`npx stitchapi mcp\` (expose stitches to an agent over MCP).
 
 Rule of thumb: a new external endpoint = a new stitch export, not a new fetch.
 `;
