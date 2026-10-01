@@ -1,10 +1,10 @@
-// Direct tests for toOtlpJson (src/otlp.ts) — the OTLP/JSON `ResourceSpans` serializer a collector
+// Direct tests for otlp.json (src/otlp.ts) — the OTLP/JSON `ResourceSpans` serializer a collector
 // ingests on /v1/traces. otlp-export.spec.ts asserts the SPAN objects (OtelSpan) an otlp.sink sink
 // produces; run-identity.spec.ts checks only that parentSpanId is serialized. The wire-shape itself
 // — the resource/scope envelope, attribute value TYPING (int vs double vs bool vs string), the
 // nanosecond timestamps, the status-code mapping, and event serialization — was unpinned. A drift
 // here silently breaks collector ingestion, so it deserves a contract test.
-import { toOtlpJson } from '../src/otlp';
+import { otlp } from '../src/otlp';
 import type { OtelSpan } from '../src/otlp';
 
 interface OtlpAttr {
@@ -49,16 +49,16 @@ const baseSpan = (over: Partial<OtelSpan> = {}): OtelSpan => ({
 });
 
 const firstSpan = (spans: OtelSpan[]): OtlpSpan => {
-    const doc = toOtlpJson(spans) as OtlpDoc;
+    const doc = otlp.json(spans) as OtlpDoc;
     return doc.resourceSpans[0]!.scopeSpans[0]!.spans[0]!;
 };
 
 const attr = (attrs: OtlpAttr[], key: string): Record<string, unknown> =>
     attrs.find((a) => a.key === key)!.value;
 
-describe('toOtlpJson', () => {
+describe('otlp.json', () => {
     it('wraps spans in the ResourceSpans envelope (resource + versioned scope + schemaUrl)', () => {
-        const doc = toOtlpJson([baseSpan()], {
+        const doc = otlp.json([baseSpan()], {
             'service.name': 'checkout',
         }) as OtlpDoc;
         const rs = doc.resourceSpans[0]!;
@@ -78,7 +78,7 @@ describe('toOtlpJson', () => {
         vi.stubEnv('OTEL_SERVICE_NAME', '');
         vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', '');
         try {
-            const rs = (toOtlpJson([baseSpan()]) as OtlpDoc).resourceSpans[0]!;
+            const rs = (otlp.json([baseSpan()]) as OtlpDoc).resourceSpans[0]!;
             expect(attr(rs.resource.attributes, 'service.name')).toEqual({
                 stringValue: 'unknown_service',
             });

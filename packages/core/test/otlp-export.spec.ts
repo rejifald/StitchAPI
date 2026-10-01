@@ -2,8 +2,10 @@
 // INTERNAL run span over a CLIENT span per request (OTel HTTP semconv attributes, ADR 0017 D6) —
 // and hands it to a SpanExporter. Tested with a STUB exporter that
 // captures spans in memory — no running collector, no network.
-import { otlp, stitch } from '../src';
-import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
+import { stitch } from '../src';
+import type { StitchEvent } from '../src';
+import { otlp } from '../src/otlp';
+import type { OtelSpan, SpanExporter } from '../src/otlp';
 import { exportsFromEnv, multiplex } from '../src/trace';
 import { scrubUrl } from '../src/util';
 import { startMockServer } from './support/mock-server';

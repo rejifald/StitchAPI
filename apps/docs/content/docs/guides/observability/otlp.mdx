@@ -15,7 +15,11 @@ console/JSONL sink rather than replacing it.
 
 The zero-code path is an env toggle: set `STITCH_EXPORT=otlp` and every stitch
 also fans its events to an OTLP collector (default
-`http://localhost:4318/v1/traces`, or `OTEL_EXPORTER_OTLP_ENDPOINT`).
+`http://localhost:4318/v1/traces`, or the
+[standard OTel exporter variables](#options)). There is nothing to import — the
+exporter loads on first use, so a process that never sets the toggle never loads
+it, and the events of a call that starts before it has loaded are held and sent
+in order.
 
 ```bash
 STITCH_EXPORT=otlp OTEL_SERVICE_NAME=checkout \
@@ -23,11 +27,12 @@ STITCH_EXPORT=otlp OTEL_SERVICE_NAME=checkout \
 ```
 
 To wire it yourself — to set headers or the resource, or to tee OTLP next to
-your own sink — build the sink with `otlp.sink()` and combine sinks with
-`multiplex`:
+your own sink — import `otlp` from `stitchapi/otlp`, build the sink with
+`otlp.sink()` and combine sinks with `multiplex`:
 
 ```ts twoslash
-import { createTrace, multiplex, otlp } from 'stitchapi';
+import { createTrace, multiplex } from 'stitchapi';
+import { otlp } from 'stitchapi/otlp';
 
 const trace = multiplex(
     createTrace({ console: true }),
@@ -117,8 +122,8 @@ before:
 1. `telemetry.sdk.name` (`stitchapi`), `telemetry.sdk.language` (`nodejs` or
    `webjs`) and `telemetry.sdk.version` (the package version).
 2. `OTEL_RESOURCE_ATTRIBUTES` — `key=value` pairs separated by commas, with `,`
-   and `=` inside a value percent-encoded. A value that fails to decode is
-   discarded whole.
+   inside a value percent-encoded (a bare `=` in a value is fine: the pair splits
+   on the first one). A value that fails to decode discards the whole variable.
 3. `service.name` from `OTEL_SERVICE_NAME`, else the one in
    `OTEL_RESOURCE_ATTRIBUTES`, else `unknown_service`.
 4. The sink's `resource` option.
@@ -129,11 +134,27 @@ follow.
 
 ## Options
 
-`STITCH_EXPORT=otlp` is the toggle (a comma list, e.g. `console,otlp`);
-`OTEL_EXPORTER_OTLP_ENDPOINT` sets the collector base URL; `OTEL_SERVICE_NAME`
-and `OTEL_RESOURCE_ATTRIBUTES` set the resource.
+`STITCH_EXPORT=otlp` is the toggle (a comma list, e.g. `console,otlp`). The
+exporter reads the standard OTel variables, so a collector configured for any
+other OTel SDK works unchanged:
 
-The pipeline is one namespace, `otlp`, with a member per layer.
+| Variable                             | Effect                                                                                                                            |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | The full URL spans POST to, used as-is. Wins over the generic endpoint.                                                           |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`        | The collector base URL; `/v1/traces` is appended. Default `http://localhost:4318`.                                                |
+| `OTEL_EXPORTER_OTLP_HEADERS`         | `key=value` pairs, comma-separated, values percent-encoded (`authorization=Bearer%20token`). Under any `headers` option you pass. |
+| `OTEL_EXPORTER_OTLP_TRACES_HEADERS`  | The same, for traces only; overrides `OTEL_EXPORTER_OTLP_HEADERS` header by header.                                               |
+| `OTEL_SERVICE_NAME`                  | The resource's `service.name`.                                                                                                    |
+| `OTEL_RESOURCE_ATTRIBUTES`           | The rest of the resource ([above](#the-resource)).                                                                                |
+
+An empty variable counts as unset. The `endpoint` option, when you pass one,
+beats both endpoint variables and stays a base URL (`/v1/traces` is still
+appended); an explicit header beats an environment one of the same name, in any
+case.
+
+The pipeline is one namespace, `otlp`, with a member per layer. It lives on its
+own subpath — `import { otlp } from 'stitchapi/otlp'` — rather than the root
+entry, so it adds nothing to the bundle of an app that does not export spans.
 
 `otlp.sink(opts?)` returns a sink. `OtlpOptions` carries `endpoint` (OTLP/HTTP
 base URL), `headers` (extra headers on the POST, e.g. auth), `resource` (resource
@@ -152,7 +173,9 @@ built from.
 
 <Callout type="warn">
     Export is fire-and-forget: a missing collector or network error drops the
-    batch and never breaks a stitch call.
+    batch and never breaks a stitch call. The same goes for the
+    `STITCH_EXPORT=otlp` toggle: if the exporter module cannot load, one warning
+    is printed, spans are not exported, and calls run as usual.
 </Callout>
 
 <Callout type="warn">

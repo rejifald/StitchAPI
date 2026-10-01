@@ -36,27 +36,12 @@ export {
     loggerSink,
 } from './trace';
 export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
-// The OTLP trace pipeline, one namespace over one export path. `otlp.sink(opts?)` is the
-// TraceSink you hand to `trace` — it maps a stitch's events to an OTel span tree (an INTERNAL run
-// span, a CLIENT span per HTTP request — ADR 0017 D6); `otlp.exporter(opts?)` is the default
-// destination it builds, POSTing OTLP/JSON to `${endpoint}/v1/traces`;
-// `otlp.json(spans, resource?)` is the serializer underneath both, public as the
-// seam for a transport core does not ship (gRPC, a queue, a file) so a hand-rolled exporter uses
-// the same wire mapping rather than re-deriving it.
-//
-// Same shape as `secrets` and the token grammars below, for the same reason: one name per
-// dimension with the role at the call site, rather than the three names
-// (`otlpSink`/`otlpHttpExporter`/`toOtlpJson`) it replaced — which repeated the subject noun in
-// all three and varied only the role word, while hiding that they are three LAYERS of one
-// pipeline (json feeds exporter feeds sink) rather than three sibling helpers.
-export { otlp } from './otlp';
-export type {
-    SpanExporter,
-    OtelSpan,
-    OtelSpanEvent,
-    SpanAttributes,
-    OtlpOptions,
-} from './otlp';
+// The OTLP trace pipeline lives on `stitchapi/otlp` (the `otlp.sink` / `otlp.exporter` /
+// `otlp.json` namespace and its `OtelSpan`/`SpanExporter`/`OtlpOptions` types). Deliberately NOT
+// re-exported here, for the reason `stitchapi/auth` is not: a root re-export puts the whole sink,
+// serializer and exporter back on every consumer's `import { stitch }` path. The
+// `STITCH_EXPORT=otlp` toggle still works with no import — stitch.ts reaches the subpath through
+// a lazy `import('./otlp')`, the way the engine reaches `cache`.
 // The trace-redaction escape hatch, one namespace over one denylist. `secrets.register(name)`
 // widens it so a host's custom credential param is scrubbed in every trace sink (start.url, OTLP
 // url.full, input.query); `secrets.has(name)` is the matching predicate, so a host can audit which

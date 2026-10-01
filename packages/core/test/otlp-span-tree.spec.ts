@@ -7,14 +7,10 @@
 // tree is normalized for the snapshot: span ids/timestamps dropped (the invariants they must hold
 // are asserted structurally instead), the mock server's random port masked, and the package
 // version masked so a release doesn't churn the golden.
-import { otlp, stitch } from '../src';
-import type {
-    Adapter,
-    OtelSpan,
-    SpanAttributes,
-    SpanExporter,
-    Surface,
-} from '../src';
+import { stitch } from '../src';
+import type { Adapter, Surface } from '../src';
+import { otlp } from '../src/otlp';
+import type { OtelSpan, SpanAttributes, SpanExporter } from '../src/otlp';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

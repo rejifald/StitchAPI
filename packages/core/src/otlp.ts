@@ -1,4 +1,9 @@
-// Opt-in OpenTelemetry/OTLP trace sink: maps each stitch call's event stream to a span TREE (ADR
+// `stitchapi/otlp` — the opt-in OpenTelemetry/OTLP trace pipeline. It is a subpath of its own (the
+// ADR 0021 move, for the same bundle reason as `cache` and `auth`): the root barrel does not export
+// it and nothing on the core path imports it statically. `STITCH_EXPORT=otlp` reaches it through a
+// lazy `import('./otlp')` in stitch.ts; a host that wires `trace: otlp.sink()` by hand imports it.
+//
+// The sink maps each stitch call's event stream to a span TREE (ADR
 // 0017 D6) — one INTERNAL run span, a page span per page when paginating, and one attempt span per
 // physical request (CLIENT with the OTel HTTP semantic-convention attributes, or INTERNAL for a
 // surface that replaces the HTTP transport) — and hands finished spans to a SpanExporter. The
@@ -50,8 +55,18 @@ export interface SpanExporter {
 
 export interface OtlpOptions {
     exporter?: SpanExporter; // override the destination (e.g. a stub in tests)
-    endpoint?: string; // OTLP/HTTP base URL (default: env OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4318)
-    headers?: Record<string, string>; // extra headers for the OTLP POST (e.g. auth)
+    /**
+     * OTLP/HTTP base URL; spans POST to `${endpoint}/v1/traces`. Default: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
+     * (a full URL, used as-is), else `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/traces`, else
+     * `http://localhost:4318`.
+     */
+    endpoint?: string;
+    /**
+     * Extra headers for the OTLP POST (e.g. auth), merged over `OTEL_EXPORTER_OTLP_HEADERS` and
+     * `OTEL_EXPORTER_OTLP_TRACES_HEADERS` (`key=value,…` pairs, percent-encoded values): an
+     * explicit header wins over the environment's.
+     */
+    headers?: Record<string, string>;
     /**
      * Resource attributes describing the process that emits the spans — set `service.name` here.
      * Merged over the environment, which is read once when the sink is built: `service.name`
@@ -67,27 +82,48 @@ const SCHEMA_URL = 'https://opentelemetry.io/schemas/1.44.0';
 // The package version, from the build-time `define` (src/version.d.ts). `typeof` rather than a bare
 // read because a workspace package's tests alias `stitchapi` to this source without the define, and
 // a bare read of an undefined global throws at import; the bundle folds the guard away.
+//
+// Declared here as well, module-scoped (esbuild erases it, so the `define` still applies): those same
+// workspace packages typecheck this file through a `paths` alias and never load version.d.ts, so
+// without it every one of them fails with `Cannot find name '__PKG_VERSION__'`.
+declare const __PKG_VERSION__: string | undefined;
 const VERSION = typeof __PKG_VERSION__ === 'string' ? __PKG_VERSION__ : '0.0.0';
 
+// An OTel `key=value,key=value` environment list (the W3C Baggage shape `OTEL_RESOURCE_ATTRIBUTES`
+// and `OTEL_EXPORTER_OTLP_HEADERS` share): split on the FIRST `=`, so a value may carry one itself
+// (base64 padding), trim, percent-decode both sides, skip an entry with no key. A variable with a
+// value that fails to decode is discarded whole (the OTel resource SDK spec), never thrown.
+function envPairs(name: string): Record<string, string> {
+    try {
+        return Object.fromEntries(
+            (readEnv(name) ?? '').split(',').flatMap((pair) => {
+                const eq = pair.indexOf('=');
+                return eq > 0
+                    ? [
+                          [
+                              decodeURIComponent(pair.slice(0, eq).trim()),
+                              decodeURIComponent(pair.slice(eq + 1).trim()),
+                          ],
+                      ]
+                    : [];
+            }),
+        );
+    } catch {
+        return {};
+    }
+}
+
+// An empty variable is an unset one (OTel SDK environment spec): `||`, not `??`.
+// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+const envOf = (name: string): string | undefined => readEnv(name) || undefined;
+
 /**
- * Internal — resolve the resource for a sink: the SDK's own attributes, then the environment
+ * Resolve the resource for a sink: the SDK's own attributes, then the environment
  * (`OTEL_RESOURCE_ATTRIBUTES`, then `OTEL_SERVICE_NAME`, which wins over the former's
  * `service.name`), then the caller's `resource`, each overriding the last.
  */
-export function otlpResource(resource?: SpanAttributes): SpanAttributes {
-    let env: SpanAttributes;
-    try {
-        env = Object.fromEntries(
-            (readEnv('OTEL_RESOURCE_ATTRIBUTES') ?? '')
-                .split(',')
-                .filter((pair) => pair.includes('='))
-                .map((pair) =>
-                    pair.split('=').map((s) => decodeURIComponent(s.trim())),
-                ),
-        ) as SpanAttributes;
-    } catch {
-        env = {}; // a value that fails to decode is discarded whole (OTel resource SDK spec)
-    }
+function otlpResource(resource?: SpanAttributes): SpanAttributes {
+    const env = envPairs('OTEL_RESOURCE_ATTRIBUTES');
     return {
         'telemetry.sdk.name': 'stitchapi',
         'telemetry.sdk.language': (
@@ -98,10 +134,9 @@ export function otlpResource(resource?: SpanAttributes): SpanAttributes {
         'telemetry.sdk.version': VERSION,
         ...env,
         'service.name':
-            // `||`, not `??`: an empty variable is an unset one (OTel SDK environment spec).
-            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-            readEnv('OTEL_SERVICE_NAME') ||
-            (env['service.name'] ?? 'unknown_service'),
+            envOf('OTEL_SERVICE_NAME') ??
+            env['service.name'] ??
+            'unknown_service',
         ...resource,
     };
 }
@@ -190,7 +225,7 @@ function endPage(r: OpenRun, at: number, failed?: string): void {
 }
 
 /**
- * Sink layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
+ * Sink layer of {@link otlp}; the namespace carries the contract. Internal — the module
  * exports the namespace, not this.
  *
  * A TraceSink that turns each stitch call's events (start → … → done) into a span tree, exported
@@ -211,7 +246,7 @@ function endPage(r: OpenRun, at: number, failed?: string): void {
  * and a page's off the `progress` events that open and close them. A sink fed events by hand
  * without ids mints its own and correlates by stitch name (a tolerant stack).
  */
-export function otlpSink(opts: OtlpOptions = {}): TraceSink {
+function otlpSink(opts: OtlpOptions = {}): TraceSink {
     const exporter =
         opts.exporter ??
         otlpHttpExporter(
@@ -430,16 +465,15 @@ export function otlpSink(opts: OtlpOptions = {}): TraceSink {
     };
     // Non-enumerable test probe for the internal run map: lets the resource-leak suite assert the
     // map drains to empty after a completed run without exposing it on the public TraceSink type
-    // (non-enumerable → never serialized into a trace, never part of the contract).
-    Object.defineProperty(sink, OPEN_SPANS, {
+    // (non-enumerable → never serialized into a trace, never part of the contract). The key is a
+    // registered symbol — `Symbol.for('stitch.otlp.openSpans')` — so the suite reads it without
+    // this module exporting an internal.
+    Object.defineProperty(sink, Symbol.for('stitch.otlp.openSpans'), {
         value: runs,
         enumerable: false,
     });
     return sink;
 }
-
-/** Internal: keys the non-enumerable `open` map probe used by the resource-leak test suite. */
-export const OPEN_SPANS = Symbol('stitch.otlp.openSpans');
 
 const OTLP_STATUS = { UNSET: 0, OK: 1, ERROR: 2 } as const;
 // OTLP's SpanKind enum, in wire order (SPAN_KIND_INTERNAL = 1 … SPAN_KIND_CONSUMER = 5).
@@ -466,7 +500,7 @@ function toOtlpAttributes(attrs: SpanAttributes): unknown[] {
 }
 
 /**
- * Serializer layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
+ * Serializer layer of {@link otlp}; the namespace carries the contract. Internal — the module
  * exports the namespace, not this.
  *
  * Serialize spans to the OTLP/JSON `ResourceSpans` shape a collector accepts on `/v1/traces`.
@@ -474,7 +508,7 @@ function toOtlpAttributes(attrs: SpanAttributes): unknown[] {
  * environment; the scope is `stitchapi` at its package version, and both carry the `schemaUrl`
  * of the semantic-conventions version the attributes follow.
  */
-export function toOtlpJson(
+function toOtlpJson(
     spans: OtelSpan[],
     resource: SpanAttributes = otlpResource(),
 ): unknown {
@@ -525,29 +559,45 @@ export function toOtlpJson(
  */
 export type OtlpExporterOptions = Omit<OtlpOptions, 'exporter' | 'resource'>;
 
+// HTTP header names are case-insensitive: fold them so an explicit `Authorization` replaces an
+// environment `authorization` instead of riding beside it as a second value.
+const lowerKeys = (h: Record<string, string> = {}): Record<string, string> =>
+    Object.fromEntries(Object.entries(h).map(([k, v]) => [k.toLowerCase(), v]));
+
 /**
- * Exporter layer of {@link otlp}; the namespace carries the contract. Internal — the barrel
+ * Exporter layer of {@link otlp}; the namespace carries the contract. Internal — the module
  * exports the namespace, not this.
  *
- * Default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces` (endpoint defaults to
- * `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`), with the resource the sink hands it.
- * Fire-and-forget — failures are swallowed so a missing collector never breaks a stitch call.
+ * Default exporter: POST spans as OTLP/JSON, with the resource the sink hands it. Where it posts
+ * follows the OTel exporter spec: `opts.endpoint` (a base URL, `/v1/traces` appended), else
+ * `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (the full URL, used as-is), else `OTEL_EXPORTER_OTLP_ENDPOINT`
+ * (a base URL, `/v1/traces` appended), else `http://localhost:4318`. Headers are
+ * `OTEL_EXPORTER_OTLP_HEADERS`, then `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, then `opts.headers`,
+ * each overriding the last. Fire-and-forget — failures are swallowed so a missing collector never
+ * breaks a stitch call.
  */
-export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
-    const base =
-        opts.endpoint ??
-        readEnv('OTEL_EXPORTER_OTLP_ENDPOINT') ??
-        'http://localhost:4318';
-    const url = stripTrailingSlashes(base) + '/v1/traces';
+function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
+    const url =
+        (opts.endpoint === undefined
+            ? envOf('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT')
+            : undefined) ??
+        stripTrailingSlashes(
+            opts.endpoint ??
+                envOf('OTEL_EXPORTER_OTLP_ENDPOINT') ??
+                'http://localhost:4318',
+        ) + '/v1/traces';
+    const headers = {
+        'content-type': 'application/json',
+        ...lowerKeys(envPairs('OTEL_EXPORTER_OTLP_HEADERS')),
+        ...lowerKeys(envPairs('OTEL_EXPORTER_OTLP_TRACES_HEADERS')),
+        ...lowerKeys(opts.headers),
+    };
     return {
         async export(spans, resource): Promise<void> {
             try {
                 await fetch(url, {
                     method: 'POST',
-                    headers: {
-                        'content-type': 'application/json',
-                        ...(opts.headers ?? {}),
-                    },
+                    headers,
                     body: JSON.stringify(toOtlpJson(spans, resource)),
                 });
             } catch {
@@ -559,8 +609,9 @@ export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
 
 /**
  * The OTLP trace pipeline — one namespace for one export path (ADR 0007 correlates the spans
- * it builds). The shape is the token grammars’ and `secrets`’: one name per dimension, the role
- * named at the call site, rather than three names on the barrel repeating the subject noun.
+ * it builds), imported from `stitchapi/otlp`. The shape is the token grammars’ and `secrets`’: one
+ * name per dimension, the role named at the call site, rather than three names repeating the
+ * subject noun.
  *
  * The three are layers of a single pipeline, not independent helpers, which is why they read
  * better as one name — each is the input to the next:

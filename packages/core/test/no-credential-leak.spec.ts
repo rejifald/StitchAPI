@@ -10,9 +10,11 @@
 // into output MUST be registered as a case below. A future config-exporter — `stitch gen` /
 // client publishing (ADR 0013/0014) — that forgets to scrub will fail THIS test instead of baking
 // a password into a shared document. Add the surface here in the same PR that adds the surface.
-import { otlp, stitch } from '../src';
-import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
+import { stitch } from '../src';
+import type { StitchEvent } from '../src';
 import { toOpenApi } from '../src/openapi';
+import { otlp } from '../src/otlp';
+import type { OtelSpan, SpanExporter } from '../src/otlp';
 import type { StitchRegistry } from '../src/registry';
 import { redactEventForTransport } from '../src/trace';
 

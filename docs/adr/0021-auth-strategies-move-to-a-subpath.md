@@ -351,3 +351,28 @@ in `src/` (`index.ts`, for the comment only), the resolvers still run at call ti
 rather than at module scope, and `credential.file` is still the member that reaches
 `node:fs` through `nodeFs()` — the browser-bundle guard in the ADR's §"CJS and
 `browser`" note applies to it under the new spelling.
+
+## Addendum (2026-10-01) — the OTLP pipeline followed it onto its own subpath
+
+The rule this ADR applied to auth — _a capability the core path does not need is
+reached through its own import_ — applied again when the OTLP exporter was rewritten into
+the ADR 0017 D6 span tree ([#871](https://github.com/rejifald/StitchAPI/issues/871),
+[#872](https://github.com/rejifald/StitchAPI/issues/872)). The rewrite added 0.63 KB gzip
+to both root scenarios and put them 0.45 / 0.46 KB over budget; instead of a raise, the
+`otlp` namespace and its types moved to **`stitchapi/otlp`** — hard break, no root
+re-export, same grounds as §3.
+
+It differs from auth in one respect, and the difference matters for the measurement:
+`stitch.ts` has a real edge to it. `STITCH_EXPORT=otlp` is a zero-import toggle, so the
+module is reached through a lazy `import('./otlp')` (the engine's pattern for `cache`)
+behind a sink that holds its events until the module resolves. That edge is why the size
+gate's two root scenarios treat the chunk as deferred (`defer: ['otlp']` in
+`scripts/bundle-size.mjs`): the gate re-bundles without code splitting, which inlines every
+dynamic import, so the lazy import alone left the root scenarios at 25.51 / 22.80 KB.
+Measured with the chunk deferred: whole entry 25.25 → 23.55 KB, `import { stitch }`
+22.46 → 20.79 KB, and the chunk itself — `stitchapi/otlp` — 2.70 KB, a gated scenario of
+its own. The advertised figures moved `~25 / ~22 kB` → `~24 / ~21 kB`.
+
+`cache.mjs` is reached by the same kind of edge and is still inlined into both root
+scenarios (~3.0 KB gzip on each); whether the gate should defer it too is a separate
+decision about what the advertised size promises.

@@ -103,6 +103,7 @@ const BROWSER_LEGIT = [
     'src/pipe.ts',
     'src/cache.ts',
     'src/fingerprint.ts',
+    'src/otlp.ts',
     'src/xhr-adapter.ts',
     'src/testing.ts',
 ];

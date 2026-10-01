@@ -23,6 +23,15 @@ npm release are grouped under the in-development version that introduced them.
   `SpanExporter.export` receives the resolved resource as a second argument and `otlp.json` takes
   it as one, so a custom transport ships the same resource the default exporter does.
 
+- **The default OTLP exporter reads the standard OTel exporter variables.**
+  ([#872](https://github.com/rejifald/StitchAPI/issues/872)) `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is
+  a full URL, used as-is and winning over `OTEL_EXPORTER_OTLP_ENDPOINT` (a base URL, `/v1/traces`
+  appended); `OTEL_EXPORTER_OTLP_HEADERS` and its traces-specific `OTEL_EXPORTER_OTLP_TRACES_HEADERS`
+  are comma-separated `key=value` pairs with percent-encoded values, merged under any `headers`
+  option (an explicit header wins over the environment's, whatever the case of its name). An empty
+  variable counts as unset. `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_RESOURCE_ATTRIBUTES` now split a
+  pair on its **first** `=`, so a value that contains one (base64 padding) is no longer truncated.
+
 - **`StitchEvent` gains the fields the span tree is built from — all optional, all additive.**
   ([ADR 0017](docs/adr/0017-outbound-trace-context-propagation.md) D6) `start.surface` (the surface
   id) and `start.transport` (`'http'`, or the id of a surface that replaces the transport);
@@ -34,6 +43,21 @@ npm release are grouped under the in-development version that introduced them.
   in a minified build instead of `'Error'`.
 
 ### Changed
+
+- **BREAKING CHANGE: `otlp` moves to `stitchapi/otlp`.** ([#871](https://github.com/rejifald/StitchAPI/issues/871),
+  [#872](https://github.com/rejifald/StitchAPI/issues/872), [ADR 0021](docs/adr/0021-auth-strategies-move-to-a-subpath.md)
+  addendum) The span-tree rewrite below put the core bundle 0.45 KB over its budget, so the OTLP
+  pipeline leaves the root entry the way the auth strategies did: the `otlp` namespace
+  (`otlp.sink`/`otlp.exporter`/`otlp.json`) and the `OtelSpan`, `OtelSpanEvent`, `SpanAttributes`,
+  `SpanExporter` and `OtlpOptions` types are no longer exported from `stitchapi`. Pre-GA hard break,
+  no root re-export ([CONTRACT D5](docs/CONTRACT.md#0-resolved-decisions)). The `STITCH_EXPORT=otlp`
+  toggle needs no import and is unchanged: the exporter loads on first use, holds the events of a call
+  that starts before it has loaded and sends them in order, and a load failure prints one warning
+  rather than failing a call. Measured: whole entry 25.25 → 23.55 KB gzip, `import { stitch }`
+  22.46 → 20.79 KB (advertised `~25 / ~22 kB` → `~24 / ~21 kB`), the subpath 2.70 KB.
+
+    Migration — `import { otlp } from 'stitchapi'` → `import { otlp } from 'stitchapi/otlp'`, and the
+    same for the types.
 
 - **BREAKING CHANGE (dashboards): the OTLP export is a span tree — an INTERNAL run span over one
   CLIENT span per physical request.** ([#871](https://github.com/rejifald/StitchAPI/issues/871),

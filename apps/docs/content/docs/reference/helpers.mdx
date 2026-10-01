@@ -188,7 +188,8 @@ Fan one event stream out to several sinks — for example console/JSONL alongsid
 OTLP — flushing each in turn.
 
 ```ts twoslash
-import { createTrace, multiplex, otlp } from 'stitchapi';
+import { createTrace, multiplex } from 'stitchapi';
+import { otlp } from 'stitchapi/otlp';
 
 const sink = multiplex(createTrace(), otlp.sink());
 ```
@@ -213,7 +214,8 @@ const sink = loggerSink(console, { levels: { result: 'debug' } });
 
 ### otlp.sink
 
-An opt-in OpenTelemetry sink: it maps each stitch call's events to a span tree
+An opt-in OpenTelemetry sink, imported from `stitchapi/otlp` (it is not on the
+root entry): it maps each stitch call's events to a span tree
 — an `INTERNAL` run span, a page span per page, and a `CLIENT` span per HTTP
 request — and hands finished spans to a `SpanExporter`, together with the
 resource it resolved. With no exporter supplied it builds `otlp.exporter()`.
@@ -221,7 +223,7 @@ Configured by `OtlpOptions` (below). The tree and its attributes are on
 [OTLP export](/docs/guides/observability/otlp#the-span-tree).
 
 ```ts twoslash
-import { otlp } from 'stitchapi';
+import { otlp } from 'stitchapi/otlp';
 
 const sink = otlp.sink({
     endpoint: 'https://api.example.com:4318',
@@ -230,7 +232,7 @@ const sink = otlp.sink({
 ```
 
 `otlp` groups the three layers of one export path the same way
-[`duration`](#duration) groups a parse/format pair: one name on the barrel, the
+[`duration`](#duration) groups a parse/format pair: one name on the subpath, the
 role at the call site. They are layers, not siblings — `sink` builds spans and
 hands them to `exporter`, which POSTs what `json` serialized — so reach for the
 one you actually need. `otlp.sink()` alone covers the common case.
@@ -238,13 +240,15 @@ one you actually need. `otlp.sink()` alone covers the common case.
 ### otlp.exporter
 
 The default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces`. The
-endpoint defaults to `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`.
-It serializes each batch with the resource the sink hands it, so the resource
+endpoint defaults to `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (a full URL, used
+as-is), else `OTEL_EXPORTER_OTLP_ENDPOINT`, else `http://localhost:4318`; headers
+come from `OTEL_EXPORTER_OTLP_HEADERS` under any you pass
+([the variables](/docs/guides/observability/otlp#options)). It serializes each batch with the resource the sink hands it, so the resource
 is set on the sink, not here. Fire-and-forget — a missing collector never
 breaks a stitch call.
 
 ```ts twoslash
-import { otlp } from 'stitchapi';
+import { otlp } from 'stitchapi/otlp';
 
 const exporter = otlp.exporter({
     endpoint: 'https://api.example.com:4318',
@@ -261,8 +265,8 @@ rather than re-deriving it. Pass it the `resource` your exporter's `export`
 receives; without one it resolves the resource from the environment.
 
 ```ts twoslash
-import { otlp } from 'stitchapi';
-import type { SpanExporter } from 'stitchapi';
+import { otlp } from 'stitchapi/otlp';
+import type { SpanExporter } from 'stitchapi/otlp';
 
 const fileExporter: SpanExporter = {
     export(spans, resource) {

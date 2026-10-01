@@ -155,8 +155,9 @@ before the header exists:
 - **Status follows the conventions** — UNSET on success, ERROR on failure with an
   `error.type` (the error class, else the HTTP status, else `_OTHER`).
 
-Implemented in `otlp.ts` with golden tests of the exported tree
-(`packages/core/test/otlp-span-tree.spec.ts`). **Outbound propagation itself — Decisions 1–5
+Implemented in `otlp.ts` — shipped as the `stitchapi/otlp` subpath, off the root entry
+([ADR 0021](./0021-auth-strategies-move-to-a-subpath.md), addendum) — with golden tests of the
+exported tree (`packages/core/test/otlp-span-tree.spec.ts`). **Outbound propagation itself — Decisions 1–5
 and 7 — is still Proposed and not built:** no request carries a `traceparent` yet. Decision 1
 is amended above so that, when it lands, the header carries the attempt's id.
 

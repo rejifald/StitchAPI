@@ -384,29 +384,63 @@ const KB = 1024;
 //
 // The conventional ~0.2 KB step, not a minimum one: this is a new capability on the public
 // surface, not a fix squeezing past a ceiling. Headroom lands at 0.21 / 0.18.
+// Whole entry 24.80→23.75 / `import { stitch }` 22.00→21.00 KB — a DROP, not a raise, and a change
+// to what the two root scenarios COUNT. The OTLP pipeline was rewritten into the ADR 0017 D6 span
+// tree (#871/#872): +0.63 KB on both scenarios, which put them 0.45 / 0.46 KB over. It moved to
+// `stitchapi/otlp` instead of the budget moving: the root barrel no longer exports `otlp`, and the
+// only edge from the core path is the lazy `import('./otlp')` behind `STITCH_EXPORT=otlp` (stitch.ts),
+// which tsup's esm splitting keeps in its own chunk.
+//
+// That lazy edge is why the root scenarios take `defer: ['otlp']`. This gate re-bundles WITHOUT code
+// splitting, and esbuild then INLINES every `import()` it can resolve — measured, the lazy import on
+// its own left the root scenarios at 25.51 / 22.80 KB, worse than before the move (the chunk's bytes
+// plus the loader). A bundler that splits dynamic imports (Vite, Rollup, webpack, esbuild
+// `--splitting`) emits the chunk as an async file that only loads when the toggle is set, and that is
+// what the deferred scenarios measure: 23.55 / 20.80 KB. The bytes are not hidden — the chunk is its
+// own scenario below, with its own ceiling, and root + chunk is the no-splitting total.
+//
+// NOT changed here: `cache.mjs` is reached the same way (`import('./cache')` in the engine) and is
+// still inlined into both root scenarios, ~3.0 KB gzip on each. Treating it like `otlp` would
+// re-baseline every advertised figure (~24 → ~21, ~21 → ~18), which is a decision about what this
+// gate promises, not a side effect of moving one sink — so it is left as it was.
+//
+// The ADVERTISED figures move: 23.55 rounds to 24 and 20.80 to 21, so every site quoting them goes
+// ~25 → ~24 and ~22 → ~21 kB — the six sites under the `bundle-advertised-size` tether. Headroom
+// lands at ~0.2 KB on each ceiling, the step this gate is meant to hold.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
+// `defer` names lazy subpath chunks the scenario treats as deferred (an async chunk in a
+// code-splitting bundler) rather than inlined — see the note above.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.8 * KB,
+        budget: 23.75 * KB,
         advertised: true,
+        defer: ['otlp'],
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 22.0 * KB,
+        budget: 21.0 * KB,
         advertised: true,
+        defer: ['otlp'],
     },
     {
         name: 'stitchapi/auth — whole surface',
         code: `export * from './auth.mjs';`,
         budget: 5.35 * KB,
     },
+    // The lazy chunk the root scenarios defer: pay for the whole sink + serializer + exporter only
+    // if you import `otlp` (or set `STITCH_EXPORT=otlp`). Measured 2.70 KB, 0.2 KB of headroom.
+    {
+        name: 'stitchapi/otlp — whole surface',
+        code: `export * from './otlp.mjs';`,
+        budget: 2.9 * KB,
+    },
 ];
 
-function measure(code) {
+function measure(code, defer = []) {
     const result = esbuild.buildSync({
         stdin: {
             contents: code,
@@ -435,7 +469,19 @@ function measure(code) {
         //
         // A builtin the list misses fails loudly rather than measuring something wrong —
         // extend it when the artifacts start reaching for a new one.
-        external: ['node:*', 'fs', 'fs/promises', 'path', 'url', 'http'],
+        //
+        // A scenario's `defer` chunks are external too: `*/<name>.mjs` matches the lazy
+        // `import('./<name>.mjs')` inside the build, which this no-splitting bundle would otherwise
+        // inline. See the `defer` note on SCENARIOS.
+        external: [
+            'node:*',
+            'fs',
+            'fs/promises',
+            'path',
+            'url',
+            'http',
+            ...defer.map((name) => `*/${name}.mjs`),
+        ],
         write: false,
         logLevel: 'silent',
     });
@@ -457,7 +503,7 @@ if (!existsSync(resolve(libDir, 'index.mjs'))) {
 }
 
 const rows = SCENARIOS.map((s) => {
-    const m = measure(s.code);
+    const m = measure(s.code, s.defer);
     return { ...s, ...m, over: m.gzip > s.budget };
 });
 
