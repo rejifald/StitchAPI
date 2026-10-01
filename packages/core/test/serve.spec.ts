@@ -289,10 +289,9 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
     };
     const registry = {
         // A templated route, retried once on a 503: `start.template` names the upstream route, and
-        // the retry's `progress` frame carries a `status` and (for a throw) an `errorType`.
-        // Named, because an unnamed stitch's event `name` defaults to its `path`.
+        // the retry's `progress` frame carries a `status`. Unnamed on purpose: an event's `name`
+        // then defaults to the stitch's `path`, the same route again.
         routed: stitch({
-            name: 'ledger-read',
             baseUrl: 'https://upstream.test',
             path: '/internal/ledger/{id}',
             adapter: () =>
@@ -399,6 +398,7 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
 
     test('by default `start` drops the route template and keeps what the engine stamps', async () => {
         const body = await stream('routed', undefined, '{"params":{"id":7}}');
+        // Neither the `template` nor the default `name` (the stitch's `path`) may carry the route.
         expect(body).not.toContain('/internal/ledger');
         const [start] = framesOf(body, 'start');
         expect(start).toEqual(
@@ -416,10 +416,44 @@ describe('serve SSE withholds the trace fields that name the upstream unless `di
         );
     });
 
-    test('`disclose: true` sends the route template', async () => {
+    test('by default every frame that carries a `name` says the key the caller addressed', async () => {
+        const body = await stream('routed', undefined, '{"params":{"id":7}}');
+        const named = ['start', 'error'].flatMap((type) =>
+            framesOf(body, type),
+        );
+        expect(named).toHaveLength(2);
+        for (const frame of named)
+            expect(frame).toHaveProperty('name', 'routed');
+    });
+
+    test('by default the JSON error body has no `name`, and no route', async () => {
+        const h = await serve({ routed: registry.routed }, { port: 0 });
+        try {
+            const res = await fetch(`${h.url}/stitch/routed`, {
+                method: 'POST',
+                body: '{"params":{"id":7}}',
+            });
+            expect(res.status).toBe(503);
+            await expect(res.json()).resolves.toEqual({
+                error: 'Service Unavailable',
+                status: 503,
+            });
+        } finally {
+            await h.close();
+        }
+    });
+
+    test("`disclose: true` sends the route template and the stitch's own name", async () => {
         const body = await stream('routed', true, '{"params":{"id":7}}');
         expect(framesOf(body, 'start')[0]).toEqual(
-            expect.objectContaining({ template: '/internal/ledger/{id}' }),
+            expect.objectContaining({
+                template: '/internal/ledger/{id}',
+                name: '/internal/ledger/{id}',
+            }),
+        );
+        expect(framesOf(body, 'error')[0]).toHaveProperty(
+            'name',
+            '/internal/ledger/{id}',
         );
     });
 

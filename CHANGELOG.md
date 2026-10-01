@@ -537,10 +537,11 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
   `'Too Many Requests'`). The same rule covers the SSE stream and the last-resort `500` body: an
   `error` frame's `message` and the frame for a stream that throws carry the reason phrase, a
   `start` frame has no `url` or `template` (they name the upstream host and its route), a
-  `progress` or `info` frame has no
-  `detail` (on a retry it is the raw transport error text), and a `drift` finding has no `detail`
-  (for a failed output validation it is the validator's issue message, which can echo the value
-  the upstream sent) but keeps its `level`, `path`, `change` and `sample`. The frames and event
+  `progress` or `info` frame has no `detail` (on a retry it is the raw transport error text), a
+  `drift` finding has no `detail` (for a failed output validation it is the validator's issue
+  message, which can echo the value the upstream sent) but keeps its `level`, `path`, `change` and
+  `sample`, and a `start` or `error` frame's `name` is the name the caller addressed the stitch by
+  (the stitch's own name defaults to its `path`, which is the route again). The frames and event
   types are unchanged, and so is everything else the stream carries, including `delta` and `result`
   payloads. The status mapping is unchanged (#707). `ServeOptions.disclose` (a boolean, default
   `false`) and `stitch serve --disclose` restore all of it for trusted callers.

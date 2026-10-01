@@ -90,6 +90,9 @@ these fields are dropped:
   upstream host and its route (`/internal/ledger/{id}`);
 - an `event: progress` or `event: info` frame has no `detail`. On a retry
   `progress` frame that field is the raw transport error text;
+- a frame's `name`, on `start` and `error`, is the name you addressed the stitch
+  by in `/stitch/:name`. A stitch's own name defaults to its `path`, so
+  `/internal/ledger/{id}` would otherwise appear there;
 - an `event: drift` frame's `finding` has no `detail`. For a failed output
   validation that field is the validator's issue message, which can repeat the
   value the upstream sent. The finding keeps its `level`, `path`, `change` and

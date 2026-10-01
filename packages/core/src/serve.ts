@@ -34,16 +34,22 @@ export interface ServeOptions {
     /**
      * Disclose a failed run's raw detail to the caller. **Default `false`**: the JSON error body
      * carries the reason phrase for the response status (`{ error: 'Bad Gateway', status }`), and
-     * in SSE mode an `error` frame's `message` is that same phrase, a `start` frame omits the
-     * upstream `url` and its path `template`, and `progress` / `info` frames and a `drift` finding omit their `detail`
-     * (a finding keeps its `level`, `path`, `change` and `sample`). The raw message can reveal
-     * internal topology (a transport failure reads like
+     * in SSE mode:
+     *
+     * - an `error` frame's `message` is that same phrase;
+     * - a `start` frame omits the upstream `url` and its path `template`;
+     * - `progress` and `info` frames, and a `drift` finding, omit their `detail` (a finding keeps
+     *   its `level`, `path`, `change` and `sample`);
+     * - a frame's `name` is the name the caller addressed the stitch by, not the stitch's own
+     *   (which defaults to its `path`).
+     *
+     * The raw message can reveal internal topology (a transport failure reads like
      * `getaddrinfo ENOTFOUND payments.internal.corp`) or an upstream's own wording to an untrusted
-     * client, the `url`, the `template` and a retry's `detail` name the same hosts and routes, and a validator's issue
-     * message in a finding can echo the received value, so all of it is withheld by default, as
-     * every `@stitchapi/*` host adapter withholds the message. The frames and event types stay;
-     * only those fields are dropped. Turn it on when the callers are trusted (local
-     * development, an internal network). CLI: `stitch serve --disclose`.
+     * client; the `url`, the `template`, the default `name` and a retry's `detail` name the same
+     * hosts and routes; and a validator's issue message in a finding can echo the received value.
+     * All of it is withheld by default, as every `@stitchapi/*` host adapter withholds the
+     * message. The frames and event types stay; only those fields change. Turn it on when the
+     * callers are trusted (local development, an internal network). CLI: `stitch serve --disclose`.
      */
     disclose?: boolean;
 }
@@ -138,18 +144,29 @@ const retryAfterHeader = (
 // process. The streamed `delta`/`result` payload is preserved (it is what the caller asked for).
 //
 // Unless `disclose` is on, also drop what names the upstream: a `start` frame's `url` (its host)
-// and `template` (its route, `/internal/ledger/{id}`), the raw transport error text a retry's `progress.detail` carries (the engine's
-// `String(err.message)`), a strategy's `info.detail`, a `drift` finding's `detail` (a validator's
-// issue message, which can echo the received value), and an `error` frame's `message` (which
-// becomes the reason phrase JSON mode would answer with). A finding keeps its `level`, `path`,
-// `change` and `sample`: those are structural coordinates (`items[3].x`), not values. Everything
-// else the engine stamps on a frame stays: span ids, `surface` / `transport` (ids the code
-// defines), a `progress` frame's `status` (a number, which JSON mode also passes through) and an
-// `errorType` (a class name, never a message). The frame types stay, so a client keyed on them is
-// unaffected.
-function frameBody(ev: StitchEvent, disclose: boolean | undefined): object {
+// and `template` (its route, `/internal/ledger/{id}`), the raw transport error text a retry's
+// `progress.detail` carries (the engine's `String(err.message)`), a strategy's `info.detail`, a
+// `drift` finding's `detail` (a validator's issue message, which can echo the received value), and
+// an `error` frame's `message` (which becomes the reason phrase JSON mode would answer with). A
+// finding keeps its `level`, `path`, `change` and `sample`: those are structural coordinates
+// (`items[3].x`), not values. Every frame that carries a `name` (`start`, `error`) gets the name the
+// caller addressed the stitch by instead: the engine's own name defaults to the stitch's `path`, so
+// an unnamed stitch would say `/internal/ledger/{id}` there. Everything else the engine stamps on a
+// frame stays: span ids, `surface` / `transport` (ids the code defines), a `progress` frame's
+// `status` (a number, which JSON mode also passes through) and an `errorType` (a class name, never
+// a message). The frame types stay, so a client keyed on them is unaffected.
+function frameBody(
+    ev: StitchEvent,
+    disclose: boolean | undefined,
+    name: string,
+): object {
     const safe = redactEventForTransport(ev);
     if (disclose) return safe;
+    const body = withheld(safe, disclose);
+    return 'name' in body ? { ...body, name } : body;
+}
+
+function withheld(safe: StitchEvent, disclose: boolean | undefined): object {
     switch (safe.type) {
         case 'start':
             return compact({ ...safe, url: undefined, template: undefined });
@@ -242,6 +259,7 @@ async function streamSse(
     res: ServerResponse,
     stream: AsyncIterable<StitchEvent>,
     disclose: boolean | undefined,
+    name: string,
 ): Promise<void> {
     res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -255,7 +273,7 @@ async function streamSse(
             if (result.done) break;
             const ev = result.value;
             res.write(
-                `event: ${ev.type}\ndata: ${JSON.stringify(frameBody(ev, disclose))}\n\n`,
+                `event: ${ev.type}\ndata: ${JSON.stringify(frameBody(ev, disclose, name))}\n\n`,
             );
         }
     } catch (e) {
@@ -372,7 +390,8 @@ export function createServeHandler(
                 ...input,
                 signal: controller.signal,
             }) as AsyncIterable<StitchEvent>;
-            if (wantsSse(req, url)) await streamSse(res, stream, disclose);
+            if (wantsSse(req, url))
+                await streamSse(res, stream, disclose, name);
             else await runJson(res, stream, disclose);
         } finally {
             req.off('close', onClose);
