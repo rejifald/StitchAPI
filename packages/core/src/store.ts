@@ -1,6 +1,7 @@
 // The default in-memory state store + a store-backed throttle. Swapping the store for a
 // Redis/Postgres adapter makes throttle distributed and sessions persistent/shared across
 // workers, with no change to the call site (DESIGN.md §13).
+import { createThrottle } from './resilience';
 import type {
     AcquireOptions,
     Clock,
@@ -122,11 +123,12 @@ export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
     const view: StitchStore = {
         get: (key) => store.get(prefix + key),
         set: (key, value, ttl) => store.set(prefix + key, value, ttl),
-        increment: (key, ttl) => store.increment(prefix + key, ttl),
     };
-    // Forward the optional pacing cursor only when the backend has one, so the view reports the
-    // backend's real capability: a lens that always exposed `reserve` would make every store look
-    // GCRA-capable and silently break the fallback the absence is meant to select.
+    // Forward each optional verb only when the backend has it, so the view reports the backend's
+    // real capability: a lens that always exposed `increment` or `reserve` would make every store
+    // look counter- or GCRA-capable and silently break the fallback the absence is meant to select.
+    const increment = store.increment?.bind(store);
+    if (increment) view.increment = (key, ttl) => increment(prefix + key, ttl);
     const reserve = store.reserve?.bind(store);
     if (reserve)
         view.reserve = (key, spacing, at, ttl) =>
@@ -155,12 +157,17 @@ export function chainThrottle(throttles: Throttle[]): Throttle {
     return {
         async acquire(key, opts) {
             let waited = 0;
+            const notes: string[] = [];
             // Thread the acquire options (e.g. `rateOnly` for streaming) to EVERY gate, so a
             // streaming member skips the concurrency slot on both the seam bucket and its own
             // local throttle while still charging each rate gate (ADR 0005 Decision 12).
-            for (const t of throttles)
-                waited += (await t.acquire(key, opts)).waited;
-            return { waited };
+            for (const t of throttles) {
+                const r = await t.acquire(key, opts);
+                waited += r.waited;
+                // Each gate announces its own per-process fallback once; keep every one.
+                if (r.note) notes.push(r.note);
+            }
+            return { waited, note: notes.join('; ') };
         },
         release(key) {
             // Unwind in reverse acquisition order.
@@ -170,7 +177,15 @@ export function chainThrottle(throttles: Throttle[]): Throttle {
 }
 
 export interface Throttle {
-    acquire(key: string, opts?: AcquireOptions): Promise<{ waited: number }>;
+    /**
+     * `note` is non-empty on the FIRST acquire of a store-backed throttle that cannot be
+     * fleet-wide on its store (#882/#725) — the engine turns it into one `info` event, topic
+     * `throttle.per-process`. Every later acquire leaves it empty.
+     */
+    acquire(
+        key: string,
+        opts?: AcquireOptions,
+    ): Promise<{ waited: number; note?: string }>;
     release(key: string): void;
 }
 
@@ -211,9 +226,14 @@ export interface Throttle {
  * pinned in `store.spec.ts` against a store with `reserve` deliberately withheld, so the fallback
  * stays a decision on the record rather than a surprise — and both are what the cell removes.
  *
- * The fallback is not deprecated and is not going away: an eventually-consistent backend
- * (Cloudflare KV) has no atomic read-compute-write to build a cell from, so this path is the only
- * one it can take.
+ * The fallback is not deprecated and is not going away: `reserve` is optional, and so is the
+ * counter (#882). On a store with NEITHER — a get/set-only backend such as Cloudflare Workers KV,
+ * which has no atomic read-modify-write to build either from — `rate` is paced by the in-process
+ * limiter itself ({@link createThrottle}, `pool: 'host'` pooling included), so N processes emit
+ * N×. The same is true of `concurrency` without the lease pair. Neither degrades in silence: the
+ * first acquire carries a `note` naming what is per-process and why, which the engine emits once as
+ * an `info` event (topic `throttle.per-process`) — the "is my limiter fleet-wide?" answer #725
+ * asked for.
  */
 export function createStoreThrottle(
     opts: ThrottleOptions | undefined,
@@ -231,6 +251,25 @@ export function createStoreThrottle(
               }
             : undefined;
     const leaseTtl = parseDuration(opts?.lease) ?? DEFAULT_LEASE_MS;
+    // Which limits cannot be fleet-wide on THIS store, decided once from its verbs and announced on
+    // the first acquire only (#725) — a store swap that drops a verb must not halve the guarantee
+    // in silence. Empty when every declared limit is fleet-wide.
+    let note = [
+        paced &&
+            !store.reserve &&
+            !store.increment &&
+            'rate: the store has no reserve or increment',
+        concurrency != null &&
+            !leases &&
+            'concurrency: the store has no lease/release',
+    ]
+        .filter(Boolean)
+        .join('; ');
+    // With neither `reserve` nor `increment` there is no shared slot to pace on, so `rate` takes
+    // its step from the very limiter a store-less stitch runs: same arithmetic, and `pool: 'host'`
+    // pools through the same in-process registry instead of a per-throttle copy. Built on first
+    // use and kept, so a closure-local (`pool: 'stitch'`) cursor lives as long as this throttle.
+    let inProcess: ReturnType<typeof createThrottle> | undefined;
     const local = new Map<
         string,
         {
@@ -324,6 +363,9 @@ export function createStoreThrottle(
         }
         if (paced) {
             const spacing = paced.per / paced.count; // ms between grants
+            // The instant this grant is due. Left at 0 on the in-process branch below, which does
+            // its own sleeping, so the wait computed from it is never positive there.
+            let at = 0;
             if (store.reserve) {
                 // The GCRA cell (ADR 0024). One atomic read-compute-write over a shared cursor
                 // gives the fleet what neither half of the fallback below can: the cursor carries
@@ -334,69 +376,78 @@ export function createStoreThrottle(
                 // TTL is a full window past the last reservation: `per >= spacing` always, so it
                 // outlives any gap short enough to still need pacing, and a key idle longer than
                 // that should restart from the present anyway.
-                const at = await store.reserve(
+                at = await store.reserve(
                     `rl:${key}`,
                     spacing,
                     clock.now(),
                     paced.per + 100,
                 );
-                const wait = at - clock.now();
-                if (wait > 0) {
-                    await clock.sleep(wait);
-                    waited += wait;
-                }
-                return { waited };
+            } else if (store.increment) {
+                // Fallback for a store with no `reserve` — an eventually-consistent backend, or any
+                // implementation predating ADR 0024. Correct per process and bounded, but a fleet
+                // drifts to N× mid-window; the comments below are the full account of why.
+                //
+                // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
+                // the atomic increment hands each caller a unique slot N in the window, and slot N
+                // is scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the
+                // next windowStart, so grants stay one `spacing` apart across the boundary — no
+                // fixed-window burst. No re-check loop: each caller owns a distinct, non-colliding
+                // slot.
+                const windowStart =
+                    Math.floor(clock.now() / paced.per) * paced.per;
+                // Track the window we minted a key for; when it rolls over, DELETE the previous
+                // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
+                // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves
+                // a dead key per window in the backend until something else happens to evict it.
+                const s = stateFor(key);
+                if (s.lastWindow !== undefined && s.lastWindow < windowStart)
+                    await store.set(`rl:${key}:${s.lastWindow}`, undefined);
+                s.lastWindow = windowStart;
+                const n = await store.increment(
+                    `rl:${key}:${windowStart}`,
+                    paced.per + 100,
+                );
+                // The slot is a FLOOR on the grant, not the grant time itself. A process that joins
+                // mid-window finds every slot up to `n` already scheduled in the PAST, and granting
+                // each of those the moment it is claimed drains them in one tick — a burst of up to
+                // `count-1` calls with no spacing at all, scaling with the window length: `'2/s'`
+                // and `'120/m'` declare the same 500ms spacing, but one leaves a single elapsed
+                // slot to drain and the other leaves 119. That is a cold start (a rolling deploy, a
+                // new worker, a lambda), not the sustained-overload edge described above. So pace
+                // on the same local cursor the in-process limiter keeps and take the LATER of the
+                // two: the shared counter still allocates slots across the fleet, while no single
+                // process ever grants two calls closer than `spacing`. The bound is PER-PROCESS,
+                // and that is the whole of what it buys — a stale slot paces nobody, so while the
+                // stale prefix lasts only each process's own cursor holds the line and N workers
+                // emit at N× the declared rate. At a window boundary the slots are in the future
+                // and the fleet does pace on one budget. That residue is what `store.reserve`
+                // closes above, which is why this path runs only when the backend cannot offer the
+                // cell.
+                at = Math.max(
+                    clock.now(),
+                    s.nextGrantAt ?? 0,
+                    windowStart + (n - 1) * spacing,
+                );
+                s.nextGrantAt = at + spacing;
+            } else {
+                // Neither verb (#882): no shared slot exists, so there is nothing to floor on and
+                // no `rl:` key to mint. The limiter a store-less stitch runs does the pacing and
+                // sleeps itself — rate-only, so it never takes the concurrency slot that was
+                // handled above even though it was handed the same options — and the result is
+                // announced once through `note`.
+                inProcess ??= createThrottle(opts, clock);
+                waited += (await inProcess.acquire(key, { rateOnly: true }))
+                    .waited;
             }
-            // Fallback for a store with no `reserve` — an eventually-consistent backend, or any
-            // implementation predating ADR 0024. Correct per process and bounded, but a fleet
-            // drifts to N× mid-window; the comments below are the full account of why.
-            //
-            // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
-            // the atomic increment hands each caller a unique slot N in the window, and slot N is
-            // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
-            // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
-            // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
-            const windowStart = Math.floor(clock.now() / paced.per) * paced.per;
-            // Track the window we minted a key for; when it rolls over, DELETE the previous
-            // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
-            // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves a
-            // dead key per window in the backend until something else happens to evict it.
-            const s = stateFor(key);
-            if (s.lastWindow !== undefined && s.lastWindow < windowStart)
-                await store.set(`rl:${key}:${s.lastWindow}`, undefined);
-            s.lastWindow = windowStart;
-            const n = await store.increment(
-                `rl:${key}:${windowStart}`,
-                paced.per + 100,
-            );
-            // The slot is a FLOOR on the grant, not the grant time itself. A process that joins
-            // mid-window finds every slot up to `n` already scheduled in the PAST, and granting
-            // each of those the moment it is claimed drains them in one tick — a burst of up to
-            // `count-1` calls with no spacing at all, scaling with the window length: `'2/s'` and
-            // `'120/m'` declare the same 500ms spacing, but one leaves a single elapsed slot to
-            // drain and the other leaves 119. That is a cold start (a rolling deploy, a new
-            // worker, a lambda), not the sustained-overload edge described above.
-            // So pace on the same local cursor the in-process limiter keeps and take the LATER of
-            // the two: the shared counter still allocates slots across the fleet, while no single
-            // process ever grants two calls closer than `spacing`. The bound is PER-PROCESS, and
-            // that is the whole of what it buys — a stale slot paces nobody, so while the stale
-            // prefix lasts only each process's own cursor holds the line and N workers emit at N×
-            // the declared rate. At a window boundary the slots are in the future and the fleet
-            // does pace on one budget. That residue is what `store.reserve` closes above, which is
-            // why this path runs only when the backend cannot offer the cell.
-            const at = Math.max(
-                clock.now(),
-                s.nextGrantAt ?? 0,
-                windowStart + (n - 1) * spacing,
-            );
-            s.nextGrantAt = at + spacing;
             const wait = at - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
                 waited += wait;
             }
         }
-        return { waited };
+        const r = { waited, note };
+        note = ''; // once per throttle, not per call
+        return r;
     }
 
     function release(key: string): void {

@@ -214,8 +214,8 @@ describe('denoKvStore — increment TTL window', () => {
         const ttl = 200;
 
         // Two increments inside one window — the counter must not be permanent.
-        expect(await store.increment('rate', ttl)).toBe(1);
-        expect(await store.increment('rate', ttl)).toBe(2);
+        expect(await store.increment!('rate', ttl)).toBe(1);
+        expect(await store.increment!('rate', ttl)).toBe(2);
 
         // Advance past the window's absolute deadline (pinned at the FIRST increment).
         vi.setSystemTime(ttl + 1);
@@ -224,7 +224,7 @@ describe('denoKvStore — increment TTL window', () => {
         // bug the 2nd increment wiped the expiry, the key never expired, and this
         // returned 3 (an ever-growing permanent counter — the rate limit never
         // reset). It must be 1.
-        expect(await store.increment('rate', ttl)).toBe(1);
+        expect(await store.increment!('rate', ttl)).toBe(1);
     });
 
     test('within one window increments accumulate (1, 2, 3) without any early reset', async () => {
@@ -233,12 +233,12 @@ describe('denoKvStore — increment TTL window', () => {
         const store = denoKvStore(expiryKv());
         const ttl = 1000;
 
-        expect(await store.increment('rate', ttl)).toBe(1);
+        expect(await store.increment!('rate', ttl)).toBe(1);
         // Time advances but stays INSIDE the window — no reset, no extension.
         vi.setSystemTime(400);
-        expect(await store.increment('rate', ttl)).toBe(2);
+        expect(await store.increment!('rate', ttl)).toBe(2);
         vi.setSystemTime(900);
-        expect(await store.increment('rate', ttl)).toBe(3);
+        expect(await store.increment!('rate', ttl)).toBe(3);
     });
 
     test('the window deadline is FIXED, not sliding: later increments never push it out', async () => {
@@ -247,13 +247,13 @@ describe('denoKvStore — increment TTL window', () => {
         const store = denoKvStore(expiryKv());
         const ttl = 200;
 
-        expect(await store.increment('rate', ttl)).toBe(1); // deadline pinned at 200
+        expect(await store.increment!('rate', ttl)).toBe(1); // deadline pinned at 200
         vi.setSystemTime(150);
-        expect(await store.increment('rate', ttl)).toBe(2); // must NOT reset to t=350
+        expect(await store.increment!('rate', ttl)).toBe(2); // must NOT reset to t=350
         // Cross the ORIGINAL deadline. A sliding window would still be alive here
         // (150 + 200 = 350); a fixed window has already expired at 200.
         vi.setSystemTime(210);
-        expect(await store.increment('rate', ttl)).toBe(1);
+        expect(await store.increment!('rate', ttl)).toBe(1);
     });
 
     test('every commit carries a positive expireIn so the window can always expire', async () => {
@@ -263,9 +263,9 @@ describe('denoKvStore — increment TTL window', () => {
         const rec = recordingKv();
         const store = denoKvStore(rec.kv);
 
-        expect(await store.increment('rate', 1000)).toBe(1);
-        expect(await store.increment('rate', 1000)).toBe(2);
-        expect(await store.increment('rate', 1000)).toBe(3);
+        expect(await store.increment!('rate', 1000)).toBe(1);
+        expect(await store.increment!('rate', 1000)).toBe(2);
+        expect(await store.increment!('rate', 1000)).toBe(3);
 
         // No `undefined` — the entry never loses its expiry on a later write.
         for (const s of rec.atomicSets) {
@@ -285,15 +285,15 @@ describe('denoKvStore — increment TTL window', () => {
         await kv.set(['legacy'], 7); // an old bare counter, no deadline
         const store = denoKvStore(kv);
 
-        expect(await store.increment('legacy', 200)).toBe(1);
-        expect(await store.increment('legacy', 200)).toBe(2);
+        expect(await store.increment!('legacy', 200)).toBe(1);
+        expect(await store.increment!('legacy', 200)).toBe(2);
     });
 
     test('throws after exhausting retry.attempts lost compare-and-set races', async () => {
         const rec = recordingKv({ failAtomic: true });
         const store = denoKvStore(rec.kv, { retry: { attempts: 3 } });
         // `attempts` is the TOTAL including the first, so 3 means 3 reads, not 4.
-        await expect(store.increment('x', 1000)).rejects.toThrow(
+        await expect(store.increment!('x', 1000)).rejects.toThrow(
             /lost 3 compare-and-set races/,
         );
     });
@@ -301,7 +301,7 @@ describe('denoKvStore — increment TTL window', () => {
     test('a bare number is the attempts shorthand (retry: 3 ≡ { attempts: 3 })', async () => {
         const rec = recordingKv({ failAtomic: true });
         const store = denoKvStore(rec.kv, { retry: 3 });
-        await expect(store.increment('x', 1000)).rejects.toThrow(
+        await expect(store.increment!('x', 1000)).rejects.toThrow(
             /lost 3 compare-and-set races/,
         );
     });
@@ -309,7 +309,7 @@ describe('denoKvStore — increment TTL window', () => {
     test('the default budget is 100 attempts', async () => {
         const rec = recordingKv({ failAtomic: true });
         const store = denoKvStore(rec.kv);
-        await expect(store.increment('x', 1000)).rejects.toThrow(
+        await expect(store.increment!('x', 1000)).rejects.toThrow(
             /lost 100 compare-and-set races/,
         );
     });
@@ -321,7 +321,7 @@ describe('denoKvStore — increment TTL window', () => {
         const spy = vi.spyOn(globalThis, 'setTimeout');
         const rec = recordingKv({ failAtomic: true });
         const store = denoKvStore(rec.kv, { retry: 4 });
-        await expect(store.increment('x', 1000)).rejects.toThrow(
+        await expect(store.increment!('x', 1000)).rejects.toThrow(
             /lost 4 compare-and-set races/,
         );
         expect(spy).not.toHaveBeenCalled();
@@ -341,7 +341,7 @@ describe('denoKvStore — increment TTL window', () => {
         const store = denoKvStore(rec.kv, {
             retry: { attempts: 4, backoff: { curve: 'fixed', base: '20ms' } },
         });
-        await expect(store.increment('x', 1000)).rejects.toThrow(
+        await expect(store.increment!('x', 1000)).rejects.toThrow(
             /lost 4 compare-and-set races/,
         );
         // 4 attempts → 3 gaps; the delay after the final loss would only stall the throw.
@@ -365,7 +365,7 @@ describe('denoKvStore — increment TTL window', () => {
                 backoff: { curve: 'expo', base: 10, max: 30 },
             },
         });
-        await expect(store.increment('x', 1000)).rejects.toThrow(
+        await expect(store.increment!('x', 1000)).rejects.toThrow(
             /lost 5 compare-and-set races/,
         );
         expect(delays).toEqual([10, 20, 30, 30]);
@@ -390,7 +390,7 @@ describe('denoKvStore — increment TTL window', () => {
         const store = denoKvStore(rec.kv, {
             retry: { attempts: 8, backoff: 'expo' },
         });
-        await expect(store.increment('x', 1000)).rejects.toThrow(
+        await expect(store.increment!('x', 1000)).rejects.toThrow(
             /lost 8 compare-and-set races/,
         );
         // 5 · 2^(n−1) over seven gaps, clamped by `max` on the last.
@@ -415,11 +415,11 @@ describe('denoKvStore — increment without a window', () => {
         vi.setSystemTime(0);
         const store = denoKvStore(expiryKv());
 
-        expect(await store.increment('count')).toBe(1);
+        expect(await store.increment!('count')).toBe(1);
         // Arbitrarily far in the future — a windowless counter never resets.
         vi.setSystemTime(1_000_000_000);
-        expect(await store.increment('count')).toBe(2);
-        expect(await store.increment('count')).toBe(3);
+        expect(await store.increment!('count')).toBe(2);
+        expect(await store.increment!('count')).toBe(3);
         // `get` unwraps the envelope to the plain count, windowed or not.
         expect(await store.get('count')).toBe(3);
     });
@@ -428,9 +428,9 @@ describe('denoKvStore — increment without a window', () => {
         const rec = recordingKv();
         const store = denoKvStore(rec.kv);
 
-        expect(await store.increment('count')).toBe(1);
-        expect(await store.increment('count', 0)).toBe(2);
-        expect(await store.increment('count', -5)).toBe(3);
+        expect(await store.increment!('count')).toBe(1);
+        expect(await store.increment!('count', 0)).toBe(2);
+        expect(await store.increment!('count', -5)).toBe(3);
 
         // A windowless counter is written WITHOUT an expiry, matching `set`'s
         // no-TTL path — the key must never silently gain a window.
@@ -445,10 +445,10 @@ describe('denoKvStore — increment without a window', () => {
         vi.setSystemTime(0);
         const store = denoKvStore(expiryKv());
 
-        expect(await store.increment('count')).toBe(1); // windowless
-        expect(await store.increment('count', 200)).toBe(2); // ttl ignored — still live
+        expect(await store.increment!('count')).toBe(1); // windowless
+        expect(await store.increment!('count', 200)).toBe(2); // ttl ignored — still live
         vi.setSystemTime(500); // past the ttl that was ignored
-        expect(await store.increment('count')).toBe(3);
+        expect(await store.increment!('count')).toBe(3);
     });
 });
 
@@ -462,11 +462,11 @@ describe('denoKvStore — increment without a window', () => {
         vi.setSystemTime(0);
         const store = denoKvStore(expiryKv());
 
-        expect(await store.increment('count')).toBe(1);
+        expect(await store.increment!('count')).toBe(1);
         // Arbitrarily far in the future — a windowless counter never resets.
         vi.setSystemTime(1_000_000_000);
-        expect(await store.increment('count')).toBe(2);
-        expect(await store.increment('count')).toBe(3);
+        expect(await store.increment!('count')).toBe(2);
+        expect(await store.increment!('count')).toBe(3);
         // `get` unwraps the envelope to the plain count, windowed or not.
         expect(await store.get('count')).toBe(3);
     });
@@ -475,9 +475,9 @@ describe('denoKvStore — increment without a window', () => {
         const rec = recordingKv();
         const store = denoKvStore(rec.kv);
 
-        expect(await store.increment('count')).toBe(1);
-        expect(await store.increment('count', 0)).toBe(2);
-        expect(await store.increment('count', -5)).toBe(3);
+        expect(await store.increment!('count')).toBe(1);
+        expect(await store.increment!('count', 0)).toBe(2);
+        expect(await store.increment!('count', -5)).toBe(3);
 
         // A windowless counter is written WITHOUT an expiry, matching `set`'s
         // no-TTL path — the key must never silently gain a window.
@@ -492,10 +492,10 @@ describe('denoKvStore — increment without a window', () => {
         vi.setSystemTime(0);
         const store = denoKvStore(expiryKv());
 
-        expect(await store.increment('count')).toBe(1); // windowless
-        expect(await store.increment('count', 200)).toBe(2); // ttl ignored — still live
+        expect(await store.increment!('count')).toBe(1); // windowless
+        expect(await store.increment!('count', 200)).toBe(2); // ttl ignored — still live
         vi.setSystemTime(500); // past the ttl that was ignored
-        expect(await store.increment('count')).toBe(3);
+        expect(await store.increment!('count')).toBe(3);
     });
 });
 

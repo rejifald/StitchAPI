@@ -115,12 +115,12 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `credential.file()` and never reach the caller.
 - **Data shaping** - `pick` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
 - **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
-- **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
+- **Pluggable state store** - throttle state, the cache and sessions/tokens live behind a `get`/`set` store with optional atomic verbs; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
 - **Zero-infra observability** - tracing is **off by default** (a stitch's only effect is its call); opt in per stitch with `trace: 'console'` / `fileSink(path)` / a `TraceSink`, or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>` / `STITCH_EXPORT=otlp`. `stitch trace` then summarizes runs, retries, drift, and latency percentiles.
 - **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 - **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 - **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
-- **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~21 kB min+gzip**; a typical `import { stitch }` trims to **~18 kB** — and with no transitive tree, that is the entire cost. The cache engine and the OTLP exporter load lazily, on first use, and are not counted in either figure.
+- **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~21 kB min+gzip**; a typical `import { stitch }` trims to **~19 kB** — and with no transitive tree, that is the entire cost. The cache engine and the OTLP exporter load lazily, on first use, and are not counted in either figure.
 
 ## Documentation
 
@@ -162,7 +162,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~21 kB minified + gzipped** (58 kB raw, 18.8 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~18 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit. Those figures are what a code-splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`) ships up front: the cache engine (`stitchapi/cache`, reached only by a stitch with a `cache` block) and the OTLP exporter (`stitchapi/otlp`, reached only when `STITCH_EXPORT=otlp` is set) load lazily, on first use, and are budgeted as their own entries in the size gate. A bundler that does not split dynamic imports inlines both chunks and ships them with the rest.
+**Bundle size.** The whole `stitchapi` entry is **~21 kB minified + gzipped** (58 kB raw, 18.8 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~19 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit. Those figures are what a code-splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`) ships up front: the cache engine (`stitchapi/cache`, reached only by a stitch with a `cache` block) and the OTLP exporter (`stitchapi/otlp`, reached only when `STITCH_EXPORT=otlp` is set) load lazily, on first use, and are budgeted as their own entries in the size gate. A bundler that does not split dynamic imports inlines both chunks and ships them with the rest.
 
 ## Quick start
 
@@ -558,7 +558,7 @@ auth: cookieSession({
 
 ## Pluggable state store
 
-Throttle counters and session/token state live behind one small seam — a `store` you compose like any other value. The default is in-memory (zero-config, single process). Implement the 3-method interface over Redis/Postgres and, with no change at the call site:
+Throttle state, cached responses and session/token state live behind one small seam — a `store` you compose like any other value. The default is in-memory (zero-config, single process). Implement `get`/`set` over Redis/Postgres (plus the optional verbs your backend can do atomically) and, with no change at the call site:
 
 - **throttle goes distributed** - rate counters are read through the store, so a shared store paces calls across processes;
 - **sessions and tokens are shared** - `cookieSession` / `oauth2` state under the same `key` is reused across stitches and workers, surviving restarts.
@@ -567,7 +567,9 @@ Throttle counters and session/token state live behind one small seam — a `stor
 export interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
     set(key: string, value: unknown, ttl?: number): Promise<void>;
-    increment(key: string, ttl: number): Promise<number>; // atomic — rate windows
+    // Optional capabilities — implement the ones your backend can do atomically:
+    increment?(key: string, ttl?: number): Promise<number>; // rate fallback counter
+    // reserve?(…) → fleet-wide rate; lease?(…) + release?(…) → fleet-wide concurrency
 }
 ```
 

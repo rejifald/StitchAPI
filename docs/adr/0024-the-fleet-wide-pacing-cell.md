@@ -4,6 +4,18 @@
 - **Date:** 2026-08-04
 - **Tags:** resilience, throttle, store, api-surface, contract-extension, P16, P18, P19, P21
 
+> **Amendment (2026-10-01) — the fallback chain is `reserve`, then `increment`, then in-process.**
+> Decision 2 calls the counter path "the fallback" and assumes every store has the counter.
+> `increment` is now an optional capability as well (#882), so a store with neither verb —
+> Cloudflare Workers KV, which has no atomic read-modify-write to build either from — takes a
+> third rung: `rate` is paced by the in-process limiter (`createThrottle`, including
+> `pool: 'host'` pooling), per process, and the throttle says so once with an `info` event,
+> topic `throttle.per-process` (#725). The cell and the counter paths are untouched, and the
+> rule "selection is capability-based, never configuration" extends to the third rung. Read
+> "a store without `reserve`" in Decision 2 as "a store without `reserve` that has the counter";
+> the same event also covers `concurrency` on a store without the lease pair
+> ([ADR 0025](./0025-fleet-wide-concurrency-by-lease.md)).
+
 > [!NOTE]
 >
 > A counter can allocate **positions**. Turning a position into a **time** needs an

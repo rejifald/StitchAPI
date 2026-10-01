@@ -34,7 +34,7 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~21&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~18&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The cache engine and the OTLP exporter load lazily, on first use, so they are not in those figures. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~21&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~19&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The cache engine and the OTLP exporter load lazily, on first use, so they are not in those figures. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 <p align="center">
@@ -161,10 +161,10 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Read-through caching** — opt-in response cache + in-process coalescing, keyed by a derived, principal-scoped key, loaded lazily from `stitchapi/cache`.
 - **Auth as a boundary** — `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login/re-login), `oauth2`; secrets resolve at call time and never reach the caller.
 - **Any request style** — `http` by default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer surfaces behind subpath imports.
-- **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
+- **Pluggable state store** — throttle state, cache and sessions behind a `get`/`set` store with optional atomic verbs; swap in Redis/Postgres to go distributed.
 - **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 - **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
-- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~21 kB min+gzip** for the whole entry, **~18 kB** for a typical `import { stitch }` (the cache engine and the OTLP exporter load lazily, on first use).
+- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~21 kB min+gzip** for the whole entry, **~19 kB** for a typical `import { stitch }` (the cache engine and the OTLP exporter load lazily, on first use).
 
 ## Install
 

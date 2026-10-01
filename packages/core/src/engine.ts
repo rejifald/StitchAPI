@@ -67,14 +67,17 @@ function randomUUID(): string {
     });
 }
 
+/** One throttle grant: how long it waited, and — once per throttle — why it is per-process. */
+interface Acquired {
+    waited: number;
+    note?: string;
+}
+
 export interface Runtime {
     cfg: ResolvedStitchConfig;
     adapter: Adapter;
     throttle: {
-        acquire(
-            key: string,
-            opts?: AcquireOptions,
-        ): Promise<{ waited: number }>;
+        acquire(key: string, opts?: AcquireOptions): Promise<Acquired>;
         release(key: string): void;
     };
     trace: TraceSink;
@@ -602,7 +605,7 @@ async function acquireWithin(
     budget?: TotalBudget,
     opts?: AcquireOptions,
     signal?: AbortSignal,
-): Promise<{ waited: number }> {
+): Promise<Acquired> {
     if (signal?.aborted) throw abortReason(signal);
     if (budget == null && signal === undefined)
         return throttle.acquire(key, opts);
@@ -644,6 +647,27 @@ async function acquireWithin(
         clearTimeout(timer);
         if (onAbort) signal?.removeEventListener('abort', onAbort);
     }
+}
+
+// What one grant has to say, in order: the throttle's once-only `throttle.per-process` note (#725 —
+// a limit that cannot be fleet-wide on this store says so instead of degrading in silence), then
+// the `throttled` progress when the grant actually waited.
+function* grantEvents(r: Acquired, attempt: number): Generator<StitchEvent> {
+    if (r.note)
+        yield {
+            type: 'info',
+            topic: 'throttle.per-process',
+            detail: r.note,
+            at: now(),
+        };
+    if (r.waited > 0)
+        yield {
+            type: 'progress',
+            phase: 'throttled',
+            attempt,
+            waited: r.waited,
+            at: now(),
+        };
 }
 
 // Materialize a streaming-path error body for StitchError.body. A streaming adapter hands back the
@@ -720,23 +744,17 @@ async function* attemptLoop(
         state.attempts = attempt;
         // Skip the throttle entirely in delegate mode — the outer gate paces the call, so acquiring
         // here would double-count against it (the bug this mode fixes).
-        if (!delegate) {
-            const { waited } = await acquireWithin(
-                rt.throttle,
-                key,
-                budget,
-                undefined,
-                baseReq.signal,
+        if (!delegate)
+            yield* grantEvents(
+                await acquireWithin(
+                    rt.throttle,
+                    key,
+                    budget,
+                    undefined,
+                    baseReq.signal,
+                ),
+                attempt,
             );
-            if (waited > 0)
-                yield {
-                    type: 'progress',
-                    phase: 'throttled',
-                    attempt,
-                    waited,
-                    at: now(),
-                };
-        }
         try {
             const req = cloneReq(baseReq);
             if (cfg.auth) {
@@ -1460,28 +1478,21 @@ async function* runStreaming(
 
         // Charge the rate limiter at EVERY open — a reconnect is a fresh request, so it counts
         // against the rate budget like any other (Decision 12) — but still take NO concurrency slot.
-        let waited: number;
+        let grant: Acquired;
         try {
-            ({ waited } = await acquireWithin(
+            grant = await acquireWithin(
                 rt.throttle,
                 hostKey(baseReq, cfg),
                 budget,
                 { rateOnly: true },
                 baseReq.signal,
-            ));
+            );
         } catch (e) {
             yield errEvt(e, name, attempt);
             yield doneEvt(false, t0, attempt);
             return 'fail';
         }
-        if (waited > 0)
-            yield {
-                type: 'progress',
-                phase: 'throttled',
-                attempt,
-                waited,
-                at: now(),
-            };
+        yield* grantEvents(grant, attempt);
 
         let res: AdapterResult;
         try {

@@ -4,6 +4,8 @@
 - **Date:** 2026-06-14
 - **Tags:** caching, performance, resilience, runtime, multi-tenant, agents
 
+> **Amendment — a bulk-invalidation bump is a `set`, not a counter (#882).** Decision 8's generation only has to _change_, never count, so `bumpCacheGeneration` now writes a fresh random integer with `store.set` instead of calling `increment`. That made `StitchStore.increment` an optional capability (like `reserve` and `lease`): bulk invalidation works on a `get`/`set`-only store such as Workers KV, generations a counter wrote before keep their numeric prefix, and on an eventually-consistent store a bump is visible only as fast as the store propagates a write (~60s on Workers KV).
+
 > **Amendment — the store contract's counter verb is `increment`.** This ADR was written when `StitchStore`'s atomic counter was spelled `incr`; the house contracts now use whole words, so it is **`increment`** (`get`/`set`/`increment`/`close?`) per [CONTRACT.md P18](../CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary). Read `incr` as `increment` throughout the text below — the Redis **command** `INCR` is unchanged. The decision itself (reuse the store contract, grow no new vendor surface) is unaffected.
 
 ## Context

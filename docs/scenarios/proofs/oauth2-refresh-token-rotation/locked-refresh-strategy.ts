@@ -106,9 +106,15 @@ export function lockedRotatingRefresh(
         ctx: AuthContext,
         previous: string | undefined,
     ): Promise<void> => {
+        // `increment` is an optional StitchStore capability: a lock needs it, so say so up front.
+        const increment = ctx.vault.increment?.bind(ctx.vault);
+        if (!increment)
+            throw new Error(
+                'lockedRotatingRefresh needs a vault with an atomic `increment` (optional on StitchStore)',
+            );
         const deadline = Date.now() + waitMs;
         for (;;) {
-            if ((await ctx.vault.increment(lockKey, lockTtl)) === 1) {
+            if ((await increment(lockKey, lockTtl)) === 1) {
                 try {
                     await redeem(ctx);
                 } finally {

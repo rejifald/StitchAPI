@@ -142,6 +142,31 @@ const search = stitch({
 });
 ```
 
+`info` events default to `debug`, which an `info`-level production logger never
+prints. One of them is worth promoting: a `throttle.per-process` notice means a
+`rate` or `concurrency` limit is not fleet-wide on your store (see the
+[capability table](/docs/integrations/stores#capabilities)). It fires once per
+throttle, so raise just that topic with `levelOf`:
+
+```ts twoslash
+import { loggerSink, stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    trace: loggerSink(console, {
+        levelOf: (event) =>
+            event.type === 'info' && event.topic === 'throttle.per-process'
+                ? 'warn'
+                : undefined,
+    }),
+});
+```
+
+`@stitchapi/pino` and `@stitchapi/nest` leave `info` announcements out of their
+logs; to see this one there, read it off the event stream (`.stream()`) or add
+`trace: 'console'` alongside.
+
 <Callout type="info">
     This is the generic core counterpart to `@stitchapi/nest`'s NestJS-specific
     `nestLoggerSink`, which forwards the same payload-free metadata to a Nest

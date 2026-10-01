@@ -30,6 +30,16 @@ describe('expoSecureStore', () => {
         );
     });
 
+    // The kit runs a capability group only when the store HAS the verb (#882), so a store that
+    // quietly lost one would still pass — pin the capabilities this store ships.
+    test('ships the capabilities it claims: increment', () => {
+        const store = expoSecureStore(fakeSecureStore());
+        expect(typeof store.increment).toBe('function');
+        expect('reserve' in store).toBe(false);
+        expect('lease' in store).toBe(false);
+        expect('release' in store).toBe(false);
+    });
+
     test('encodes engine keys into the SecureStore-safe charset', async () => {
         const seen: string[] = [];
         const secure: SecureStoreLike = {

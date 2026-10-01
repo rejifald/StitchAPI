@@ -46,6 +46,9 @@ async function claimAtomic(
     store: StitchStore,
     eventId: string,
 ): Promise<boolean> {
+    // `increment` is an optional StitchStore capability; this ledger cannot work without it.
+    if (!store.increment)
+        throw new Error('claimAtomic needs a store with `increment`');
     return (await store.increment(`webhook:${eventId}`, DEDUP_TTL_MS)) === 1;
 }
 

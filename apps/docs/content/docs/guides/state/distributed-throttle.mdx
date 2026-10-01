@@ -58,7 +58,8 @@ configure — a store that supports it just does it.
     strict FIFO fairness is gone; and a release is fire-and-forget, because the
     expiry already covers a lost one. Backed by `memoryStore`,
     `@stitchapi/redis` and `@stitchapi/deno-kv`; a store without leases keeps
-    per-process concurrency.
+    per-process concurrency, and says so once with a `throttle.per-process`
+    `info` event.
 
 </Callout>
 
@@ -68,13 +69,19 @@ configure — a store that supports it just does it.
     the whole fleet on one continuous cursor, so every worker draws from one
     schedule no matter when it starts.
 
-    A store without one (`@stitchapi/cloudflare-kv`, which is eventually
-    consistent and has no atomic read-compute-write to build a cell from) falls
-    back to a shared counter plus a per-worker cursor. That holds the budget at a
-    window boundary and keeps each worker's own pacing exact, but a fleet that
-    starts _mid-window_ runs at up to `rate × workers` until the schedule catches
-    up with the clock. Nothing to configure either way — the throttle uses the
-    cell when the store has it.
+    A store without a cell but with an atomic counter (`increment`) falls back to
+    a shared counter plus a per-worker cursor. That holds the budget at a window
+    boundary and keeps each worker's own pacing exact, but a fleet that starts
+    _mid-window_ runs at up to `rate × workers` until the schedule catches up with
+    the clock.
+
+    A store with neither (`@stitchapi/cloudflare-kv`, which is eventually
+    consistent and has no atomic read-modify-write at all) paces each worker on
+    its own, so the fleet runs at `rate × workers`. That one isn't silent: the
+    throttle emits a `throttle.per-process` `info` event on its first call.
+    Nothing to configure either way — the throttle uses the best verb the store
+    has. The [capability table](/docs/integrations/stores#capabilities) lists
+    which store has which.
 
 </Callout>
 

@@ -119,6 +119,69 @@ describe('conformance.store', () => {
         }).not.toThrow();
     });
 
+    test('a get/set-only store passes on the base group alone (#882)', async () => {
+        // Only `get`/`set` are required; each capability group runs only when the store has
+        // the verbs, so a store without `increment`, `reserve` or the lease pair is conforming.
+        const report = await conformance.store(() => {
+            const base = memoryStore();
+            return {
+                get: (k) => base.get(k),
+                set: (k, v, ttl) => base.set(k, v, ttl),
+            };
+        });
+        expect(report.violations).toEqual([]);
+        expect(report.passed).toContain('keys: writes are isolated by key');
+        expect(
+            report.passed.filter((r) =>
+                /^(increment|reserve|lease|release):/.test(r),
+            ),
+        ).toEqual([]);
+    });
+
+    test('a store that stringifies numbers fails the integer round-trip (#897)', async () => {
+        // The cache generation is an integer written with `set` and read back by `asNum`, which
+        // treats a non-number as 0 — so a store that returns `'123'` makes `invalidate()` a silent
+        // no-op. The kit pins that on the base group, which every store runs.
+        const report = await conformance.store(() => {
+            const base = memoryStore();
+            return {
+                get: (k) => base.get(k),
+                set: (k, v, ttl) =>
+                    base.set(k, typeof v === 'number' ? String(v) : v, ttl),
+            };
+        });
+        expect(report.violations.map((v) => v.rule)).toEqual([
+            'set/get: a safe integer round-trips as a number',
+        ]);
+        expect(report.violations[0]!.detail).toContain('string');
+    });
+
+    test('half a lease pair is a violation, in either direction (#897)', async () => {
+        // The throttle needs BOTH verbs and silently ignores a lone one, so a store shipping only
+        // `lease` (or only `release`) would otherwise pass every rule while never being fleet-wide.
+        const half = (verb: 'lease' | 'release') => () => {
+            const base = memoryStore();
+            return {
+                get: (k: string) => base.get(k),
+                set: (k: string, v: unknown, ttl?: number) =>
+                    base.set(k, v, ttl),
+                [verb]: base[verb]!.bind(base),
+            } as StitchStore;
+        };
+        for (const [verb, other] of [
+            ['lease', 'release'],
+            ['release', 'lease'],
+        ] as const) {
+            const report = await conformance.store(half(verb));
+            expect(report.violations).toEqual([
+                {
+                    rule: 'lease/release: the pair is implemented together or not at all',
+                    detail: `the store implements \`${verb}\` without \`${other}\`; the throttle ignores a half pair`,
+                },
+            ]);
+        }
+    });
+
     test('a broken store yields the expected NAMED violations without throwing', async () => {
         const report = await conformance.store(brokenStore);
         expect(report.ok).toBe(false);

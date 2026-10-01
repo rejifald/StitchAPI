@@ -10,6 +10,17 @@
 - **Date:** 2026-08-04
 - **Tags:** resilience, throttle, store, api-surface, correctness, P1, P12, P16, P17, P25
 
+> **Amendment (2026-10-01) — the fallback has a third rung: in-process pacing.** `increment`
+> is now optional too (#882), so the store-backed limiter's counter fallback is itself only
+> used when the store has the counter. `rate` takes the first of three: the GCRA cell
+> (`reserve`, [ADR 0024](./0024-the-fleet-wide-pacing-cell.md)), then the counter-plus-cursor
+> schedule Decision 2 describes, then — on a get/set-only store such as Cloudflare Workers KV —
+> the in-process limiter itself, so `pool: 'host'` still pools in-process and the rate means
+> the same minimum spacing (Decision 1) on all three. Nothing in Decisions 1-5 changes; the
+> counter path is unchanged for a store that has it. The third rung is per-process by
+> construction, so it announces itself once with an `info` event, topic
+> `throttle.per-process` (#725). Read "the store-backed limiter" below as the first two rungs.
+
 > [!NOTE]
 >
 > One thesis, three consequences. **`ThrottleOptions.rate` denotes exactly one

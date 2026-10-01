@@ -52,7 +52,7 @@ test('store throttle: old rate-window keys do not accumulate over many windows',
         async increment(k: string, ttl: number): Promise<number> {
             liveKeys.add(k);
             seen.add(k);
-            return inner.increment(k, ttl);
+            return inner.increment!(k, ttl);
         },
     };
 
