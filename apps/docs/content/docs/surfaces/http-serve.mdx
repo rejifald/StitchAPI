@@ -38,7 +38,8 @@ Two routes serve the registry of named stitches:
 
 `:name` is one of the names `GET /` lists: a registry key, which for
 `stitch serve` is the export name. A stitch's configured `name` labels its
-traces and does not route to it.
+traces and does not route to it; a module's `default` export has no export name,
+so it is keyed by its configured `name`.
 
 The server binds to `127.0.0.1:8787` by default. Responses are the final
 validated result as JSON; send `Accept: text/event-stream` (or add `?stream=1`)

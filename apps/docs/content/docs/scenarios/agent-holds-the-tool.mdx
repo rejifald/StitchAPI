@@ -73,7 +73,7 @@ token on every attempt.
 `run_stitch` passed an error message through unfiltered, so text the _transport_ wrote reached
 the model verbatim. With `apiKey({ in: 'query' })` on the default adapter, a mistyped port put
 `…/v1/metrics?api_key=ak_live_…` into the model's context, from zero lines of user code. We filed
-it as [#866](https://github.com/rejifald/StitchAPI/issues/866). Every URL in an MCP error message
+it as [#866](https://github.com/rejifald/StitchAPI/issues/866). Every absolute (`scheme://`) URL in an MCP error message
 now loses its userinfo and its secret query values, so the model reads `api_key=REDACTED`. The
 same text reached the model through `@stitchapi/vercel-ai` too, so
 [#890](https://github.com/rejifald/StitchAPI/issues/890) moved the scrub to where the engine turns a
@@ -111,7 +111,7 @@ filters the one slot it is declared on, and an undeclared slot stays the full pa
 table above measures — declaring `params` says nothing about `query`, and nothing requires a slot
 to be declared.
 
-### The safe exposure is 47 lines across 3 seams
+### The safe exposure is 40 lines across 3 seams
 
 No fork, no config key. Replayed against the same vendor, the naive exposure sent
 `?tenant=globex`, `?include=internal_notes` and a 999,999 refund; the safe one sent

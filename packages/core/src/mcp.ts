@@ -16,7 +16,7 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { envelope, scrubUrls } from './util';
+import { envelope, scrubUrls, topLevelQueryIndex } from './util';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -211,15 +211,21 @@ export function createMcpServer(
         }
     }
 
+    // `path` is the route TEMPLATE. A literal query written into it (`/v1/{id}?sig=tok`) is the
+    // operator's pinned default, which can be a credential — `describe_stitch` scrubs the same text —
+    // and the agent has no use for it to pick a stitch, so it is cut. The cut is brace-aware, as the
+    // engine's is: a `{?limit}` operator is part of the template, not a query.
     function callListStitches(): ToolResult {
         const list = Object.keys(registry)
             .sort()
             .map((name) => {
                 const cfg = registry[name]?.__config;
+                const path = cfg?.path ?? '';
+                const q = topLevelQueryIndex(path);
                 return {
                     name,
                     method: (cfg?.method ?? 'GET').toUpperCase(),
-                    path: cfg?.path ?? '',
+                    path: q < 0 ? path : path.slice(0, q),
                 };
             });
         return textResult(list);

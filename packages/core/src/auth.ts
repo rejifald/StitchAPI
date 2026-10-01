@@ -289,8 +289,11 @@ export interface ApiKeyOptions {
  * (a duplicate cookie name is ambiguous — RFC 6265 §5.4 — and re-applying the strategy on a retry
  * must stay idempotent) while keeping the other pairs in place. The pair lands where the first
  * same-named one stood, and any later duplicate is dropped: replacing only the first would leave a
- * second forged `SESSION=…` for a vendor that reads the last occurrence. Cookie names are
- * case-sensitive, so the match is exact.
+ * second forged `SESSION=…` for a vendor that reads the last occurrence. The name match is
+ * case-INSENSITIVE: RFC 6265 calls cookie names case-sensitive, but a vendor on ASP.NET (and some
+ * others) reads `session` and `SESSION` as one cookie, so an exact match would leave a forged
+ * `session=…` beside the real `SESSION=…`. The cost of the wider match is that an unrelated cookie
+ * differing from the session's name only in case is replaced too, which is the safe side to err on.
  */
 function setCookiePair(
     existing: string | undefined,
@@ -298,12 +301,13 @@ function setCookiePair(
     value: string,
 ): string {
     const pair = `${name}=${value}`;
+    const lower = name.toLowerCase();
     let placed = false;
     const parts: string[] = [];
     for (const raw of (existing ?? '').split(';')) {
         const p = raw.trim();
         const eq = p.indexOf('=');
-        if ((eq < 0 ? p : p.slice(0, eq)).trim() !== name) {
+        if ((eq < 0 ? p : p.slice(0, eq)).trim().toLowerCase() !== lower) {
             if (p) parts.push(p);
         } else if (!placed) {
             parts.push(pair);

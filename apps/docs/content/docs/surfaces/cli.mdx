@@ -92,7 +92,8 @@ there.
 — throttle, request, retry, the request [surface](/docs/reference/surfaces),
 pagination, validation, transform, pick, and cache — read straight from the
 definition, with no run. Pass `--name` to diagram a single stitch by its export
-name; a configured `name` does not select it. Auth is redacted from a stitch's
+name; a configured `name` does not select it (a module's `default` export, which
+has no export name, is keyed by its configured `name`). Auth is redacted from a stitch's
 public config, so the credential never appears in the diagram.
 
 ```bash

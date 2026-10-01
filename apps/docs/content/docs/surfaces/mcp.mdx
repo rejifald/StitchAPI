@@ -49,7 +49,9 @@ headers }` object. This is code-mode: one tool, not one tool per path.
 
 `list_stitches` is the discovery tool. It takes no arguments and returns each
 stitch's `name`, `method`, and `path`, so the agent knows what to pass to
-`run_stitch`.
+`run_stitch`. The `path` is the route template: a literal query written into it
+(`/v1/{id}?sig=…`) is the operator's pinned default, and can be a credential, so
+it is cut. A `{?limit}` template operator is part of the template and stays.
 
 ### Which names a call resolves
 
@@ -61,7 +63,10 @@ else. For `stitch mcp --module`, a key is the export name. The names
 - A stitch's configured `name` is a trace label, not an address. Expose
   `export const approvedRefund = stitch({ name: 'issueRefund', … })` and the
   agent can call `approvedRefund` but not `issueRefund`. Renaming a stitch in
-  the registry you hand over really hides the old name.
+  the registry you hand over really hides the old name. The one exception is a
+  module's `default` export: it has no export name, so `stitch mcp --module`
+  keys it by its configured `name` (or `default` when it has none), because that
+  is the only name it has.
 - Inherited object keys are not stitches. `constructor` or `toString` is an
   `unknown stitch` error like any other missing name.
 
@@ -78,8 +83,9 @@ else. For `stitch mcp --module`, a key is the export name. The names
 ### Errors the agent sees
 
 A failed call returns an `isError` tool result whose text is the error message.
-Every URL in that message has lost its userinfo and the values of its
-secret-bearing query parameters. A transport error often quotes the request URL,
+Every absolute (`scheme://`) URL in that message has lost its userinfo and the
+values of its secret-bearing query parameters. A transport error often quotes the
+request URL,
 and with `apiKey({ in: 'query' })` that URL carries the key. The model sees
 `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=REDACTED`,
 never the key itself. The scrub happens in core, where the engine turns the
@@ -89,8 +95,9 @@ once more at its own boundary as a second line. The scrubber matches the same
 parameter names as the trace sinks, including any name
 `apiKey({ in: 'query', name })` registers. `describe_stitch` scrubs the endpoint
 it reports the same way, so a credential written into a `baseUrl` does not reach
-the model either. A key in a header is still the better choice: it is never part
-of a URL.
+the model either. A relative path or a schemeless `host/path?key=…` quoted in a
+message is not recognised as a URL yet. A key in a header is still the better
+choice: it is never part of a URL.
 
 ### Tool annotations
 

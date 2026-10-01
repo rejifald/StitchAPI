@@ -128,7 +128,12 @@ asserts the request carried a header literally named `X-Catalog-Token`.
 
 A stitch lowercases the header name: it sends `x-catalog-token`. The default
 `x-api-key` is already lowercase; a custom name is lowercased too. The same holds
-for the headers on an `oauth2` token request.
+for the headers on an `oauth2` token request, and for every header you pass
+yourself: the config's `headers`, a call's `input.headers`, and the headers a
+surface adds are folded to lowercase once, before auth runs. That is also what
+makes `Cookie: …` or `X-API-Key: …` in `input.headers` collide with the
+credential the strategy writes instead of travelling beside it: the strategy's
+value replaces yours, in whatever case you spelled the name.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';

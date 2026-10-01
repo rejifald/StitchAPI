@@ -111,6 +111,23 @@ async function mcpToolCall(
     return JSON.stringify(response);
 }
 
+// `list_stitches` returns each stitch's `path`. A literal query written into it is the operator's
+// pinned default (`?access_token=...`), which the discovery tool must not hand to the model; the
+// whole JSON-RPC response is scanned, `baseUrl` userinfo included.
+async function mcpListStitches(): Promise<string> {
+    const getUser = stitch({
+        baseUrl: POISONED_BASE_URL,
+        path: `/users/1?access_token=${SECRET_QUERY_VALUE}`,
+    });
+    const response = await createMcpServer({ getUser }).handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'list_stitches' },
+    });
+    return JSON.stringify(response);
+}
+
 // The engine's own error channel (#890): the same DNS-shaped failure, read where the engine turns
 // the transport's throw into an error. The awaited `StitchError.message`, the `.safe()` copy and
 // what a custom trace sink is handed (the `error` event, and the `retry` progress detail that
@@ -183,6 +200,13 @@ const SURFACES: Surface[] = [
         name: 'mcp run_stitch → tool error text',
         serialize: () => mcpToolCall('run_stitch'),
         emitsHost: true,
+    },
+    {
+        // The model's context, discovery side: `list_stitches` returns every stitch's `path`, and a
+        // literal query pinned into it is a credential the agent has no use for.
+        name: 'mcp list_stitches → name, method, path',
+        serialize: mcpListStitches,
+        emitsHost: false, // `path` is the template only: no scheme or host
     },
     {
         // The model's context again: `describe_stitch` quotes the configured endpoint in its

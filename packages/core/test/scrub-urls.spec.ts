@@ -13,7 +13,7 @@ describe('scrubUrls', () => {
                 'GET https://u:pw@a.test/x?token=t1 failed; retry http://b.test/y?page=2&api_key=k2.',
             ),
         ).toBe(
-            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED',
+            'GET https://a.test/x?token=REDACTED failed; retry http://b.test/y?page=2&api_key=REDACTED.',
         );
     });
 
@@ -57,6 +57,38 @@ describe('scrubUrls', () => {
         );
     });
 
+    test('punctuation that closes the sentence or the bracket around a URL is not part of it', () => {
+        expect(scrubUrls('(https://a.test/x?key=K), retry')).toBe(
+            '(https://a.test/x?key=REDACTED), retry',
+        );
+        expect(scrubUrls('see [https://a.test/x?key=K].')).toBe(
+            'see [https://a.test/x?key=REDACTED].',
+        );
+        expect(scrubUrls('https://u:pw@a.test/x?key=K;')).toBe(
+            'https://a.test/x?key=REDACTED;',
+        );
+        expect(
+            scrubUrls('first https://a.test/x?key=K, then https://b.test/'),
+        ).toBe('first https://a.test/x?key=REDACTED, then https://b.test/');
+        // a clean URL keeps its closing punctuation too, byte for byte
+        const clean = 'ok (https://a.test/x?page=2), and https://b.test/.';
+        expect(scrubUrls(clean)).toBe(clean);
+    });
+
+    test('only the TRAILING run is dropped: a credential may hold those characters inside', () => {
+        // a JWT is dotted, so cutting the value at the first `.` would leave its tail in the clear
+        expect(
+            scrubUrls('https://a.test/x?token=eyJhbGc.eyJzdWIi.sig, ok'),
+        ).toBe('https://a.test/x?token=REDACTED, ok');
+        expect(scrubUrls('https://a.test/x?key=a),b;c')).toBe(
+            'https://a.test/x?key=REDACTED',
+        );
+        // nothing but punctuation after `://` is not a URL
+        expect(scrubUrls('proto://. and ://), x')).toBe(
+            'proto://. and ://), x',
+        );
+    });
+
     test('userinfo runs to the last `@` of the authority; an `@` in the path or query is left alone', () => {
         expect(scrubUrls('http://user@a.test/x')).toBe('http://a.test/x');
         expect(scrubUrls('http://u:p@w@a.test/x')).toBe('http://a.test/x');
@@ -92,6 +124,12 @@ describe('scrubUrls', () => {
         ['userinfo markers', `http://${'@'.repeat(200_000)}`],
         ['bare separators', '://'.repeat(100_000)],
         ['keys without a value', `http://a.test/?${'k'.repeat(200_000)}`],
+        ['trailing punctuation', `http://a.test/?k=${'.'.repeat(200_000)}`],
+        [
+            'punctuation only after the separator',
+            `://${'.,;)]'.repeat(40_000)}`,
+        ],
+        ['separators each followed by dots', '://....'.repeat(50_000)],
     ])('stays linear on a long run of %s', (_label, hostile) => {
         const started = performance.now();
         scrubUrls(hostile);

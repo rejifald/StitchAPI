@@ -1102,7 +1102,12 @@ export function scrubUrl(url: string): string {
  *
  * A URL is whatever follows a `://` up to whitespace or a character that conventionally delimits
  * one in prose or JSON (a backslash too, so an escaped quote in JSON-ish text is never swallowed and
- * rewritten). The scheme itself is never inspected: only what FOLLOWS the `://` is rewritten.
+ * rewritten), minus a trailing run of `) ] , . ;`: punctuation that ends a sentence or closes a
+ * bracket around the URL is not part of it, so `(…?key=K), retry` keeps its `), retry`. Only the
+ * TRAILING run is dropped, not every such character: a credential can hold one (a JWT is dotted), and
+ * leaving the tail of a secret in the clear is worse than eating the comma after it. The scheme is
+ * never inspected: only what FOLLOWS the `://` is rewritten. Only absolute (`scheme://`) URLs are
+ * recognised: a relative path or a schemeless `host/path?key=K` is not scrubbed.
  *
  * Linear on untrusted text (a transport's message, a vendor's error body): the scan is anchored on
  * the literal `://`, so there is no scheme run to retry from every start position — that is what made
@@ -1111,7 +1116,7 @@ export function scrubUrl(url: string): string {
  * of times.
  */
 export function scrubUrls(text: string): string {
-    return text.replace(/:\/\/[^\s"'<>`\\]+/g, (url) =>
+    return text.replace(/:\/\/[^\s"'<>`\\]*[^\s"'<>`\\).,;\]]/g, (url) =>
         url
             // userinfo runs to the LAST `@` before the authority ends, as the WHATWG parser reads it
             .replace(/^:\/\/[^/?#]*@/, '://')

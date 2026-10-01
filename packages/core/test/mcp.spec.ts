@@ -230,6 +230,33 @@ test('tools/call list_stitches enumerates name/method/path', async () => {
     expect(list[0]).toMatchObject({ method: 'GET', path: '/widgets/{id}' });
 });
 
+// A literal query in `path` is the operator's pinned default and can be a credential
+// (`/v1/{id}?sig=tok`); `describe_stitch` scrubs the same text, so the discovery tool must not
+// hand it over. The cut is brace-aware: a `{?limit}` operator is template, not a query.
+test('list_stitches returns the path template without a literal query', async () => {
+    const mcp = createMcpServer({
+        pinned: stitch({
+            baseUrl: 'https://api.vendor.test',
+            path: '/v1/{id}?sig=tok_live_123&page=2',
+        }),
+        templated: stitch({
+            baseUrl: 'https://api.vendor.test',
+            path: '/v1/items{?limit,offset}',
+        }),
+        plain: stitch({ baseUrl: 'https://api.vendor.test', path: '/v1/x' }),
+    });
+    const res = await mcp.handle(req('tools/call', { name: 'list_stitches' }));
+    const text = (res?.result as ToolCallResult).content[0]!.text;
+    expect(text).not.toContain('tok_live_123');
+    expect(text).not.toContain('page=2');
+    const list = JSON.parse(text) as { name: string; path: string }[];
+    expect(Object.fromEntries(list.map((s) => [s.name, s.path]))).toEqual({
+        pinned: '/v1/{id}',
+        templated: '/v1/items{?limit,offset}',
+        plain: '/v1/x',
+    });
+});
+
 test('tools/call describe_stitch teaches a stitch shape without running it', async () => {
     const res = await server.handle(
         req('tools/call', {

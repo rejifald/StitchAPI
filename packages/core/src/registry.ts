@@ -48,6 +48,9 @@ export function collectStitches(mod: unknown): StitchRegistry {
 
     for (const [key, value] of Object.entries(mod as Record<string, unknown>)) {
         if (isStitch(value)) {
+            // A `default` export has no export name of its own, so its configured `name` (else
+            // "default") is the only name it can be called by: the one place `name` is an address.
+            // Every other stitch is keyed by its export name, and `name` stays a trace label.
             out[key === 'default' ? (value.__config.name ?? 'default') : key] =
                 value;
         } else if (

@@ -49,11 +49,16 @@ runtime made before giving up, `at` is when it gave up.
     writes the URL it called into its own error text — `Failed to parse URL from
     http://host:99999/v1?api_key=…`, or a DNS failure quoting the request — and
     with `apiKey({ in: 'query' })` that URL holds the key. The engine scrubs it
-    once, where the throw becomes a `StitchError`: userinfo is dropped and the
-    value of every secret-named query parameter becomes `REDACTED`, so `?api_key=…`
-    reads `?api_key=REDACTED`. Every consumer of the message gets the scrubbed
-    text — the awaited error, `.safe()`, the `error` event, `stitch serve`, the
-    MCP tool result, an AI SDK tool failure the model reads, and the trace sinks.
+    once, where the throw becomes a `StitchError`: in every absolute
+    (`scheme://`) URL the userinfo is dropped and the value of every secret-named
+    query parameter becomes `REDACTED`, so `?api_key=…` reads
+    `?api_key=REDACTED`. A relative path or a schemeless `host/path?key=…` in the
+    message is not recognised as a URL yet. The same goes for the text a surface
+    writes when it rejects a response (a GraphQL `errors` message that echoes a
+    URL), and for the `retry` progress `detail`. Every consumer of the message
+    gets the scrubbed text — the awaited error, `.safe()`, the `error` event,
+    `stitch serve`, the MCP tool result, an AI SDK tool failure the model reads,
+    and the trace sinks.
     What it does not touch is the original: the error the transport threw rides on
     `.cause`, unmodified, and `.url` is the response's final URL as the transport
     reported it. Code that logs `err.cause`, or `console.error(err)` (which prints

@@ -160,7 +160,8 @@ function joinUrl(base: string, path: string): string {
 
 // Inject a stable Idempotency-Key on writes. The key is computed once per logical call (here,
 // in buildRequest) and the attempt loop reuses the same request, so it stays constant across
-// retries. SAFE methods are skipped, and a caller-provided header (case-insensitive) wins.
+// retries. SAFE methods are skipped, and a caller-provided header wins (`headers` is already
+// folded to lower case by `buildRequest`, so a case-insensitive match is a plain lookup).
 // "Safe" rather than "GET/HEAD" because QUERY is a read that carries a body: stamping a
 // dedupe token on a request that changes nothing is a category error, and the header would
 // vary the cache key on every send.
@@ -172,13 +173,8 @@ function applyIdempotency(
 ): void {
     if (!cfg.idempotency) return;
     if (isSafeMethod(method)) return; // writes only
-    const header = cfg.idempotency.header ?? 'Idempotency-Key';
-    if (
-        Object.keys(headers).some(
-            (h) => h.toLowerCase() === header.toLowerCase(),
-        )
-    )
-        return;
+    const header = (cfg.idempotency.header ?? 'Idempotency-Key').toLowerCase();
+    if (Object.hasOwn(headers, header)) return;
     const keyOf = cfg.idempotency.keyOf;
     headers[header] = keyOf ? keyOf(input) : randomUUID();
 }
@@ -265,6 +261,18 @@ function buildRequest(
     // The surface shapes the request (graphql packs { query, variables } + forces POST, …);
     // absent, the http identity above stands.
     if (cfg.kind.buildRequest) req = cfg.kind.buildRequest(cfg, input, req);
+    // Header names are case-insensitive on the wire, but the bag they travel in is not, and every
+    // auth strategy reads and writes it by ONE key (`req.headers['cookie']`, `['authorization']`, the
+    // lower-cased `apiKey` name). A caller's `Cookie` / `X-API-Key` / `Authorization` (an
+    // `input.headers` slot, a config header, a surface's own) is a DIFFERENT key to that code, so the
+    // strategy's pair landed beside the caller's instead of replacing it, and `fetch` joined the two
+    // on the wire (`X-API-Key: FORGED, REAL`; `Cookie: SESSION=forged; SESSION=real`). Fold the names
+    // to lower case once, here, after the last place a header can be authored and before auth runs
+    // (it runs on a clone of this request), so there is only one spelling to collide on. The merge
+    // order decides a clash: a later source (the call's input over the config) wins.
+    req.headers = Object.fromEntries(
+        Object.entries(req.headers).map(([k, v]) => [k.toLowerCase(), v]),
+    );
     // Idempotency runs AFTER surface shaping so a surface that forces a write still gets a key.
     applyIdempotency(cfg, input, req.method, req.headers);
     return req;
@@ -314,7 +322,8 @@ const pinSource = <E extends object>(evt: E, err: unknown): E => {
 //     can tell a socket reset from a generic "fetch failed". A StitchError the engine minted itself
 //     is excluded: it keeps being rebuilt from the event (unchanged behaviour).
 const ridesThrough = (err: unknown): boolean =>
-    (err as { response?: AdapterResult }).response !== undefined ||
+    (err as { response?: AdapterResult } | null | undefined)?.response !==
+        undefined ||
     err instanceof RateLimitError ||
     (err instanceof Error && !(err instanceof StitchError));
 
@@ -378,15 +387,19 @@ function contractViolationEvt(
     return evt;
 }
 
-// THE choke point where a thrown value (a transport / adapter / hook failure) becomes the error
-// event — and so, via `rebuildError`, the `StitchError.message` — every surface reads: MCP, serve,
-// the host SSE frames, the trace sinks, OTLP `status.message`, pino / sentry. A transport writes the
-// URL it called into its own message (`Failed to parse URL from http://host:99999/v1?api_key=…`,
-// `request to https://host/v1?api_key=… failed`), so the message is URL-scrubbed HERE, once, and no
-// consumer has to remember to. The foreign error is not touched: it rides on as `cause` (see
-// `ridesThrough`), raw, for a caller who deliberately walks it.
+// Where a THROWN value (a transport / adapter / hook failure) becomes the error event — and so, via
+// `rebuildError`, the `StitchError.message` every surface reads: MCP, serve, the host SSE frames,
+// the trace sinks, OTLP `status.message`, pino / sentry. A transport writes the URL it called into
+// its own message (`Failed to parse URL from http://host:99999/v1?api_key=…`, `request to
+// https://host/v1?api_key=… failed`), so the message is URL-scrubbed HERE and no consumer has to
+// remember to. The two other places the engine writes free text onto an event scrub the same way:
+// `surfaceErrEvt` (a surface's verdict, which can quote an upstream body) and the `retry` progress
+// `detail` of the transport and `interpret` arms. The foreign error is not touched: it rides on as
+// `cause` (see `ridesThrough`), raw, for a caller who deliberately walks it. A bag with no
+// `message` — or a `throw undefined` / `throw null`, which has no properties at all — is reported
+// as the string it stringifies to.
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
-    const e = err as { message?: string; status?: number };
+    const e = (err ?? {}) as { message?: string; status?: number };
     const evt: Extract<StitchEvent, { type: 'error' }> = {
         type: 'error',
         name,
@@ -830,7 +843,7 @@ async function* attemptLoop(
                     type: 'progress',
                     phase: 'retry',
                     attempt,
-                    detail: `interpret: ${outcome.message}`,
+                    detail: scrubUrls(`interpret: ${outcome.message}`),
                     at: now(),
                 };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
@@ -1191,7 +1204,7 @@ function surfaceErrEvt(
     const evt: Extract<StitchEvent, { type: 'error' }> = {
         type: 'error',
         name,
-        message: outcome.message,
+        message: scrubUrls(outcome.message),
         attempts,
         at: now(),
     };

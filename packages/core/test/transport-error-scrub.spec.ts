@@ -12,6 +12,7 @@ import { StitchError, otlp, stitch } from '../src';
 import type { OtelSpan, SpanExporter, StitchEvent, TraceSink } from '../src';
 import { apiKey } from '../src/auth';
 import { serve } from '../src/serve';
+import type { Surface } from '../src/surface';
 import { fileSink } from '../src/trace';
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -209,4 +210,101 @@ describe('the foreign error is left alone, so `cause` stays the raw original (#8
         expect(err.cause).toBe(transportError);
         expect(transportError.message).toContain(KEY);
     });
+});
+
+// A surface's verdict is the other free text the engine writes onto an error event: graphql's
+// "200 with `errors`" quotes the upstream's own message, and an upstream can echo a URL.
+describe('a surface verdict that quotes a URL is scrubbed too', () => {
+    const echo = 'bad token for https://svc:hunter2@db.test/q?access_token=tkn';
+    const surface = (retry: boolean): Surface => ({
+        id: 'echo',
+        interpret: () =>
+            retry
+                ? { ok: false, retry: true, message: echo }
+                : { ok: false, message: echo },
+    });
+    const call = (kind: Surface, trace?: TraceSink) =>
+        stitch({
+            url: 'https://x.test/a',
+            kind,
+            retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+            adapter: () =>
+                Promise.resolve({ status: 200, headers: {}, body: {} }),
+            ...(trace ? { trace } : {}),
+        });
+
+    test('the failure message and the error event carry no credential', async () => {
+        const { events, sink } = capture();
+        const err = (await call(surface(false), sink)().catch(
+            (e: unknown) => e,
+        )) as Error;
+        expect(err.message).toContain('db.test');
+        expect(err.message).toContain('access_token=REDACTED');
+        expect(err.message).not.toMatch(/hunter2|tkn/);
+        const event = events.find((e) => e.type === 'error');
+        expect(JSON.stringify(event)).not.toMatch(/hunter2|tkn/);
+    });
+
+    test('the `interpret:` retry detail does too', async () => {
+        const { events, sink } = capture();
+        await call(surface(true), sink)().catch(() => undefined);
+        const retry = events.find(
+            (e) => e.type === 'progress' && e.phase === 'retry',
+        );
+        expect(retry).toBeDefined();
+        expect(JSON.stringify(retry)).toContain('access_token=REDACTED');
+        expect(JSON.stringify(retry)).not.toMatch(/hunter2|tkn/);
+    });
+
+    test('`stitch serve` returns the scrubbed text', async () => {
+        const handle = await serve({ echo: call(surface(false)) }, { port: 0 });
+        try {
+            const res = await fetch(`${handle.url}/stitch/echo`, {
+                method: 'POST',
+                body: '{}',
+            });
+            const body = await res.text();
+            expect(body).toContain('access_token=REDACTED');
+            expect(body).not.toMatch(/hunter2|tkn/);
+        } finally {
+            await handle.close();
+        }
+    });
+});
+
+// `throw undefined` / `throw null` have no properties to read: the engine used to dereference one
+// while building the error event, so the failure became a TypeError out of the generator and
+// `.stream()` rejected instead of yielding its `error` + `done` events.
+describe('a nullish throw is reported like any other failure', () => {
+    const nullish = (value: unknown, trace?: TraceSink) =>
+        stitch({
+            url: 'https://x.test/a',
+            retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the case under test
+            adapter: () => Promise.reject(value),
+            ...(trace ? { trace } : {}),
+        });
+
+    test.each([undefined, null])('throw %s: awaited', async (value) => {
+        const err = await nullish(value)().catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(StitchError);
+        expect((err as StitchError).message).toBe(String(value));
+        expect((err as StitchError).attempts).toBe(2);
+    });
+
+    test.each([undefined, null])('throw %s: .safe()', async (value) => {
+        const { ok, error } = await nullish(value)().safe();
+        expect(ok).toBe(false);
+        expect(error?.message).toBe(String(value));
+    });
+
+    test.each([undefined, null])(
+        'throw %s: .stream() ends with error and done events',
+        async (value) => {
+            const types: string[] = [];
+            for await (const ev of nullish(value).stream()) types.push(ev.type);
+            expect(types).toContain('error');
+            expect(types.at(-1)).toBe('done');
+        },
+    );
 });

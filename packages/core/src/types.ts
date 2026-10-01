@@ -1705,9 +1705,11 @@ export type KnownMethod =
 
 export interface StitchConfig {
     /**
-     * Label used in events and traces; defaults to `path` or `'stitch'`. A label, not an address:
-     * `stitch run`, `stitch serve` and the MCP tools resolve a stitch by its registry key (the
-     * export name) only, so this never makes a stitch callable under a second name.
+     * Label used in events and traces; defaults to `path` or `'stitch'`. Not an address:
+     * `stitch run`, `stitch serve` and the MCP tools resolve a stitch by its registry key only, so
+     * this never makes a stitch callable under a second name. For a module's named exports that key
+     * is the export name. The one exception is a module's `default` export, which has no export name:
+     * `collectStitches` keys it by this `name` (else `"default"`), because that is the only name it has.
      */
     name?: string;
     /**
@@ -1995,8 +1997,9 @@ export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
  * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
  * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
  *
- * When the failure was a transport throw, `message` is the transport's own text with every URL
- * credential scrubbed from it (userinfo dropped, secret query values read `REDACTED`): a transport
+ * When the failure was a transport throw, `message` is the transport's own text with the credential
+ * scrubbed from every absolute (`scheme://`) URL in it (userinfo dropped, secret query values read
+ * `REDACTED`; a relative or schemeless URL is not recognised yet): a transport
  * quotes the request URL, and with `apiKey({ in: 'query' })` that URL holds the key. The original
  * error rides on `cause`, unmodified and so with its raw message.
  */

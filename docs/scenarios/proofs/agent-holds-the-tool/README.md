@@ -22,16 +22,18 @@ headers — `authorization`, `cookie`, `host`, `x-forwarded-for`, `content-type`
 reached the vendor as **zero headers**. And even on a stitch that opts in, `authorization` is
 unforgeable, because `auth` is applied to a clone **after** the merge (engine.ts:647).
 
-Three findings went the other way — one is a genuine credential leak, and one has since been fixed
-upstream (#663):
+Three findings went the other way — one was a genuine credential leak, since closed (#866, #890),
+and one was fixed upstream (#663):
 
-- **The MCP error channel is an unfiltered `Error.message` pass-through** (C4). StitchAPI's own
+- **The MCP error channel was an unfiltered `Error.message` pass-through** (C4). StitchAPI's own
   messages are terse and clean — `HTTP 500`, `timed out after 25ms`, `circuit open` — and a vendor
   500 whose body held an internal hostname, a stack frame and a `postgres://vendor:hunter2@…` DSN
-  reached the model as **four characters**. But a message written by the _transport_ is forwarded
+  reached the model as **four characters**. But a message written by the _transport_ was forwarded
   verbatim, and on the **default `fetchAdapter`** with an `apiKey({ in: 'query' })` stitch the model
   received `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_qry_…`
-  — **the credential, in its context, from zero lines of user code.**
+  — **the credential, in its context, from zero lines of user code.** Core now URL-scrubs that
+  message where the engine mints the error, so the scripts measure `api_key=REDACTED` and the key
+  absent.
 - **A model-supplied `query` overwrites a query parameter the operator pinned in the configured
   path** (C2 d). `path: '/v1/orders?tenant=acme'` + `input: { query: { tenant: 'globex' } }` put
   `?tenant=globex` on the wire and the vendor returned the other tenant's data. A pin is a default,
@@ -93,27 +95,27 @@ directory, and it is documented in place.
 
 ### What reaches the model
 
-| Payload                           | Carries a credential?  | What it carries instead                                                                                                                             |
-| --------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `initialize`                      | **no**                 | protocol version, `capabilities: { tools }`, `serverInfo`                                                                                           |
-| `tools/list`                      | **no**                 | 3 tool descriptors, 1,464 bytes, constant for any registry size                                                                                     |
-| `list_stitches`                   | **no**                 | every stitch's **name, method and path** — the route table                                                                                          |
-| `describe_stitch`                 | **no**                 | ~1KB/stitch: the **full internal endpoint URL**, surface, input-slot booleans, `output`, the **auth scheme**, policies, pipeline, a Mermaid diagram |
-| `run_stitch` success              | **no**                 | the validated result body                                                                                                                           |
-| `run_stitch` vendor 4xx/5xx       | **no**                 | `HTTP <status>` — **not** `.body`, `.url`, `.status` or the response headers                                                                        |
-| `run_stitch` timeout / circuit    | **no**                 | `timed out after 25ms` / `circuit open`                                                                                                             |
-| `run_stitch` input validation     | **no**                 | `invalid <slot>: <the schema's own issue text>`                                                                                                     |
-| `run_stitch` unknown name         | **no**                 | the message plus **every registered name**                                                                                                          |
-| `run_stitch` missing credential   | **no**                 | `missing env var VENDOR_BEARER_TOKEN` — the **variable name**, never the value                                                                      |
-| **`run_stitch` transport error**  | **YES, conditionally** | the transport's message **verbatim** — see the footgun below                                                                                        |
-| a vendor endpoint that mints keys | **YES, by contract**   | the response body, which is what a capability is for                                                                                                |
+| Payload                           | Carries a credential? | What it carries instead                                                                                                                             |
+| --------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `initialize`                      | **no**                | protocol version, `capabilities: { tools }`, `serverInfo`                                                                                           |
+| `tools/list`                      | **no**                | 3 tool descriptors, 1,464 bytes, constant for any registry size                                                                                     |
+| `list_stitches`                   | **no**                | every stitch's **name, method and path** — the route table                                                                                          |
+| `describe_stitch`                 | **no**                | ~1KB/stitch: the **full internal endpoint URL**, surface, input-slot booleans, `output`, the **auth scheme**, policies, pipeline, a Mermaid diagram |
+| `run_stitch` success              | **no**                | the validated result body                                                                                                                           |
+| `run_stitch` vendor 4xx/5xx       | **no**                | `HTTP <status>` — **not** `.body`, `.url`, `.status` or the response headers                                                                        |
+| `run_stitch` timeout / circuit    | **no**                | `timed out after 25ms` / `circuit open`                                                                                                             |
+| `run_stitch` input validation     | **no**                | `invalid <slot>: <the schema's own issue text>`                                                                                                     |
+| `run_stitch` unknown name         | **no**                | the message plus **every registered name**                                                                                                          |
+| `run_stitch` missing credential   | **no**                | `missing env var VENDOR_BEARER_TOKEN` — the **variable name**, never the value                                                                      |
+| `run_stitch` transport error      | **no** (since #890)   | the transport's message with every absolute URL scrubbed: `…?api_key=REDACTED`                                                                      |
+| a vendor endpoint that mints keys | **YES, by contract**  | the response body, which is what a capability is for                                                                                                |
 
 ### What the model can set
 
 | Input field                                     | Reaches the wire?                | What an attacker actually gets                                                                                                        |
 | ----------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `headers`                                       | **no**                           | deleted outright unless the stitch declares `input.headers` (mcp.ts:128)                                                              |
-| `headers` (opted in)                            | **yes, except `authorization`**  | any non-credential header; on a `cookieSession` stitch, a `SESSION` pair sent **before** the real one                                 |
+| `headers` (opted in)                            | **yes, except `authorization`**  | any non-credential header; a `Cookie` / `X-API-Key` / `Authorization` in any case is **replaced** by the strategy's own (#866)        |
 | `query`                                         | **yes, absent a `query` schema** | **overwrites an operator's pinned query parameter**; appends anything else. A declared schema's parsed value is what ships (#663)     |
 | `params`                                        | **yes, encoded**                 | `{id}` percent-encodes `/` → traversal blocked. `{+id}` (reserved expansion) does **not** → a different endpoint, with the credential |
 | `body`                                          | **yes, whole**                   | the entire request body of a write, when no `input.body` schema is declared                                                           |
@@ -125,16 +127,16 @@ boundary is entirely the operator's.** That is the finding this directory exists
 
 ## What each script establishes
 
-| Script                   | Question                                                    | Measured                                                                                                                             |
-| ------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `c1-credential-reach.ts` | **DECIDING** — does a credential reach the model anywhere?  | **No.** 30 payload scans, 4 auth strategies, 14,529 bytes; the wire proves each call authenticated; stdio bytes identical            |
-| `c2-input-rewrite.ts`    | **DECIDING** — can `input` redirect or rewrite the call?    | **The header hypothesis is refuted** (6 headers → 0). 5 other levers are real; `authorization` is unforgeable                        |
-| `c3-allowlist.ts`        | any allow-list? what do the discovery tools disclose?       | **None beyond the registry object.** ~1KB/stitch incl. the internal URL. `selectStitch` also answers to `__config.name`              |
-| `c4-error-rendering.ts`  | does a failure leak the URL, headers or the vendor body?    | **No — and yes.** `HTTP 500` only; but the channel is unfiltered and `apiKey({in:'query'})` + a transport error leaks                |
-| `c5-runaway.ts`          | do `throttle`/`circuit` apply? any non-count budget?        | **Both apply; nothing is on by default.** 1 tool call = 5 (retry) or 12 (paginate) requests. **No spend budget exists**              |
-| `c6-confirmation.ts`     | is there a confirmation seam for an irreversible call?      | **No, in either direction.** No elicitation channel, no tool `annotations`, one tool name for a read and a refund                    |
-| `c7-schema.ts`           | is `input` typed enough? does a schema constrain the model? | **Four untyped bags; presence-only descriptions.** A schema filters its ONE slot (#663, pinned); an undeclared slot is a passthrough |
-| `c8-assembled.ts`        | the safest exposure, against the naive one                  | **47 executable lines, 3 seams, 0 config keys** — and every C2/C3/C7 attack replayed and blocked                                     |
+| Script                   | Question                                                    | Measured                                                                                                                                  |
+| ------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `c1-credential-reach.ts` | **DECIDING** — does a credential reach the model anywhere?  | **No.** 30 payload scans, 4 auth strategies, 14,529 bytes; the wire proves each call authenticated; stdio bytes identical                 |
+| `c2-input-rewrite.ts`    | **DECIDING** — can `input` redirect or rewrite the call?    | **The header hypothesis is refuted** (6 headers → 0). 5 other levers are real; `authorization` is unforgeable                             |
+| `c3-allowlist.ts`        | any allow-list? what do the discovery tools disclose?       | **None beyond the registry object.** ~1KB/stitch incl. the internal URL. `selectStitch` once answered to `__config.name` (#866: key only) |
+| `c4-error-rendering.ts`  | does a failure leak the URL, headers or the vendor body?    | **No.** `HTTP 500` only; the transport-error leak this found is closed (#866/#890): `api_key=REDACTED`                                    |
+| `c5-runaway.ts`          | do `throttle`/`circuit` apply? any non-count budget?        | **Both apply; nothing is on by default.** 1 tool call = 5 (retry) or 12 (paginate) requests. **No spend budget exists**                   |
+| `c6-confirmation.ts`     | is there a confirmation seam for an irreversible call?      | **No, in either direction.** No elicitation channel, no tool `annotations`, one tool name for a read and a refund                         |
+| `c7-schema.ts`           | is `input` typed enough? does a schema constrain the model? | **Four untyped bags; presence-only descriptions.** A schema filters its ONE slot (#663, pinned); an undeclared slot is a passthrough      |
+| `c8-assembled.ts`        | the safest exposure, against the naive one                  | **40 executable lines, 3 seams, 0 config keys** — and every C2/C3/C7 attack replayed and blocked                                          |
 
 ## Files
 
@@ -169,11 +171,12 @@ boundary is entirely the operator's.** That is the finding this directory exists
   registered login stitch is the sharpest of those: an agent can call it, and gets `HTTP 401`,
   because the login credential lives in `cookieSession.credentialsOf` and the MCP path never reaches
   it.
-- **The one leak is `apiKey({ in: 'query' })`, not MCP.** The auth guide already warns that a key in
+- **The one leak was `apiKey({ in: 'query' })`, not MCP.** The auth guide already warns that a key in
   the URL "leaks wherever URLs go — server access logs, proxies, the browser history, a `Referer`
-  header". What C4 adds is one more destination: an unfiltered error message, and therefore the
+  header". What C4 added was one more destination: an unfiltered error message, and therefore the
   model's context, its output, and any tool it calls next. The control is exact — the identical
-  transport failure on a `bearer` stitch disclosed the URL and no secret.
+  transport failure on a `bearer` stitch disclosed the URL and no secret. The message is scrubbed
+  now, but a key in a header is still the better placement.
 - **`sanitizeAgentInput` is a denylist of one key, and that is a design decision with a cost.** It
   removes `headers` and forwards everything else as authored. Today nothing else is exploitable
   (`signal` and `onProgress` are runtime-only slots JSON can fill only with inert values, and the
@@ -191,39 +194,44 @@ boundary is entirely the operator's.** That is the finding this directory exists
   stitch. What a host cannot see is that **one tool call is not one request**: `retry: { attempts: 5 }`
   made five and `paginate` made twelve, with no signal of either in the tool result. A host that
   budgets "20 tool calls" has budgeted up to 1,000 vendor requests.
-- **C8's 47 lines are the honest cost and they are cheap.** Three seams, no fork, no config key, and
+- **C8's 40 lines are the honest cost and they are cheap.** Three seams, no fork, no config key, and
   every measured attack blocked while the reads keep working and keep authenticating. The line count
   goes the library's way here precisely because the expensive half — the credential boundary, the
   resilience chain, the discovery tools, the JSON-RPC layer and the transport — is already done.
 
 ## Footguns
 
-1. **A transport error message reaches the model verbatim, and an `apiKey({ in: 'query' })`
-   credential rides in it.** Measured on the built-in `fetchAdapter` with no user code:
+1. **A transport error message used to reach the model verbatim, with an `apiKey({ in: 'query' })`
+   credential in it — fixed in #866 / #890.** Measured on the built-in `fetchAdapter` with no user
+   code, it was
    `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_qry_…`.
    Node's `fetch` only writes that on a malformed URL, but `node-fetch`, `got` and several house
    wrappers put the full URL in **every** network error (`request to <url> failed, reason: …`), so
-   with a swapped adapter a routine DNS failure does it. **Fix: `apiKey({ in: 'header' })`.** There is
-   no redaction on this path — `errorResult((e as Error).message)` is the whole of it (mcp.ts:184).
+   with a swapped adapter a routine DNS failure did it. Core now scrubs absolute (`scheme://`) URLs
+   in the message where the engine mints the error, so the model reads `api_key=REDACTED`.
+   `apiKey({ in: 'header' })` is still the better placement: a key in a URL leaks everywhere else
+   URLs go.
 2. **A query parameter pinned in the configured path is a default, not a constraint.**
    `path: '/v1/orders?tenant=acme'` reads like an operator invariant and is overwritten by
    `input: { query: { tenant: 'globex' } }` (`{ ...predefined, ...input.query }`, engine.ts:211).
    Measured end to end: the vendor echoed `globex`. Since #663 a strip-mode `input.query` schema is
    the constraint — C7 (e) measures the pin surviving it; absent one, anything that must not move
    belongs in a `headers` entry or in the path template, not in the query string.
-3. **An input schema filters only its own slot — and the two cookie writers disagree.** Since #663
-   (issue #648, filed from this audit) `validateInput` returns the parsed value and the request is
-   built from it (engine.ts:415-447), so a stripping schema drops unknown keys from the wire — but
-   only on the slot it is declared on; an undeclared slot is a full passthrough. Separately,
-   `cookieSession.apply` **joins** the `Cookie` header
-   (`[req.headers.cookie, cookie].join('; ')`, auth.ts:918-921) while `apiKey({ in: 'cookie' })`
-   **replaces** the same-named pair via `setCookiePair` (auth.ts:228-245). Measured on a
-   headers-opted-in stitch: `SESSION=attacker; SESSION=sess_live_…`, and a vendor that reads the
-   first pair — Express, Rails, Go's `net/http`, PHP — runs the call as the model's session.
-4. **Renaming a registry key does not hide a stitch.** `selectStitch` falls back from the key to
-   every stitch's configured `__config.name` (registry.ts:71-74), so `{ readOnlyOrders: refund }`
-   still answers to `run_stitch({ name: 'refund' })` — callable, and absent from `list_stitches`, at
-   the same time. `safe-exposure.ts`'s `expose` rejects the mismatch at construction.
+3. **An input schema filters only its own slot.** Since #663 (issue #648, filed from this audit)
+   `validateInput` returns the parsed value and the request is built from it (engine.ts:415-447), so
+   a stripping schema drops unknown keys from the wire — but only on the slot it is declared on; an
+   undeclared slot is a full passthrough. (This audit also found that `cookieSession.apply`
+   **joined** the `Cookie` header where `apiKey({ in: 'cookie' })` **replaced** the same-named pair:
+   `SESSION=attacker; SESSION=sess_live_…`, and a vendor that reads the first pair — Express, Rails,
+   Go's `net/http`, PHP — ran the call as the model's session. Fixed in #866: both go through
+   `setCookiePair`, the cookie name is matched case-insensitively, and the engine folds header names
+   to lower case before auth runs, so `Cookie`, `COOKIE` and `cookie` are one header.)
+4. **Renaming a registry key did not hide a stitch — fixed in #866.** `selectStitch` fell back from
+   the key to every stitch's configured `__config.name`, so `{ readOnlyOrders: refund }` still
+   answered to `run_stitch({ name: 'refund' })` — callable, and absent from `list_stitches`, at the
+   same time. It resolves the registry's own key alone now, so `safe-exposure.ts`'s `expose` needs
+   no check for it. (A module's `default` export has no export name; `collectStitches` keys it by its
+   configured `name`.)
 5. **`sensitive: true` does not mean "do not expose this".** It is a **cache** opt-out
    (types.ts:1652-1658) — the one word in `StitchConfig` that reads like an agent-visibility flag,
    and measured, a stitch carrying it was still listed by `list_stitches` and still ran. None of the
