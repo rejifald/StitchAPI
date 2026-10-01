@@ -89,6 +89,10 @@ pre-push:
         # the expensive test/build jobs. Mirrors CI's check:contract step.
         - name: contract
           run: '{setup} pnpm check:contract'
+        # Package-runner bin guard (#861): no bare `stitch` through npx/dlx — that npm name is an
+        # unrelated package. Text-only scan of tracked files. Mirrors CI's check:npx-bin step.
+        - name: npx-bin
+          run: '{setup} pnpm check:npx-bin'
         # Unknown-key guard ratchet: a generic-inferred option bag with no `NoUnknownKeys`
         # intersection lets a misspelled or removed slot typecheck and be silently dropped.
         # Cheap source scan, same tier as the contract ratchet. Mirrors CI's step.
