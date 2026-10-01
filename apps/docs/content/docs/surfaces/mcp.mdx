@@ -83,7 +83,7 @@ else. For `stitch mcp --module`, a key is the export name. The names
 ### Errors the agent sees
 
 A failed call returns an `isError` tool result whose text is the error message.
-Every absolute (`scheme://`) URL in that message has lost its userinfo and the
+Every URL in that message — absolute, schemeless or relative — has lost its userinfo and the
 values of its secret-bearing query parameters. A transport error often quotes the
 request URL,
 and with `apiKey({ in: 'query' })` that URL carries the key. The model sees
@@ -95,8 +95,7 @@ once more at its own boundary as a second line. The scrubber matches the same
 parameter names as the trace sinks, including any name
 `apiKey({ in: 'query', name })` registers. `describe_stitch` scrubs the endpoint
 it reports the same way, so a credential written into a `baseUrl` does not reach
-the model either. A relative path or a schemeless `host/path?key=…` quoted in a
-message is not recognised as a URL yet. A key in a header is still the better
+the model either. A key in a header is still the better
 choice: it is never part of a URL.
 
 ### Tool annotations

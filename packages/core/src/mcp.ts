@@ -16,7 +16,7 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { envelope, scrubUrls, topLevelQueryIndex } from './util';
+import { envelope, scrubUrl, topLevelQueryIndex } from './util';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -127,7 +127,7 @@ function textResult(value: unknown): ToolResult {
 // messages are request-free already; this closes the channel for the ones it did not write.
 function errorResult(message: string): ToolResult {
     return {
-        content: [{ type: 'text', text: scrubUrls(message) }],
+        content: [{ type: 'text', text: scrubUrl(message) }],
         isError: true,
     };
 }
@@ -248,7 +248,7 @@ export function createMcpServer(
         const inputSlots = cfg.input ?? {};
         return textResult({
             name: a.name,
-            endpoint: scrubUrls(endpointLabel(cfg)),
+            endpoint: scrubUrl(endpointLabel(cfg)),
             surface: cfg.kind ?? 'http', // __config.kind is the surface id string
             input: {
                 params: inputSlots.params !== undefined,
@@ -262,10 +262,10 @@ export function createMcpServer(
             },
             auth: authTagOf(cfg),
             policies: policySummary(cfg),
-            pipeline: pipelineStages(cfg).map(scrubUrls),
+            pipeline: pipelineStages(cfg).map(scrubUrl),
             // A one-entry registry under the resolved key: `toMermaid`'s name filter must not
             // draw a different stitch that merely shares the name.
-            diagram: scrubUrls(toMermaid({ [a.name]: stitch }).diagram),
+            diagram: scrubUrl(toMermaid({ [a.name]: stitch }).diagram),
         });
     }
 

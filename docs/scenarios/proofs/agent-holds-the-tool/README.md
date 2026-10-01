@@ -207,7 +207,7 @@ boundary is entirely the operator's.** That is the finding this directory exists
    `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_qry_…`.
    Node's `fetch` only writes that on a malformed URL, but `node-fetch`, `got` and several house
    wrappers put the full URL in **every** network error (`request to <url> failed, reason: …`), so
-   with a swapped adapter a routine DNS failure did it. Core now scrubs absolute (`scheme://`) URLs
+   with a swapped adapter a routine DNS failure did it. Core now scrubs URLs
    in the message where the engine mints the error, so the model reads `api_key=REDACTED`.
    `apiKey({ in: 'header' })` is still the better placement: a key in a URL leaks everywhere else
    URLs go.

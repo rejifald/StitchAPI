@@ -182,10 +182,46 @@ event's input headers, response headers, and so on):
 - `set-cookie`
 - `x-api-key`
 
+Those five are the fixed list. The same redaction also covers a header whose name
+**ends in `-key`** (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`,
+`x-goog-api-key` — the dashes defeat the `api_key` stem), one that **names a
+session** (`x-session-id`), and one that carries a **secret stem**
+(`x-auth-token`, `x-csrf-token`, `x-client-secret`, `x-amz-signature`) or a name
+you `secrets.register`. A few `-key` headers are not credentials and stay
+readable: `Idempotency-Key` (a dedupe token worth having when you debug a
+retry), `Sec-WebSocket-Key`, `Surrogate-Key` and `X-Cache-Key`.
+
 So a call carrying `authorization: 'Bearer …'` traces as
 `"authorization":"[REDACTED]"` — the raw secret never reaches disk. Redaction
 happens at the sink boundary, so the live request still sends the real header; only
 the trace copy is scrubbed.
+
+The JSONL sink applies the same `[REDACTED]` to any **secret-named key** at any
+depth of the record — the shared [`secrets`](/docs/reference/helpers) denylist
+(`password`, `client_secret`, `access_token`, `api_key`, `signature`, … and any
+name you `secrets.register`) — and that covers the payloads: the request body,
+GraphQL variables, the response `data` and every streamed `chunk`. An OAuth
+password-grant body or a token response therefore reaches disk as
+`{"grant_type":"password","password":"[REDACTED]"}` and
+`{"access_token":"[REDACTED]","expires_in":3600}`.
+
+A payload is not a headers map, so two rules differ from the header and URL ones:
+
+- **A secret name redacts every string beneath it, and only strings.** A key such
+  as `api_keys`, `tokens` or `credentials` taints its whole subtree, so
+  `api_keys: ["A1"]`, `credentials: { pass: "P1", key: "K1" }` and
+  `apiKeys: [{ key: "sk-…" }]` reach disk as `[REDACTED]` strings — at any depth,
+  whatever the inner keys are called. A token _count_ (`usage.output_tokens`,
+  `max_tokens`), a flag (`signature_valid: true`), a `null` or an empty string
+  sits under a secret-looking name but is not a secret, and stays readable.
+- **`code`, `key` and `auth` are ordinary fields in a payload** (a status `code`, a
+  cache `key`) and stay readable there. In a URL query they are credentials, so
+  `?code=…` and `?key=…` are redacted in the `url` and in the structured
+  `input.query`.
+
+The match is by key name only — a secret under an innocuous name, or inside a
+free-text string, is not caught. A string under a name that merely _contains_ a
+stem (`next_page_token`) is still redacted: over-matching is the safe direction.
 
 The same boundary scrubs **URLs**: a `start` event's resolved URL has any userinfo
 (`https://user:pass@host`) removed and the values of secret-bearing query params
@@ -193,18 +229,21 @@ The same boundary scrubs **URLs**: a `start` event's resolved URL has any userin
 JSONL `url` field and the OTLP [`url.full`](/docs/guides/observability/otlp)
 attribute. The matching keys in the `start` event's structured `input.query` are
 redacted the same way, so the two views can't disagree; benign params (`page`,
-`sort`) survive for observability.
+`sort`) survive for observability. The scrub is textual, so it reaches a relative
+or protocol-relative URL, a URL nested in another param's value, `;`-separated
+pairs and a JSON-escaped URL too — not only a well-formed absolute one.
 
 The URL also shows up in failure text: a transport writes the URL it called into its
 own error message, and with `apiKey({ in: 'query' })` that URL carries the key. The
-engine scrubs it before the `error` event is built, so a `.message` that quotes an
-absolute (`scheme://`) URL (and the `retry` progress `detail` that quotes the same
+engine scrubs it before the `error` event is built, so a `.message` that quotes a
+URL — absolute, schemeless or relative — (and the `retry` progress `detail` that quotes the same
 text) reads `?api_key=REDACTED` for every sink, a custom one included. The `start`
 event's raw `url` is a different field: a custom sink still has to scrub that one
 itself.
 
-Need to redact a non-standard auth header (say `x-auth-token`)? Widen the
-denylist — you can extend it but never shrink it — with `redactHeaders`:
+Need to redact a header whose name none of those rules catches (say a partner's
+`x-acme-ref`)? Widen the denylist — you can extend it but never shrink it — with
+`redactHeaders`:
 
 ```ts twoslash
 import { fileSink, stitch } from 'stitchapi';
@@ -213,7 +252,7 @@ const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search',
     trace: fileSink('./runs/today.jsonl', {
-        redactHeaders: ['x-auth-token', 'x-session-id'],
+        redactHeaders: ['x-acme-ref'],
     }),
 });
 ```
@@ -256,14 +295,14 @@ marker:
 { "truncated": true, "chars": 51234, "preview": "{\"items\":[{\"id\":1,…" }
 ```
 
-`preview` is the first `body.chars` characters of the (already header-redacted)
-JSON, so you keep a readable head of the payload without storing all of it. The
+`preview` is the first `body.chars` characters of the (already redacted) JSON,
+so you keep a readable head of the payload without storing all of it. The
 default cap is **2048 characters**; `0` keeps only the marker, no preview.
 
-Truncation bounds _size_ — it is not field-level redaction, and a preview can
-still contain a body-embedded secret. Header and URL secrets are redacted (above)
-regardless of the cap. Customer data in a response body is the case this leaves
-open: [the customer data you didn't mean to log](/docs/scenarios/pii-in-the-logs)
+Truncation bounds _size_ — it is not field-level redaction. Header, URL and
+secret-named body fields are redacted (above) _before_ the cap applies, so
+neither the stored body nor its `preview` holds one, at any cap — full capture
+included. Customer data in a response body is the case this leaves open: [the customer data you didn't mean to log](/docs/scenarios/pii-in-the-logs)
 counts which destinations carry a whole body and which carry none, and why there
 is nothing in between.
 

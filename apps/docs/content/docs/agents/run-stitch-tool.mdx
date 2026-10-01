@@ -112,7 +112,7 @@ where `input` is the stitch input `{ params?, query?, body?, headers? }`;
 stitch's configured `name` is a trace label and does not select it, so a name
 the listing does not show is an `unknown stitch` error on every tool. A failed
 `run_stitch` returns the error message as an `isError` result, with credentials
-scrubbed from any absolute (`scheme://`) URL it quotes. The tools also carry MCP `annotations`:
+scrubbed from any URL it quotes. The tools also carry MCP `annotations`:
 `list_stitches` and `describe_stitch` are read-only, and `run_stitch` is not.
 The [MCP surface](/docs/surfaces/mcp#which-names-a-call-resolves) page covers
 all three rules.

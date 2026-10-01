@@ -50,7 +50,7 @@ import {
     newRunContext,
     now,
     parseDuration,
-    scrubUrls,
+    scrubUrl,
     systemClock,
     topLevelQueryIndex,
 } from './util';
@@ -146,7 +146,13 @@ function emitInto(
     };
 }
 
-const nameOf = (cfg: ResolvedStitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
+// The DISPLAY name — on every event, trace line, OTLP span name and hook. The `path` fallback is
+// scrubbed: `stitch('https://h/x?api_key=S')` lands its URL on `path`, and an unnamed stitch's
+// name must not carry the credential into a log. The store keys below (`hostKey`, and
+// `cacheStitchId` in cache.ts) keep the RAW fallback — re-deriving them is #845's call.
+const storeKeyOf = (cfg: ResolvedStitchConfig) =>
+    cfg.name ?? cfg.path ?? 'stitch';
+export const nameOf = (cfg: ResolvedStitchConfig) => scrubUrl(storeKeyOf(cfg));
 
 function joinUrl(base: string, path: string): string {
     if (/^https?:\/\//i.test(path)) return path;
@@ -257,7 +263,7 @@ function buildRequest(
                 ? 'A relative `url` does NOT join `baseUrl` — `url` is the whole endpoint, so `baseUrl` is ignored. Pass the relative endpoint as `path` instead.'
                 : 'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).';
         const e = new Error(
-            `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(url)} is not absolute. ` +
+            `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(scrubUrl(url))} is not absolute. ` +
                 hint,
         );
         e.name = 'StitchConfigError';
@@ -318,7 +324,7 @@ const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
             /* fall through */
         }
     }
-    return nameOf(cfg);
+    return storeKeyOf(cfg);
 };
 
 // A non-enumerable back-reference from an `error` event to the live error instance it was built
@@ -440,7 +446,7 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const evt: Extract<StitchEvent, { type: 'error' }> = compact({
         type: 'error',
         name,
-        message: scrubUrls(String(e.message ?? err)),
+        message: scrubUrl(String(e.message ?? err)),
         errorType: errorType(err),
         attempts,
         at: now(),
@@ -785,7 +791,7 @@ async function* attemptLoop(
                         type: 'progress',
                         phase: 'retry',
                         attempt,
-                        detail: scrubUrls(
+                        detail: scrubUrl(
                             String((err as Error)?.message ?? err),
                         ),
                         errorType: errorType(err),
@@ -894,7 +900,7 @@ async function* attemptLoop(
                     type: 'progress',
                     phase: 'retry',
                     attempt,
-                    detail: scrubUrls(`interpret: ${outcome.message}`),
+                    detail: scrubUrl(`interpret: ${outcome.message}`),
                     status: res.status,
                     at: now(),
                 };
@@ -1271,7 +1277,7 @@ function surfaceErrEvt(
     const evt: Extract<StitchEvent, { type: 'error' }> = {
         type: 'error',
         name,
-        message: scrubUrls(outcome.message),
+        message: scrubUrl(outcome.message),
         attempts,
         at: now(),
     };

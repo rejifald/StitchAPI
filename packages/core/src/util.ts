@@ -839,25 +839,20 @@ export function appendQueryString(url: string, qs: string): string {
  * (pattern `data` matches `data[].id`).
  */
 export function matchPath(pattern: string, path: string): boolean {
-    if (pattern === path) return true;
-    if (path.startsWith(pattern + '.') || path.startsWith(pattern + '['))
-        return true;
-    if (pattern.includes('*')) {
-        const rx = new RegExp(
-            '^' +
-                pattern
-                    .split('.')
-                    .map((s) =>
-                        s === '*'
-                            ? '[^.]+'
-                            : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-                    )
-                    .join('\\.') +
-                '($|\\.|\\[)',
-        );
-        return rx.test(path);
-    }
-    return false;
+    // One anchored pattern for all three forms: the path IS the pattern (`$`), or continues it
+    // as a child (`.`) or an element (`[`). A bare `*` segment is the wildcard; the rest is literal.
+    return new RegExp(
+        '^' +
+            pattern
+                .split('.')
+                .map((s) =>
+                    s === '*'
+                        ? '[^.]+'
+                        : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                )
+                .join('\\.') +
+            '($|\\.|\\[)',
+    ).test(path);
 }
 
 export function matchAny(
@@ -910,36 +905,20 @@ export function dirnameOf(path: string): string {
 
 // Query keys whose values are secrets when they ride in a URL: redacted before a
 // URL reaches a trace sink (OTLP `url.full`, the JSONL `start.url`). A key matches
-// if (case-insensitively) it is one of these names …
-const SECRET_QUERY_KEYS = new Set([
-    'key',
-    'sig',
-    'auth',
-    'pwd',
-    'code',
-    'sas',
-    'access_key',
-]);
-// … or if it CONTAINS one of these stems — so `access_token`, `refresh_token`,
-// `client_secret`, `x-amz-signature`, and `apikey` are all caught without listing
-// every vendor spelling. Over-matching a benign param is the safe direction here.
-const SECRET_QUERY_STEMS = [
-    'token',
-    'secret',
-    'password',
-    'passwd',
-    'signature',
-    'credential',
-    'apikey',
-    'api_key',
-];
+// if (case-insensitively) it is one of the exact names (`key|sig|auth|pwd|code|sas|access_key`)
+// or CONTAINS one of the stems (`token|secret|password|…`) — so `access_token`, `refresh_token`,
+// `client_secret`, `x-amz-signature`, and `apikey` are all caught without listing every vendor
+// spelling. Over-matching a benign param is the safe direction here. (A pattern of fixed words —
+// no nested quantifier, so no backtracking blow-up.)
+const SECRET_QUERY_KEYS =
+    /^(key|sig|auth|pwd|code|sas|access_key)$|token|secret|password|passwd|signature|credential|api_?key/;
 const URL_REDACTED = 'REDACTED';
 
 // Caller-registered query-param names that carry a secret value — the escape hatch for a
 // credential whose param name the built-in set/stems don't catch. `apiKey({ in: 'query', name })`
 // registers its configured `name` here at construction, so a key placed in the URL is redacted in
 // every trace sink (the JSONL/console `start.url` via `scrubUrl`, the OTLP `url.full`, and the
-// structured `input.query` via `redactSecretQuery`) without listing every vendor spelling. The
+// structured `input.query` via `redactKeys`) without listing every vendor spelling. The
 // default `api_key` already matches a stem; this covers an arbitrary configured name too.
 // Lower-cased on insert so the membership test in `isSecretKey` stays case-insensitive.
 //
@@ -974,11 +953,7 @@ export function registerSecretKey(name: string): void {
  */
 export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
-    return (
-        SECRET_QUERY_KEYS.has(k) ||
-        registeredSecretKeys().has(k) ||
-        SECRET_QUERY_STEMS.some((s) => k.includes(s))
-    );
+    return SECRET_QUERY_KEYS.test(k) || registeredSecretKeys().has(k);
 }
 
 /**
@@ -998,42 +973,54 @@ export function isSecretKey(key: string): boolean {
  *   the denylist is always applied.
  */
 export function redactSecretsDeep(value: unknown, extra?: string[]): unknown {
-    return redactSecretsAt(value, extra, undefined);
+    return redactDeep(
+        value,
+        (k, _v, path) =>
+            isSecretKey(k) || matchAny(extra, k) || matchAny(extra, path),
+        URL_REDACTED,
+    );
 }
 
-// Recursive worker for redactSecretsDeep: `path` tracks where in the tree we are so the
-// caller's `extra` patterns can match full paths, without that state leaking into the export.
-function redactSecretsAt(
+// The ONE deep walker behind every secret scrub ({@link redactSecretsDeep} and {@link redactKeys}):
+// clone `value`, treating each entry `flag(key, value, path)` flags in one of two ways. By default
+// the entry's whole value becomes `mark`. With `taint` (`false` at the root — the caller's opt-in)
+// a flagged entry instead TAINTS what is beneath it: every non-empty string there, at any depth and
+// whatever its own key — an array element included — becomes `mark`, while numbers, booleans and
+// `null` stay readable. Walks arrays and objects — a class instance (a DTO, a model) by its own
+// enumerable fields, as `JSON.stringify` would — but not a `Date`, which has none and would come
+// out as `{}`. `path` is where in the tree `value` sits (`a.b[0].c`), so a caller's pattern can
+// match full paths; at the root a key IS its own path.
+function redactDeep(
     value: unknown,
-    extra: string[] | undefined,
-    path: string | undefined,
+    flag: (key: string, value: unknown, path: string) => boolean,
+    mark: string,
+    path?: string,
+    taint?: boolean,
 ): unknown {
-    if (Array.isArray(value)) {
-        return value.map((item, i) =>
-            redactSecretsAt(
-                item,
-                extra,
-                path !== undefined ? `${path}[${i}]` : `[${i}]`,
-            ),
+    if (typeof value === 'string') return taint && value ? mark : value;
+    if (Array.isArray(value))
+        return value.map((v, i) =>
+            redactDeep(v, flag, mark, `${path ?? ''}[${i}]`, taint),
         );
-    }
-    if (value !== null && typeof value === 'object') {
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            const childPath = path !== undefined ? `${path}.${k}` : k;
-            const secret =
-                isSecretKey(k) ||
-                (extra !== undefined &&
-                    (extra.some((p) => matchPath(p, k)) ||
-                        (path !== undefined &&
-                            extra.some((p) => matchPath(p, childPath)))));
-            out[k] = secret
-                ? URL_REDACTED
-                : redactSecretsAt(v, extra, childPath);
-        }
-        return out;
-    }
-    return value;
+    if (!isObj(value) || value instanceof Date) return value;
+    return Object.fromEntries(
+        Object.entries(value).map(([k, v]) => {
+            const at = path === undefined ? k : `${path}.${k}`;
+            const hit = flag(k, v, at);
+            return [
+                k,
+                hit && taint === undefined
+                    ? mark
+                    : redactDeep(
+                          v,
+                          flag,
+                          mark,
+                          at,
+                          taint === undefined ? taint : taint || hit,
+                      ),
+            ];
+        }),
+    );
 }
 
 /**
@@ -1069,77 +1056,170 @@ export const secrets = {
     redact: redactSecretsDeep,
 } as const;
 
-/**
- * Strip credentials from a URL before it reaches a trace sink: removes userinfo
- * (`https://user:pass@host` → `https://host`) and replaces the values of
- * secret-bearing query params (`api_key`, `access_token`, `signature`, …) with
- * `REDACTED`, while keeping benign params (`page`, `sort`) intact for observability.
- * Returns the original string unchanged when there is nothing to scrub (so a clean
- * URL is never reformatted) or when it is not an absolute URL we can parse.
- */
-export function scrubUrl(url: string): string {
-    let u: URL;
-    try {
-        u = new URL(url);
-    } catch {
-        return url; // relative/opaque/malformed — no structured parts to scrub
-    }
-    const hadUserinfo = u.username !== '' || u.password !== '';
-    u.username = '';
-    u.password = '';
-    const secretKeys = [...new Set(u.searchParams.keys())].filter(isSecretKey);
-    for (const key of secretKeys) {
-        // Preserve a repeated key's arity (e.g. `?k=a&k=b` → two REDACTED values).
-        const count = u.searchParams.getAll(key).length;
-        u.searchParams.delete(key);
-        for (let i = 0; i < count; i++)
-            u.searchParams.append(key, URL_REDACTED);
-    }
-    return hadUserinfo || secretKeys.length > 0 ? u.toString() : url;
-}
-
-/**
- * {@link scrubUrl} for free text — an error message, a log line — that may quote URLs. Every
- * absolute URL in it loses its userinfo and the values of its secret-named query / fragment
- * parameters; the text around it is untouched. The URL a transport error quotes is often one the
- * WHATWG parser rejects (`Failed to parse URL from http://host:99999/v1?api_key=…`), and
- * {@link scrubUrl} hands such a URL back as-is, so the scrub here is lexical: it never asks
- * `new URL` whether the text is well-formed.
- *
- * A URL is whatever follows a `://` up to whitespace or a character that conventionally delimits
- * one in prose or JSON (a backslash too, so an escaped quote in JSON-ish text is never swallowed and
- * rewritten), minus a trailing run of `) ] , . ;`: punctuation that ends a sentence or closes a
- * bracket around the URL is not part of it, so `(…?key=K), retry` keeps its `), retry`. Only the
- * TRAILING run is dropped, not every such character: a credential can hold one (a JWT is dotted), and
- * leaving the tail of a secret in the clear is worse than eating the comma after it. The scheme is
- * never inspected: only what FOLLOWS the `://` is rewritten. Only absolute (`scheme://`) URLs are
- * recognised: a relative path or a schemeless `host/path?key=K` is not scrubbed.
- *
- * Linear on untrusted text (a transport's message, a vendor's error body): the scan is anchored on
- * the literal `://`, so there is no scheme run to retry from every start position — that is what made
- * the first version, `/[a-z][a-z\d+.-]*:\/\/…/g`, quadratic on a long run of letters (CodeQL). Every
- * pattern below is anchored or bounded by a delimiter, so each character is read a bounded number
- * of times.
- */
-export function scrubUrls(text: string): string {
-    return text.replace(/:\/\/[^\s"'<>`\\]*[^\s"'<>`\\).,;\]]/g, (url) =>
-        url
-            // userinfo runs to the LAST `@` before the authority ends, as the WHATWG parser reads it
-            .replace(/^:\/\/[^/?#]*@/, '://')
-            // a `?` / `&` / `#` pair whose (decoded) key is a secret keeps its key and loses its
-            // value, so the message still says which parameter it was
-            .replace(/([?&#][^=&#?]*=)[^&#]*/g, (pair, head: string) =>
-                isSecretKey(decodeQueryKey(head.slice(1, -1)))
-                    ? head + URL_REDACTED
-                    : pair,
-            ),
-    );
-}
-
-function decodeQueryKey(key: string): string {
+// The key of a `k=v` query pair, decoded so the denylist sees `api_key` in `api%5Fkey`; a stray `%`
+// matches the raw spelling rather than give up on the pair.
+function decodeKey(key: string): string {
     try {
         return decodeURIComponent(key);
     } catch {
-        return key; // a stray `%` — match the raw spelling rather than give up on the pair
+        return key;
     }
+}
+
+/**
+ * Strip credentials from a URL — or from free text that quotes URLs — before it reaches an output
+ * documented as safe to show: a trace sink, the public `__config`, an error's JSON, an error
+ * message, an MCP tool result. Removes userinfo (`https://user:pass@host` → `https://host`) and
+ * replaces the VALUE of every secret-bearing query pair (`api_key`, `access_token`, `signature`, …,
+ * by the shared {@link isSecretKey} denylist, which includes every name registered process-wide)
+ * with `REDACTED`, while keeping benign pairs (`page`, `sort`) intact for observability.
+ *
+ * Textual, not parsed: the string is rewritten in place, so ONE function covers every shape a
+ * config or an error message holds — absolute, protocol-relative (`//u:p@h/x`), relative
+ * (`/a?api_key=K`), RFC 6570 templated (`/a{?page,token}`, `/a/{id}`), one the WHATWG parser
+ * rejects (`Failed to parse URL from http://h:99999/?api_key=K`), or a whole sentence of prose or
+ * JSON around any of those — and text with nothing to scrub comes back byte-for-byte. A `{template}`
+ * slot is a parameter name, never a literal credential, so a pair or a userinfo with a brace in it
+ * is left alone: `paramNamesOf` and the OpenAPI path still read the slots. Nothing here keys on a
+ * `scheme://`, so the scheme is never inspected either.
+ *
+ * What it reaches, beyond a well-formed `https://u:p@h/x?k=v`:
+ * - a schemeless or relative URL (`//u:p@h/x`, `/v1?api_key=K`);
+ * - a URL nested in a benign value (`next=https://o/?token=…`): a second pass stops at `?`, so the
+ *   nested pairs are scanned as pairs (the first lets a secret value run through a raw `?`);
+ * - a raw `/`, `?` or `#` in a userinfo password (base64), unless what follows the colon is a port
+ *   (`host:8080/@pkg`) — so a password of only digits is not told from one and is left;
+ * - `;` separators, a JSON-escaped `https:\/\/…` and the escaped ampersand Go's JSON encoder writes
+ *   (backslash, `u0026`) between pairs;
+ * - a pair after `?`, `&`, `;` or `#` (a fragment carries an OAuth `#access_token=`).
+ *
+ * Where a value ends. It runs to whitespace, a quote, `<` `>`, a backslash, `&`, `#` or `}` (a `}`
+ * is the end of the text around the URL — `{u: https://h/x?token=S}` keeps its brace; a `{` opens a
+ * template slot and leaves the pair alone), and a `;` that begins another pair (`;k=`). Only a
+ * TRAILING run of `) ] , . ;` is cut off: punctuation that ends a sentence or closes a bracket
+ * around the URL is not part of it, so `(…?key=K), retry` keeps its `), retry`; but a credential
+ * can hold those characters inside (a JWT is dotted), and leaving the tail of a secret in the clear
+ * is worse than eating the comma after it.
+ *
+ * Not reached, each a known limit: a nested URL that is itself percent-encoded
+ * (`next=https%3A%2F%2Fo%2F%3Ftoken%3D…`, which is how the engine re-serialises a query), and a
+ * secret that contains a raw `;k=`.
+ * Idempotent: a scrubbed string scrubs to itself.
+ *
+ * Linear on untrusted text (a transport's message, a vendor's error body): every pattern starts at a
+ * fixed marker (`//` after a non-word character, or `?` `&` `#` `;`) and its character classes
+ * exclude the markers, so a scan runs to the next one and no further; the trailing run is found by
+ * backing off from the end of ONE value, not by retrying from every position. None matches a
+ * scheme — the quadratic shape a `/[a-z][a-z\d+.-]*:\/\/…/g` sweep has on a long run of letters.
+ */
+export function scrubUrl(text: string): string {
+    // One pair: a secret key keeps its name and loses its value. `{page,token}` has no `=` and
+    // never matches; a `{` in the value opens a template slot, not a literal credential.
+    const scrubPair = (
+        pair: string,
+        sep: string,
+        key: string,
+        value: string,
+    ): string =>
+        value.includes('{') || !isSecretKey(decodeKey(key))
+            ? pair
+            : `${sep}${key}=${URL_REDACTED}`;
+    return (
+        text
+            // Userinfo, after a `//` that opens an authority (`://`, a leading `//`, JSON's
+            // `:\/\/`). Per the WHATWG parser it runs to the LAST `@` before the authority ends
+            // (`/ ? #`); failing that, a `user:password` whose password holds a raw `/ ? #` (base64)
+            // runs to the first `@` — unless the text after the colon is a port (`host:8080/@pkg`).
+            // A `{` ends the match: a templated userinfo is a param slot.
+            .replace(
+                /((?:^|[^\w/])(?:\\?\/){2})(?:[^\s/?#\\{"'<>`]*|[^\s/?#\\{"'<>`@:]*:(?!\d+(?!\w))[^\s\\{"'<>`@:]*)@/g,
+                '$1',
+            )
+            // A `k=v` pair after `?`, `&`, `;`, `#` or the six characters `\` `u` `0` `0` `2` `6`
+            // (how Go's JSON encoder writes `&`). The value is any run of value characters (a `;`
+            // only if no pair follows it) ending in a character that is not closing punctuation.
+            // This pass lets a value run through `?`, so a secret holding a raw `?` goes whole…
+            .replace(
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=((?:(?:[^\s&#;"'<>`\\}]|;(?![^\s=&#?;{}\\]+=))*[^\s&#;"'<>`\\}).,\]])?)/g,
+                scrubPair,
+            )
+            // …and this one stops at it, so a URL nested in a benign value (`next=https://o/?token=…`)
+            // is scanned as the pairs it holds.
+            .replace(
+                /([?&#;]|\\u0026)([^\s=&#?;{}\\]+)=((?:(?:[^\s&#;?"'<>`\\}]|;(?![^\s=&#?;{}\\]+=))*[^\s&#;?"'<>`\\}).,\]])?)/g,
+                scrubPair,
+            )
+    );
+}
+
+// Header names whose values are secrets — the built-in header denylist every output that echoes
+// headers applies (the JSONL/console sinks, the `serve` SSE `start` frame, `stitch run`, and the
+// literal `headers` on the public `__config`). Matched case-insensitively.
+export const SECRET_HEADERS = [
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+];
+
+// A header NAME the {@link SECRET_HEADERS} denylist does not list but that carries a secret value:
+// one ending in `-key` (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`, `x-goog-api-key`
+// — the dashes defeat the `api_key` / `apikey` stems), one naming a session (`x-session-id`), or
+// anything {@link isSecretKey} catches (`x-auth-token`, `x-client-secret`, `x-amz-signature`, a
+// `secrets.register`ed name; a `-token` / `-secret` suffix needs no rule of its own — those are
+// stems). A few `-key` headers are not credentials — `Idempotency-Key` (a dedupe token worth
+// reading while debugging), `Sec-WebSocket-Key` (a handshake nonce), `Surrogate-Key` and
+// `X-Cache-Key` (CDN tags) — and are exempt. `@stitchapi/query-core` and `@stitchapi/swr` mirror
+// this rule set (`secrets.has` is their handle on the stems), each pinned by the same name table
+// in its spec.
+const isSecretHeader = (name: string): boolean =>
+    /^(?!.*(?:idempotency|websocket|surrogate|cache)-key$).*-key$|session/i.test(
+        name,
+    ) || isSecretKey(name);
+
+// The exact names `isSecretKey` over-matches in a PAYLOAD — a status or entity `code`, a cache or
+// sort `key`, an `auth` block — and which stay secret in a URL query, where `code` / `key` /
+// `auth` ARE credentials. A string under a stem match (`next_page_token`, `tokenizer`) stays
+// redacted: over-matching a string is the safe direction, and a count or flag under one is spared
+// because only STRINGS are redacted.
+const PAYLOAD_EXEMPT = /^(code|key|auth)$/i;
+const isSecretPayloadKey = (key: string): boolean =>
+    isSecretKey(key) && !PAYLOAD_EXEMPT.test(key);
+
+/**
+ * Deep-clone `value`, replacing the value of every secret-bearing key with `[REDACTED]`. Two
+ * grammars, because a name→value map and a payload are different things:
+ *
+ * - a flat map of request metadata (the default — `headers`, `query`): a key is secret when the
+ *   `denylist` lists it, or it is a header name the header rules catch (`api-key`, `x-session-id`,
+ *   `x-auth-token`, …) — a superset of {@link isSecretKey}, so a URL param named `code` or `key`
+ *   is covered — whatever its value;
+ * - a payload (`payload: true` — a request body, a response `data`, a streamed `chunk`, the whole
+ *   trace record): a key {@link isSecretKey} catches, minus the over-matches in `PAYLOAD_EXEMPT`,
+ *   taints what is beneath it, and every NON-EMPTY STRING there is redacted, at any depth and
+ *   whatever its own key — `api_keys: ['A1']`, `credentials: { pass: 'P1', key: 'K1' }` and
+ *   `apiKeys: [{ key: 'sk-…' }]` all go. Counts and flags under such a key are not secrets and
+ *   stay readable (`usage.output_tokens: 12`, `max_tokens: 1000`, `signature_valid: true`).
+ *
+ * `denylist` (lower-case names — {@link SECRET_HEADERS}, possibly widened by `redactHeaders`)
+ * redacts a matching key in both. Non-mutating: the live value keeps its secrets; only the copy a
+ * trace record or the public `__config` carries is scrubbed. Walks arrays and objects (a `Date`
+ * passes through as itself — see `redactDeep`).
+ */
+export function redactKeys(
+    value: unknown,
+    denylist: readonly string[] = SECRET_HEADERS,
+    payload = false,
+): unknown {
+    const secretName = payload ? isSecretPayloadKey : isSecretHeader;
+    return redactDeep(
+        value,
+        (k, v) =>
+            (denylist.includes(k.toLowerCase()) || secretName(k)) &&
+            (payload || v !== ''),
+        '[REDACTED]',
+        undefined,
+        payload ? false : undefined,
+    );
 }

@@ -47,7 +47,12 @@ to stdout as JSONL — one JSON object per line, exit code `1` if an `error` eve
 is seen. Flags map onto the stitch's single input object: a bare `--<k>` becomes
 a path param when `<k>` is a `{param}` in the path and a query param otherwise,
 while `--params.<k>`, `--query.<k>`, `--headers.<k>`, and `--body '<json>'` (or
-`--body.<k> <v>`) target a bucket explicitly. `--module, -m` points at the
+`--body.<k> <v>`) target a bucket explicitly. Secrets you pass this way reach
+the request but not the output: like `stitch serve`, each `start` line has its
+URL credentials, secret query values, secret header values
+(`--headers.authorization`) and secret-named body fields (`--body.password`)
+redacted. The response itself — the `result` line — is printed as the server
+sent it. `--module, -m` points at the
 stitches module (default `./stitches.ts` and friends). `--trace` records the run
 (off by default): bare writes the default JSONL file for `stitch trace`,
 `--trace=console` streams events to stderr, and `--trace=<path>` writes JSONL to

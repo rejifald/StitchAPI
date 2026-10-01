@@ -22,6 +22,7 @@ import {
     executeRaw,
     executeRawTraced,
     makeRuntime,
+    nameOf,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { processWide } from './process-wide';
@@ -77,8 +78,9 @@ import {
     isSafeMethod,
     newRunContext,
     readEnv,
+    redactKeys,
     redactSecretsDeep,
-    scrubUrls,
+    scrubUrl,
     systemClock,
 } from './util';
 import { type Validator, toValidator } from './validator';
@@ -441,7 +443,7 @@ export function compose(config: ComposeInput): ResolvedStitchConfig {
 // gate the repo deliberately keeps tight. Behaviour is unchanged: the circuit nudge runs before the
 // idempotency guard, so it still fires for every surface, not just `http`.
 function warnConstruction(cfg: ResolvedStitchConfig): void {
-    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const name = nameOf(cfg);
     // `halfOpenAfter` is off the type now, so it is read back at its former `number | string`
     // shape — the only values a stale config can be carrying.
     const circuit = cfg.circuit as
@@ -892,7 +894,7 @@ function asStitchError(e: unknown): StitchError {
     if (e instanceof StitchError) return e;
     const status = (e as { status?: unknown }).status;
     return new StitchError(
-        scrubUrls(e instanceof Error ? e.message : String(e)),
+        scrubUrl(e instanceof Error ? e.message : String(e)),
         {
             ...(typeof status === 'number' ? { status } : {}),
             cause: e,
@@ -1028,6 +1030,8 @@ const REDACTED_IF_FN_SLOTS = [
     'url',
     'baseUrl',
 ] as const satisfies readonly RedactedIfFnSlot[];
+// The string-endpoint slots whose literal form is URL-scrubbed on the way to `__config`.
+const ENDPOINT_SLOTS = ['url', 'baseUrl', 'path'] as const;
 const FN_BEARING_SLOTS = [
     'paginate',
     'retry',
@@ -1098,6 +1102,23 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     for (const k of FN_BEARING_SLOTS) {
         if (cfg[k] !== undefined) out[k] = stripFns(cfg[k]);
     }
+    // Literal secrets the author wrote straight into the config are scrubbed too — `__config` is
+    // what `report().config`, `diagram`, `export --openapi`, MCP `describe_stitch` and the
+    // query-core/swr keys echo, and they all call it safe to show. A string endpoint loses its
+    // userinfo and secret query values (`scrubUrl` — the trace sinks' URL scrubber, textual so a
+    // relative or `{template}` endpoint is scrubbed too and its param slots survive; the
+    // `stitch('https://…')` string form lands on `path`, so `path` goes through it as well), and a
+    // secret header value reads `[REDACTED]` (`redactKeys` — the sinks' header denylist plus any
+    // secret-named header). Applied when the stitch is BUILT: a name registered with
+    // `secrets.register` afterwards reaches the sinks but not this snapshot. The engine never
+    // reads these off `__config`: it sends the real values from `__rawConfig`, and so do the
+    // readers that need the real thing (`seam.invalidate`'s cache id).
+    for (const k of ENDPOINT_SLOTS) {
+        const v = out[k];
+        if (typeof v === 'string') out[k] = scrubUrl(v);
+    }
+    if (cfg.headers)
+        redacted.headers = redactKeys(cfg.headers) as Record<string, string>;
     return redacted;
 }
 
@@ -1150,7 +1171,7 @@ export function makeStitch<T = unknown>(
     if (shared?.vault) rtOpts.vault = shared.vault;
     if (shared?.principal !== undefined) rtOpts.principal = shared.principal;
     const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);
-    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const name = nameOf(cfg);
 
     // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
     // ROOT run per consumption; composition (`linked`/`all`, stitchapi/pipe) supplies a CHILD run via

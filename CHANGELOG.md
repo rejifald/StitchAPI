@@ -279,13 +279,14 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
   `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_…`, from zero
   lines of user code. A `node-fetch`-shaped adapter does the same on any DNS failure. Every error
   text that crosses the MCP boundary is now URL-scrubbed (a free-text companion to the trace
-  sinks' `scrubUrl`): each absolute (`scheme://`) URL in the text loses its userinfo and the values
+  sinks' `scrubUrl`, now one function — see the #873 entry below): each URL in the text loses its
+  userinfo and the values
   of its secret-bearing query parameters (`api_key=REDACTED`), using the same denylist as the trace
   sinks, names registered by `apiKey({ in: 'query', name })` included. A URL the WHATWG parser
   rejects is exactly the one such a message quotes, so the scrub is lexical and never asks `new URL`
   whether the text is well-formed. Punctuation that closes the sentence or the bracket around a URL
   (`) ] , . ;`, a trailing run only: a JWT is dotted) is not part of it, so `(…?key=K), retry` keeps
-  its `), retry`. A relative path or a schemeless `host/path?key=K` is not recognised as a URL yet.
+  its `), retry`. A relative path and a schemeless `//u:p@h/x?key=K` are scrubbed too.
   A `throw` of a non-`Error` value now reaches the model as its string instead of `undefined`.
 
     The same sweep found the success path leaking too: `describe_stitch` quoted the configured
@@ -309,7 +310,7 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
   response (a GraphQL `errors` message that echoes a URL, an `interpret` verdict) is scrubbed the
   same way, on the `error` event and on the `interpret:` retry detail. It is the scrubber from the
   MCP bullet, so the denylist is the trace sinks' and the names `apiKey({ in: 'query', name })`
-  registers are covered, and only absolute (`scheme://`) URLs are recognised for now. The MCP
+  registers are covered, and a relative or schemeless URL is scrubbed like an absolute one. The MCP
   boundary keeps its own scrub as defence in depth.
 
     **What does not change.** The error the transport threw is left alone: it rides on
@@ -354,6 +355,79 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
 
     The names a hook, a mock or an adapter reads are lower-case now: see the BREAKING CHANGE under
     Changed.
+
+- **Outputs documented as safe to log no longer carry literal secrets — `JSON.stringify(err)`,
+  `.report().config`, the JSONL file sink, `stitch run` stdout.**
+  ([#873](https://github.com/rejifald/StitchAPI/issues/873)) Each was measured carrying a secret
+  verbatim while its docs called it safe to log or echo. **Breaking** (`JSON.stringify(err)` loses
+  `body`, and `__config` reads scrubbed values); rc channel, so a hard break with no alias.
+
+    - **`StitchError.toJSON()`** — `JSON.stringify(err)` was `{ status, attempts, body, url, name }`:
+      `message` missing (an `Error`'s own `message` is non-enumerable), `body` the unredacted
+      upstream payload, and a `RateLimitError` added its raw `response`, `set-cookie` included. It
+      is now a `StitchErrorResult`, `{ name, message, status?, attempts, url? }` (a
+      `RateLimitErrorResult` adds `retryAfter`): `url` and any URL quoted in `message` — a transport
+      error for a malformed URL quotes the whole request URL — are scrubbed of userinfo and secret
+      query values, and optional keys are absent rather than `undefined`. `err.body`, `err.url`,
+      `err.cause` and `err.response` are unchanged on the live error. **Migration:** read
+      `err.body` directly. Not covered: a non-URL secret an adapter put in `message`, and a logger
+      that bypasses `toJSON` (pino's `err` serializer).
+    - **`__config` scrubs literal secrets.** `redactConfig` stripped live handles but kept literal
+      values, so `headers: { authorization: 'Bearer …' }` and
+      `url: 'https://user:pw@host/a?api_key=…'` reached `.report().config`, `stitch diagram`,
+      `stitch export --openapi` and MCP `describe_stitch`. A string `url` / `baseUrl` / `path` now
+      loses its userinfo and secret query values — whatever its shape: absolute, relative
+      (`/a?api_key=…`), protocol-relative (`//user:pw@host/…`) or an RFC 6570 template
+      (`{?page,token}`, `?api_key={apiKey}` keep their `{param}` slots) — and a secret header
+      value reads `[REDACTED]`. The engine still sends the real values from `__rawConfig`, and
+      `seam.invalidate(stitch)` reads its cache id from there too. `__config` is a snapshot taken
+      when the stitch is built, so `secrets.register` applies to it only when called first. Query
+      keys that `@stitchapi/query-core` / `@stitchapi/swr` derive from `__config` now carry the
+      scrubbed form, so two stitches differing only by a secret in the URL share a key (#880).
+    - **A nameless stitch's name no longer carries its URL secret.** `stitch('https://h/x?api_key=…')`
+      stores the URL as `path` and used it as the display name, so every trace record, hook
+      argument, console line, OTLP span name and `stitch run` line quoted it. The name is scrubbed
+      for display; the store key a cache, throttle or circuit derives from it is unchanged (#845).
+    - **One URL scrubber, `scrubUrl`, textual and free-text capable.** It rewrote a URL through
+      `new URL`, which left a relative or protocol-relative URL untouched and re-encoded a
+      templated one (`{?page,token}` became `%7B?page%2Ctoken%7D=REDACTED`), while the MCP/engine
+      error scrub (#866/#890) was a second, `scheme://`-anchored function (`scrubUrls`). They are
+      now one implementation, in `util.ts`, that every caller uses: the trace sinks, the OTLP
+      `url.full`, `__config`, `StitchError.toJSON`, the engine's error text and the MCP tool
+      results. It rewrites the string in place, so a clean URL comes back byte-for-byte, a
+      `#access_token=` fragment pair is covered, and any URL in prose or JSON is scrubbed, not only
+      one after a `://`: a schemeless or relative one (`//u:p@h/x?token=…`, `/v1?api_key=…`), a
+      URL nested in a benign value (`next=https://o/?token=…`, rescanned), a raw `/`, `?` or `#`
+      in a userinfo password (base64; a password of digits only reads as a port and is left),
+      `;`-separated pairs, and a JSON-escaped `https:\/\/…` with Go's escaped ampersand between
+      pairs. A value ends at whitespace, a quote, `}` or a `;k=` pair; only a TRAILING run of
+      `) ] , . ;` is cut off (a JWT is dotted, so a credential can hold them inside), and a `{`
+      still opens a template slot. It reads the one process-wide secret-key registry, is
+      idempotent, leaves non-URL text alone, and is linear on hostile input. Known limits: a
+      percent-encoded nested URL, and a secret that contains a raw `;k=`.
+    - **The JSONL file sink scrubs secret-named payload fields.** It truncated bodies but never
+      redacted them: a password-grant `password` / `client_secret` and a response `access_token`
+      reached disk in full. Every key the shared `secrets` denylist matches — in the request body,
+      GraphQL variables, the response `data` and each streamed `chunk` — is now `[REDACTED]`, before
+      the size cap cuts a `preview`. A secret-named key redacts **every non-empty string beneath it**,
+      at any depth and whatever the inner keys are called (`api_keys: ["A1"]`,
+      `credentials: { pass: "P1", key: "K1" }`, `apiKeys: [{ key: "sk-…" }]`); over-matching is
+      bounded to strings, so token counts (`usage.output_tokens`, `max_tokens`) and flags
+      (`signature_valid`) survive, and the exact names `code`, `key` and `auth` are ordinary payload
+      fields (they stay credentials in a URL query, in `url` and in `input.query`). A string under
+      a name that merely contains a stem (`next_page_token`) is still redacted. A `Date` passes
+      through as itself rather than `{}` — in this walker, in `secrets.redact` and in the `serve`
+      stream.
+    - **More header names are redacted** — in `__config`, the JSONL file, the `serve` / `stitch run`
+      frames and the `@stitchapi/query-core` / `@stitchapi/swr` query keys: any name ending in
+      `-key` (`api-key`, `Ocp-Apim-Subscription-Key`, `X-RapidAPI-Key`, `x-goog-api-key`) and any
+      naming a session (`x-session-id`), on top of the five-name denylist and the secret stems
+      (`x-auth-token`). `Idempotency-Key`, `Sec-WebSocket-Key`, `Surrogate-Key` and `X-Cache-Key`
+      are not credentials and stay readable. A `-key` header that varies a response (say
+      `x-partition-key`) now keys it by a constant until #880 hashes the redacted value.
+    - **`stitch run` redacts its stdout the way `stitch serve` does.** It wrote the raw event, so an
+      `--headers.authorization` or `--body.password` flag was echoed back on the `start` line. The
+      response (`result`) is still printed as sent.
 
 ## [1.0.0-rc.8] — 2026-09-17
 
