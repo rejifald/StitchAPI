@@ -170,14 +170,16 @@ function joinUrl(base: string, path: string): string {
 //   5. an absolute `url` that carries no `{…}` variable is a single literal URL, whose path may be an
 //      instance id (`/users/42`) or a secret, so it is no template either. A relative `path` — the
 //      stitch's declared route — is a template even with no variable (`/users`).
-const ORIGIN = /^[a-z][a-z\d+.-]*:\/\/(?:[^/{]|\{[^/}][^}]*\})*/i;
+// An expression body never contains `{` (RFC 6570), so both patterns exclude it: a stray `{#…` with
+// no closing brace then fails in one scan instead of re-scanning to the end from every `{`.
+const ORIGIN = /^[a-z][a-z\d+.-]*:\/\/(?:[^/{]|\{[^/{}][^{}]*\})*/i;
 function urlTemplate(cfg: ResolvedStitchConfig): string | undefined {
     const { url, baseUrl, path = '' } = cfg;
     const base = url === undefined ? baseUrl : '';
     const raw = url ?? path;
     if (typeof raw === 'function' || typeof base === 'function') return;
     const t = joinUrl(base ?? '', raw)
-        .replace(/\{[?&#][^}]*\}|[?#].*/g, '')
+        .replace(/\{[?&#][^{}]*\}|[?#].*/g, '')
         .replace(ORIGIN, '');
     return t && (t.includes('{') || !ORIGIN.test(raw)) ? t : undefined;
 }

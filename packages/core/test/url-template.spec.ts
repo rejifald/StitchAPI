@@ -159,3 +159,18 @@ test('only the config is read: an expanded value never reaches the template', as
     });
     expect(template).toBe('/users/{id}');
 });
+
+// An unclosed `{&…` repeated is the input a backtracking pattern re-scans from every brace (CodeQL
+// js/polynomial-redos): 5 000 repetitions already cost the `[^}]*` form ~0.8 s, so 20 000 would take
+// ~13 s. The bound is generous for a linear pass and far below the quadratic one.
+test.each([
+    ['a path', { baseUrl: BASE, path: `/x${'{&a'.repeat(20_000)}` }],
+    ['an authority', { url: `https://${'{&'.repeat(20_000)}` }],
+])(
+    'unclosed braces in %s are scanned in linear time',
+    async (_label, config) => {
+        const started = performance.now();
+        await templateOf(stitch({ name: 't', adapter, ...config }));
+        expect(performance.now() - started).toBeLessThan(1500);
+    },
+);
