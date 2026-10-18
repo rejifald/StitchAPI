@@ -37,7 +37,6 @@ describe('measure', () => {
     });
 
     it('counts a file listed twice once, as Vercel ships it once', () => {
-        // The route trace and the Next runtime trace overlap (next, react).
         const stat = fakeStat({ '/next/server.js': 100 });
         expect(
             measure(['/next/server.js', '/next/server.js'], stat).bytes,

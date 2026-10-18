@@ -260,9 +260,8 @@ jobs:
             # uncompressed, after the build has passed, so this step's build stayed
             # green while every production deploy from 2026-09-30 to 2026-10-18 failed
             # on /api/mcp at 276.86 MB (an onnxruntime-node bump grew it). This sums
-            # each function's traced files plus the Next runtime and fails over a
-            # budget that leaves room for what Vercel adds; the number and its
-            # derivation are in the script.
+            # each function's traced files, the number Vercel checks, and fails 40 MB
+            # under the cap; the budget and its derivation are in the script.
             - name: Fail if a function is over the size budget
               run: pnpm --filter @stitchapi/docs check:function-size
 

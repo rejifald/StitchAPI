@@ -1,5 +1,6 @@
 // Fail when a deployed function's files add up to more than a budget kept well
-// below Vercel's 250 MB uncompressed cap.
+// below Vercel's 250 MB uncompressed cap. Vercel's "MB" are MiB (2^20 bytes), and
+// so are this script's.
 //
 // Vercel refuses a deploy outright when one function is over the cap: "The
 // Vercel Function "api/mcp" is 276.86mb uncompressed which exceeds the maximum
@@ -9,20 +10,22 @@
 // libraries grew by 17 MB, and /api/mcp crossed the cap with nothing in CI to say
 // so. The cap is the same on every plan.
 //
-// What a function ships is its entry plus the files `next build` traced for it
-// (the `*.nft.json` beside every entry under .next/server), plus the Next server
-// runtime it runs on (.next/next-server.js.nft.json). This sums the sizes of that
-// union per function and fails over BUDGET_MB. The two search functions carry
-// almost all of it: the embedding model (90 MB), onnxruntime's linux/x64 library
-// (46 MB), the search index (19 MB) and sharp's libvips (19 MB); see
-// outputFileTracingIncludes in next.config.mjs.
+// What a function ships is its entry plus the files `next build` traced for it,
+// listed in the `*.nft.json` beside every entry under .next/server. This sums
+// their sizes per function and fails over BUDGET_MB. It is the number Vercel
+// checks: for the first deploy after the trims in next.config.mjs, Vercel's
+// build-output analysis (VERCEL_ANALYZE_BUILD_OUTPUT=1) put /api/mcp at 174.20
+// MB, and a linux trace of the same commit sums to the same within a megabyte.
+// The two search functions carry almost all of it: the embedding model (87 MB),
+// onnxruntime's linux/x64 library (44 MB), the search index (18 MB) and sharp's
+// libvips (18 MB); see outputFileTracingIncludes in next.config.mjs.
 //
 // The sum only means something on the platform Vercel builds on, so CI runs it on
 // linux (verify-docs, verify.yml). On macOS the trace carries darwin binaries in
 // place of linux ones, and the number is not comparable. It also has to see the
 // deploy-only artifacts: the search index and the model are built only when
 // VERCEL or BUILD_SEARCH_INDEX is set (scripts/prebuild-search-index.mjs), and a
-// build without them would measure a function 110 MB lighter than the one that
+// build without them would measure a function 105 MB lighter than the one that
 // ships. So it fails when the search functions' traces hold neither.
 //
 // Run it after `pnpm build` with BUILD_SEARCH_INDEX=1; CI does:
@@ -35,21 +38,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * The budget, in MB (10^6 bytes), for what this script measures.
+ * The budget, in MiB, as Vercel counts them.
  *
- * Vercel counts more than the traces list. For the build it refused at 276.86 MB
- * (onnxruntime-node 1.30, before the trims in next.config.mjs), this measure
- * comes to about 243 MB on linux: a macOS build of that commit, with its darwin
- * onnxruntime and sharp binaries swapped for the linux ones' published sizes. So
- * Vercel's figure runs about 34 MB above this one, from what its builder adds to
- * each function and from how it counts.
- *
- * 200 here is about 234 MB to Vercel: 16 MB under the cap at the moment this
- * fails. /api/mcp measured about 190 MB here (about 224 MB to Vercel) when the
- * budget was set. Raising it eats the headroom, so a change that needs more
- * should take weight out first; the model and onnxruntime are the big items.
+ * 210 fails 40 MB under the cap, room for one more dependency bump the size of
+ * the one that broke production (#836 added 17 MB) to land while the cause is
+ * found. /api/mcp was 174 MB when the budget was set, so there are 36 MB to grow
+ * into. Raising it eats the headroom, so a change that needs more should take
+ * weight out first; the model and onnxruntime are the big items.
  */
-export const BUDGET_MB = 200;
+export const BUDGET_MB = 210;
 
 /** Functions that must carry the deploy-only search artifacts. */
 const SEARCH_FUNCTIONS = [
@@ -57,7 +54,7 @@ const SEARCH_FUNCTIONS = [
     'app/api/search-docs/route.js',
 ];
 
-const MB = 1e6;
+const MB = 2 ** 20;
 
 /** How many of the largest files to list for a function over budget. */
 const LISTED = 10;
@@ -143,8 +140,7 @@ async function main() {
         console.error(`[check-function-size] ${message}`);
         process.exit(1);
     };
-    const dotNext = join(appRoot, '.next');
-    const serverDir = join(dotNext, 'server');
+    const serverDir = join(appRoot, '.next', 'server');
     const traces = findTraces(serverDir);
     if (traces.length === 0) {
         fail(
@@ -159,15 +155,13 @@ async function main() {
                 'below are not comparable to the budget.',
         );
     }
-    const runtime = tracedFiles(join(dotNext, 'next-server.js.nft.json'));
-
     const results = traces.map((trace) => {
         const entry = trace.slice(0, -'.nft.json'.length);
         const files = tracedFiles(trace);
         return {
             name: relative(serverDir, entry),
             files,
-            ...measure([entry, ...files, ...runtime]),
+            ...measure([entry, ...files]),
         };
     });
 
@@ -200,7 +194,7 @@ async function main() {
         fail(
             `${over.length} function(s) over the ${BUDGET_MB} MB budget. Vercel refuses ` +
                 'a deploy with a function over 250 MB uncompressed, and the budget ' +
-                'leaves room for what Vercel adds. See scripts/check-function-size.mjs.',
+                'keeps 40 MB of that free. See scripts/check-function-size.mjs.',
         );
     }
     say(`${results.length} functions measured, all within ${BUDGET_MB} MB`);
