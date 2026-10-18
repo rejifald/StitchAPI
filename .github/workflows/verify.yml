@@ -209,13 +209,38 @@ jobs:
             # it and fails on an OOM kill, a failed build, or a peak above 6 GiB of
             # memory the kernel cannot reclaim: a quarter of the machine stays free for
             # the Vercel CLI, the build's page cache, and growth. The number and its
-            # derivation live in the script. As before, the search-index prebuild skips
-            # here (it needs the vendored model); search-relevance builds the index.
+            # derivation live in the script.
+            #
+            # The build runs the search-index prebuild, as Vercel's does
+            # (BUILD_SEARCH_INDEX), so the function-size gate below measures the
+            # functions with the index, the page dump and the model in them. The model
+            # comes from the same cache as the search-relevance job's, with the same
+            # key; see that job for why it is keyed this way. VENDORED_EMBED_MODEL keeps
+            # the index build on the vendored copy, so nothing after the fetch step
+            # touches the network.
+            - id: embed-model
+              run: |
+                  set -euo pipefail
+                  KEY="$(pnpm --filter @stitchapi/docs --silent run embed-model-cache-key | tail -n1)"
+                  if [ -z "$KEY" ]; then
+                      echo "::error::could not compute the embedding-model cache key"
+                      exit 1
+                  fi
+                  echo "key=$KEY" >> "$GITHUB_OUTPUT"
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+              with:
+                  path: apps/docs/.model-cache
+                  key: ${{ steps.embed-model.outputs.key }}
+                  restore-keys: embed-model-
+            - run: pnpm --filter @stitchapi/docs fetch:embed-model
             #
             # pnpm by absolute path: the scope's command is looked up on sudo's PATH,
             # not the runner's. --uid/--gid run the build as the runner user, so it
             # writes nothing root-owned into the workspace.
             - name: Build the docs in Vercel's build envelope (2 CPUs, 8 GB, no swap)
+              env:
+                  BUILD_SEARCH_INDEX: '1'
+                  VENDORED_EMBED_MODEL: '1'
               run: >-
                   sudo --preserve-env systemd-run --scope --quiet --collect
                   --property=MemoryMax=8G --property=MemorySwapMax=0
@@ -231,6 +256,15 @@ jobs:
             # if one reaches into .next outside server/, or into test/, e2e/ or scripts/.
             - name: Fail if a function trace reaches build scratch or the app's tests
               run: pnpm --filter @stitchapi/docs check:traces
+            # Function-size gate: Vercel refuses a deploy with a function over 250 MB
+            # uncompressed, after the build has passed, so this step's build stayed
+            # green while every production deploy from 2026-09-30 to 2026-10-18 failed
+            # on /api/mcp at 276.86 MB (an onnxruntime-node bump grew it). This sums
+            # each function's traced files plus the Next runtime and fails over a
+            # budget that leaves room for what Vercel adds; the number and its
+            # derivation are in the script.
+            - name: Fail if a function is over the size budget
+              run: pnpm --filter @stitchapi/docs check:function-size
 
     verify:
         # This job's ONLY purpose is to keep the required-check name `verify`
