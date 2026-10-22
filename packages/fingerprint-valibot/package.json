@@ -55,11 +55,11 @@
         "valibot": "^1.5.0"
     },
     "devDependencies": {
-        "@types/node": "^26.6.3",
+        "@types/node": "^26.6.5",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^6.0.3",
         "valibot": "^1.5.0",
-        "vitest": "^5.0.2"
+        "vitest": "^5.0.5"
     }
 }
