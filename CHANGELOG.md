@@ -11,6 +11,13 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.9] — 2026-10-22
+
+`1.0.0-rc.8` was never tagged or published, so this is the first release since `1.0.0-rc.7`.
+Upgrading from rc.7, read the [1.0.0-rc.8](#100-rc8--2026-09-17-never-published) entry below as
+well; both sets of changes ship here. `@stitchapi/download` is not published with this release
+([#843](https://github.com/rejifald/StitchAPI/issues/843)).
+
 ### Added
 
 - **A throttle that cannot be fleet-wide on its store says so, once — an `info` event, topic
@@ -612,7 +619,7 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
     from an SSE stream: start the server with `serve(registry, { disclose: true })` or
     `stitch serve --disclose`. There is no alias for an earlier spelling.
 
-## [1.0.0-rc.8] — 2026-09-17
+## [1.0.0-rc.8] — 2026-09-17 (never published)
 
 ### Added
 
@@ -4398,8 +4405,9 @@ causality push:
 - **Playground:** the browser Worker runner, handler registration, incremental
   streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.8...HEAD
-[1.0.0-rc.8]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...v1.0.0-rc.8
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.9...HEAD
+[1.0.0-rc.9]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...v1.0.0-rc.9
+[1.0.0-rc.8]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...8233e8d3
 [1.0.0-rc.7]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.4...v1.0.0-rc.5

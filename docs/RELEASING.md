@@ -21,7 +21,9 @@ the manifest set itself — every `packages/*/package.json` without
 added tomorrow is covered without editing this page.
 
 **Never published** (`"private": true`): `@stitchapi/completions-plugin`,
-`@stitchapi/sandbox-sim`, `@stitchapi/eval-harness`, `@stitchapi/docs`.
+`@stitchapi/sandbox-sim`, `@stitchapi/eval-harness`, `@stitchapi/docs`, and
+`@stitchapi/download`, which stays out of the 1.0 cut until it has had a
+prerelease of its own ([#843](https://github.com/rejifald/StitchAPI/issues/843)).
 
 ## Versioning
 
@@ -63,7 +65,10 @@ prerelease-aware peer-range satisfaction for in-repo deps, **(3)** scoped
 packages declare `publishConfig.access: public`, **(4)** dist-tag safety (a
 prerelease may not land on `latest`), **(5)** a `CHANGELOG.md` entry exists for
 the version (`--changelog`), and **(6)** the git/release tag equals the version
-(`--release-tag`).
+(`--release-tag`). The heading match is exact: `## [1.0.0-rc.8]` does not count
+as the `1.0.0` entry. `pnpm check:release` also runs
+[`check-release-selftest.mjs`](../scripts/check-release-selftest.mjs), which
+proves that against fixtures.
 
 Flags: `--print-tag` (print the derived dist-tag and exit), `--changelog`,
 `--tag <dist-tag>`, `--release-tag <ref>`.
@@ -101,6 +106,30 @@ Flags: `--print-tag` (print the derived dist-tag and exit), `--changelog`,
         `npm view stitchapi@<derived-tag> version`.
 
 ## Promote a prerelease to stable
+
+### The soak exit criterion
+
+A release candidate becomes the stable release only when **all** of these hold.
+The point of the soak is that `1.0.0` freezes a shape people have already
+installed, not one that exists only on `main`.
+
+1. **The freeze list is empty.** No open issue carries the `v1.0 release` label
+   (tracker [#839](https://github.com/rejifald/StitchAPI/issues/839)).
+2. **The candidate is on npm.** Every publishable package is installable at the
+   candidate version under the `rc` dist-tag, and its `npm-publish.yml` run
+   finished with no failed package.
+3. **14 quiet days.** For 14 days after the candidate was published there was no
+   `type!:` commit to a published package and no new `v1.0 release` issue. Either
+   one restarts the clock, and the fix ships as the next rc.
+4. **A real consumer.** At least one project outside this repository has
+   upgraded to the candidate and runs it in its own CI or production, with no
+   unreported break.
+5. **Promote what soaked.** `1.0.0` is the candidate's tree with only the
+   version, CHANGELOG and README banner changed. A non-breaking fix found during
+   the soak ships as a new rc. The 14-day clock keeps running, but the new rc
+   needs at least 7 days on npm itself before it is promoted.
+
+### Cutting the stable release
 
 When the soak is clean, release the final version (e.g. `1.0.0-rc.2` → `1.0.0`)
 by repeating the checklist — the derived tag becomes `latest` automatically and
