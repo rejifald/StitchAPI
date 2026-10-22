@@ -103,7 +103,14 @@ Flags: `--print-tag` (print the derived dist-tag and exit), `--changelog`,
         (`pnpm pack` → `npm publish <tarball> --provenance`). New packages must be
         bootstrapped first — see _Bootstrapping a new package's first publish_ below.
 11. [ ] Confirm on npm: `npm view stitchapi dist-tags` and
-        `npm view stitchapi@<derived-tag> version`.
+        `npm view stitchapi@<derived-tag> version`. A freshly published package
+        can show its old dist-tag for a few minutes; trust the publish run's
+        summary and check again.
+12. [ ] Bump the exact pins in
+        [`examples/stackblitz/*/package.json`](../examples/stackblitz) to the new
+        version in a follow-up PR. They install from npm rather than the
+        workspace, so they can only move once the release is published, and
+        nothing else updates them.
 
 ## Promote a prerelease to stable
 
