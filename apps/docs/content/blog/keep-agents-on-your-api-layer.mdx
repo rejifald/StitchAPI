@@ -24,7 +24,11 @@ Every coding agent loads a rules file at the start of a session — `AGENTS.md`,
 npx stitchapi init
 ```
 
-Run it in a project where `stitchapi` is installed and `npx` uses that local copy. Use the package name, not the executable's: `stitch` is an unrelated package on npm, and `npx` downloads it whenever the project has no local `stitch` bin.
+Run it in a project where `stitchapi` is installed and `npx` uses that local copy. Use the package name, not the executable's: `stitch` is an unrelated package on npm, and `npx` downloads it whenever the project has no local `stitch` bin. Until 1.0 is stable, install the release candidate first: npm's `latest` is 0.7.0, which has no `stitch` executable, so `npx stitchapi …` fails in a project without it.
+
+```package-install
+stitchapi
+```
 
 `stitch init` writes the canonical consumer rule into whichever convention your agents read (`--format agents,cursor,claude,copilot,windsurf,cline,aider`, or `all`). Here is the `AGENTS.md` it drops in — the whole thing:
 
@@ -113,11 +117,11 @@ npx stitchapi init --check --project
 ```
 
 ```text
-stale AGENTS.md (run `stitch init --force` to refresh)
-1 StitchAPI rule file(s) out of date — run `stitch init --force`
+stale AGENTS.md (--force overwrites the whole file)
+1 StitchAPI rule file(s) out of date — refresh with: stitch init --format agents --project --force
 ```
 
-An absent rule is reported, never failed — you choose which conventions to adopt — but a _stale_ one breaks the build. The nudge ages with the code instead of rotting next to it.
+The command it prints names only the stale files and keeps the `--project` (and any `--module`) the check ran under, so a refresh never writes a convention you didn't adopt or drops your stitches list. An absent rule is reported, never failed — you choose which conventions to adopt — but a _stale_ one breaks the build. The nudge ages with the code instead of rotting next to it.
 
 **CI catches a stale rule the same way it catches a failing test.**
 

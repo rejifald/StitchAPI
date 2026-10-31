@@ -60,6 +60,15 @@ you ship. Use the package name, not the executable's: `stitch` is an unrelated
 package on npm, and `npx` downloads it whenever your project has no local
 `stitch` bin.
 
+Until 1.0 is stable, install the release candidate first: npm's `latest` is
+0.7.0, which has no `stitch` executable, so outside a project that has installed
+`stitchapi`, `npx stitchapi …` fails with "could not determine executable to
+run".
+
+```package-install
+stitchapi
+```
+
 `stitch init` (aliased as `stitch rules`) writes the rule into the convention
 each agent reads. Pick one or more with `--format` (a comma list, or `all` — the
 default):
@@ -78,7 +87,8 @@ For example, `npx stitchapi init --format agents,cursor` writes just those two.
 
 It refuses to clobber an existing file unless you pass `--force`. For the shared
 files (`CLAUDE.md`, Copilot, Aider) only the marked block is replaced — your
-surrounding content is left intact.
+surrounding content is left intact. The other four (`AGENTS.md`, Cursor,
+Windsurf, Cline) are standalone files, so `--force` overwrites them whole.
 
 ## Make the rule about _your_ APIs
 
@@ -112,6 +122,13 @@ npx stitchapi init --check
 
 Pair it with `--project` to also re-check the declared-stitches list:
 `npx stitchapi init --check --project`.
+
+When a file is stale, `--check` prints the command that refreshes just the stale
+files — `stitch init --format agents --force`, say — with the same `--project`
+and `--module` the check ran under. Re-run your original `init` with `--force`
+added, not a bare `stitch init --force`: the default `--format all` would write
+all seven targets, and dropping `--project` would rewrite the rule without your
+stitches list.
 
 ## See also
 
