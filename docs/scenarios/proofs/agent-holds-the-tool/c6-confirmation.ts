@@ -9,10 +9,11 @@
 //      request) and `serveStdio` never hands user code the outbound stream. There is no channel
 //      from the server to the human.
 //   2. Can the CLIENT ask? Every MCP host has a "confirm before a destructive tool" policy, driven
-//      by the tool's `annotations` (`readOnlyHint`, `destructiveHint`). Measured below: the tool
-//      descriptors carry no annotations at all — and code-mode means one tool name covers a GET of
-//      an order and a POST of a refund, so even a client that annotated perfectly could not tell
-//      them apart without parsing arguments it has no schema for.
+//      by the tool's `annotations` (`readOnlyHint`, `destructiveHint`). Since #866 the descriptors
+//      carry them — but code-mode means one tool name covers a GET of an order and a POST of a
+//      refund, so `run_stitch` can only be annotated for the worst case, and even a client that
+//      annotated perfectly could not tell the two apart without parsing arguments it has no schema
+//      for.
 //
 // Then it measures what a determined operator CAN do in user code, and where each seam sits
 // relative to the request: `hooks.onRequest` (after auth, retried), a `Surface.execute` (replaces
@@ -89,11 +90,27 @@ async function main(): Promise<void> {
             tools: ToolDescriptor[];
         }
     ).tools;
-    for (const tool of tools)
-        check(`${tool.name}.annotations`, tool.annotations === undefined, true);
+    const annotations = Object.fromEntries(
+        tools.map((t) => [t.name, JSON.stringify(t.annotations)]),
+    );
+    check(
+        'list_stitches.annotations',
+        annotations['list_stitches'],
+        '{"readOnlyHint":true,"openWorldHint":false}',
+    );
+    check(
+        'describe_stitch.annotations',
+        annotations['describe_stitch'],
+        '{"readOnlyHint":true,"openWorldHint":false}',
+    );
+    check(
+        'run_stitch.annotations',
+        annotations['run_stitch'],
+        '{"readOnlyHint":false,"destructiveHint":true,"openWorldHint":true}',
+    );
     note(
-        'no readOnlyHint, no destructiveHint, no idempotentHint, no openWorldHint',
-        'the four MCP tool annotations a host uses to decide whether to prompt',
+        'the two discovery tools are read-only; run_stitch is the worst case for every stitch behind it',
+        'it fronts a write as readily as a read, so it claims nothing it cannot promise for all of them (mcp.ts)',
     );
     wire.reset();
     const read = await client.callTool('run_stitch', {
@@ -131,7 +148,7 @@ async function main(): Promise<void> {
     );
     note(
         'it does — but a host would have to CALL a tool to learn it',
-        'and the annotation it needs is on the tool descriptor, which is fetched once, before any call',
+        'and the annotation it reads is on the tool descriptor, which is fetched once, before any call, and is one value for every stitch',
     );
 
     heading('C6 (c) — what a REFUSAL seam can do, and where each one sits');
@@ -233,7 +250,7 @@ async function main(): Promise<void> {
 
     finish(
         'C6',
-        "NO CONFIRMATION SEAM, IN EITHER DIRECTION — AND CODE-MODE TAKES THE CLIENT'S ONE AWAY TOO. The server cannot ask: it reports protocol `2025-06-18`, whose `elicitation` is the standard's server-initiated request for user input, but it advertises `capabilities: { tools }` and nothing else, ignores the elicitation and sampling capabilities the client offers, and structurally could not use them — `McpServer` is `{ handle }`, a pure request/response mapping, and `serveStdio` returns `{ server, close }` while keeping `stdout` private, so no user code can originate a message. The client cannot ask either: all three tool descriptors carry NO `annotations`, so `readOnlyHint`/`destructiveHint` — the fields a host reads to decide whether to prompt — are absent; and because code-mode puts every endpoint behind ONE tool name, the read of an order and a 25,000 refund arrive at the host as the same `run_stitch` call, with the method buried in an argument the host has no schema for. `list_stitches` does report `POST /v1/refunds`, but a host would have to call a tool to learn it, and the annotation it needs is fixed at `tools/list` time. WHAT USER CODE CAN DO IS REFUSE, NOT ASK, and there are two useful seats: `hooks.onRequest` sees the final URL, method and credential header and can throw — measured, the vendor got zero requests, the model got the reason, and despite `retry: { attempts: 3 }` the gate was asked exactly once, because a refusal is not a retryable failure; an `adapter` wrapper sits one layer further out and gated a POST while letting a GET through, at one function and no per-stitch config. Both are policy, not approval: nothing in the process can reach a human",
+        "NO CONFIRMATION SEAM, IN EITHER DIRECTION — AND CODE-MODE TAKES THE CLIENT'S ONE AWAY TOO. The server cannot ask: it reports protocol `2025-06-18`, whose `elicitation` is the standard's server-initiated request for user input, but it advertises `capabilities: { tools }` and nothing else, ignores the elicitation and sampling capabilities the client offers, and structurally could not use them — `McpServer` is `{ handle }`, a pure request/response mapping, and `serveStdio` returns `{ server, close }` while keeping `stdout` private, so no user code can originate a message. The client can be told, not asked: since #866 the descriptors carry `annotations` — `list_stitches` and `describe_stitch` are `readOnlyHint: true`, `run_stitch` is `readOnlyHint: false, destructiveHint: true, openWorldHint: true` — but because code-mode puts every endpoint behind ONE tool name, the read of an order and a 25,000 refund arrive at the host as the same `run_stitch` call, which can only be annotated for the worst case, with the method buried in an argument the host has no schema for. `list_stitches` does report `POST /v1/refunds`, but a host would have to call a tool to learn it, and the annotation it needs is fixed at `tools/list` time. WHAT USER CODE CAN DO IS REFUSE, NOT ASK, and there are two useful seats: `hooks.onRequest` sees the final URL, method and credential header and can throw — measured, the vendor got zero requests, the model got the reason, and despite `retry: { attempts: 3 }` the gate was asked exactly once, because a refusal is not a retryable failure; an `adapter` wrapper sits one layer further out and gated a POST while letting a GET through, at one function and no per-stitch config. Both are policy, not approval: nothing in the process can reach a human",
     );
 }
 

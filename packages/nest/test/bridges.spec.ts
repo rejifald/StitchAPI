@@ -278,9 +278,54 @@ describe('nestBorrowStore', () => {
 
         expect(await borrowed.get('a')).toBe('v');
         await borrowed.set('b', 'x', 1000);
-        expect(await borrowed.increment('c', 2000)).toBe(7);
+        expect(await borrowed.increment!('c', 2000)).toBe(7);
 
         expect(seen).toEqual(['get:a', 'set:b=x@1000', 'increment:c@2000']);
         expect(closed).toBe(false);
+    });
+
+    // #882 — every verb past get/set is an optional capability, and the throttle and the
+    // conformance kit both select on its PRESENCE. A wrapper that invented one would call a method
+    // that is not there; one that dropped one would silently turn a fleet-wide limit per-process.
+    test('a get/set-only store borrows as get/set-only — no invented increment', () => {
+        const borrowed = nestBorrowStore({
+            get: async () => undefined,
+            set: async () => undefined,
+        });
+        expect(Object.keys(borrowed).sort()).toEqual(['get', 'set']);
+    });
+
+    test('forwards reserve and the lease pair when the store has them', async () => {
+        const seen: string[] = [];
+        const borrowed = nestBorrowStore({
+            get: async () => undefined,
+            set: async () => undefined,
+            reserve: async (k, spacing, at) => {
+                seen.push(`reserve:${k}`);
+                return at + spacing;
+            },
+            lease: async (k, token) => {
+                seen.push(`lease:${k}:${token}`);
+                return true;
+            },
+            release: async (k, token) => {
+                seen.push(`release:${k}:${token}`);
+            },
+        });
+        expect('increment' in borrowed).toBe(false);
+        expect(await borrowed.reserve!('r', 100, 1_000)).toBe(1_100);
+        expect(await borrowed.lease!('s', 't', 1, 1_000, 0)).toBe(true);
+        await borrowed.release!('s', 't');
+        expect(seen).toEqual(['reserve:r', 'lease:s:t', 'release:s:t']);
+    });
+
+    test('half a lease pair is not forwarded', () => {
+        const borrowed = nestBorrowStore({
+            get: async () => undefined,
+            set: async () => undefined,
+            lease: async () => true,
+        });
+        expect('lease' in borrowed).toBe(false);
+        expect('release' in borrowed).toBe(false);
     });
 });

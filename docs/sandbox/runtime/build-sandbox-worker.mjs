@@ -44,6 +44,8 @@ const CORE =
 // The auth surface is its own entry (ADR 0021); `stitchapi` aliases to a FILE, so
 // `stitchapi/auth` cannot resolve underneath it and needs its own alias.
 const CORE_AUTH = CORE.replace(/index\.ts$/, 'auth.ts');
+// The OTLP pipeline is its own entry too (#871/#872) — same reason, same alias shape.
+const CORE_OTLP = CORE.replace(/index\.ts$/, 'otlp.ts');
 // Alias every workspace `@stitchapi/*` playground package to its SOURCE: its
 // published entry is a built `lib/` the docs `build:sandbox` flow never builds, so
 // resolving src keeps the worker build publish-free (the same trick as `stitchapi`
@@ -109,6 +111,7 @@ await esbuild.build({
     alias: {
         stitchapi: CORE,
         'stitchapi/auth': CORE_AUTH,
+        'stitchapi/otlp': CORE_OTLP,
         ...WORKSPACE_ALIASES,
     },
     logLevel: 'info',

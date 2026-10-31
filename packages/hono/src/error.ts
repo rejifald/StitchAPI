@@ -1,8 +1,8 @@
 // StitchError → Hono HTTPException (mirrors @stitchapi/nest's exception-filter). A failed stitch
-// rejects with a `StitchError` — a branded `Error` (`name === 'StitchError'`) carrying the upstream
-// `status`. This bridges it to Hono's HTTP layer so a handler calling a stitch needs no per-route
-// try/catch: register `stitchError.handler` as the app's `onError`, or map by hand with
-// `stitchError.map`.
+// rejects with a `StitchError` (or a subclass such as `RateLimitError`) carrying the upstream
+// `status`, recognised by core's `isStitchError`. This bridges it to Hono's HTTP layer so a
+// handler calling a stitch needs no per-route try/catch: register `stitchError.handler` as the
+// app's `onError`, or map by hand with `stitchError.map`.
 //
 // The three functions below are the implementations; the barrel exports only the `stitchError`
 // namespace that faces them. They stay plain module functions so this package's own call sites
@@ -12,6 +12,7 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { isStitchError as isCoreStitchError } from 'stitchapi';
 
 /** The error a stitch rejects with on failure: a branded `Error` carrying the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
@@ -20,10 +21,18 @@ export type StitchErrorLike = Error & { status?: number };
  * Guard half of {@link stitchError}; the namespace carries the contract. Internal — the
  * barrel exports the namespace, not this.
  *
- * True when `err` is the error a stitch rejects with on failure (`name === 'StitchError'`).
+ * True when `err` is the error a stitch rejects with on failure — a `StitchError` or any subclass
+ * (`RateLimitError` included), from any copy of `stitchapi`: core's `isStitchError`, or an `Error`
+ * named after a stitch failure. The name fallback is fail-safe: a copy of `stitchapi` older than
+ * the brand, or a lookalike, would otherwise fall through to the app's own error handling, which
+ * may echo the message. Recognising too much only redacts more.
  */
 export function isStitchError(err: unknown): err is StitchErrorLike {
-    return err instanceof Error && err.name === 'StitchError';
+    return (
+        isCoreStitchError(err) ||
+        (err instanceof Error &&
+            (err.name === 'StitchError' || err.name === 'RateLimitError'))
+    );
 }
 
 export interface StitchErrorOptions {

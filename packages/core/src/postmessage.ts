@@ -87,6 +87,8 @@ import { type Validator, toValidator } from './validator';
  * The raw channel a {@link PostMessageChannel} rides — the one seam between this surface and a
  * concrete browser primitive (a `Window`, an iframe's `contentWindow`, a `MessagePort`). Keeping it
  * this small is what lets the tests drive the whole surface over an in-memory fake pair with no DOM.
+ *
+ * @experimental
  */
 export interface MessageTransport {
     /** Post one envelope to the peer (optionally transferring ownership of `transfer`'s objects). */
@@ -123,6 +125,8 @@ export interface MessageTransport {
  * A concrete, non-wildcard target origin: `https://app.example.com` or `http://localhost:3000`. The
  * template-literal union structurally **forbids `'*'`** — `'*'` is not assignable to either arm — so
  * the type itself rejects the "post to anyone" footgun that makes `postMessage('*')` a data leak.
+ *
+ * @experimental
  */
 export type Origin = `https://${string}` | `http://${string}`;
 
@@ -228,7 +232,11 @@ type PostMessageVerbConfig = Partial<
     Omit<StitchConfig, 'kind' | 'url' | 'adapter'>
 >;
 
-/** Options for {@link PostMessageChannel.request}. */
+/**
+ * Options for {@link PostMessageChannel.request}.
+ *
+ * @experimental
+ */
 export type RequestOptions = PostMessageVerbConfig & {
     /** The `type` the correlated reply must carry. Default `` `${type}-result` ``. */
     reply?: string;
@@ -238,21 +246,33 @@ export type RequestOptions = PostMessageVerbConfig & {
     output?: StitchConfig['output'];
 };
 
-/** Options for {@link PostMessageChannel.emit}. */
+/**
+ * Options for {@link PostMessageChannel.emit}.
+ *
+ * @experimental
+ */
 export type EmitOptions = PostMessageVerbConfig & {
     /** Schema validating the outbound `body` payload (the call argument). */
     input?: StitchConfig['input'];
 };
 
-/** Options for {@link PostMessageChannel.events}. */
+/**
+ * Options for {@link PostMessageChannel.events}.
+ *
+ * @experimental
+ */
 export type EventsOptions = PostMessageVerbConfig & {
     /** Schema validating each inbound event payload (the collected/streamed value). */
     output?: StitchConfig['output'];
 };
 
-/** Options for {@link PostMessageChannel.respond}. `input`/`output` are BARE schemas validating
+/**
+ * Options for {@link PostMessageChannel.respond}. `input`/`output` are BARE schemas validating
  *  the single inbound payload / the single result (not slotted `InputSchemas` — a responder
- *  answers one value, not a request with `body`/`query`/… slots). */
+ *  answers one value, not a request with `body`/`query`/… slots).
+ *
+ * @experimental
+ */
 export interface RespondOptions {
     /** Schema validating the inbound request payload (a failure DROPS the request). */
     input?: SchemaLike;
@@ -267,6 +287,8 @@ export interface RespondOptions {
  * `channel.over` / `channel.window` / `channel.port`; binds the transport + the allowed
  * origins ONCE, then mints stitches (`request`/`emit`/`events`) and responders (`respond`) that all
  * share its single demux listener and per-channel registry. `close()` tears the whole thing down.
+ *
+ * @experimental
  */
 export interface PostMessageChannel {
     /**
@@ -343,6 +365,8 @@ export interface PostMessageChannel {
  * per-call (it closes over the channel + this `opts`), so the exported identity is just the redaction
  * anchor: `request`/`emit` stitches expose `kind: 'postmessage'` on `__config`, round-tripping as
  * JSON. The live per-call surface is built in {@link makeChannel}.
+ *
+ * @experimental
  */
 export const postMessageSurface: Surface = { id: 'postmessage' };
 
@@ -353,6 +377,8 @@ export const postMessageSurface: Surface = { id: 'postmessage' };
  * target — the envelope's `payload`, the sse `.data` precedent — for an inspector reading the
  * surface; the per-call `events` surface extracts that payload upstream (at enqueue) so the chunk it
  * yields IS the payload, validated directly.
+ *
+ * @experimental
  */
 export const postMessageEventSurface: Surface = {
     id: 'postmessage-event',
@@ -371,6 +397,8 @@ export const postMessageEventSurface: Surface = {
  *
  * P12 scalar shorthand: `origins: X` is exactly `origins: { to: X, from: [X] }` — the parent↔iframe
  * case, where the frame you post to is the only frame you accept from.
+ *
+ * @experimental
  */
 export interface OriginOptions {
     /** The concrete (non-wildcard) origin outbound messages are addressed to. */
@@ -455,7 +483,11 @@ function requireOrigins(value: unknown, slot: string, hint: string): void {
         throw new Error(`postmessage: \`${slot}\` is required — ${hint}`);
 }
 
-/** Options for `channel.over`. */
+/**
+ * Options for `channel.over`.
+ *
+ * @experimental
+ */
 export interface ChannelOptions {
     /**
      * Origin(s) inbound messages may come from — the SAME name and the SAME value-space as
@@ -532,6 +564,8 @@ function channelOver(
  * the frame — a classic postMessage data leak — and a wildcard on the inbound half matches nothing,
  * which fails silent instead of loud. The type forbids `'*'`; this catches an `as any` cast, and
  * the patterns the type cannot express.
+ *
+ * @experimental
  */
 export interface WindowChannelOptions {
     /**
@@ -830,6 +864,8 @@ function privateChannel(transport: MessageTransport): PostMessageChannel {
  * and `stitchapi/auth`), so no gate moves. The trade was made knowingly: NAMES freeze at the
  * stable tag, BYTES stay recoverable afterwards — split the subpath, or add a
  * `stitchapi/postmessage/port` entry — so the reversible cost is the one to pay.
+ *
+ * @experimental
  */
 export const channel = {
     over: channelOver,

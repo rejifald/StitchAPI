@@ -39,6 +39,16 @@ describe('asyncStorageStore', () => {
         );
     });
 
+    // The kit runs a capability group only when the store HAS the verb (#882), so a store that
+    // quietly lost one would still pass — pin the capabilities this store ships.
+    test('ships the capabilities it claims: increment', () => {
+        const store = asyncStorageStore(fakeAsyncStorage());
+        expect(typeof store.increment).toBe('function');
+        expect('reserve' in store).toBe(false);
+        expect('lease' in store).toBe(false);
+        expect('release' in store).toBe(false);
+    });
+
     test('a manualClock drives TTL expiry through the `clock` seam', async () => {
         const clock = manualClock(1000);
         const store = asyncStorageStore(fakeAsyncStorage(), { clock });
@@ -63,18 +73,18 @@ describe('asyncStorageStore', () => {
     test('increment without a ttl never expires (no window)', async () => {
         const clock = manualClock();
         const store = asyncStorageStore(fakeAsyncStorage(), { clock });
-        expect(await store.increment('c')).toBe(1);
+        expect(await store.increment!('c')).toBe(1);
         await clock.advance(10_000_000);
-        expect(await store.increment('c')).toBe(2);
+        expect(await store.increment!('c')).toBe(2);
     });
 
     test('increment resets to 1 once its TTL window lapses', async () => {
         const clock = manualClock();
         const store = asyncStorageStore(fakeAsyncStorage(), { clock });
-        expect(await store.increment('c', 100)).toBe(1);
-        expect(await store.increment('c', 100)).toBe(2);
+        expect(await store.increment!('c', 100)).toBe(1);
+        expect(await store.increment!('c', 100)).toBe(2);
         await clock.advance(200); // window lapsed
-        expect(await store.increment('c', 100)).toBe(1);
+        expect(await store.increment!('c', 100)).toBe(1);
     });
 
     test('the retired `now` thunk is gone — the seam is `clock` (compile-time)', () => {
@@ -89,7 +99,7 @@ describe('asyncStorageStore', () => {
     test('concurrent increment stays atomic', async () => {
         const store = asyncStorageStore(fakeAsyncStorage());
         const results = await Promise.all(
-            Array.from({ length: 20 }, () => store.increment('n', 60_000)),
+            Array.from({ length: 20 }, () => store.increment!('n', 60_000)),
         );
         expect(results.sort((a, b) => a - b)).toEqual(
             Array.from({ length: 20 }, (_, i) => i + 1),

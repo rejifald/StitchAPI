@@ -49,7 +49,8 @@ One definition, four surfaces. The [in-process function](/docs/surfaces/function
 awaits or `.stream()`s it; the [CLI](/docs/surfaces/cli) (`stitch run`) loads the
 module and runs it by name; [MCP](/docs/surfaces/mcp) exposes it to agents through
 the single `run_stitch` tool; and it can be [served over HTTP](/docs/surfaces/http-serve).
-The `name` is what the CLI and MCP resolve — nothing else about the definition
+The export name, `getUser`, is what the CLI, HTTP and MCP resolve. The
+configured `name` labels the stitch's traces. Nothing else about the definition
 changes between front doors.
 
 ## See also

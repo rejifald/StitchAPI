@@ -139,3 +139,93 @@ test('a single named cookie still replays only that one (regression)', async () 
     expect(req.cookies['sid']).toBe('ABC'); // captured
     expect(req.cookies['csrf']).toBeUndefined(); // NOT captured — named mode is scoped to one cookie
 });
+
+// #866 — the session cookie REPLACES a same-named pair the request already carries, as
+// `apiKey({ in: 'cookie' })` does. Joining sent a forged pair first — `SESSION=attacker;
+// SESSION=sess_live_…` — and a vendor reading the first occurrence ran the call as the forger's
+// session (fixation). The forged pair rides in on input headers here: on the MCP surface that is
+// the model's argument, on a stitch that declares an `input.headers` schema.
+describe('a forged same-named cookie is replaced, never joined (#866)', () => {
+    test('named mode: the session pair takes the forged one’s place; other cookies stay', async () => {
+        server.route('POST', '/login', {
+            setCookies: [{ name: 'SESSION', value: 'sess_live_cookie' }],
+            body: { ok: true },
+        });
+        server.route('GET', '/data', { body: { ok: true } });
+
+        const data = stitch({
+            baseUrl: server.url,
+            path: '/data',
+            auth: cookieSession({
+                login: loginStitch(),
+                cookie: 'SESSION',
+                credentialsOf,
+                tenancy: 'app',
+            }),
+        });
+
+        await data({
+            headers: {
+                cookie: 'tracking=xyz; SESSION=attacker; theme=dark; SESSION=attacker2',
+            },
+        });
+        const req = server.calls('/data')[0]!;
+        // In place of the FIRST forged pair, and every later duplicate dropped — replacing only
+        // the first would leave `SESSION=attacker2` for a vendor that reads the last occurrence.
+        expect(req.headers['cookie']).toBe(
+            'tracking=xyz; SESSION=sess_live_cookie; theme=dark',
+        );
+    });
+
+    test('jar mode: every pair the login set replaces its forged twin', async () => {
+        server.route('POST', '/login', {
+            setCookies: [
+                { name: 'sid', value: 'ABC' },
+                { name: 'csrf', value: 'XYZ' },
+            ],
+            body: { ok: true },
+        });
+        server.route('GET', '/data', { body: { ok: true } });
+
+        const data = stitch({
+            baseUrl: server.url,
+            path: '/data',
+            auth: cookieSession({
+                login: loginStitch(),
+                cookie: '*',
+                credentialsOf,
+                tenancy: 'app',
+            }),
+        });
+
+        await data({
+            headers: { cookie: 'csrf=forged; theme=dark; sid=forged' },
+        });
+        const req = server.calls('/data')[0]!;
+        expect(req.headers['cookie']).toBe('csrf=XYZ; theme=dark; sid=ABC');
+    });
+
+    test('with no cookie on the request, the session is the whole header', async () => {
+        server.route('POST', '/login', {
+            setCookies: [{ name: 'SESSION', value: 'sess_live_cookie' }],
+            body: { ok: true },
+        });
+        server.route('GET', '/data', { body: { ok: true } });
+
+        const data = stitch({
+            baseUrl: server.url,
+            path: '/data',
+            auth: cookieSession({
+                login: loginStitch(),
+                cookie: 'SESSION',
+                credentialsOf,
+                tenancy: 'app',
+            }),
+        });
+
+        await data();
+        expect(server.calls('/data')[0]!.headers['cookie']).toBe(
+            'SESSION=sess_live_cookie',
+        );
+    });
+});

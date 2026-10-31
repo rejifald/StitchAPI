@@ -198,12 +198,12 @@ async function main(): Promise<void> {
             0,
         );
         check(
-            'and — NOT IN THE CLAIMS — `JSON.stringify(inspection)` is back to 7 on a failure',
+            'and — NOT IN THE CLAIMS — `JSON.stringify(inspection)` was back to 7 on a failure; since #873 it is 0',
             failing.get('.inspect() wrapper'),
-            7,
+            0,
         );
         note(
-            '→ the route is the enumerable `error` field: `StitchError` assigns `this.body` in its constructor, so it is an OWN ENUMERABLE property and `JSON.stringify(err)` emits `{"name":"StitchError","status":500,"attempts":1,"body":{…}}`. `err.stack` and `String(err)` are clean (C1(g) measured 0), so the leak is specific to JSON-serialising the error — which is exactly what a structured logger does',
+            '→ MEASURED BEFORE #873: the route was the enumerable `error` field — `StitchError` assigns `this.body` in its constructor, so it is an OWN ENUMERABLE property and `JSON.stringify(err)` emitted `{"name":"StitchError","status":500,"attempts":1,"body":{…}}`. `StitchError.toJSON` now emits `{ name, message, status?, attempts, url? }` and no body, so JSON-serialising the error — which is exactly what a structured logger does — is clean; the live `err.body` is still all 7, for the `catch` block that reads it deliberately',
         );
         note(
             '→ the allowlist is airtight on every destination that reads the VALIDATED value and absent on every destination that reads the RESPONSE. Output validation is stage 7; a non-2xx never reaches it. So an `output` allowlist plus an unguarded `catch (e) { log.error(e.body) }` is a complete filter with a hole exactly where an incident actually gets logged',

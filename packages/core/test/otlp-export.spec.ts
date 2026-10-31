@@ -1,8 +1,11 @@
-// OTLP export: an opt-in trace sink maps the event stream to OpenTelemetry CLIENT spans (OTel
-// HTTP semconv attributes) and hands them to a SpanExporter. Tested with a STUB exporter that
+// OTLP export: an opt-in trace sink maps the event stream to an OpenTelemetry span tree — an
+// INTERNAL run span over a CLIENT span per request, named `{method} {url.template}` (OTel HTTP
+// semconv, ADR 0017 D6) — and hands it to a SpanExporter. Tested with a STUB exporter that
 // captures spans in memory — no running collector, no network.
-import { otlp, stitch } from '../src';
-import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
+import { stitch } from '../src';
+import type { StitchEvent } from '../src';
+import { otlp } from '../src/otlp';
+import type { OtelSpan, SpanExporter } from '../src/otlp';
 import { exportsFromEnv, multiplex } from '../src/trace';
 import { scrubUrl } from '../src/util';
 import { startMockServer } from './support/mock-server';
@@ -40,7 +43,7 @@ beforeEach(() => {
     server.reset();
 });
 
-test('maps a successful call to one CLIENT span with OTel HTTP semconv attributes', () => {
+test('maps a retried call to an INTERNAL run span and a CLIENT span per request (OTel HTTP semconv)', () => {
     const { exporter, spans } = stubExporter();
     const sink = otlp.sink({ exporter });
     const name = 'getThing';
@@ -49,36 +52,63 @@ test('maps a successful call to one CLIENT span with OTel HTTP semconv attribute
             type: 'start',
             name,
             method: 'GET',
-            url: 'http://api.example.com/x',
+            url: 'http://api.example.com/things/42',
+            template: '/things/{id}',
             input: {},
             at: 1000,
         },
+        { type: 'progress', phase: 'request', attempt: 1, at: 1001 },
         {
             type: 'progress',
             phase: 'retry',
             attempt: 1,
-            detail: '503',
+            detail: 'status 503',
+            status: 503,
             at: 1010,
         },
+        { type: 'progress', phase: 'request', attempt: 2, at: 1020 },
         { type: 'result', data: {}, status: 200, attempts: 2, at: 1050 },
         { type: 'done', ok: true, elapsed: 50, attempts: 2, at: 1050 },
     ];
     for (const ev of events) sink.handle(ev, { name });
 
-    expect(spans).toHaveLength(1);
-    const span = spans[0]!;
-    expect(span.kind).toBe('CLIENT');
-    expect(span.attributes['http.request.method']).toBe('GET');
-    expect(span.attributes['url.full']).toBe('http://api.example.com/x');
-    expect(span.attributes['server.address']).toBe('api.example.com');
-    expect(span.attributes['http.response.status_code']).toBe(200);
-    expect(span.status.code).toBe('OK');
-    expect(span.events.some((e) => e.name === 'retry')).toBe(true);
-    expect(span.traceId).toMatch(/^[0-9a-f]{32}$/);
-    expect(span.spanId).toMatch(/^[0-9a-f]{16}$/);
+    expect(spans).toHaveLength(3);
+    const [run, first, second] = spans as [OtelSpan, OtelSpan, OtelSpan];
+    // The run: INTERNAL, named for the stitch, no http.* — and UNSET on success (semconv).
+    expect(run.kind).toBe('INTERNAL');
+    expect(run.name).toBe(name);
+    expect(run.attributes).toEqual({ 'stitch.name': name });
+    expect(run.status.code).toBe('UNSET');
+    expect(run.events.some((e) => e.name === 'retry')).toBe(true);
+    expect(run.traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(run.spanId).toMatch(/^[0-9a-f]{16}$/);
+    // Each request is a CLIENT child named `{method} {template}` (`url.template` carries the
+    // template), with the HTTP attributes. The run itself carries no HTTP attribute.
+    expect(run.attributes).not.toHaveProperty('url.template');
+    for (const a of [first, second]) {
+        expect(a.kind).toBe('CLIENT');
+        expect(a.name).toBe('GET /things/{id}');
+        expect(a.parentSpanId).toBe(run.spanId);
+        expect(a.traceId).toBe(run.traceId);
+        expect(a.attributes['http.request.method']).toBe('GET');
+        expect(a.attributes['url.template']).toBe('/things/{id}');
+        expect(a.attributes['url.full']).toBe(
+            'http://api.example.com/things/42',
+        );
+        expect(a.attributes['server.address']).toBe('api.example.com');
+        expect(a.attributes['server.port']).toBe(80);
+    }
+    // The resent request failed on a 503; the resend carries its count and the 200.
+    expect(first.status.code).toBe('ERROR');
+    expect(first.attributes['http.response.status_code']).toBe(503);
+    expect(first.attributes['error.type']).toBe('503');
+    expect(first.attributes['http.request.resend_count']).toBeUndefined();
+    expect(second.status.code).toBe('UNSET');
+    expect(second.attributes['http.response.status_code']).toBe(200);
+    expect(second.attributes['http.request.resend_count']).toBe(1);
 });
 
-test('maps an error to an ERROR span with error.type and status_code', () => {
+test('maps an error to an ERROR run and attempt with error.type and status_code', () => {
     const { exporter, spans } = stubExporter();
     const sink = otlp.sink({ exporter });
     const name = 'createThing';
@@ -87,10 +117,11 @@ test('maps an error to an ERROR span with error.type and status_code', () => {
             type: 'start',
             name,
             method: 'POST',
-            url: 'http://api.example.com/x',
+            url: 'https://api.example.com:8443/x',
             input: {},
             at: 1000,
         },
+        { type: 'progress', phase: 'request', attempt: 1, at: 1001 },
         {
             type: 'error',
             name,
@@ -103,14 +134,22 @@ test('maps an error to an ERROR span with error.type and status_code', () => {
     ];
     for (const ev of events) sink.handle(ev, { name });
 
-    expect(spans).toHaveLength(1);
-    expect(spans[0]!.status.code).toBe('ERROR');
-    expect(spans[0]!.status.message).toBe('HTTP 500');
-    expect(spans[0]!.attributes['http.response.status_code']).toBe(500);
-    expect(spans[0]!.attributes['error.type']).toBe('500');
+    expect(spans).toHaveLength(2);
+    const [run, attempt] = spans as [OtelSpan, OtelSpan];
+    // `HTTP 500` restates the status `error.type` already carries, so there is no description.
+    expect(run.status).toEqual({ code: 'ERROR' });
+    expect(run.attributes['error.type']).toBe('500');
+    expect(run.attributes['http.response.status_code']).toBeUndefined();
+    expect(attempt.status).toEqual({ code: 'ERROR' });
+    expect(attempt.attributes['http.response.status_code']).toBe(500);
+    expect(attempt.attributes['error.type']).toBe('500');
+    expect(attempt.attributes['server.port']).toBe(8443); // an explicit port survives
+    // No `template` on the `start` event (a hand-fed stream, or none known): the method alone.
+    expect(attempt.name).toBe('POST');
+    expect(attempt.attributes).not.toHaveProperty('url.template');
 });
 
-test('end-to-end: a real stitch call exports one span to the stub exporter', async () => {
+test('end-to-end: a real stitch call exports its run span and one attempt span', async () => {
     const { exporter, spans } = stubExporter();
     const sink = otlp.sink({ exporter });
     server.route('GET', '/ping', { body: { ok: true } });
@@ -119,11 +158,19 @@ test('end-to-end: a real stitch call exports one span to the stub exporter', asy
     // Tap the public event stream and feed it through the OTLP sink (as the trace tee would).
     for await (const ev of ping.stream()) sink.handle(ev, { name: 'ping' });
 
-    expect(spans).toHaveLength(1);
-    expect(spans[0]!.attributes['http.request.method']).toBe('GET');
-    expect(String(spans[0]!.attributes['url.full'])).toContain('/ping');
-    expect(spans[0]!.attributes['http.response.status_code']).toBe(200);
-    expect(spans[0]!.status.code).toBe('OK');
+    expect(spans).toHaveLength(2); // a single clean request still gets its own span
+    const [run, attempt] = spans as [OtelSpan, OtelSpan];
+    expect(run.kind).toBe('INTERNAL');
+    expect(run.attributes['stitch.surface']).toBe('http');
+    expect(run.status.code).toBe('UNSET');
+    expect(attempt.kind).toBe('CLIENT');
+    expect(attempt.parentSpanId).toBe(run.spanId); // ids from the `start` event, not re-minted
+    expect(attempt.name).toBe('GET /ping'); // the stitch's path template, off the `start` event
+    expect(attempt.attributes['url.template']).toBe('/ping');
+    expect(attempt.attributes['http.request.method']).toBe('GET');
+    expect(String(attempt.attributes['url.full'])).toContain('/ping');
+    expect(attempt.attributes['http.response.status_code']).toBe(200);
+    expect(attempt.status.code).toBe('UNSET');
 });
 
 test('STITCH_EXPORT parses to a list and multiplex fans out to every sink', () => {
@@ -160,17 +207,19 @@ test('url.full strips userinfo and redacts secret query params before export', (
             input: {},
             at: 1000,
         },
+        { type: 'progress', phase: 'request', attempt: 1, at: 1001 },
         { type: 'result', data: {}, status: 200, attempts: 1, at: 1050 },
         { type: 'done', ok: true, elapsed: 50, attempts: 1, at: 1050 },
     ];
     for (const ev of events) sink.handle(ev, { name });
 
-    const full = String(spans[0]!.attributes['url.full']);
+    expect(JSON.stringify(spans)).not.toContain('sk-otlp-leak');
+    const full = String(spans[1]!.attributes['url.full']);
     expect(full).not.toContain('sk-otlp-leak');
     expect(full).not.toContain('user:pass');
     expect(full).toContain('access_token=REDACTED');
     expect(full).toContain('page=2'); // benign params survive
-    expect(spans[0]!.attributes['server.address']).toBe('api.example.com');
+    expect(spans[1]!.attributes['server.address']).toBe('api.example.com');
 });
 
 test('scrubUrl: clean URLs pass through, credentials are redacted', () => {
@@ -201,8 +250,9 @@ test('scrubUrl: clean URLs pass through, credentials are redacted', () => {
         expect(out).toContain('page=2');
     }
 
-    // Non-absolute / unparseable strings are returned unchanged.
+    // A relative URL is scrubbed too (the scrub is textual, not parsed) — `scrub-url-text.spec.ts`
+    // pins every shape.
     expect(scrubUrl('/relative/path?token=abc')).toBe(
-        '/relative/path?token=abc',
+        '/relative/path?token=REDACTED',
     );
 });

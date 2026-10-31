@@ -69,15 +69,39 @@ test('myStore implements the StitchStore contract', async () => {
 ## conformance.store
 
 `conformance.store(makeStore, opts?)` verifies a [pluggable
-store](/docs/guides/state/pluggable-store) — the `get`/`set`/`increment` + TTL
-surface the engine uses for throttle counters and auth/session state:
+store](/docs/guides/state/pluggable-store) — the surface the engine uses for
+throttle state, the response cache and auth/session state. Only `get` and `set`
+are required, so the rules come in four groups, one per capability, and a group
+runs only when the store has that capability. A store passes by honouring the
+groups it implements:
 
-- `set`/`get` round-trips a value; a missing key resolves to `undefined`;
-  a second `set` overwrites; writes are isolated by key.
-- A `set` with `ttl` expires; a `set` without `ttl` does not.
-- `increment` initializes a missing key to 1, increments an existing counter,
-  restarts at 1 once its TTL window lapses, and is atomic within a process:
-  20 concurrent calls must return 1..20 exactly.
+- **base** (always) — `set`/`get` round-trips a value, and a safe integer comes
+  back as a `number` (the cache's bulk invalidation stores its generation that
+  way, and a store that returns `'123'` makes `invalidate()` a silent no-op); a
+  missing key resolves to `undefined`; a second `set` overwrites;
+  `set(key, undefined)` deletes; writes are isolated by key. A `set` with `ttl`
+  expires; a `set` without `ttl` does not.
+- **counter** (`increment`) — initializes a missing key to 1, increments an
+  existing counter, restarts at 1 once its TTL window lapses, keeps counters
+  isolated by key, and is atomic within a process: 20 concurrent calls must
+  return 1..20 exactly.
+- **pacing** (`reserve`) — a cold cursor grants at `now`, successive grants
+  advance by exactly one spacing, an idle cursor resets to `now`, 20 concurrent
+  grants are 20 distinct evenly-spaced instants, and cursors are isolated by key.
+- **lease** (`lease` + `release`, checked only when both are present; a store
+  with just one of the two fails a `lease/release` rule, because the throttle
+  ignores a half pair and quietly stays per-process) — fills to
+  the cap then refuses, a release frees a slot, re-leasing renews rather than
+  taking a second slot, a lapsed holder's slot comes back, releasing an unheld
+  token is a no-op, 20 concurrent callers on 5 slots yield exactly 5 winners, and
+  semaphores are isolated by key.
+
+A missing group is not a violation — `@stitchapi/cloudflare-kv`, a `get`/`set`
+store, passes on the base group alone. So the report doesn't tell you a verb went
+missing: if your store ships a capability, assert it is there too
+(`expect(typeof store.increment).toBe('function')`). The
+[capability table](/docs/integrations/stores#capabilities) shows what each
+first-party store implements.
 
 TTL rules use real timers with a small window (default 60ms). Pass
 `{ ttl }` to give a backend with coarser expiry more room. Keys are
@@ -185,7 +209,7 @@ If the store cuts a corner — a non-atomic `INCR`, a dropped TTL — the test
 fails with every broken rule named:
 
 ```
-Error: StitchAPI store contract: 2 violation(s), 8 rule(s) passed
+Error: StitchAPI store contract: 2 violation(s), 10 rule(s) passed
   - set: a ttl entry expires: value survived its 250ms TTL: got "soon-gone"
   - increment: 20 concurrent calls net exactly +20: sorted results of 20 concurrent increments ...
 ```

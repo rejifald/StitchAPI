@@ -218,6 +218,55 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         expect(JSON.parse(JSON.stringify(s.__config))).toEqual(s.__config);
     });
 
+    test('literal secrets on the string endpoint and headers are scrubbed; the data stays JSON (#873)', () => {
+        // `__config` is what report().config / diagram / export / MCP echo as safe to show, so a
+        // secret written straight into the config is scrubbed on the way there — userinfo and
+        // secret query values off every string endpoint slot, secret header values to
+        // `[REDACTED]` — while benign data, RFC 6570 slots and the JSON round-trip all survive.
+        const literal = stitch({
+            name: 'p0-literal-secrets',
+            url: 'https://svc:pw873@api.example.test/v1/{id}?page=2&access_token=tok873',
+            headers: {
+                accept: 'application/json',
+                Authorization: 'Bearer hdr873',
+                'x-auth-token': 'xat873',
+            },
+        });
+        const cfg = literal.__config;
+        expect(cfg.url).toBe(
+            'https://api.example.test/v1/{id}?page=2&access_token=REDACTED',
+        );
+        expect(cfg.headers).toEqual({
+            accept: 'application/json',
+            Authorization: '[REDACTED]',
+            'x-auth-token': '[REDACTED]',
+        });
+        const json = JSON.stringify(cfg);
+        for (const secret of ['pw873', 'tok873', 'hdr873', 'xat873'])
+            expect(json).not.toContain(secret);
+        expect(JSON.parse(json)).toEqual(cfg);
+        // The engine sends the real values: they live, unscrubbed, on `__rawConfig` only.
+        const raw = rawConfigOf(literal);
+        expect(raw.url).toContain('svc:pw873@');
+        expect(raw.headers?.['Authorization']).toBe('Bearer hdr873');
+
+        // `baseUrl` and the `stitch('https://…')` string form (which lands on `path`) go through
+        // the same scrub; a clean endpoint is returned byte-for-byte.
+        expect(
+            stitch({
+                baseUrl: 'https://svc:pw873@api.example.test',
+                path: '/x',
+            }).__config.baseUrl,
+        ).toBe('https://api.example.test');
+        expect(
+            stitch('https://api.example.test/x?api_key=key873').__config.path,
+        ).toBe('https://api.example.test/x?api_key=REDACTED');
+        expect(
+            stitch({ url: 'https://api.example.test/x/{id}?page=1' }).__config
+                .url,
+        ).toBe('https://api.example.test/x/{id}?page=1');
+    });
+
     test('the engine-side sugar lives on the non-enumerable __rawConfig', () => {
         const raw = rawConfigOf(laden);
         expect(typeof raw.url).toBe('function');

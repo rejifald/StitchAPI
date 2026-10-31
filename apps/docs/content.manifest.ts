@@ -421,7 +421,7 @@ export const pages: Page[] = [
         path: 'scenarios/pii-in-the-logs',
         title: "The customer data you didn't mean to log",
         description:
-            'Response bodies reach 13 destinations and metadata reaches 11 — with nothing in between. An output allowlist takes it to zero; sensitive: true does not, and only gates the cache.',
+            'Response bodies reach 12 destinations and metadata reaches 12 — with nothing in between. An output allowlist takes it to zero; sensitive: true does not, and only gates the cache.',
         kind: 'guide',
     },
     {
@@ -738,7 +738,7 @@ export const pages: Page[] = [
         path: 'guides/state/pluggable-store',
         title: 'The pluggable store',
         description:
-            'Swap the in-memory store for a shared one to back throttle and sessions with get/set/increment + TTL.',
+            'Swap the in-memory store for a shared one to back throttle, cache and sessions — get/set + TTL, plus the optional verbs that make a throttle fleet-wide.',
         kind: 'guide',
     },
     {
@@ -905,6 +905,13 @@ export const pages: Page[] = [
         title: 'Event types',
         description:
             'The StitchEvent union and the shape of each event in the stream.',
+        kind: 'reference',
+    },
+    {
+        path: 'reference/stability',
+        title: 'Stability',
+        description:
+            'Which StitchAPI surfaces are experimental, what that changes when you upgrade, and the three conditions for one to graduate to the stable 1.x promise.',
         kind: 'reference',
     },
 

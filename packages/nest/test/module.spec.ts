@@ -397,7 +397,7 @@ describe('bridges', () => {
         expect(borrowed.close).toBeUndefined();
         expect(await borrowed.get('k')).toBe(1);
         await borrowed.set('k', 'v');
-        expect(await borrowed.increment('k', 1)).toBe(2);
+        expect(await borrowed.increment!('k', 1)).toBe(2);
         expect(calls).toEqual(['get', 'set', 'increment']); // close is never delegated
     });
 

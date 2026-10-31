@@ -3,12 +3,17 @@
 Runnable evidence for the claims in [`../../pii-in-the-logs.md`](../../pii-in-the-logs.md).
 
 **C1 and C2, the two deciding claims, are both confirmed — and the capture's clean split
-("credentials are protected by default; customer PII is not") does not survive C4.** The PII half is
-exactly as bad as predicted: a customer record reaches thirteen destinations with every one of seven
-sentinels intact, and nothing in the default path removes a single one of them. The credential half
-holds for credentials the library _places_ — a declarative `bearer`/`apiKey` never enters the event
-stream at all — and fails for credentials that ride the payload: a vendor's `access_token` in a
-response body, and a `client_secret` in a request body, are both written to the JSONL log in full.
+("credentials are protected by default; customer PII is not") did not survive C4.** The PII half is
+exactly as bad as predicted: a customer record reaches twelve destinations with every one of seven
+sentinels intact (thirteen before [#873](https://github.com/rejifald/StitchAPI/issues/873) took
+`JSON.stringify(err)` out), and nothing in the default path removes a single one of them. The
+credential half holds for credentials the library _places_ — a declarative `bearer`/`apiKey` never
+enters the event stream at all — and failed for credentials that ride the payload: a vendor's
+`access_token` in a response body, and a `client_secret` in a request body, were both written to the
+JSONL log in full. #873 closed that for every credential whose key names it (a secret stem); a
+credential under a name no rule catches (`session_cookie` in C4) is still written until the host
+names it with `secrets.register`. The scripts below assert the post-#873 behaviour and say where
+they measured otherwise before it.
 
 `sensitive: true` is settled. It is a cache opt-out and only a cache opt-out: 1 of 11 destinations
 changed, and it was the cache. Across the whole of `packages/core/src` there is exactly **one**
@@ -28,10 +33,12 @@ Two ADR claims were refuted by measurement:
   re-levels the
   finding and fails the call (C7(f)).
 
-And a third thing that is not in the claims at all: **`console.error(err)` is safe and
-`logger.error({ err })` is not.** `StitchError.body` is an own **enumerable** property while
-`message` is not, so `err.stack` and `String(err)` carry nothing and `JSON.stringify(err)` carries
-the entire customer record (C1(g)).
+And a third thing that is not in the claims at all: **`console.error(err)` was safe and
+`logger.error({ err })` was not.** `StitchError.body` is an own **enumerable** property while
+`message` is not, so `err.stack` and `String(err)` carry nothing and `JSON.stringify(err)` carried
+the entire customer record (C1(g)). `StitchError.toJSON` (#873) now leaves the body out, so a logger
+that serialises through `JSON.stringify` is clean; one that copies the error's enumerable fields
+itself — pino's `err` serializer — still writes it ([#893](https://github.com/rejifald/StitchAPI/issues/893)).
 
 Every script is standalone and offline. The transport is a fake in-memory `Adapter`; the only file
 written is a JSONL trace under a `mkdtemp` directory that each script deletes.
@@ -95,16 +102,16 @@ rather than quietly applied.
 
 ## What each script establishes
 
-| Script                   | Question                                   | Measured                                                                                                         |
-| ------------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `c1-where-does-it-go.ts` | where does the body go by default?         | **13 destinations carry all 7; 11 carry none.** No partial redaction anywhere. `logger.error({err})` leaks       |
-| `c2-sensitive.ts`        | does `sensitive: true` affect any logging? | **No. 1 of 11 destinations changed — the cache.** One read of the value in the whole of `packages/core/src`      |
-| `c3-inspect-redact.ts`   | what does `.inspect({ redact })` redact?   | **`redact: true` removes 0 of 7.** It is the credential denylist reused. Named lists work at depth and in arrays |
-| `c4-credentials.ts`      | is the credential half genuinely safe?     | **PARTIAL.** Declarative auth 0/3 everywhere; a token in a RESPONSE body is written to the log 3/3               |
-| `c5-boundary.ts`         | can PII be stripped at the boundary?       | **Yes — and only `hooks.onResponse` covers the failure path.** Order measured, not inferred                      |
-| `c6-allowlist.ts`        | is an allowlist expressible?               | **Yes, 7 → 0 at every value-reading destination.** Residue: `.inspect().raw` and `StitchError.body`              |
-| `c7-drift-signal.ts`     | does drift notice a new PII field?         | **Yes, 3 new `undeclared` findings, 0 values.** ADR 0018 §4 is only as safe as the validator's message wording   |
-| `c8-assembled.ts`        | the best available setup, and its cost     | **42 lines, 2 seams, 0 of 9 destinations.** The boundary and the drift signal are mutually exclusive             |
+| Script                   | Question                                   | Measured                                                                                                                                             |
+| ------------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `c1-where-does-it-go.ts` | where does the body go by default?         | **12 destinations carry all 7; 12 carry none.** No partial redaction anywhere. `JSON.stringify(err)` was 7 of 7 before #873                          |
+| `c2-sensitive.ts`        | does `sensitive: true` affect any logging? | **No. 1 of 11 destinations changed — the cache.** One read of the value in the whole of `packages/core/src`                                          |
+| `c3-inspect-redact.ts`   | what does `.inspect({ redact })` redact?   | **`redact: true` removes 0 of 7.** It is the credential denylist reused. Named lists work at depth and in arrays                                     |
+| `c4-credentials.ts`      | is the credential half genuinely safe?     | **PARTIAL, mostly closed by #873.** Declarative auth 0/3 everywhere; a stem-named token in a body is scrubbed (was 3/3), `session_cookie` 1/3 is not |
+| `c5-boundary.ts`         | can PII be stripped at the boundary?       | **Yes — and only `hooks.onResponse` covers the failure path.** Order measured, not inferred                                                          |
+| `c6-allowlist.ts`        | is an allowlist expressible?               | **Yes, 7 → 0 at every value-reading destination.** Residue: `.inspect().raw` and `StitchError.body`                                                  |
+| `c7-drift-signal.ts`     | does drift notice a new PII field?         | **Yes, 3 new `undeclared` findings, 0 values.** ADR 0018 §4 is only as safe as the validator's message wording                                       |
+| `c8-assembled.ts`        | the best available setup, and its cost     | **42 lines, 2 seams, 0 of 9 destinations.** The boundary and the drift signal are mutually exclusive                                                 |
 
 ## The C1 table
 
@@ -133,7 +140,7 @@ is present in that destination's bytes.
   StitchError.body                    490   ●●  ●●  ●●  ●●  ●●  ●●  ●●
   StitchError.message                   8    ·   ·   ·   ·   ·   ·   ·
   String(err) + err.stack             600    ·   ·   ·   ·   ·   ·   ·
-  JSON.stringify(StitchError)         597   ●●  ●●  ●●  ●●  ●●  ●●  ●●
+  JSON.stringify(StitchError)         120    ·   ·   ·   ·   ·   ·   ·
   event:error (JSON)                  103    ·   ·   ·   ·   ·   ·   ·
   cache entry (store.set)             627   ●●  ●●  ●●  ●●  ●●  ●●  ●●
   otlp.sink (exported spans)          455    ·   ·   ·   ·   ·   ·   ·
@@ -154,7 +161,8 @@ kept a 2048-character _prefix_; the eighth sentinel is missing purely because it
 
 **Non-enumerability protects one field.** `.inspect().raw` is non-enumerable, exactly as ADR 0016
 says. `.inspect().data` — holding the same record — is not, so `JSON.stringify(wrapper)` leaks
-everything anyway. The same shape repeats on `StitchError`: `body` is enumerable, `message` is not.
+everything anyway. The same shape repeated on `StitchError` (`body` enumerable, `message` not) until
+`toJSON` (#873) left the body out of the JSON view; the live `err.body` is still 7 of 7.
 
 ## The seam order (C5)
 

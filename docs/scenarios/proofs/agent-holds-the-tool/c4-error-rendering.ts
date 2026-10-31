@@ -8,11 +8,12 @@
 //   `{"error":"token_revoked","hint":"rotate ak_live_… in the dashboard"}` never reaches the model;
 //   it gets `HTTP 401`. StitchAPI's own messages are uniformly terse and carry no request detail.
 //
-//   the bad half — it is an UNFILTERED PASS-THROUGH. Any error that reaches the top of the stack
-//   hands its message to the model verbatim, including one the TRANSPORT wrote. Node's built-in
-//   `fetch` writes `Failed to parse URL from <the whole URL>`, and on an `apiKey({ in: 'query' })`
-//   stitch the whole URL contains the credential. That is measured below, on the default adapter,
-//   with no user code and no network.
+//   the bad half, CLOSED — it was an UNFILTERED PASS-THROUGH. Any error that reached the top of
+//   the stack handed its message to the model verbatim, including one the TRANSPORT wrote. Node's
+//   built-in `fetch` writes `Failed to parse URL from <the whole URL>`, and on an
+//   `apiKey({ in: 'query' })` stitch the whole URL contains the credential. Filed as #866; core now
+//   URL-scrubs the message where the engine mints it (#890), so the model reads `api_key=REDACTED`.
+//   Measured below, on the default adapter, with no user code and no network.
 //
 // Everything here is offline: the "network failure" is a port outside the valid range, so `fetch`
 // rejects the URL before opening a socket.
@@ -174,7 +175,9 @@ async function main(): Promise<void> {
     for (const ex of [http500, timedOut, opened, badInput, badOutput, unknown])
         checkClean(`${ex.label} ${ex.text.slice(0, 18)}`, ex.raw, HELD_SECRETS);
 
-    heading('C4 (c) — THE LEAK: the message is an unfiltered pass-through');
+    heading(
+        'C4 (c) — THE FORMER LEAK: the message is URL-scrubbed (#866, #890)',
+    );
     // The DEFAULT transport. No adapter, no network: port 99999 is outside the valid range, so
     // undici rejects the URL string before opening a socket — and puts that string in the message.
     const defaultTransport = await inProcess({
@@ -189,14 +192,17 @@ async function main(): Promise<void> {
     });
     check('isError', parseFail.isError, true);
     note('the text the model received', parseFail.text);
+    checkClean('the model’s payload holds no KEY', parseFail.raw, {
+        apiKeyQuery: SECRETS.apiKeyQuery,
+    });
     checkDiscloses(
-        'the model’s payload now holds the KEY',
-        parseFail.raw,
-        SECRETS.apiKeyQuery,
+        '…and still names the parameter',
+        parseFail.text,
+        'api_key=REDACTED',
     );
     note(
         'nothing here is user code',
-        'built-in fetchAdapter, built-in apiKey({ in: "query" }), a mistyped port — and the credential is in the model’s context',
+        'built-in fetchAdapter, built-in apiKey({ in: "query" }), a mistyped port — and the credential is not in the model’s context',
     );
 
     // The realistic trigger: a third-party adapter that names the URL on EVERY network error.
@@ -212,11 +218,9 @@ async function main(): Promise<void> {
         name: 'metrics',
     });
     note('a node-fetch-shaped DNS failure → text', dnsFail.text);
-    checkDiscloses(
-        'the KEY again, on a routine DNS failure',
-        dnsFail.raw,
-        SECRETS.apiKeyQuery,
-    );
+    checkClean('no KEY on a routine DNS failure either', dnsFail.raw, {
+        apiKeyQuery: SECRETS.apiKeyQuery,
+    });
 
     // The control: the SAME transport failure on a bearer stitch discloses the URL and no secret.
     const bearerClient = await inProcess({
@@ -237,13 +241,13 @@ async function main(): Promise<void> {
         `${BASE}/v1/orders`,
     );
     note(
-        'the leak is a PROPERTY OF apiKey({ in: "query" }), not of MCP',
-        'the auth guide already warns a key in the URL leaks wherever URLs go — this measures one more place it goes: the model’s context',
+        'the leak was a PROPERTY OF apiKey({ in: "query" }), not of MCP',
+        'the auth guide warns a key in the URL leaks wherever URLs go; core now scrubs absolute URLs in a failure message, but a header key is still the better placement',
     );
 
     finish(
         'C4',
-        "NO LEAK FROM StitchAPI'S OWN ERRORS, AND ONE REAL LEAK THROUGH THEM. `run_stitch` renders `(e as Error).message` and drops everything else a `StitchError` carries — `.status`, `.attempts`, `.body`, `.url` — so a vendor 500 whose body held an internal hostname, a stack frame and a `postgres://vendor:hunter2@…` DSN reached the model as the four characters `HTTP 500`. The whole built-in taxonomy is terse and request-free: `HTTP 500`, `timed out after 25ms`, `circuit open`, `invalid params: <the schema's own issue text>`, `contract violation (drift)`. The one disclosure that is by design is name enumeration — an unknown stitch answers with every registered name. BUT THE CHANNEL IS UNFILTERED, and that is a genuine hole in C1's promise: any message written by the TRANSPORT reaches the model verbatim. On the DEFAULT `fetchAdapter`, with an `apiKey({ in: 'query' })` stitch and a mistyped port, the model received `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_qry_8899aabbccddeeff` — the credential, in its context, from zero lines of user code. With a `node-fetch`-shaped adapter (`request to <url> failed, reason: …`) the same thing happens on any DNS failure, which is a routine production event rather than a typo. The control pins the cause: the identical failure on a `bearer` stitch disclosed the URL and no secret. This is `apiKey({ in: 'query' })` leaking where URLs go — the auth guide already says so — and the MCP error channel is one more place URLs go",
+        "NO LEAK FROM StitchAPI'S OWN ERRORS, AND THE ONE LEAK THROUGH THEM IS CLOSED. `run_stitch` renders `(e as Error).message` and drops everything else a `StitchError` carries — `.status`, `.attempts`, `.body`, `.url` — so a vendor 500 whose body held an internal hostname, a stack frame and a `postgres://vendor:hunter2@…` DSN reached the model as the four characters `HTTP 500`. The whole built-in taxonomy is terse and request-free: `HTTP 500`, `timed out after 25ms`, `circuit open`, `invalid params: <the schema's own issue text>`, `contract violation (drift)`. The one disclosure that is by design is name enumeration — an unknown stitch answers with every registered name. BUT THE CHANNEL WAS UNFILTERED, and that was a genuine hole in C1's promise: any message written by the TRANSPORT reached the model verbatim. On the DEFAULT `fetchAdapter`, with an `apiKey({ in: 'query' })` stitch and a mistyped port, the model received `Failed to parse URL from http://api.vendor.test:99999/v1/metrics?api_key=ak_live_qry_8899aabbccddeeff` — the credential, in its context, from zero lines of user code. With a `node-fetch`-shaped adapter (`request to <url> failed, reason: …`) the same thing happened on any DNS failure, which is a routine production event rather than a typo. It is closed (#866, #890): the engine URL-scrubs the message where it mints the error, so the model reads `api_key=REDACTED` and the credential is absent on both paths. The control still pins the cause: the identical failure on a `bearer` stitch disclosed the URL and no secret. This is `apiKey({ in: 'query' })` leaking where URLs go — the auth guide says so — and a header key stays the better placement",
     );
 }
 

@@ -44,7 +44,11 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import semver from 'semver';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// CHECK_RELEASE_ROOT points the guardrail at another tree. It exists for ONE caller: the
+// self-test (scripts/check-release-selftest.mjs), which runs this script against fixtures.
+const ROOT = process.env.CHECK_RELEASE_ROOT
+    ? resolve(process.env.CHECK_RELEASE_ROOT)
+    : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PACKAGES_DIR = join(ROOT, 'packages');
 
 // ---- args --------------------------------------------------------------------
@@ -105,23 +109,39 @@ const ok = [];
 const pass = (msg) => ok.push(msg);
 
 // ---- CHANGELOG breaking-change coverage (check 5, advisory half) --------------
+// The `## [version]` heading for exactly this version. The version must END at `]`,
+// whitespace or end of line: a bare prefix match lets `## [1.0.0-rc.8]` pass as the
+// `1.0.0` heading, and `## [1.0.0-rc.10]` as `1.0.0-rc.1` (#857).
+function changelogHeading(version) {
+    const escaped = version.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+    return new RegExp(`^##\\s*\\[?${escaped}(?:\\]|\\s|$)`, 'm');
+}
+
 // The text under one `## [version]` heading, up to the next one.
 function sectionFor(body, version) {
     const lines = body.split('\n');
-    const start = lines.findIndex((l) =>
-        new RegExp(
-            `^##\\s*\\[?${version.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')}\\]?`,
-        ).test(l),
-    );
+    const heading = changelogHeading(version);
+    const start = lines.findIndex((l) => heading.test(l));
     if (start === -1) return '';
     const rest = lines.slice(start + 1);
     const end = rest.findIndex((l) => /^##\s/.test(l));
     return (end === -1 ? rest : rest.slice(0, end)).join('\n');
 }
 
+// Everything above the `## [version]` heading of the previous release: every section
+// written since it. A version that was cut but never tagged (rc.8) keeps its own heading,
+// and its breaks first ship in the next tag, so they count too.
+function notesSince(body, version) {
+    if (!version) return ''; // no previous tag: an empty version would match any `## ` line
+    const lines = body.split('\n');
+    const heading = changelogHeading(version);
+    const end = lines.findIndex((l) => heading.test(l));
+    return end === -1 ? '' : lines.slice(0, end).join('\n');
+}
+
 // Conventional-commit subjects marked breaking (`type(scope)!:`) since the previous
-// release tag. Returns [] when git is unavailable (a published tarball has no history),
-// which makes this check a no-op rather than a spurious failure.
+// release tag, and that tag. Returns no subjects when git is unavailable (a published
+// tarball has no history), which makes this check a no-op rather than a spurious failure.
 function breakingSubjects() {
     try {
         const since = execSync('git describe --tags --abbrev=0 2>/dev/null', {
@@ -129,15 +149,16 @@ function breakingSubjects() {
             encoding: 'utf8',
         }).trim();
         const range = since ? `${since}..HEAD` : 'HEAD';
-        return execSync(`git log --format=%s ${range}`, {
+        const subjects = execSync(`git log --format=%s ${range}`, {
             cwd: ROOT,
             encoding: 'utf8',
         })
             .split('\n')
             .filter((s) => /^[a-z]+(\([^)]*\))?!:/.test(s.trim()))
             .map((s) => s.trim());
+        return { since, subjects };
     } catch {
-        return [];
+        return { since: '', subjects: [] };
     }
 }
 
@@ -229,11 +250,7 @@ if (opts.changelog && canonical) {
     const body = existsSync(changelogPath)
         ? readFileSync(changelogPath, 'utf8')
         : '';
-    const heading = new RegExp(
-        `^##\\s*\\[?${canonical.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')}\\]?`,
-        'm',
-    );
-    if (!heading.test(body)) {
+    if (!changelogHeading(canonical).test(body)) {
         fail(`CHANGELOG.md is missing a "## [${canonical}]" entry`);
     } else {
         pass(`CHANGELOG: entry present for ${canonical}`);
@@ -245,13 +262,15 @@ if (opts.changelog && canonical) {
         // match is by subject keyword and a legitimately-reworded entry would otherwise
         // block a publish — but it makes an undocumented break visible at release time
         // instead of after it ships.
-        // Both sections: unreleased work is described under [Unreleased] until the
-        // release renames that heading to the version, so either placement counts.
+        // Every section since the previous tag: unreleased work is described under
+        // [Unreleased] until the release renames that heading to the version, and an
+        // untagged version's section (rc.8) ships in this one. Without a findable previous
+        // heading, fall back to this version's section plus [Unreleased].
+        const { since, subjects } = breakingSubjects();
         const section =
+            notesSince(body, since.replace(/^v/, '')) ||
             sectionFor(body, canonical) + '\n' + sectionFor(body, 'Unreleased');
-        const undocumented = breakingSubjects().filter(
-            (s) => !mentions(section, s),
-        );
+        const undocumented = subjects.filter((s) => !mentions(section, s));
         if (undocumented.length === 0) {
             pass(
                 `CHANGELOG: every breaking commit since the last release is described`,

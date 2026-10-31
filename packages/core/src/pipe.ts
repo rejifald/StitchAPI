@@ -37,6 +37,8 @@ interface Runnable {
  * A composed flow — what every combinator returns. It is callable (`await composable(input)` runs it
  * as a root) and nests inside any other combinator (it carries the same child-run protocol a stitch
  * does). `__composable` brands it so it is distinguishable from a bare callable.
+ *
+ * @experimental
  */
 export interface Composable<Out> {
     (input?: StitchInput): Promise<Out>;
@@ -184,6 +186,8 @@ async function runRace(
  * bare `Stitch` default. Gating on `__stitch` / `__composable` accepts every real stitch or composable,
  * narrow input or not, while still rejecting a plain function. The runtime reaches members through a
  * cast to their call-signature view, not through this constraint.
+ *
+ * @experimental
  */
 export type Member =
     { readonly __stitch: true } | { readonly __composable: true };
@@ -248,13 +252,27 @@ function isBag(x: unknown): x is Record<string, Node> {
  *
  * Each member keeps its own retry/timeout/validation, runs as a sibling child run (the trace draws a
  * fan), and is auto-cancelled if a sibling fails first.
+ *
+ * @experimental
  */
 export function all<const T extends readonly Member[]>(
     members: T,
 ): Composable<TupleOut<T>>;
+/**
+ * {@link all} over a NAMED object of members, resolving to an object keyed by the same names:
+ * `all({ user: fetchUser, prefs: fetchPrefs })`.
+ *
+ * @experimental
+ */
 export function all<M extends Record<string, Member>>(
     members: M,
 ): Composable<BagOut<M>>;
+/**
+ * {@link all} over bare member ARGUMENTS, resolving to the same tuple as the array form:
+ * `all(fetchUser, fetchPrefs)`.
+ *
+ * @experimental
+ */
 export function all<const T extends readonly Member[]>(
     ...members: T
 ): Composable<TupleOut<T>>;
@@ -284,10 +302,17 @@ export function all(...args: readonly unknown[]): Composable<unknown> {
  * and so the statuses you would route on, are one level down in `.errors`. ({@link race} rejects with
  * a `StitchError` carrying `status` directly.) Pass the members as an ARRAY (`any([a, b])`) or as
  * bare ARGUMENTS (`any(a, b)`) — same combinator.
+ *
+ * @experimental
  */
 export function any<M extends readonly Member[]>(
     members: M,
 ): Composable<OutputOf<M[number]>>;
+/**
+ * {@link any} over bare member ARGUMENTS: `any(a, b)`, the same combinator as the array form.
+ *
+ * @experimental
+ */
 export function any<M extends readonly Member[]>(
     ...members: M
 ): Composable<OutputOf<M[number]>>;
@@ -312,10 +337,17 @@ export function any(...args: readonly unknown[]): Composable<unknown> {
  * `status` and all, so you can route on it directly — where `any`'s all-failed `AggregateError`
  * carries no `status` and keeps the per-member ones one level down, in `.errors`. Pass the members as
  * an ARRAY (`race([a, b])`) or as bare ARGUMENTS (`race(a, b)`) — same combinator.
+ *
+ * @experimental
  */
 export function race<M extends readonly Member[]>(
     members: M,
 ): Composable<OutputOf<M[number]>>;
+/**
+ * {@link race} over bare member ARGUMENTS: `race(a, b)`, the same combinator as the array form.
+ *
+ * @experimental
+ */
 export function race<M extends readonly Member[]>(
     ...members: M
 ): Composable<OutputOf<M[number]>>;
@@ -337,6 +369,8 @@ export function race(...args: readonly unknown[]): Composable<unknown> {
  * called with its own typed input; a combinator ({@link Composable} — an {@link all}/{@link any}/
  * {@link race} result) with the shared {@link StitchInput}, so a parallel fan inside a sequential scope
  * still joins the one trace.
+ *
+ * @experimental
  */
 export interface ScopedRun {
     // `NoInfer` on the args pins `I` to the STITCH's own input — otherwise TS also infers `I` from the
@@ -370,6 +404,8 @@ export interface ScopedRun {
  *     });
  * });
  * ```
+ *
+ * @experimental
  */
 export function linked<T>(
     body: (run: ScopedRun) => Promise<T> | T,

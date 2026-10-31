@@ -30,10 +30,13 @@ const appRoot = resolve(here, '..');
 // in as the runtime route (see embed.ts), so it needs the vendored copy to
 // already exist. `.source` (fumadocs collections) must exist before the index
 // build reads getText('processed'); generate it, then embed + persist the dump.
+// Last, dump every page's Markdown for the hosted get_doc tool, which reads that
+// file instead of importing the MDX source (lib/search-index/get-doc.ts).
 const steps = [
     ['node', ['--import', 'tsx/esm', resolve(here, 'fetch-embed-model.mts')]],
     ['pnpm', ['exec', 'fumadocs-mdx']],
     ['node', ['--import', 'tsx/esm', resolve(here, 'build-search-index.mjs')]],
+    ['node', ['--import', 'tsx/esm', resolve(here, 'build-docs-pages.mjs')]],
 ];
 for (const [bin, args] of steps) {
     const result = spawnSync(bin, args, { cwd: appRoot, stdio: 'inherit' });

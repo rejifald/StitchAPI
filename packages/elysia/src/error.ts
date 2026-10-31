@@ -1,8 +1,9 @@
 // StitchError → Elysia HTTP response (mirrors @stitchapi/hono's error.ts and the Fastify
-// error-handler). A failed stitch rejects with a `StitchError` — a branded `Error`
-// (`name === 'StitchError'`) carrying the upstream `status`. This bridges it to Elysia's HTTP
-// layer so a route calling a stitch needs no per-route try/catch: the plugin registers
-// `stitchError.handler` as the app's `.onError`, or map by hand with `stitchError.map`.
+// error-handler). A failed stitch rejects with a `StitchError` (or a subclass such as
+// `RateLimitError`) carrying the upstream `status`, recognised by core's `isStitchError`. This
+// bridges it to Elysia's HTTP layer so a route calling a stitch needs no per-route try/catch: the
+// plugin registers `stitchError.handler` as the app's `.onError`, or map by hand with
+// `stitchError.map`.
 //
 // The three functions below are the implementations; the barrel exports only the `stitchError`
 // namespace that faces them. They stay plain module functions so `plugin.ts` (and a bundler)
@@ -12,6 +13,8 @@
 // Deno and the edge alike.
 import type { ErrorContextLike } from './context';
 
+import { isStitchError as isCoreStitchError } from 'stitchapi';
+
 /** The error a stitch rejects with on failure: a branded `Error` carrying the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
 
@@ -19,10 +22,18 @@ export type StitchErrorLike = Error & { status?: number };
  * Guard half of {@link stitchError}; the namespace carries the contract. Internal — the
  * barrel exports the namespace, not this.
  *
- * True when `err` is the error a stitch rejects with on failure (`name === 'StitchError'`).
+ * True when `err` is the error a stitch rejects with on failure — a `StitchError` or any subclass
+ * (`RateLimitError` included), from any copy of `stitchapi`: core's `isStitchError`, or an `Error`
+ * named after a stitch failure. The name fallback is fail-safe: a copy of `stitchapi` older than
+ * the brand, or a lookalike, would otherwise reach the framework's default handler, which echoes
+ * the message. Recognising too much only redacts more.
  */
 export function isStitchError(err: unknown): err is StitchErrorLike {
-    return err instanceof Error && err.name === 'StitchError';
+    return (
+        isCoreStitchError(err) ||
+        (err instanceof Error &&
+            (err.name === 'StitchError' || err.name === 'RateLimitError'))
+    );
 }
 
 export interface StitchErrorOptions {

@@ -12,7 +12,8 @@
 // into `consoleSink` and `loggerSink`, the two destinations C1 measured as carrying nothing (h).
 //
 //   pnpm exec tsx docs/scenarios/proofs/pii-in-the-logs/c7-drift-signal.ts
-import { drift, otlp, stitch } from '../../../../packages/core/src/index';
+import { drift, stitch } from '../../../../packages/core/src/index';
+import { otlp } from '../../../../packages/core/src/otlp';
 import type { OtelSpan } from '../../../../packages/core/src/otlp';
 import { consoleSink, loggerSink } from '../../../../packages/core/src/trace';
 import type {

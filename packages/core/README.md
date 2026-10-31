@@ -4,7 +4,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.8`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
+> **StitchAPI is at `1.0.0-rc.9`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 **Turn any REST, GraphQL, SSE, or LLM API into a typed, resilient function.** Its one primitive — a **stitch** — takes a single endpoint and hands you back a callable: declare the endpoint's contract once (input, output, auth, resilience) and call it like a local function. No server, no codegen, no config files — only explicit composition. The same definition your code calls, the CLI runs and an AI agent can invoke without ever touching a credential.
 
@@ -115,12 +115,12 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `credential.file()` and never reach the caller.
 - **Data shaping** - `pick` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
 - **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
-- **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
+- **Pluggable state store** - throttle state, the cache and sessions/tokens live behind a `get`/`set` store with optional atomic verbs; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
 - **Zero-infra observability** - tracing is **off by default** (a stitch's only effect is its call); opt in per stitch with `trace: 'console'` / `fileSink(path)` / a `TraceSink`, or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>` / `STITCH_EXPORT=otlp`. `stitch trace` then summarizes runs, retries, drift, and latency percentiles.
 - **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 - **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 - **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
-- **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~25 kB min+gzip**; a typical `import { stitch }` trims to **~22 kB** — and with no transitive tree, that is the entire cost.
+- **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~21 kB min+gzip**; a typical `import { stitch }` trims to **~19 kB** — and with no transitive tree, that is the entire cost. The cache engine and the OTLP exporter load lazily, on first use, and are not counted in either figure.
 
 ## Documentation
 
@@ -162,7 +162,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~25 kB minified + gzipped** (66 kB raw, ~22 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~22 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
+**Bundle size.** The whole `stitchapi` entry is **~21 kB minified + gzipped** (58 kB raw, 18.8 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~19 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit. Those figures are what a code-splitting bundler (Vite, Rollup, webpack, esbuild `--splitting`) ships up front: the cache engine (`stitchapi/cache`, reached only by a stitch with a `cache` block) and the OTLP exporter (`stitchapi/otlp`, reached only when `STITCH_EXPORT=otlp` is set) load lazily, on first use, and are budgeted as their own entries in the size gate. A bundler that does not split dynamic imports inlines both chunks and ships them with the rest.
 
 ## Quick start
 
@@ -330,6 +330,12 @@ const adminUsers = listUsers.with({ query: { role: 'admin' } });
 
 await adminUsers({ query: { q: 'ada' } }); // → /users?role=admin&q=ada
 ```
+
+### Composing stitches: `stitchapi/pipe`
+
+> **Experimental.** `stitchapi/pipe` ships in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+
+`stitchapi/pipe` combines stitches into flows you `await` like any function. `all`, `any` and `race` run independent stitches concurrently as sibling child runs: `all` resolves when every member succeeds, `any` on the first success, `race` on the first to settle, and each cancels the members that can no longer affect the result. `linked` runs a body of plain `await`s so every call is a child run of the one before it, and the sequence shares one trace chain.
 
 ## Validation & leveled drift
 
@@ -552,7 +558,7 @@ auth: cookieSession({
 
 ## Pluggable state store
 
-Throttle counters and session/token state live behind one small seam — a `store` you compose like any other value. The default is in-memory (zero-config, single process). Implement the 3-method interface over Redis/Postgres and, with no change at the call site:
+Throttle state, cached responses and session/token state live behind one small seam — a `store` you compose like any other value. The default is in-memory (zero-config, single process). Implement `get`/`set` over Redis/Postgres (plus the optional verbs your backend can do atomically) and, with no change at the call site:
 
 - **throttle goes distributed** - rate counters are read through the store, so a shared store paces calls across processes;
 - **sessions and tokens are shared** - `cookieSession` / `oauth2` state under the same `key` is reused across stitches and workers, surviving restarts.
@@ -561,7 +567,9 @@ Throttle counters and session/token state live behind one small seam — a `stor
 export interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
     set(key: string, value: unknown, ttl?: number): Promise<void>;
-    increment(key: string, ttl: number): Promise<number>; // atomic — rate windows
+    // Optional capabilities — implement the ones your backend can do atomically:
+    increment?(key: string, ttl?: number): Promise<number>; // rate fallback counter
+    // reserve?(…) → fleet-wide rate; lease?(…) + release?(…) → fleet-wide concurrency
 }
 ```
 
@@ -722,6 +730,8 @@ const { blob, filename } = await getReport({
 
 ### LLM and shell
 
+> **Experimental.** `stitchapi/llm` and `@stitchapi/shell` ship in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+
 Two non-HTTP surfaces speak the same engine. `llm` is a chat-completion over a provider _contract_ — the first-party `anthropic` and `openai` mappings are plain config, no SDK dependency, and the credential is the stitch's own `auth`:
 
 ```ts
@@ -750,6 +760,8 @@ const status = await git({ body: ['status', '--porcelain'] }); // stdout string
 ```
 
 ### postMessage
+
+> **Experimental.** `stitchapi/postmessage` ships in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
 
 `postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `origins` is the security gate, and a wildcard is forbidden by the type _and_ at construction — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
 
@@ -958,7 +970,6 @@ StitchAPI ships thin, peer-dependency integration packages — server frameworks
 <tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a></td><td>The stitch event stream as structured Pino logs</td></tr>
 <tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a></td><td>Stitch events as Sentry breadcrumbs, with error capture</td></tr>
 <tr><th colspan="2">Surfaces</th></tr>
-<tr><td><a href="packages/download"><code>@stitchapi/download</code></a></td><td>Batch file downloads with FIFO concurrency, cancel, and ETA</td></tr>
 <tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a></td><td>Run a static local command as a stitch (injection-proof)</td></tr>
 <tr><th colspan="2">Cache fingerprint adapters</th></tr>
 <tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a></td><td>Cache-fingerprint strategy for ArkType schemas</td></tr>

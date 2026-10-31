@@ -147,7 +147,7 @@ describe('registry', () => {
         expect(Object.keys(reg).sort()).toEqual(['a', 'b', 'c']);
     });
 
-    test('selectStitch matches by export key, then by configured name', () => {
+    test('selectStitch matches the export key only — a configured name is not an address', () => {
         const listing = stitch({
             name: 'list-things',
             baseUrl: 'http://x',
@@ -155,7 +155,11 @@ describe('registry', () => {
         });
         const reg = { listing };
         expect(selectStitch(reg, 'listing')).toBe(listing);
-        expect(selectStitch(reg, 'list-things')).toBe(listing);
+        // #866: the configured `name` is a trace label. Resolving it too made a stitch callable
+        // under a name no listing shows.
+        expect(() => selectStitch(reg, 'list-things')).toThrow(
+            /unknown stitch "list-things"\. Available: listing/,
+        );
     });
 
     test('selectStitch throws a listing error for an unknown name', () => {

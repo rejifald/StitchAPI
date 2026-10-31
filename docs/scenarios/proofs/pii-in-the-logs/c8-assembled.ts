@@ -257,7 +257,7 @@ async function main(): Promise<void> {
         const leak500 = printBattery('nothing configured, 500', bare500);
         check('destinations measured per run', bare200.size, 10);
         check('destinations leaking on a 200', leak200, 6);
-        check('destinations leaking on a 500', leak500, 4);
+        check('destinations leaking on a 500', leak500, 1); // was 4 before #873: only `StitchError.body` remains
     }
 
     heading('C8 (b) — variant A: the allowlist alone');
@@ -269,7 +269,7 @@ async function main(): Promise<void> {
         check('user-code lines', userLines('A'), 9);
         check('destinations still leaking on a 200', leak200, 1);
         check('and it is `.inspect().raw`', a200.get('.inspect().raw'), 7);
-        check('destinations still leaking on a 500', leak500, 4);
+        check('destinations still leaking on a 500', leak500, 1);
         check(
             'the drift signal SURVIVES — undeclared findings',
             (await findingsFor(variantA)).filter(
@@ -458,7 +458,7 @@ async function main(): Promise<void> {
 
     finish(
         'C8',
-        'ASSEMBLED and measured. Baseline: a stitch with a trace sink, a cache and a `.report()` leaks the customer record at 6 of 10 destinations on a 200 and 4 of 10 on a 500. Variant A — the allowlist alone, `output: drift(SAFE, …)`, 9 executable lines, one seam (`output`) — takes that to 1 of 10 on a 200 (only `.inspect().raw`, by design) and leaves the 500 path untouched at 4 of 10. Variant B — the boundary alone, `hooks.onResponse` mutating `res.body`, 7 executable lines, one seam — takes BOTH to 0 of 10, including `StitchError.body` and `JSON.stringify(error)`, and costs the entire drift signal: 0 findings, because drift diffs the response against the schema and the boundary removed the response first. Variant C — both plus a 23-line hand-rolled key walker, 42 executable lines, two seams (`hooks.onResponse` + `output`) — is 0 of 9 destinations on both the success and the failure path AND recovers a names-only inventory of every undeclared field (7 paths, 0 sentinels), which is the "log the detection, not the data" shape the scenario\'s own sources recommend. The costs, stated: (1) 42 lines (as this repo\'s Prettier formats them), of which 23 re-implement a walker `drift.ts` already contains and does not export; (2) the allowlist must be written and maintained — the whole response shape, which is the thing that drifts; (3) `res.body = …` inside a `(ctx) => void` hook is nowhere documented as a privacy mechanism, so the correct construction is discoverable only by reading the engine; (4) `.inspect().raw` is deliberately unreachable by any of this on variant A and is only covered in B/C because the body was destroyed before capture — which also means `.inspect()` can no longer answer the question it exists for; and (5) none of it is upstream of the Adapter, which read the bytes first — measured, a spy inside the transport still sees all 7',
+        "ASSEMBLED and measured. Baseline: a stitch with a trace sink, a cache and a `.report()` leaks the customer record at 6 of 10 destinations on a 200 and 1 of 10 on a 500 (it was 4 before #873: `JSON.stringify(error)`, the `.inspect()` wrapper and `.report()` carried the failing body through `StitchError.body`'s enumerability; `StitchError.toJSON` now leaves it out, and only the live `StitchError.body` remains). Variant A — the allowlist alone, `output: drift(SAFE, …)`, 9 executable lines, one seam (`output`) — takes that to 1 of 10 on a 200 (only `.inspect().raw`, by design) and leaves the 500 path untouched at 1 of 10. Variant B — the boundary alone, `hooks.onResponse` mutating `res.body`, 7 executable lines, one seam — takes BOTH to 0 of 10, including `StitchError.body`, and costs the entire drift signal: 0 findings, because drift diffs the response against the schema and the boundary removed the response first. Variant C — both plus a 23-line hand-rolled key walker, 42 executable lines, two seams (`hooks.onResponse` + `output`) — is 0 of 9 destinations on both the success and the failure path AND recovers a names-only inventory of every undeclared field (7 paths, 0 sentinels), which is the \"log the detection, not the data\" shape the scenario's own sources recommend. The costs, stated: (1) 42 lines (as this repo's Prettier formats them), of which 23 re-implement a walker `drift.ts` already contains and does not export; (2) the allowlist must be written and maintained — the whole response shape, which is the thing that drifts; (3) `res.body = …` inside a `(ctx) => void` hook is nowhere documented as a privacy mechanism, so the correct construction is discoverable only by reading the engine; (4) `.inspect().raw` is deliberately unreachable by any of this on variant A and is only covered in B/C because the body was destroyed before capture — which also means `.inspect()` can no longer answer the question it exists for; and (5) none of it is upstream of the Adapter, which read the bytes first — measured, a spy inside the transport still sees all 7",
     );
 }
 

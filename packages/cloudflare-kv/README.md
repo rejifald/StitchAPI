@@ -30,19 +30,41 @@ types** — it runs on a small structural `KVNamespaceLike` surface that a real
 `KVNamespace` binding satisfies as-is, so there's no `@cloudflare/workers-types`
 dependency and a test double is a drop-in.
 
-## `increment` is unsupported on Workers KV — use a Durable Object
+## A `get`/`set` store — what that means per feature
 
-> **Workers KV has no atomic increment.** It is last-write-wins `get`/`put`/
-> `delete` only, so a distributed throttle counter built on it would **undercount
-> under concurrency and silently break rate limiting**. Rather than do that,
-> `cloudflareKvStore(...).increment(...)` **throws** a clear, documented error.
+Workers KV is last-write-wins `get`/`put`/`delete` with **no atomic
+read-modify-write**, so `cloudflareKvStore` implements only the two verbs the
+`StitchStore` contract requires, `get` and `set`. It has none of the optional
+capabilities — no `increment` counter, no `reserve` pacing cell, no
+`lease`/`release` semaphore — rather than fake them. StitchAPI uses a capability
+only when the store has it:
 
-If you need a **distributed throttle**, back it with a
+- **Cache** — fully supported, bulk invalidation included (a generation bump is a
+  plain `set`).
+- **Auth** — fully supported: cookie jars and tokens are `get`/`set`.
+- **Throttle** — `rate` and `concurrency` hold **per isolate**, not across the
+  fleet. The throttle says so once, with an `info` event (topic
+  `throttle.per-process`) on its first call.
+
+If you need a **fleet-wide throttle** at the edge, back it with a
 **[Durable Object](https://developers.cloudflare.com/durable-objects/)**-based
-`StitchStore` instead: a Durable Object gives you the single-writer,
-strongly-consistent counter that an atomic `increment` requires. KV remains the right
-backend for the rest — **cache and shared sessions/tokens** (`get`/`set`), which
-is the overwhelmingly common edge need.
+`StitchStore` (a single writer, strongly consistent) or run `@stitchapi/redis`
+over Upstash's HTTP API. KV remains the right backend for the rest — **cache and
+shared sessions/tokens**, which is the overwhelmingly common edge need.
+
+The store passes the base group of `conformance.store` from `stitchapi/testing`,
+which checks the capabilities a store implements.
+
+## Eventual consistency
+
+KV is eventually consistent: a write can take **about 60 seconds** to reach every
+location. A cache invalidation is a write, so for up to a minute a reader in
+another location may still serve the entries you just invalidated.
+
+Workers KV also allows **one write per second to the same key**. A bulk
+invalidation (`cache.invalidate()`, `seam.invalidate()`) writes one generation
+key, so rapid back-to-back calls can be rejected with a `429` — invalidate once
+per change, or debounce.
 
 ## TTL semantics
 
@@ -51,7 +73,7 @@ reconciles this with the StitchStore contract's millisecond TTLs for you:
 
 - `ttl` (ms) → `Math.max(60, Math.ceil(ttl / 1000))` seconds.
 - So a value asked to live for 5s lives for 60s (harmless for caches/sessions).
-- No `ttl` → no expiry (`ttl` is optional on both `set` and `increment`).
+- No `ttl` → no expiry.
 
 `set(key, undefined)` deletes the key (the cache's delete, ADR 0003 §8). The store
 owns no connection, so there is no `close()`.

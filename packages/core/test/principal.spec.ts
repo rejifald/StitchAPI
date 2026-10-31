@@ -43,7 +43,7 @@ function spyStore(): { store: StitchStore; closed: () => boolean } {
         store: {
             get: (k) => base.get(k),
             set: (k, v, ttl) => base.set(k, v, ttl),
-            increment: (k, ttl) => base.increment(k, ttl),
+            increment: (k, ttl) => base.increment!(k, ttl),
             close: async () => {
                 didClose = true;
                 await base.close?.();

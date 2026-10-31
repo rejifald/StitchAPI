@@ -32,7 +32,7 @@ import type { TraceSink } from 'stitchapi';
  *     validate, compile,
  *     fetchAdapter, memoryStore, multiplex,
  *     StitchError, RateLimitError,
- *     isStitch, isSeam, verdictOf,
+ *     isStitch, isSeam, isStitchError, verdictOf,
  *     httpSurface, graphqlSurface,
  *     xhrAdapter, axiosAdapter,
  *     duration, size, rate, compact, secrets,
@@ -73,6 +73,7 @@ export {
     // Type guards and the verdict reader. Pure predicates over plain objects.
     isStitch,
     isSeam,
+    isStitchError,
     verdictOf,
     // Surface descriptors. Plain objects describing a protocol, no transport.
     httpSurface,
@@ -110,13 +111,14 @@ export { bearer, apiKey, basic, oauth2 } from 'stitchapi/auth';
 
 // All public types — none carry runtime Node weight. Core's barrel re-exports
 // `./types` via `export *`, so every public type is reachable from the main entry.
+// The OTLP types live on `stitchapi/otlp` since #871/#872, off the root barrel.
 export type {
     SpanExporter,
     OtelSpan,
     OtelSpanEvent,
     SpanAttributes,
     OtlpOptions,
-} from 'stitchapi';
+} from 'stitchapi/otlp';
 export type * from 'stitchapi';
 
 /* ---- Node-only surfaces, shimmed (emit a RunNotice) ---------------------- */

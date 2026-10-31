@@ -171,7 +171,7 @@ const recordingStore = (): { store: StitchStore; keys: string[] } => {
                 keys.push(k);
                 return base.set(k, v, ttl);
             },
-            increment: (k, ttl) => base.increment(k, ttl),
+            increment: (k, ttl) => base.increment!(k, ttl),
         },
     };
 };
@@ -454,7 +454,7 @@ describe('Pluggable store — throttle', () => {
         return {
             get: (k) => s.get(k),
             set: (k, v, ttl) => s.set(k, v, ttl),
-            increment: (k, ttl) => s.increment(k, ttl),
+            increment: (k, ttl) => s.increment!(k, ttl),
         };
     };
 
@@ -466,7 +466,7 @@ describe('Pluggable store — throttle', () => {
         return {
             get: (k) => s.get(k),
             set: (k, v, ttl) => s.set(k, v, ttl),
-            increment: (k, ttl) => s.increment(k, ttl),
+            increment: (k, ttl) => s.increment!(k, ttl),
             reserve: (k, spacing, at, ttl) => s.reserve!(k, spacing, at, ttl),
         };
     };

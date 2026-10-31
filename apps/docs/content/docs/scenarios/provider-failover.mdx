@@ -72,6 +72,12 @@ const primary = stitch({
 Measured: neither credential appeared on the other provider, and per-stitch `pick` normalised
 two different response envelopes into one string.
 
+<Callout type="warn" title="Experimental">
+    `linked` comes from `stitchapi/pipe`, which may change shape or behaviour in
+    a minor release, with each change and its migration listed in the changelog.
+    [Stability](/docs/reference/stability) says what that means.
+</Callout>
+
 **The routing between them is yours** — about 30 lines, on `linked`:
 
 ```ts

@@ -59,6 +59,11 @@ export async function startReceiver(
     const now = opts.nowSeconds ?? (() => Math.floor(Date.now() / 1000));
     const maxBytes = opts.maxBytes ?? 1024 * 1024;
     const decide = opts.onDecision ?? ((): void => undefined);
+    // `increment` is an optional StitchStore capability; the dedup claim below cannot work without
+    // it, so fail at start rather than on the first delivery.
+    const increment = opts.store.increment?.bind(opts.store);
+    if (!increment)
+        throw new Error('startReceiver needs a store with `increment`');
 
     const server = createServer((req, res) => {
         void (async () => {
@@ -110,7 +115,7 @@ export async function startReceiver(
 
             // 4. Atomic dedup claim. `increment` and not `get`+`set`: the racy pair lets two
             //    workers both win (C5 (b)).
-            const claim = await opts.store.increment(
+            const claim = await increment(
                 `webhook:${event.id}`,
                 opts.dedupTtlMs,
             );

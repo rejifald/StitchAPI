@@ -1,6 +1,8 @@
 # ADR 0017 — Outbound trace-context propagation: correlation is not idempotency
 
-- **Status:** Proposed
+- **Status:** Proposed — except Decision 6's export structure, **Accepted and implemented**
+  (2026-10-01, [#871](https://github.com/rejifald/StitchAPI/issues/871); see the
+  [amendment](#amendment-2026-10-01--decision-6s-span-structure-is-adopted-ahead-of-propagation))
 - **Date:** 2026-06-29
 - **Tags:** observability, tracing, traceparent, w3c-trace-context, propagation, correlation, idempotency, browser-first
 
@@ -64,10 +66,18 @@ engine-minted identity on the outbound request, as a field distinct from
 on".**
 
 1.  **W3C `traceparent` is the default carrier.** Build it from the run's
-    `traceId` + `spanId` + sampled flag, so a downstream server continues
-    **the same trace tree** the OTLP sink ([`otlp.ts`](../../packages/core/src/otlp.ts))
+    `traceId` + the **attempt's** `spanId` + sampled flag, so a downstream server
+    continues **the same trace tree** the OTLP sink ([`otlp.ts`](../../packages/core/src/otlp.ts))
     already emits — the outbound header and the exported span agree by construction.
     `tracestate` is carried through when present.
+
+    _Amended 2026-10-01:_ this read "the run's `traceId` + `spanId`". That predates the
+    per-attempt spans of Decision 6, and the two conflict: the request a header rides on is
+    an attempt, so the span id it carries must be that attempt's — the CLIENT span the sink
+    exports for it — or a server's span would parent to the INTERNAL run span and every
+    retry of a call would look like one request downstream. The engine mints the attempt
+    id at request time and stamps it on `progress{phase: 'request'}`, so the header and the
+    span read the same value.
 
 2.  **A configurable correlation header, for systems that don't speak W3C.**
     Some infrastructure keys on `X-Request-Id` / `X-Correlation-Id` rather than
@@ -118,6 +128,59 @@ on".**
     fresh `spanId`). Do not collapse the struct into a single stored `traceparent` — it
     drops one of the two span ids and silently breaks child-span parenting, and
     `otlp.ts` reads all three as fields, not substrings.
+
+## Amendment (2026-10-01) — Decision 6's span structure is adopted ahead of propagation
+
+Decision 6 was written for the wire, but it fixes the **export** shape too, and that shape
+is what dashboards and alerts key on: span kind, span name, and which span carries which
+attribute. Restructuring the tree after 1.0 breaks them, so the export side is adopted now
+([#871](https://github.com/rejifald/StitchAPI/issues/871), maintainer decision option (a)),
+before the header exists:
+
+- **Run span** — one per stitch call, kind **INTERNAL**, named for the stitch. It carries
+  `stitch.name`, `stitch.surface`, the call's progress/info/drift span events, and the
+  run-level status. It holds no `http.*` attribute.
+- **Page spans** — INTERNAL children of the run, one per page of a paginated call.
+- **Attempt spans** — one per **physical request, always** (a single clean request
+  included), a child of its page or else of the run. Over the HTTP adapter it is a
+  **CLIENT** span named `{method} {url.template}` per the OTel HTTP conventions
+  ([#900](https://github.com/rejifald/StitchAPI/issues/900)) — `GET /users/{id}` — with
+  `http.request.method`, `url.template`, `url.full` (scrubbed), `server.address`,
+  `server.port`, `http.response.status_code`, `http.request.resend_count` (on a resend) and
+  `error.type`. The template is the stitch's unexpanded **path** template (`path` under a
+  static `baseUrl`'s path, or a templated `url`; scheme, authority — a scheme-relative
+  `//user:pass@host/x` included — query and fragment removed), stamped by the engine on
+  `start.template`; with none known — a function `url` or `baseUrl`, or an absolute `url` with
+  no `{…}` variable — the name is the bare `{method}` and `url.template` is absent. For a
+  surface whose `execute` replaces the transport (ADR 0008 — `shell`, `postmessage`) it is
+  INTERNAL with no `http.*`. The HTTP details a backend keys on follow the client conventions:
+  a method semconv does not name (anything outside the 1.44 well-known set: `CONNECT`, `DELETE`,
+  `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT`, `QUERY`, `TRACE`; `OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS`
+  replaces it) is `http.request.method = _OTHER` with the verb in
+  `http.request.method_original`, and the span is named `HTTP` / `HTTP {url.template}`;
+  `server.address` is the bare host (an IPv6 literal without brackets); `server.port` defaults
+  to 443/80 for `https:`/`http:` only. `stitch.attempt` is the 1-based **ordinal of the physical
+  request** within its page (or the run), not the engine's counter: an auth refresh resends
+  without counting against `retry.attempts`, so that counter reads `1` on both requests.
+- **Ids are engine-minted at request time** — an attempt's on `progress{phase: 'request'}`
+  (`spanId`, `parentSpanId`), a page's on the `progress{phase: 'paginate'}` that closes it —
+  never at export. The same ids are what a future per-record stamp
+  ([#874](https://github.com/rejifald/StitchAPI/issues/874)) and the outbound header read.
+- **`spanId` on an event means "the span this event belongs to"** — the run on `start`, the
+  attempt on `progress{request}`, the page on `progress{paginate}` — and `parentSpanId` is that
+  span's parent. Fixed now, in the types' JSDoc and the events reference, so #874 stamps ids on
+  every record by filling in fields that already exist rather than renaming any.
+- **Status follows the conventions** — UNSET on success, ERROR on failure with an
+  `error.type` (the error class, else the HTTP status, else `_OTHER`). The description is
+  omitted where the span already says it (a 4xx/5xx is on `error.type` and
+  `http.response.status_code`, so `HTTP 503` / `status 503` / `refresh` are not repeated); a
+  failed page carries its run's `error.type` and description.
+
+Implemented in `otlp.ts` — shipped as the `stitchapi/otlp` subpath, off the root entry
+([ADR 0021](./0021-auth-strategies-move-to-a-subpath.md), addendum) — with golden tests of the
+exported tree (`packages/core/test/otlp-span-tree.spec.ts`). **Outbound propagation itself — Decisions 1–5
+and 7 — is still Proposed and not built:** no request carries a `traceparent` yet. Decision 1
+is amended above so that, when it lands, the header carries the attempt's id.
 
 ## Consequences
 

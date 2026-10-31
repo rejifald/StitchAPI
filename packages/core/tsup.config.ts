@@ -20,6 +20,9 @@ const define = { __PKG_VERSION__: JSON.stringify(version) };
 // the engine reaches it via a lazy `import('./cache')`, which esm splitting keeps in its chunk.
 // `auth` is its own entry for the same reason (ADR 0021): nothing on the core path imports it, so
 // off the root barrel the factories are unreachable from `import { stitch }` by construction.
+// `otlp` is its own entry for the same reason (the #871/#872 span-tree rewrite put it over budget):
+// the root barrel no longer exports it, and the only edge from the core path is the lazy
+// `import('./otlp')` behind `STITCH_EXPORT=otlp`, which esm splitting keeps in its own chunk.
 export default defineConfig([
     {
         entry: [
@@ -31,6 +34,9 @@ export default defineConfig([
             'src/fingerprint.ts',
             'src/cache.ts',
             'src/auth.ts',
+            // the OTLP trace pipeline → stitchapi/otlp; stitch.ts reaches it for STITCH_EXPORT=otlp
+            // through a lazy import('./otlp'), like cache, so the root barrel does not export it
+            'src/otlp.ts',
             // surfaces (ADR 0005 Decision 10) — subpath-only; the root entry bundles http alone
             'src/graphql.ts',
             'src/sse.ts',

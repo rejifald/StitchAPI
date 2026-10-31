@@ -1,6 +1,6 @@
 ---
 title: Distributed stores
-description: Attach a Redis, Cloudflare Workers KV, or Deno KV StitchStore so a stitch's throttle, sessions, and cache become fleet-wide — same call site, no backend in core. Includes the atomic-increment trade-off that decides which store fits.
+description: Attach a Redis, Cloudflare Workers KV, or Deno KV StitchStore so a stitch's throttle, sessions, and cache become fleet-wide — same call site, no backend in core. Includes the capability table that decides which store fits.
 prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
@@ -14,25 +14,67 @@ and every worker shares the same counters and sessions.
 
 Each driver is a thin peer-dependency (or zero-dependency) package that imports no
 client of its own — it runs on a small structural surface, so the client you
-already use is a drop-in, and a test double is too. All three are proven against
-the same `conformance.store` kit from `stitchapi/testing`.
+already use is a drop-in, and a test double is too. Each one runs the same
+`conformance.store` kit from `stitchapi/testing`, which checks the capability
+groups a store implements: every store passes the base group, and Redis and Deno KV
+pass the counter, pacing and lease groups as well.
 
 ## Which store?
 
-The deciding axis is **atomic `increment`**: a distributed _throttle_ needs it (rate
-counters must increment exactly once under concurrency), while shared _cache_ and
-_sessions_ need only `get` / `set`.
+The deciding axis is **atomicity**. Shared _cache_ and _sessions_ need only `get` /
+`set`, which every backend has. A fleet-wide _throttle_ needs an atomic
+read-modify-write in the store — the pacing cell for `rate`, the lease pair for
+`concurrency` — and an eventually-consistent backend can't offer one.
 
-| Package                    | Runtime                                        | Atomic `increment` → distributed throttle | Shared cache & sessions | TTL unit    |
-| -------------------------- | ---------------------------------------------- | ----------------------------------------- | ----------------------- | ----------- |
-| `@stitchapi/redis`         | Node (TCP) **and** edge (Upstash HTTP)         | ✅ Lua `INCR` + `PEXPIRE`                 | ✅                      | ms          |
-| `@stitchapi/deno-kv`       | Deno / Deno Deploy · Node & Bun via `@deno/kv` | ✅ atomic compare-and-set                 | ✅                      | ms          |
-| `@stitchapi/cloudflare-kv` | Cloudflare Workers / Pages (Web-API only)      | ❌ throws — back it with a Durable Object | ✅                      | s (60s min) |
+| Package                    | Runtime                                        | Fleet-wide throttle                         | Shared cache & sessions | TTL unit    |
+| -------------------------- | ---------------------------------------------- | ------------------------------------------- | ----------------------- | ----------- |
+| `@stitchapi/redis`         | Node (TCP) **and** edge (Upstash HTTP)         | ✅ Lua scripts, one round trip each         | ✅                      | ms          |
+| `@stitchapi/deno-kv`       | Deno / Deno Deploy · Node & Bun via `@deno/kv` | ✅ atomic compare-and-set                   | ✅                      | ms          |
+| `@stitchapi/cloudflare-kv` | Cloudflare Workers / Pages (Web-API only)      | ❌ per isolate — pair with a Durable Object | ✅                      | s (60s min) |
 
 Reach for **Redis** on Node — or when you want one store that _also_ runs on the
 edge via Upstash; **Deno KV** on Deno Deploy, where the same handle is replicated
 globally; **Cloudflare Workers KV** when you're on Workers and need shared cache
 and sessions (and pair it with a Durable Object if you also need a throttle).
+
+## Capabilities
+
+`StitchStore` requires only `get` and `set`. Every other verb is a **capability**: a
+feature uses it when the store has it, and degrades in a known way when it doesn't.
+Nothing is configured — the throttle and the cache look at which verbs the store
+has.
+
+| Store                                               | `get` / `set` | `increment` | `reserve` | `lease` / `release` |
+| --------------------------------------------------- | ------------- | ----------- | --------- | ------------------- |
+| `memoryStore()` (core default, one process)         | ✅            | ✅          | ✅        | ✅                  |
+| `@stitchapi/redis` (bundled adapters)               | ✅            | ✅          | ✅        | ✅                  |
+| `@stitchapi/deno-kv`                                | ✅            | ✅          | ✅        | ✅                  |
+| `@stitchapi/cloudflare-kv`                          | ✅            | —           | —         | —                   |
+| `asyncStorageStore` / `expoSecureStore` (on-device) | ✅            | ✅          | —         | —                   |
+
+A custom `RedisDriver` must implement `increment`; `reserve` and the lease pair are
+optional there too, and `redisStore` exposes only what the driver has.
+
+What each capability buys, and what happens without it:
+
+| Capability          | Used by                                         | Without it                                                                                                                                     |
+| ------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get` / `set`       | cache, auth sessions and tokens, circuit, all   | required                                                                                                                                       |
+| `reserve`           | `throttle.rate` — one fleet-wide cursor         | `rate` falls back to `increment`: fleet-shared slots, but a fleet that starts mid-window can run at up to `rate × workers` until it catches up |
+| `increment`         | `throttle.rate`, only when there's no `reserve` | with no `reserve` either, `rate` paces **per process**                                                                                         |
+| `lease` / `release` | `throttle.concurrency` — fleet-wide slots       | `concurrency` caps **per process**                                                                                                             |
+
+Bulk cache invalidation needs no capability: it writes a fresh generation with
+`set`, so it works on every store.
+
+A limit that ends up per-process says so. On its first call the throttle emits one
+`info` event, topic `throttle.per-process`, naming the limit and the missing verbs
+— for example `rate: the store has no reserve or increment`. Route events to a
+[trace sink](/docs/guides/observability/trace-sinks) to see it; it fires once per
+throttle, not per call. `loggerSink` logs `info` events at `debug` (and
+`@stitchapi/pino` and `@stitchapi/nest` leave them out), so to see this one at the
+usual log level
+[raise its topic to `warn`](/docs/guides/observability/trace-sinks#logging-to-a-host-logger).
 
 ## Redis — `@stitchapi/redis`
 
@@ -102,15 +144,27 @@ export default {
 ```
 
 <Callout type="warn">
-    **Workers KV has no atomic increment.** It is last-write-wins `get` / `put`
-    / `delete` only, so a throttle counter built on it would undercount under
-    concurrency and silently break rate limiting. Rather than do that,
-    `cloudflareKvStore(...).increment(...)` **throws** a documented error. For a
-    distributed throttle, back it with a [Durable
-    Object](https://developers.cloudflare.com/durable-objects/) — the
-    single-writer, strongly-consistent counter an atomic `increment` requires.
-    KV remains the right backend for cache and sessions, the common edge need.
+    **Workers KV is a `get` / `set` store.** It is last-write-wins `get` / `put`
+    / `delete` with no atomic read-modify-write, so `cloudflareKvStore`
+    implements none of the optional capabilities — no `increment`, `reserve` or
+    lease pair. Cache (bulk invalidation included) and sessions work fully. A
+    `throttle` over it paces **per isolate** and announces that once with a
+    `throttle.per-process` event. For a fleet-wide throttle at the edge, back it
+    with a [Durable Object](https://developers.cloudflare.com/durable-objects/)
+    — a single writer, strongly consistent — or run `@stitchapi/redis` over
+    Upstash's HTTP API.
 </Callout>
+
+KV is also **eventually consistent**: a write can take about 60 seconds to reach
+every location. That includes a cache bulk invalidation (`stitch.cache.invalidate()`,
+`seam.invalidate()`), so for up to a minute a reader elsewhere may still serve the
+entries you just invalidated. Exact invalidation (`stitch.invalidate(input)`) is a
+`set` too, with the same lag.
+
+Workers KV also allows **one write per second to the same key**. A bulk
+invalidation writes one generation key, so rapid back-to-back `invalidate()` calls
+(a loop, a webhook burst) can be rejected with a `429` — invalidate once per
+change, or debounce.
 
 KV's `expirationTtl` is in **seconds** with a **60-second minimum**; the store
 reconciles that with the contract's millisecond TTLs (`ttl` →

@@ -157,7 +157,8 @@ seam and bind explicitly — `seam.as(job.data.tenantId)`.
 
 ## Errors → HTTP — `StitchExceptionFilter`
 
-A failed stitch throws a `StitchError` (a branded `Error` carrying the upstream `status`).
+A failed stitch throws a `StitchError` (or a subclass such as `RateLimitError`) carrying the
+upstream `status`; the filter recognises every subclass through core's `isStitchError`.
 Register `StitchExceptionFilter` globally to turn it into an `HttpException` — **`502 Bad
 Gateway` by default** (every upstream failure is a gateway error; it never leaks an
 upstream's `401`/`404` to your client), so controllers calling stitches need no try/catch:

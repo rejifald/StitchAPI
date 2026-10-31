@@ -1,6 +1,6 @@
 {
     "name": "stitchapi",
-    "version": "1.0.0-rc.8",
+    "version": "1.0.0-rc.9",
     "type": "commonjs",
     "description": "Turn any API into a typed, resilient function. A declarative stitch takes one endpoint — HTTP, GraphQL, SSE, LLM, even a shell command — and hands back a callable with auth, retries, validation, and drift built in. No server, no codegen, no config files. Callable from code, the CLI, or an AI agent over MCP — agents get a capability, not your credentials. Zero deps.",
     "main": "lib/index.js",
@@ -105,6 +105,20 @@
             "require": {
                 "types": "./lib/auth.d.ts",
                 "default": "./lib/auth.js"
+            }
+        },
+        "./otlp": {
+            "browser": {
+                "types": "./lib/otlp.d.mts",
+                "default": "./lib/otlp.mjs"
+            },
+            "import": {
+                "types": "./lib/otlp.d.mts",
+                "default": "./lib/otlp.mjs"
+            },
+            "require": {
+                "types": "./lib/otlp.d.ts",
+                "default": "./lib/otlp.js"
             }
         },
         "./graphql": {

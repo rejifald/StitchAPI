@@ -18,8 +18,8 @@ import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type AtLeastOne,
+    type ConfigError,
     type DriftFinding,
-    type NoRequestShapeOnLlm,
     type NoUnknownKeys,
     type NoUnknownNestedKeys,
     type Seam,
@@ -30,13 +30,21 @@ import {
     isSeam,
 } from './types';
 
-/** A chat message in the normalised request. */
+/**
+ * A chat message in the normalised request.
+ *
+ * @experimental
+ */
 export interface LlmMessage {
     role: 'user' | 'assistant' | 'system';
     content: string;
 }
 
-/** The normalised LLM request a provider maps to its wire body. */
+/**
+ * The normalised LLM request a provider maps to its wire body.
+ *
+ * @experimental
+ */
 export interface LlmRequest {
     model: string;
     messages: LlmMessage[];
@@ -49,7 +57,11 @@ export interface LlmRequest {
     temperature?: number;
 }
 
-/** The normalised result a provider lifts out of its response. `raw` keeps the provider's full body. */
+/**
+ * The normalised result a provider lifts out of its response. `raw` keeps the provider's full body.
+ *
+ * @experimental
+ */
 export interface LlmResult {
     text: string;
     model?: string;
@@ -123,6 +135,8 @@ const truncationFinding = (reason: string | undefined): DriftFinding => ({
  * non-secret headers, maps a {@link LlmRequest} to its HTTP body, and lifts an {@link LlmResult} out
  * of the response. First-party {@link anthropic} / {@link openai} implement it; BYO any other by
  * writing one. The CREDENTIAL is the stitch's `auth` (`bearer`/`apiKey`), never the provider.
+ *
+ * @experimental
  */
 export interface LlmProvider {
     id: string;
@@ -138,9 +152,13 @@ export interface LlmProvider {
     parse: (body: unknown) => LlmResult;
 }
 
-/** Per-stitch llm defaults baked into the surface (the call may override via `body`). Exported
+/**
+ * Per-stitch llm defaults baked into the surface (the call may override via `body`). Exported
  *  alongside {@link makeLlmSurface}, whose argument it is — a public factory taking a private
- *  parameter type is not actually constructible by a consumer. */
+ *  parameter type is not actually constructible by a consumer.
+ *
+ * @experimental
+ */
 export interface LlmDefaults {
     provider: LlmProvider;
     model?: string;
@@ -176,6 +194,8 @@ function toRequest(d: LlmDefaults, input: StitchInput): LlmRequest {
  * built per stitch — it closes over the provider + defaults ({@link makeLlmSurface}) — so this
  * exported identity is the redaction/inspection anchor: an llm stitch exposes `kind: 'llm'` on
  * `__config`, round-tripping as JSON.
+ *
+ * @experimental
  */
 export const llmSurface: Surface = { id: 'llm' };
 
@@ -209,6 +229,8 @@ export const llmSurface: Surface = { id: 'llm' };
  *
  * That example is deliberate: making truncation FATAL is a caller-side policy this surface does not
  * impose, and exporting the factory is what makes it a five-line wrapper instead of a fork.
+ *
+ * @experimental
  */
 // `method` and the body encoding are the surface's, not the caller's — `NoRequestShapeOnLlm` makes
 // authoring `method` or `wire.body` a compile error so the override is never silent. `headers` and
@@ -268,8 +290,12 @@ export function makeLlmSurface(
     };
 }
 
-/** Config for {@link llm}: the shared {@link StitchConfig} keys (minus `kind` — the surface owns
- *  it) plus the llm defaults. */
+/**
+ * Config for {@link llm}: the shared {@link StitchConfig} keys (minus `kind` — the surface owns
+ *  it) plus the llm defaults.
+ *
+ * @experimental
+ */
 export type LlmOptions = Partial<Omit<StitchConfig, 'kind'>> & {
     provider: LlmProvider;
     model?: string;
@@ -294,6 +320,63 @@ function llmConfig(config: LlmOptions): Partial<StitchConfig> {
         ...rest,
         kind: makeLlmSurface(defaults),
         ...(urlless ? { url: provider.url } : {}),
+    };
+}
+
+/**
+ * Compile-time guard: the `llm` surface OWNS how it frames a chat completion. The live surface's
+ * `buildRequest` forces `method: 'POST'` and a JSON body unconditionally and replaces the body with
+ * `provider.buildBody(...)`, so either field authored on an `llm()` config is never read. Same
+ * class as `NoWireBodyOnGraphql` (`wire.body`) and `NoRequestShapeOnDownload` (`method`) — this
+ * surface simply fixes one of each.
+ *
+ * As on graphql, this makes `WireOptions.multipart` unreachable for free:
+ * `MultipartOnlyOnMultipartBody` requires `wire.body: 'multipart'` first, and that spelling is
+ * exactly what this rejects. `WireOptions.response` is deliberately NOT guarded — `buildRequest`
+ * leaves it alone, so it still reaches the adapter and is a live knob here. That is also why the
+ * `wire` arm names `body` alone rather than replacing the envelope: the other three members stay
+ * authorable.
+ *
+ * There is no `…FixedByLlm<C>` sibling keyed off `kind`, and that asymmetry is deliberate: the
+ * exported `llmSurface` is only the redaction/inspection IDENTITY (ADR 0005 Decision 11) and carries
+ * no `buildRequest`. A `stitch({ kind: llmSurface, method: 'PUT' })` therefore keeps its `PUT` — the
+ * field is live on that path, and guarding it off the `id` would reject config that is honoured. The
+ * overriding surface is built per stitch by `makeLlmSurface`, reachable only through `llm()` /
+ * `llm.bind(seam).stitch`, which is exactly where this guard is applied.
+ *
+ * Unlike its graphql/download siblings this is a plain object type, not a conditional over `C`, and
+ * that difference is load-bearing rather than cosmetic. Those two guard authoring helpers that
+ * capture a `const C` to infer the call-argument type from `config.input` (`InputOf<C>`), so the
+ * guard has to be conditional to stay a no-op on the configs it does not touch. `llm()` infers
+ * nothing — it returns a flat `Stitch<LlmResult>` — so its parameter can stay NON-generic, and
+ * keeping it that way is what preserves excess-property checking on the object literal. That check
+ * is load-bearing here: it is what makes the removed `maxTokens` spelling a compile error (P4,
+ * pinned by a test in llm.spec.ts). Making the parameter generic to fit the conditional idiom would
+ * have silently traded that guarantee away for this one.
+ *
+ * Only the AUTHORING slot moves under `wire`. `makeLlmSurface`'s `buildRequest` still sets a flat
+ * `bodyType: 'json'` on its `AdapterRequest`, which is the transport contract and is unchanged.
+ *
+ * NOT converted to the `AnyLayer`/`Layers` composed read its siblings use, and there is nothing here
+ * to convert: those guards are conditionals over a captured `C`, and the layer walk is what lets
+ * them ask "is this slot set ANYWHERE in the chain?". This one has no `C` — the parameter is
+ * non-generic, for the excess-property reason above — so it intersects UNCONDITIONALLY and rejects
+ * the literal slot every time, which is strictly stronger than a conditional at the literal level.
+ * What it cannot do is see a violation living entirely inside an `extends` fragment
+ * (`llm({ provider, extends: [{ wire: { body: 'form' } }] })` compiles). That is the SAME fail-open
+ * the composed guards document as their first residual limit — the literal-level case, which is
+ * the one people write, errors precisely — so converting would buy nothing and cost the
+ * `maxTokens` guarantee. Pinned as a tsd expectation so it stays a decision on record.
+ *
+ * Declared here, not in `types.ts`: only `llm` uses it, and a type in the stable root barrel that
+ * only an experimental surface reads would freeze that surface's shape from the stable side.
+ *
+ * @experimental
+ */
+export interface NoRequestShapeOnLlm {
+    method?: ConfigError<'the `llm` surface always POSTs to the provider — `method` is ignored'>;
+    wire?: {
+        body?: ConfigError<'the `llm` surface always sends a JSON body built by the provider — `wire.body` is ignored'>;
     };
 }
 
@@ -335,8 +418,12 @@ const llmStitch = <const C extends LlmOptions = LlmOptions>(
         InputOf<C>
     >;
 
-/** llm members bound to a seam. `stitch(config)` creates an llm member of `seam`; `seam` is the
- *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
+/**
+ * llm members bound to a seam. `stitch(config)` creates an llm member of `seam`; `seam` is the
+ *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`).
+ *
+ * @experimental
+ */
 export interface LlmSeamApi {
     readonly stitch: <const C extends LlmOptions = LlmOptions>(
         config: C &
@@ -366,6 +453,8 @@ function bindSeam(s: Seam): LlmSeamApi {
  * - `llm.bind(options)` — a new seam, configured by `options`, whose members default to llm.
  * - `llm.bind(seam())` — the all-defaults new seam (the opaque `bind({})` is a compile error, P20).
  * - `llm.surface` — the llm {@link Surface} identity.
+ *
+ * @experimental
  */
 export const llm = Object.assign(llmStitch, {
     surface: llmSurface,
@@ -390,6 +479,8 @@ export const llm = Object.assign(llmStitch, {
  * Anthropic Messages API (`/v1/messages`). System prompts ride the top-level `system` param (not a
  * message), `max_tokens` is required (default 1024). Auth is the user's `apiKey({ name: 'x-api-key',
  * … })`; this only sets the non-secret `anthropic-version`. Defaults to the current `claude-opus-4-8`.
+ *
+ * @experimental
  */
 export const anthropic: LlmProvider = {
     id: 'anthropic',
@@ -442,6 +533,8 @@ export const anthropic: LlmProvider = {
 /**
  * OpenAI Chat Completions (`/v1/chat/completions`). A system prompt is prepended as a `system`
  * message. Auth is the user's `bearer(env('OPENAI_API_KEY'))`. Defaults to `gpt-4o`.
+ *
+ * @experimental
  */
 export const openai: LlmProvider = {
     id: 'openai',

@@ -140,6 +140,8 @@ function describeRoot(schema: unknown): string {
  * import { typeboxFingerprinter } from '@stitchapi/fingerprint-typebox';
  * fingerprinters.register(typeboxFingerprinter);
  * ```
+ *
+ * @experimental
  */
 export const typeboxFingerprinter: SchemaFingerprinter = {
     vendor: 'typebox',

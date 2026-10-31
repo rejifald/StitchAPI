@@ -33,6 +33,7 @@ import {
 import { parentPort } from 'node:worker_threads';
 import * as stitchBuild from 'stitchapi';
 import { apiKey, basic, bearer, oauth2 } from 'stitchapi/auth';
+import { otlp } from 'stitchapi/otlp';
 
 // Baseline knobs for the current run, mutated by `env.applyKnobs`; the shim
 // reads it on every request. URL-explicit knobs still win (see dispatch).
@@ -65,7 +66,10 @@ const simFetch = createFetchShim(allHandlers, () => currentKnobs);
 // The rest of that entry stays OUT on purpose: `env` reads the host environment
 // and `credential.file` reads the host disk, which would defeat the clean `process`
 // shadow below. The browser tier only has them because they are shimmed there.
-const authBuild = { bearer, apiKey, basic, oauth2 };
+//
+// `otlp` is merged the same way: it left the main barrel for `stitchapi/otlp` (#871/#872), and
+// the playground still offers it by name on both tiers (PLAYGROUND_SURFACE_NAMES).
+const authBuild = { bearer, apiKey, basic, oauth2, otlp };
 
 const env: WorkerEnv = {
     // The whole real `stitchapi` surface, exposed name-by-name into the snippet.

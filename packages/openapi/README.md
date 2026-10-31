@@ -2,6 +2,8 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/openapi?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/openapi)
 
+> **Experimental.** `@stitchapi/openapi` and its `stitch-openapi` CLI (flags, exit codes and output) ship in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+
 **Eject selected operations from an OpenAPI document into ready-to-own
 [StitchAPI](https://stitchapi.dev) source.** A build-time code generator, kept
 separate from the zero-dep `stitchapi` runtime so it can take build-time

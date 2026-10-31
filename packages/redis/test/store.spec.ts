@@ -58,7 +58,7 @@ describe('redisStore — key mapping', () => {
 
         await store.set('k', 'v', 1000);
         await store.get('k');
-        await store.increment('c', 2000);
+        await store.increment!('c', 2000);
 
         expect(calls).toEqual([
             ['set', 'app:k', JSON.stringify('v'), 1000],
@@ -78,7 +78,7 @@ describe('redisStore — key mapping', () => {
         const store = redisStore(driver);
 
         await store.set('k', 'v');
-        await store.increment('c');
+        await store.increment!('c');
 
         expect(calls).toEqual([
             ['set', 'k', JSON.stringify('v'), undefined],

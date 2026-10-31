@@ -25,8 +25,9 @@ export const getUser = stitch({
 });
 ```
 
-Run it by name. A bare `--id` routes to the `{id}` path param, and every event
-is printed as one line of JSON, so the stream pipes straight into `jq`:
+Run it by its export name. A bare `--id` routes to the `{id}` path param, and
+every event is printed as one line of JSON, so the stream pipes straight into
+`jq`:
 
 ```bash
 stitch run getUser --id 1
@@ -46,7 +47,12 @@ to stdout as JSONL — one JSON object per line, exit code `1` if an `error` eve
 is seen. Flags map onto the stitch's single input object: a bare `--<k>` becomes
 a path param when `<k>` is a `{param}` in the path and a query param otherwise,
 while `--params.<k>`, `--query.<k>`, `--headers.<k>`, and `--body '<json>'` (or
-`--body.<k> <v>`) target a bucket explicitly. `--module, -m` points at the
+`--body.<k> <v>`) target a bucket explicitly. Secrets you pass this way reach
+the request but not the output: like `stitch serve`, each `start` line has its
+URL credentials, secret query values, secret header values
+(`--headers.authorization`) and secret-named body fields (`--body.password`)
+redacted. The response itself — the `result` line — is printed as the server
+sent it. `--module, -m` points at the
 stitches module (default `./stitches.ts` and friends). `--trace` records the run
 (off by default): bare writes the default JSONL file for `stitch trace`,
 `--trace=console` streams events to stderr, and `--trace=<path>` writes JSONL to
@@ -90,9 +96,10 @@ there.
 [Mermaid](https://mermaid.js.org) flowchart of each stitch's configured pipeline
 — throttle, request, retry, the request [surface](/docs/reference/surfaces),
 pagination, validation, transform, pick, and cache — read straight from the
-definition, with no run. Pass `--name` to diagram a single stitch by export name
-or configured `name`. Auth is redacted from a stitch's public config, so the
-credential never appears in the diagram.
+definition, with no run. Pass `--name` to diagram a single stitch by its export
+name; a configured `name` does not select it (a module's `default` export, which
+has no export name, is keyed by its configured `name`). Auth is redacted from a stitch's
+public config, so the credential never appears in the diagram.
 
 ```bash
 stitch diagram --name getUser   # paste the Mermaid into any renderer

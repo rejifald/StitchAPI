@@ -9,6 +9,7 @@
         "surfaces",
         "helpers",
         "conformance-kits",
-        "events"
+        "events",
+        "stability"
     ]
 }

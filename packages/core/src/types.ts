@@ -1,5 +1,6 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
+import { compact } from './compact';
 import type {
     NormalizedSlot,
     RedactedSlot,
@@ -16,6 +17,7 @@ import type {
     SchemaLike,
 } from './infer';
 import type { Surface } from './surface';
+import { scrubUrl } from './util';
 import type { Validator } from './validator';
 
 /**
@@ -815,58 +817,6 @@ export type NoKindOnDownload<C> =
           }
         : unknown;
 /**
- * Compile-time guard: the `llm` surface OWNS how it frames a chat completion. The live surface's
- * `buildRequest` forces `method: 'POST'` and a JSON body unconditionally and replaces the body with
- * `provider.buildBody(...)`, so either field authored on an `llm()` config is never read. Same
- * class as {@link NoWireBodyOnGraphql} (`wire.body`) and {@link NoRequestShapeOnDownload}
- * (`method`) — this surface simply fixes one of each.
- *
- * As on graphql, this makes {@link WireOptions.multipart} unreachable for free:
- * {@link MultipartOnlyOnMultipartBody} requires `wire.body: 'multipart'` first, and that spelling
- * is exactly what this rejects. {@link WireOptions.response} is deliberately NOT guarded —
- * `buildRequest` leaves it alone, so it still reaches the adapter and is a live knob here. That is
- * also why the `wire` arm names `body` alone rather than replacing the envelope: the other three
- * members stay authorable.
- *
- * There is no `…FixedByLlm<C>` sibling keyed off `kind`, and that asymmetry is deliberate: the
- * exported `llmSurface` is only the redaction/inspection IDENTITY (ADR 0005 Decision 11) and carries
- * no `buildRequest`. A `stitch({ kind: llmSurface, method: 'PUT' })` therefore keeps its `PUT` — the
- * field is live on that path, and guarding it off the `id` would reject config that is honoured. The
- * overriding surface is built per stitch by `makeLlmSurface`, reachable only through `llm()` /
- * `llm.bind(seam).stitch`, which is exactly where this guard is applied.
- *
- * Unlike its graphql/download siblings this is a plain object type, not a conditional over `C`, and
- * that difference is load-bearing rather than cosmetic. Those two guard authoring helpers that
- * capture a `const C` to infer the call-argument type from `config.input` (`InputOf<C>`), so the
- * guard has to be conditional to stay a no-op on the configs it does not touch. `llm()` infers
- * nothing — it returns a flat `Stitch<LlmResult>` — so its parameter can stay NON-generic, and
- * keeping it that way is what preserves excess-property checking on the object literal. That check
- * is load-bearing here: it is what makes the removed `maxTokens` spelling a compile error (P4,
- * pinned by a test in llm.spec.ts). Making the parameter generic to fit the conditional idiom would
- * have silently traded that guarantee away for this one.
- *
- * Only the AUTHORING slot moves under `wire`. `makeLlmSurface`'s `buildRequest` still sets a flat
- * `bodyType: 'json'` on its `AdapterRequest`, which is the transport contract and is unchanged.
- *
- * NOT converted to the {@link AnyLayer}/{@link Layers} composed read its siblings use, and there is
- * nothing here to convert: those guards are conditionals over a captured `C`, and the layer walk is
- * what lets them ask "is this slot set ANYWHERE in the chain?". This one has no `C` — the parameter
- * is non-generic, for the excess-property reason above — so it intersects UNCONDITIONALLY and
- * rejects the literal slot every time, which is strictly stronger than a conditional at the literal
- * level. What it cannot do is see a violation living entirely inside an `extends` fragment
- * (`llm({ provider, extends: [{ wire: { body: 'form' } }] })` compiles). That is the SAME fail-open
- * the composed guards document as their first residual limit — the literal-level case, which is
- * the one people write, errors precisely — so converting would buy nothing and cost the
- * `maxTokens` guarantee. Pinned as a tsd expectation so it stays a decision on record.
- */
-export interface NoRequestShapeOnLlm {
-    method?: ConfigError<'the `llm` surface always POSTs to the provider — `method` is ignored'>;
-    wire?: {
-        body?: ConfigError<'the `llm` surface always sends a JSON body built by the provider — `wire.body` is ignored'>;
-    };
-}
-/**
-/**
  * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
  * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
  * - `'lines'` — UTF-8, split on `\n`; each `delta` chunk is a `string`.
@@ -980,6 +930,12 @@ export interface AdapterProgress {
 export interface AdapterRequest {
     url: string;
     method: string;
+    /**
+     * The request headers, with LOWER-CASE names. The engine folds every name (the config's
+     * `headers`, the call's `input.headers`, a surface's own) in `buildRequest`, before auth runs, so
+     * an auth strategy and a caller's header of another spelling cannot ride side by side. Read
+     * `headers['content-type']`, not `['Content-Type']`.
+     */
     headers: Record<string, string>;
     body?: unknown;
     bodyType?: 'json' | 'form' | 'multipart';
@@ -1531,7 +1487,8 @@ export interface HookContext {
     /**
      * The live request this attempt is about to send — for READING (log the method/url, count a
      * retry). It is the same object handed to the transport, so a mutation does take effect, but
-     * see {@link Hooks.onRequest}: by the time a hook sees it, auth has already signed it.
+     * see {@link Hooks.onRequest}: by the time a hook sees it, auth has already signed it. Its header
+     * names are lower-case ({@link AdapterRequest.headers}).
      */
     req?: AdapterRequest;
     res?: AdapterResult;
@@ -1578,6 +1535,16 @@ export type ProgressPhase =
     | 'paginate'
     | 'circuit'
     | 'cache';
+/**
+ * One thing that happened during a call. Every call is a stream of these, from `start` to `done`.
+ *
+ * **Span ids (ADR 0017 D6).** Wherever an event carries `spanId`, it is the id of the span the event
+ * BELONGS TO, and `parentSpanId` is that span's parent. Which span that is depends on the event:
+ * the RUN on `start`, the ATTEMPT (one physical request) on a `progress` step with `phase:
+ * 'request'`, the PAGE that just completed on `phase: 'paginate'`. Only those carry ids today; the
+ * meaning is the same wherever one is added, so a later change that stamps ids on every event
+ * (#874) fills in fields that already exist rather than renaming any.
+ */
 export type StitchEvent<T = unknown> =
     | {
           type: 'start';
@@ -1585,12 +1552,32 @@ export type StitchEvent<T = unknown> =
           method: string;
           url: string;
           input: StitchInput;
+          /** The id of the {@link Surface} that shaped the call (`'http'`, `'graphql'`, `'shell'`, …). */
+          surface?: string;
+          /**
+           * What carried the request: `'http'` — the HTTP adapter (`fetch`, or a custom `adapter`)
+           * — or the surface's own id when its `execute` replaces the transport (ADR 0008:
+           * `'shell'`, `'postmessage'`). The OTLP sink exports an `'http'` attempt as a CLIENT span
+           * with `http.*` attributes and any other as an INTERNAL span without them.
+           */
+          transport?: string;
+          /**
+           * The stitch's low-cardinality path template, unexpanded — `/users/{id}`, from `path`
+           * (under a static `baseUrl`'s own path) or a templated `url` — for an `'http'` transport.
+           * The query, the fragment and the scheme/authority are never in it. Omitted when none is
+           * known: a function `url`/`baseUrl`, an absolute `url` with no `{…}` variable, a
+           * non-HTTP transport. The OTLP sink names an attempt span `{method} {template}` and sets
+           * `url.template` to it.
+           */
+          template?: string;
           at: number;
           // Run identity (ADR 0007) — also delivered on the {@link TraceContext} ctx. Stamped
           // here too so a non-sink `.stream()` consumer can read a run's identity off its first
           // event. Optional: a `start` event built by hand (tests) may omit them.
+          /** The span this event belongs to: the RUN (see {@link StitchEvent}). */
           spanId?: string;
           traceId?: string;
+          /** The run's parent: the run that spawned this one (a `cookieSession` login, a `linked` step). */
           parentSpanId?: string;
       }
     | {
@@ -1600,6 +1587,23 @@ export type StitchEvent<T = unknown> =
           detail?: string;
           /** How long the engine waited before this step (ms): throttle pacing or retry/reconnect backoff. */
           waited?: number;
+          /**
+           * The response status behind this step, when a response caused it: the status a `retry`
+           * re-attempts (a `retry.on` match, or the surface asking for another attempt), the one an
+           * `auth` refresh answers, or the page a `paginate` step just read.
+           */
+          status?: number;
+          /** The thrown error's class (its `name`) behind a `retry`, omitted for a plain `Error`. */
+          errorType?: string;
+          /**
+           * The span this step belongs to (ADR 0017 D6; see {@link StitchEvent}), minted by the
+           * engine when it happens. On `request` it is the ATTEMPT — one per physical request,
+           * retries and refreshes included; on `paginate`, the PAGE that just completed. Absent on
+           * every other phase.
+           */
+          spanId?: string;
+          /** That span's parent: the run's `spanId`, or the page's for an attempt inside a page. */
+          parentSpanId?: string;
           at: number;
       }
     // A strategy-level announcement (auth decisions, inference). Non-progress; carries no secret.
@@ -1618,6 +1622,13 @@ export type StitchEvent<T = unknown> =
           type: 'error';
           name: string;
           message: string;
+          /**
+           * The failing error's class — its `name`, the discriminator every `StitchError` subclass
+           * sets (CONTRACT.md P10): `'TimeoutError'`, `'RateLimitError'`, a socket `'TypeError'`.
+           * Omitted for a plain `Error` (an HTTP status failure carries `status` instead) and for a
+           * failure the engine rendered without one (a contract violation, a surface's rejection).
+           */
+          errorType?: string;
           status?: number;
           // Set only on a delegate-backoff rate-limit outcome (`throttle.delegate`): the ms parsed
           // from `Retry-After` (delta-seconds OR HTTP-date), so a `.stream()` consumer gets the same
@@ -1704,7 +1715,13 @@ export type KnownMethod =
     'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'QUERY';
 
 export interface StitchConfig {
-    /** Label used in events and traces; defaults to `path` or `'stitch'`. */
+    /**
+     * Label used in events and traces; defaults to `path` or `'stitch'`. Not an address:
+     * `stitch run`, `stitch serve` and the MCP tools resolve a stitch by its registry key only, so
+     * this never makes a stitch callable under a second name. For a module's named exports that key
+     * is the export name. The one exception is a module's `default` export, which has no export name:
+     * `collectStitches` keys it by this `name` (else `"default"`), because that is the only name it has.
+     */
     name?: string;
     /**
      * Request style — a {@link Surface} plugin (ADR 0005 Decisions 1-2). Omitted = the built-in
@@ -1970,7 +1987,9 @@ export type ResolvedStitchConfig = Omit<StitchConfig, NormalizedSlot | 'kind'> &
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
  * (and a seam as its shared `__config`). {@link redactConfig} produces it: the live, secret-bearing
  * handles are stripped (`auth`, `store`, `adapter`), the surface is normalised to its `id` string
- * (`kind`), and the auth's non-secret {@link SecurityScheme} is projected onto `authScheme`. It
+ * (`kind`), and the auth's non-secret {@link SecurityScheme} is projected onto `authScheme`. Literal
+ * secrets written straight into the config are scrubbed too: a string `url` / `baseUrl` / `path`
+ * loses its userinfo and secret query values, and a secret header value reads `[REDACTED]`. It
  * therefore round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` /
  * `diagram` / `stitch export --openapi` read.
  *
@@ -1987,9 +2006,41 @@ export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
 };
 
 /**
+ * The JSON view of a {@link StitchError} — what `JSON.stringify(err)` emits, via
+ * {@link StitchError.toJSON}. Optional keys are ABSENT from the JSON rather than `undefined`:
+ * `status` and `url` appear only when the failure had them (a transport error has neither).
+ * Never carries the upstream `body`, a `RateLimitError`'s raw `response`, or the `cause`.
+ */
+export interface StitchErrorResult {
+    /** The error class's discriminator (`'StitchError'`, `'RateLimitError'`, …). */
+    name: string;
+    /** The message, with URL credentials scrubbed from any URL it quotes. */
+    message: string;
+    /** HTTP status, when the failure came from a response. */
+    status?: number;
+    /** Attempts made before giving up. */
+    attempts: number;
+    /** The final request URL, with userinfo and secret query values redacted. */
+    url?: string;
+}
+
+/**
  * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
  * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
  * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
+ *
+ * `JSON.stringify(err)` is {@link StitchError.toJSON}'s {@link StitchErrorResult}: `{ name, message,
+ * status?, attempts, url? }` with URL credentials scrubbed. The upstream `body`, a
+ * `RateLimitError`'s raw `response` and the `cause` stay readable as properties but never ride that
+ * JSON. What is NOT covered: a secret the upstream or an adapter put in `message` in a shape that is
+ * not a URL (an error text quoting a bare token), and a logger that bypasses `toJSON` (pino's `err`
+ * serializer copies enumerable properties — see the errors page).
+ *
+ * `message` is already scrubbed of URL credentials at the engine boundary where a thrown value
+ * becomes an error (a transport quotes the request URL, and with `apiKey({ in: 'query' })` that
+ * URL holds the key): userinfo dropped, secret query values read `REDACTED`, in an absolute,
+ * schemeless or relative URL alike. The original error rides on `cause`, unmodified and so with its
+ * raw message.
  */
 export class StitchError extends Error {
     /** HTTP status when the failure came from a response; `undefined` for transport/internal errors. */
@@ -2000,10 +2051,16 @@ export class StitchError extends Error {
      * The parsed response body of the failing response (an API's `{ error: "..." }` payload),
      * when the failure came from an HTTP response; `undefined` for transport/internal errors. Only
      * populated on the awaited / `.safe()` path — it is carried over the non-enumerable error
-     * channel and so never serialises into a trace sink.
+     * channel and so never serialises into a trace sink. It is UNREDACTED upstream data, so
+     * {@link StitchError.toJSON} leaves it out: read `err.body` deliberately, never via
+     * `JSON.stringify(err)`.
      */
     readonly body?: unknown;
-    /** The final request URL (after redirects) of the failing response, when the transport exposes it. */
+    /**
+     * The final request URL (after redirects) of the failing response, when the transport exposes
+     * it. The live value, unscrubbed — {@link StitchError.toJSON} emits it with userinfo and secret
+     * query values (`api_key`, `access_token`, …) redacted.
+     */
     readonly url?: string;
     constructor(
         message: string,
@@ -2020,10 +2077,30 @@ export class StitchError extends Error {
             opts.cause !== undefined ? { cause: opts.cause } : undefined,
         );
         this.name = 'StitchError';
+        Object.defineProperty(this, STITCH_ERROR, { value: true });
         this.status = opts.status;
         this.attempts = opts.attempts ?? 0;
         if (opts.body !== undefined) this.body = opts.body;
         if (opts.url !== undefined) this.url = opts.url;
+    }
+
+    /**
+     * The log-safe JSON view `JSON.stringify(err)` (and any logger that serialises through it)
+     * emits: a {@link StitchErrorResult}, `{ name, message, status?, attempts, url? }`. `message`
+     * is included — an `Error`'s own `message` is non-enumerable and would otherwise vanish — with
+     * userinfo and secret query values scrubbed from any URL it quotes (a transport error
+     * for a malformed URL quotes the whole request URL), and `url` is scrubbed the same way. The
+     * upstream `body`, a `RateLimitError`'s `response` and the `cause` are left out: they are
+     * unredacted upstream data, read deliberately off the error itself.
+     */
+    toJSON(): StitchErrorResult {
+        return compact({
+            name: this.name,
+            message: scrubUrl(this.message),
+            status: this.status,
+            attempts: this.attempts,
+            url: this.url && scrubUrl(this.url),
+        });
     }
 }
 
@@ -2121,8 +2198,11 @@ export type CacheOutcome =
  * _is_ an inspection (same `data` / `raw` / `findings` / `status` / `error` / `source`, same
  * never-throws contract and the same non-enumerable `raw`) extended with how the run actually went.
  * Every added field is secret-free and enumerable — a report is safe to log _except_ don't expand
- * `raw` (inherited non-enumerable, ADR 0018's `redact` applies). Per-attempt latency is deliberately
- * **absent** in v1 (deferred — the spine carries no per-attempt request spans).
+ * `raw` (inherited non-enumerable, ADR 0018's `redact` applies). `error` serialises through
+ * {@link StitchError.toJSON} (no upstream `body`, URL scrubbed) and `config` carries literal
+ * endpoints and headers already scrubbed. `data` is your validated payload, logged as-is — an
+ * `output` schema is the allowlist that keeps customer fields out of it. Per-attempt latency is
+ * deliberately **absent** in v1 (deferred — the spine carries no per-attempt request spans).
  */
 export interface RunReport<T> extends Inspection<T> {
     /** Total attempts made, including the first (1 = no retry). From the terminal event / `StitchError.attempts`. */
@@ -2134,7 +2214,10 @@ export interface RunReport<T> extends Inspection<T> {
     timing: { elapsed: number; waited?: number };
     /**
      * The **resolved, redacted** per-call config (ADR 0019 §5) — the stitch's existing redacted
-     * `__config`, never the secret-bearing `__rawConfig`. Safe to echo into a log or support ticket.
+     * `__config`, never the secret-bearing `__rawConfig`: live handles stripped, and a literal
+     * `url`/`baseUrl`/`path` scrubbed of userinfo and secret query values, a literal secret
+     * header value (`authorization`, `x-api-key`, …) replaced with `[REDACTED]`. Safe to echo into
+     * a log or support ticket.
      */
     config: RedactedStitchConfig;
     /** Fine-grained cache outcome — the detail behind {@link Inspection.source}. See {@link CacheOutcome}. */
@@ -2264,6 +2347,37 @@ export function isSeam(x: unknown): x is Seam {
     );
 }
 
+// The brand every {@link StitchError} carries (set, non-enumerable, in its constructor, so every
+// subclass inherits it). `Symbol.for` reads the global symbol registry, so every copy of this module
+// gets the SAME symbol — the CJS and ESM builds side by side (the dual-package hazard), each CJS
+// subpath entry's own bundled copy, or two installed versions. That is what lets
+// {@link isStitchError} see an error that `instanceof` cannot.
+const STITCH_ERROR = Symbol.for('stitchapi.error');
+
+/**
+ * True when `err` is a {@link StitchError} — the base class or any subclass ({@link RateLimitError},
+ * and every class that extends it later). Use it wherever a boundary decides "is this a stitch
+ * failure?", in place of either check it replaces:
+ *
+ * - **Not `err.name === 'StitchError'`.** A subclass keeps `name` as its own discriminator
+ *   (CONTRACT.md P10), so `RateLimitError` reads `'RateLimitError'` and a name check misses it.
+ * - **Not `instanceof` alone.** A second copy of `stitchapi` in the process (a CJS consumer beside
+ *   an ESM one, or two installed versions) has its own `StitchError` class, and an error from one
+ *   is not an `instanceof` the other. The guard also reads the realm-wide brand, so both match.
+ *
+ * It is **strict**: a lookalike (a plain `Error` that borrows `name = 'StitchError'`, a spread or
+ * JSON copy of a real one) is rejected, and so is an error from a copy of `stitchapi` older than
+ * the brand. A boundary that must fail safe, such as the host adapters withholding a message,
+ * adds its own name check on top rather than loosening this guard.
+ */
+export function isStitchError(err: unknown): err is StitchError {
+    return (
+        err instanceof StitchError ||
+        (err as Record<symbol, unknown> | null | undefined)?.[STITCH_ERROR] ===
+            true
+    );
+}
+
 // ---- Run identity (ADR 0007) ----------------------------------------------
 /**
  * OTLP-aligned identity for one logical call ({@link Stitch} run) and its place in a run
@@ -2300,15 +2414,34 @@ export interface TraceSink {
     flush?(): void | Promise<void>;
 }
 
-// A pluggable state store for throttle counters + auth session/token state. Default is
-// in-memory (single process). A Redis/Postgres adapter makes throttle distributed and
-// sessions persistent/shared across workers — see DESIGN.md §13.
+// A pluggable state store for throttle state, the response cache + auth session/token state.
+// Default is in-memory (single process). A Redis/Postgres adapter makes throttle distributed and
+// sessions persistent/shared across workers — see DESIGN.md §13. Only `get`/`set` are required;
+// every other verb is a CAPABILITY a feature uses when the store has it (the table is on the
+// "Distributed stores" docs page).
 export interface StitchStore {
     get(key: string): Promise<unknown>;
-    /** Set a value. `ttl` (ms) is optional on both verbs — absent means no expiry. */
+    /** Set a value. `ttl` (ms) is optional here and on `increment` — absent means no expiry. */
     set(key: string, value: unknown, ttl?: number): Promise<void>;
-    /** Atomically increment a counter. Absent `ttl` means no window — the counter never expires. */
-    increment(key: string, ttl?: number): Promise<number>;
+    /**
+     * Atomically increment a counter and resolve to the new count — a missing (or lapsed) key
+     * starts at 1. `ttl` (ms) binds to the increment that CREATES the counter and never extends,
+     * so a busy fixed window still resets; absent `ttl` means no window — it never expires.
+     *
+     * **Optional**, like {@link StitchStore.reserve} and {@link StitchStore.lease}: a store is a
+     * first-class citizen with only `get`/`set`. What it buys is the throttle's counter fallback —
+     * on a store with no `reserve`, `rate` allocates fleet-shared slots from it (ADR 0023). What
+     * degrades without it: with neither `reserve` nor `increment`, `rate` paces **per process**
+     * (each process keeps the declared spacing, so N processes emit N×), and the throttle says so
+     * once with an `info` event, topic `throttle.per-process`. Nothing else in core needs it —
+     * bulk cache invalidation writes a fresh generation with `set`.
+     *
+     * Two reasons it is not required: an eventually-consistent backend (Cloudflare Workers KV) has
+     * no atomic read-modify-write to build a counter from, and `StitchStore` is a contract
+     * **consumers implement**, so every required member is one more thing a get/set backend has to
+     * fake. Callers reach it with `store.increment?.(…)` or a presence check.
+     */
+    increment?(key: string, ttl?: number): Promise<number>;
     /**
      * Atomically reserve the next slot on a shared **pacing cursor** and resolve to the instant
      * reserved (epoch ms). One read-compute-write, indivisible across every process on the store:
@@ -2325,10 +2458,11 @@ export interface StitchStore {
      *
      * **Optional**, and a store is a first-class citizen without it. `createStoreThrottle` falls
      * back to `increment` plus a per-process cursor, which paces each process correctly and lets a
-     * fleet drift to N× mid-window (ADR 0023). Two reasons it is not required: an
-     * eventually-consistent backend (Cloudflare KV) has no atomic read-compute-write to build it
-     * from, and `StitchStore` is a contract **consumers implement**, where adding a required member
-     * is a hard break in any channel
+     * fleet drift to N× mid-window (ADR 0023) — and, on a store with no `increment` either, to the
+     * per-process cursor alone, announced once (`throttle.per-process`). Two reasons it is not
+     * required: an eventually-consistent backend (Cloudflare KV) has no atomic read-compute-write
+     * to build it from, and `StitchStore` is a contract **consumers implement**, where adding a
+     * required member is a hard break in any channel
      * ([CONTRACT.md P19](../../../docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)).
      *
      * `now` is the CALLER's clock, not the store's, so the cursor stays deterministic under an
@@ -2378,7 +2512,8 @@ export interface StitchStore {
      * `concurrency`. Size `throttle.lease` above your slowest call.
      *
      * **Optional, and paired** with {@link StitchStore.release} — a store MUST implement both or
-     * neither. Without them `concurrency` stays per-process, exactly as it was before ADR 0025.
+     * neither. Without them `concurrency` stays per-process, exactly as it was before ADR 0025,
+     * and the throttle says so once with an `info` event, topic `throttle.per-process`.
      * Same two reasons as {@link StitchStore.reserve}: an eventually-consistent backend cannot make
      * this atomic, and a required member on a consumer-implemented contract is a hard break in any
      * channel ([CONTRACT.md P19](../../../docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)).

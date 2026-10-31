@@ -420,8 +420,15 @@ function nameOf(stitch: unknown): string {
 // `secrets.register`). We redact the value (rather than dropping the header) so
 // the key stays stable per token AND callers who legitimately vary a response by
 // a non-secret header (e.g. `accept-language`) keep separate cache entries.
-// Compared case-insensitively; the `*-token` / `*-api-key` suffix rules catch
-// vendor spellings the stems miss (dashes defeat the `api_key`/`apikey` stems).
+// Compared case-insensitively; the `*-key` suffix rule catches vendor spellings the stems miss
+// (dashes defeat the `api_key`/`apikey` stems — `api-key`, `Ocp-Apim-Subscription-Key`,
+// `x-goog-api-key`), and `session` catches `x-session-id`. `*-token` / `*-secret` are stems, so
+// `secrets.has` already covers them. A few `*-key` headers are not credentials (`Idempotency-Key`,
+// `Sec-WebSocket-Key`, `Surrogate-Key`, `X-Cache-Key`) and stay readable.
+//
+// A MIRROR of core's `isSecretHeader` (`packages/core/src/util.ts`), which is internal — keep the
+// two in step: `test/query.spec.ts` pins the same name table as core's
+// `scrub-url-text.spec.ts`.
 const SECRET_HEADERS = new Set([
     'authorization',
     'proxy-authorization',
@@ -436,8 +443,9 @@ function isSecretHeader(name: string): boolean {
     const k = name.toLowerCase();
     return (
         SECRET_HEADERS.has(k) ||
-        k.endsWith('-token') ||
-        k.endsWith('-api-key') ||
+        (k.endsWith('-key') &&
+            !/(idempotency|websocket|surrogate|cache)-key$/.test(k)) ||
+        k.includes('session') ||
         secrets.has(k)
     );
 }

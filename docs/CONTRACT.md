@@ -31,13 +31,13 @@ history so the reasoning survives the renames.
 
 Five forks were decided by the maintainer; the rules below assume them.
 
-| #   | Decision                   | Resolution                                                                                                                                                                                                                                                       | Drives                                                        |
-| --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                  | [P5](#p5--one-success-field-one-failure-field)                |
-| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                       | [P4](#p4--one-cap-vocabulary)                                 |
-| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `duration.parse`.                                | [P17](#p17--one-canonical-duration-form)                      |
-| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                    | [§7](#7-enforcement)                                          |
-| D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major. | [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) |
+| #   | Decision                   | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                        | Drives                                                        |
+| --- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                                                                                                                                                                                   | [P5](#p5--one-success-field-one-failure-field)                |
+| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                                                                                                                                                                                        | [P4](#p4--one-cap-vocabulary)                                 |
+| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `duration.parse`.                                                                                                                                                                                                 | [P17](#p17--one-canonical-duration-form)                      |
+| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                                                                                                                                                                                     | [§7](#7-enforcement)                                          |
+| D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major, except on a surface listed in the member table of [P26](#p26--an-experimental-tier-sits-outside-the-freeze), which changes in a minor with no deprecation cycle. | [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) |
 
 ---
 
@@ -61,6 +61,14 @@ must preserve it.
   `Surface` already do. This explicitly includes the key-derivation functions
   ([`keyOf`](#p6--key-is-a-string-keyof-is-a-function)) — they are sugar, not a
   blessed `__config` exception.
+- Literal **secret values** are scrubbed on the way to `__config` as well, because every reader
+  above echoes it as safe to show: a string `url` / `baseUrl` / `path` — absolute, relative,
+  protocol-relative or templated — loses its userinfo and secret query values (RFC 6570
+  `{param}` slots preserved: the scrub is textual, never a `new URL` round-trip), and a secret
+  header value in `headers` reads `[REDACTED]` (#873). The data stays plain JSON; the engine
+  sends the real values from `__rawConfig`, and so does any reader that needs the real thing
+  rather than a display (`seam.invalidate`'s cache id). `__config` is a snapshot taken when the
+  stitch is built: `secrets.register` applies to it only if called before.
 - **One exemption, and only one:** the schema slots `input` / `output` hold Standard
   Schema validators, whose `validate` sits at depth 2. They are **not** sugar —
   `export --openapi` reads them off `__config` to build its parameter and response
@@ -291,8 +299,29 @@ stable discriminator) so a consumer can branch on any thrown error uniformly.
 Parity is achieved by **inheritance, not duplication**: `StitchError` is the root, and
 every other thrown class **MUST** extend it rather than re-declare its fields. A new
 class adds only what is genuinely its own (`RateLimitError` adds `retryAfter` and
-`response`) and **MUST** keep `name` as its own discriminator — that is what the
-serialising hosts branch on once the instance is gone (rtk-query stores a plain object).
+`response`) and **MUST** keep `name` as its own discriminator — that is what a consumer
+branches on once the instance is gone (rtk-query stores a plain object).
+
+While the instance is alive, "is this a stitch failure?" is core's **`isStitchError(err)`**
+(root export), never `err.name === 'StitchError'` (a subclass keeps its own `name`, so that
+check misses `RateLimitError`) and never `instanceof` alone (a second copy of `stitchapi` — the
+CJS build's per-entry bundles, or two installed versions — has its own class). Every
+`@stitchapi/*` host's `stitchError.is` runs it. The guard reads the
+**`Symbol.for('stitchapi.error')` brand** that `StitchError`'s constructor sets
+(non-enumerable, so a spread or a JSON copy does not carry it). That key is a **frozen
+cross-version contract key**: its spelling never changes and every future copy of the class
+sets it, because an older copy's guard has to keep recognising a newer copy's errors. The core
+guard stays strict (a lookalike that only borrows `name` is rejected); the hosts add a
+fail-safe `name` check (`StitchError` / `RateLimitError`) on top, since for them a missed
+error is a leaked message and over-recognising only redacts more.
+
+The guaranteed field set is the _property_ view on the live instance. The **JSON** view —
+what `JSON.stringify(err)` and a logger that serialises through it emit, via `toJSON` — is a
+deliberate subset, a `StitchErrorResult` (a `RateLimitErrorResult` for the subclass; the
+produced-shape suffix of [P3](#p3--one-suffix-system)): `{ name, message, status?, attempts,
+url? }` with URL credentials scrubbed from `message` and `url`, and **no `body`** (nor the
+subclass's `response`, nor `cause`) — those are unredacted upstream data, read off the
+instance on purpose. Absent optional keys are absent from the JSON, not `undefined`.
 
 Two consequences the surface **MUST** hold to:
 
@@ -644,6 +673,11 @@ spellings optional forever and dispatching on whichever is present, which erases
 contract the rename exists to state and lets an implementation satisfy the type while
 providing neither. For these, a rename is a hard break in **any** channel — post-GA it is
 a major-version change, not an aliasable one.
+
+_Exemption — the experimental tier._ A surface in [P26](#p26--an-experimental-tier-sits-outside-the-freeze)'s
+member table is outside this obligation: its renames, narrowings and removals ship as hard
+breaks in a **minor** release, with a CHANGELOG line and no alias. P19 binds it from the
+release that graduates it.
 
 ### P20 · No empty-object config; enable-with-defaults is a scalar
 
@@ -1106,6 +1140,121 @@ seen from either end. R9 pins the **type**; the other half of the rule — that 
 reaches `size.parse`/`duration.parse` before it is compared or slept on — is dataflow, and
 is pinned by test instead.
 
+### P26 · An experimental tier sits outside the freeze
+
+Versions are lockstep: one `$TAG` publishes every package, so `1.0.0` puts all of them, and
+every core entry point, under [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel)'s
+deprecation obligation at the same instant — including surfaces whose shape is not settled. A
+surface listed in the **member table** below is **experimental**: it ships in that same
+version and stays outside the freeze until it graduates.
+
+**A surface is experimental only if all three hold:**
+
+1. **It is listed** in the member table. The table is the single source of truth; a tag or a
+   banner alone makes nothing experimental.
+2. **Every symbol exported from it carries an `@experimental` JSDoc tag** — values and types,
+   at every entry point the surface publishes (for a member package, every key of its `exports`
+   map), through every `export *` chain, placed on the declaration. A function with overloads
+   carries the tag on **every public overload signature**: TS hover and deprecation-style
+   tooling resolve per signature, so a tag on the first leaves the others unmarked. The
+   implementation signature is not public and is exempt.
+3. **Its docs page opens with the experimental banner** — its README, where no page exists (for
+   a core subpath, the section of `packages/core/README.md` that documents it). On the docs
+   site the banner is a `<Callout type="warn" title="Experimental">`; in a README it is a
+   blockquote opening **Experimental.** Either one names the surface, says it may change shape
+   or behaviour in a minor release, and links the Stability page.
+
+Holding two of the three leaves a surface experimental in one place and promised in another.
+
+- **Stable surfaces never touch it.** Clause 1 stands: a symbol is experimental because its
+  surface is listed, so a stable entry point **MUST NOT re-export or name an experimental
+  symbol** — not in a re-export, a parameter, a return, a field, a constraint or a base type. A
+  re-export would put an experimental shape on a stable surface, which freezes it by the back
+  door; a stable signature that needs the shape takes a structural type of its own, or waits for
+  the shape to graduate. The converse is free: a member MAY import stable code and other
+  members. A type that only a member uses belongs in the member, not in a stable barrel.
+- **Change policy.** An experimental surface ships in the lockstep version — `1.0.0`, not a
+  `0.x` line and not a prerelease tag — and MAY change shape or behaviour in a **minor**
+  release. Every such change is listed in `CHANGELOG.md` with a one-line migration. The
+  surface is **exempt from [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel)'s
+  deprecation obligation** (no `@deprecated` alias is owed) and will be exempt from the
+  API-report break check (#854). **Every other rule in this contract still applies to it**:
+  naming (P1–P4, P24), typing, shorthands and envelopes bind an experimental surface exactly as
+  they bind a stable one, and the ratchet in [§7](#7-enforcement) gates it identically. The
+  tier relaxes how a change ships, never what the surface may look like.
+- **Patch releases.** A **patch** release MUST NOT change an experimental surface's shape or
+  behaviour. A change to either — a bug fix that alters what a documented call returns
+  included — ships in a minor. That is what makes a patch range (`~1.0.0`) a safe pin for a
+  consumer who builds on a member. **One exception: a security fix.** A patch MAY change an
+  experimental surface's behaviour — never its shape — to fix a security vulnerability; such a
+  fix MUST be the minimal change that closes it, and is recorded under the release's `### Security`
+  `CHANGELOG.md` heading with a one-line migration.
+- **A member's CLI.** The CLI a member package ships (`stitch-openapi`: its flags, exit codes
+  and output) is part of that package's experimental surface and changes under the same rules.
+  R12 cannot tag a flag, so the package README's banner names the CLI.
+- **Pages that teach a member.** A docs-site page whose code imports a member (or that documents
+  a member's config) carries a short inline note near its first use: a
+  `<Callout type="warn" title="Experimental">` that names the surface and links the Stability
+  page. That is separate from the banner on the surface's own page, and a README or a banner
+  elsewhere does not stand in for it. Blog posts are dated editorial, not the surface's docs,
+  and are exempt.
+- **Graduation** means removing the tag in a minor release, and it requires all three of:
+    1. a **dedicated reference page** on the docs site exists for the surface — a README, an
+       integration page that only mentions it, or an inline note on another page does not count;
+    2. **no open issue proposes a change to the surface's public shape** — checked by searching
+       the tracker for the surface's specifier and its exported names;
+    3. **one minor release has shipped with no breaking `CHANGELOG.md` entry for the surface**,
+       counted from the `Since` version in the member table. An entry is breaking if it is
+       marked **BREAKING CHANGE** and names the surface or one of its exports.
+
+    The graduating change deletes the member-table row, every `@experimental` tag, the banner and
+    the inline notes, and records the graduation in `CHANGELOG.md`. From that release P19 binds
+    the surface.
+
+- **Demotion.** Moving a stable surface into the tier is a **major**: it withdraws a promise
+  already made, which is a removal in P19's sense.
+
+**Member table** (adopted 2026-10-01, #841). `Since` is the lockstep version in which the surface
+entered the tier. The ratchet reads the first column of this table — one backticked specifier per
+row — so a row is added or removed here and nowhere else:
+
+<!-- R12 members: scripts/check-contract.mjs reads the backticked first column between these markers -->
+
+| Surface                          | Since | Why it is in the tier                                                                                                                        |
+| -------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stitchapi/llm`                  | 1.0.0 | P0 #699; the consumer-implemented `LlmProvider`/`LlmMessage` contract is unfinished; config the types accept and the runtime ignores (#849). |
+| `stitchapi/postmessage`          | 1.0.0 | No docs page.                                                                                                                                |
+| `stitchapi/pipe`                 | 1.0.0 | #643: the combinators broadcast one input to every member.                                                                                   |
+| `@stitchapi/openapi`             | 1.0.0 | #885, #876.                                                                                                                                  |
+| `@stitchapi/vercel-ai`           | 1.0.0 | #887.                                                                                                                                        |
+| `@stitchapi/fingerprint-typebox` | 1.0.0 | Cannot dispatch TypeBox 0.34 schemas (#884).                                                                                                 |
+| `@stitchapi/shell`               | 1.0.0 | No docs page; config its options type accepts and the runtime ignores (#849).                                                                |
+
+<!-- /R12 members -->
+
+_Why a tier and not a version split:_ keeping some packages at `0.x` or on an `rc` tag would
+need changes to yakir's `release-version` tether (set to `block`), to `npm-publish.yml` (one
+`$TAG` for every package) and to `check-release`. A documented tier costs a table row, a tag
+per symbol and a banner, and it has an exit. _Why the tag, the banner and the table are all
+required:_ each reaches a different reader — the tag the editor and the API report, the banner
+the person reading the page, the table the maintainer deciding what to freeze — and a tier any
+one of them could contradict is a tier nobody can trust. _What the tier is not:_ a parking lot
+(membership has a written exit above), or a licence to ship defects. The tier removes the
+**compatibility** obligation, not the correctness one; a P0 inside an experimental surface is
+still a P0.
+
+_Canonical case:_ the table above, and what is deliberately **not** in it. `toOpenApi` (the
+OpenAPI **export** in `stitchapi/registry`) keeps the full promise, while `@stitchapi/openapi`,
+the code generator, is a member: ejected code is user-owned, so changing what the generator
+emits breaks nobody who already ejected. The OTLP span structure is not a member either (#871
+settles it on its own terms), and `@stitchapi/download` is a separate decision (#843).
+
+Enforced by lint **R12** (§7), which reads the member table and holds the tags to it in both
+directions, holds the import graph to the tier's edge (the stable-surfaces clause), and is the one
+rule that cannot be baselined: P26 has no exceptions to record. The banner, the inline notes on
+pages that teach a member, and the CLI clause are review obligations: R12 reads declarations and
+imports, not prose or flags.
+
 ---
 
 ## 6. Migration record (2026-07-08 hard-break sweep)
@@ -1389,6 +1538,15 @@ against both — the findings sit at the end of the list:
   the three implementations stay plain module functions and `otlp` is a thin facade over them;
   core's own call site (`stitch.ts`) keeps importing `otlpSink` directly. Measured both sides: the
   whole entry unchanged at 24.60 KB gzip, `import { stitch }` 21.82 → 21.83 KB. No budget raise.
+  _Amendment (2026-10-01, #871/#872):_ the whole namespace left the root barrel for
+  **`stitchapi/otlp`** ([ADR 0021](adr/0021-auth-strategies-move-to-a-subpath.md)'s move), hard
+  break and no alias ([D5](#0-resolved-decisions), `rc` channel), when the D6 span-tree rewrite put
+  both root scenarios over budget. `stitch.ts` no longer imports `otlpSink`: `STITCH_EXPORT=otlp`
+  reaches the module through a lazy `import('./otlp')`, and the module exports **only** `otlp` —
+  the three implementation functions are private, so the subpath carries the one decision and the
+  old spellings are pinned absent from it as well as from the root. The facade-over-plain-functions
+  reasoning above is unchanged, but its measured bytes now sit in a lazy chunk with its own gate
+  scenario (`stitchapi/otlp`).
 - **ADR 0012 rule 6 (an adapter package the sweep never reached, 2026-08-28)** —
   `@stitchapi/react-native` exported `assertStreamingPolyfills` and
   `hasStreamingPolyfills`: two bare, non-branded names in an adapter package, which
@@ -1960,7 +2118,9 @@ reconciliation_.
   hand, so it is a regression guard, not a fix. **R11** (2026-09-04) makes it three of four:
   its one match, `BatchProgress.ratePerSec`, was found by a by-hand census days earlier and
   fixed in the very commit that adds the rule, so R11 too enters at **zero** — but as the
-  guard for a defect the surface had actually shipped, not a hypothetical one. The ratchet
+  guard for a defect the surface had actually shipped, not a hypothetical one. **R12**
+  (2026-10-01) enters at **zero** for a different reason: the tier it gates is new, so the
+  tags land in the same change as the rule. The ratchet
   mechanics
   stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
   guarantee: the surface can only get more consistent, never less.
@@ -2033,6 +2193,57 @@ reconciliation_.
   the dimension. `Min`/`Mins` are deliberately left out (`poolMin` is a minimum, not minutes);
   OTLP's `*UnixNano`/`*UnixSeconds` instants take R2's carve-out. One allow-list entry today:
   `retryAfterSeconds`, the `Retry-After` delta-seconds P17's unit-hazard clause already names.
+  **R12** the experimental tier (P26), held to its member table in both directions and to the
+  tier's edge. The table is **this file's**: the script reads the backticked first column between
+  the two marker comments in P26, so there is no second list to drift — a surface joins or leaves
+  the tier by editing that table and nowhere else. Each row resolves to its entry points
+  (`stitchapi/<subpath>` through that one key of core's `exports` map; `@stitchapi/<name>` through
+  the **union of every key** of that package's `exports` map, so a second entry point cannot hide
+  an untagged file — a key the gate cannot follow to a source file is itself a finding), and then:
+    - **(a)** every symbol the entry exports carries `@experimental` at tag position in the
+      JSDoc above **each of its public declarations**. The set is followed through direct
+      declarations, `export { … }` lists (taking the post-`as` name) and relative `export *` /
+      `export { … } from` chains to where each symbol is declared, so a barrel cannot hide an
+      untagged symbol. A function with overloads has one public declaration per overload
+      **signature**, and each carries the tag, because TS hover and deprecation-style tooling
+      resolve per signature; the implementation signature (the one with a body, once overload
+      signatures exist) is exempt. A re-export of **another package's** symbol is a finding,
+      because the tag cannot ride it.
+    - **(b)** an `@experimental` tag anywhere in a published package's `src` that is not on a
+      declaration of a listed surface is a finding — on a stable symbol, on a member or
+      parameter, or on a helper no entry exports. That is the half that keeps the table the
+      only way into the tier.
+    - **(c)** no published `src` file outside a member imports a member module or a member
+      package — relative or bare, static or dynamic, `import type` included. A member is its
+      entry files plus every file that declares one of its exports (for a member package, every
+      file in its `src`), and a member may import another member. This is the half of P26 that
+      keeps a stable surface from re-exporting or naming an experimental symbol: naming a symbol
+      takes an import, so the import graph is enough and no type checker is needed.
+      `export { all } from './pipe'` added to core's root barrel fails it.
+
+    R12 is the one rule with **no baseline**. Every other rule can carry a reviewed, written-down
+    exception; P26 cannot, because the tier is a promise to consumers and an untagged symbol on
+    an experimental surface is wrong the day it lands. `--update` leaves R12 findings out of the
+    baseline (and exits non-zero while any exist), and a baseline file that lists one is rejected.
+
+    A table that yields no rows, a row that resolves to no entry point, and an `exports` key
+    whose source cannot be read are each a finding, so a typo cannot turn the rule vacuous. Like
+    the rest it is source-text: comments, strings and regex literals are blanked before any
+    pattern runs (a JSDoc example in `postmessage.ts` and the code a generator emits in
+    `gen-openapi.ts` both spell `export const …`), and a file whose braces do not balance after
+    blanking is reported as a scanner fault rather than trusted. What it does **not** see is
+    stated in P26: the banner, the inline notes on pages that teach a member and the CLI clause
+    are prose or flags, not declarations, and (c) reads imports, so a hand-written ambient
+    declaration restating an experimental type inside a stable package would not trip it. R12
+    enters at **zero**, and it is verified
+    non-vacuous on every run rather than once: `scripts/check-contract-selftest.mjs`, which
+    `pnpm check:contract` runs after the gate, builds a miniature repository and applies one
+    mutation at a time — removing a tag, tagging a stable symbol or a member, tagging only the
+    first or only a later overload, tagging only the implementation, leaving a second entry
+    point untagged, dropping or mistyping a table row, removing the markers, hiding an untagged
+    symbol behind `export *`, re-exporting another package's symbol, importing a member from a
+    stable file, and baselining an R12 finding — and fails if any of them stops failing.
+
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
   same-name-different-**shape** detection, default-value inversion (P8), and the
   **parse half** of P17/P25 — R9 pins the type, but whether the widened value actually

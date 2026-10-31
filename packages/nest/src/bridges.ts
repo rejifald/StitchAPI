@@ -185,14 +185,31 @@ export function fromNestConfig(
 }
 
 /**
- * Wrap a store the package does **not** own: `get`/`set`/`increment` delegate, but `close` is
+ * Wrap a store the package does **not** own: every verb the store has delegates, but `close` is
  * omitted, so a seam's `close()` never tears down a store the app passed in (ADR 0006
  * Decision 8). The app — not the package — disposes a store it provides.
+ *
+ * The optional capabilities — `increment`, `reserve`, and the `lease`/`release` pair — are
+ * forwarded only when the store has them, so the borrowed view reports the store's real
+ * capability: inventing one would call a method that is not there, and dropping one would quietly
+ * turn a fleet-wide throttle into a per-process one (#882).
  */
 export function nestBorrowStore(store: StitchStore): StitchStore {
-    return {
+    const borrowed: StitchStore = {
         get: (key) => store.get(key),
         set: (key, value, ttl) => store.set(key, value, ttl),
-        increment: (key, ttl) => store.increment(key, ttl),
     };
+    const increment = store.increment?.bind(store);
+    if (increment) borrowed.increment = increment;
+    const reserve = store.reserve?.bind(store);
+    if (reserve) borrowed.reserve = reserve;
+    // The lease pair travels together or not at all — half a semaphore can take a slot it can
+    // never give back.
+    const lease = store.lease?.bind(store);
+    const release = store.release?.bind(store);
+    if (lease && release) {
+        borrowed.lease = lease;
+        borrowed.release = release;
+    }
+    return borrowed;
 }

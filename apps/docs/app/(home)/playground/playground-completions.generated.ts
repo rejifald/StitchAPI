@@ -9,7 +9,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "name",
             type: "property",
             detail: "string",
-            info: "Label used in events and traces; defaults to `path` or `'stitch'`.",
+            info: "Label used in events and traces; defaults to `path` or `'stitch'`. Not an address: `stitch run`, `stitch serve` and the MCP tools resolve a stitch by its registry key only, so this never makes a stitch callable under a second name. For a module's named exports that key is the export name. The one exception is a module's `default` export, which has no export name: `collectStitches` keys it by this `name` (else `\"default\"`), because that is the only name it has.",
         },
         {
             label: "kind",

@@ -42,6 +42,8 @@ const CORE =
 // The auth surface is its own entry (ADR 0021); `stitchapi` aliases to a FILE, so
 // `stitchapi/auth` cannot resolve underneath it and needs its own alias.
 const CORE_AUTH = CORE.replace(/index\.ts$/, 'auth.ts');
+// The OTLP pipeline is its own entry too (#871/#872) — same reason, same alias shape.
+const CORE_OTLP = CORE.replace(/index\.ts$/, 'otlp.ts');
 
 async function loadEsbuild() {
     // Prefer a workspace-resolvable `esbuild`. If unresolvable (e.g. deps not
@@ -82,6 +84,7 @@ const result = await esbuild.build({
     alias: {
         stitchapi: CORE,
         'stitchapi/auth': CORE_AUTH,
+        'stitchapi/otlp': CORE_OTLP,
     },
     metafile: true,
     logLevel: 'info',

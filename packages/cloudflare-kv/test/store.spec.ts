@@ -1,14 +1,18 @@
 // Behaviour proof for @stitchapi/cloudflare-kv.
 //
-// We deliberately do NOT run `conformance.store` from `stitchapi/testing`: that
-// kit asserts the atomic-increment rule ("20 concurrent increments net +20"), and Workers KV
-// has no atomic counter, so `increment` throws by design (see src/index.ts). The
-// contract would fail — correctly — so instead we prove the half KV *does* support
-// (get/set/delete/TTL) against a faithful in-memory KVNamespace, and assert that
-// `increment` rejects with the documented Durable-Object pointer.
+// `cloudflareKvStore` is a get/set-only store (#882): Workers KV has no atomic
+// read-modify-write, so it implements none of the contract's optional capabilities
+// (`increment`, `reserve`, `lease`/`release`). It runs `conformance.store` from
+// `stitchapi/testing`, which checks the capabilities a store HAS — here the base
+// group (get/set/delete/TTL/isolation) — against a faithful in-memory
+// KVNamespace. Then it pins what the absence means end to end: bulk cache
+// invalidation still works, and a throttle says once that it is per-process.
 import { cloudflareKvStore } from '../src';
 import type { KVNamespaceLike } from '../src';
 
+import { stitch } from 'stitchapi';
+import type { Adapter, StitchEvent } from 'stitchapi';
+import { conformance } from 'stitchapi/testing';
 import { describe, expect, test } from 'vitest';
 
 // --- a faithful in-memory Workers KV namespace ----------------------------
@@ -23,9 +27,16 @@ interface Entry {
  * The slice of `KVNamespace` the store touches, in memory. Mirrors the real
  * runtime: `expirationTtl` is in **seconds** and rejected below 60s, and reads of
  * an expired key see `null`.
+ *
+ * `msPerSecond` is how long one KV second lasts here — 1000 by default (real
+ * time). The conformance run compresses it to 1 so the kit's real-timer TTL rules
+ * can watch a 60-"second" floor lapse in 60ms; every unit conversion the store
+ * does is unchanged, only the fake's clock runs fast.
  */
 class FakeKvNamespace implements KVNamespaceLike {
     private readonly data = new Map<string, Entry>();
+
+    constructor(private readonly msPerSecond = 1000) {}
 
     private live(key: string): Entry | undefined {
         const e = this.data.get(key);
@@ -52,7 +63,8 @@ class FakeKvNamespace implements KVNamespaceLike {
         }
         this.data.set(key, {
             value,
-            expiresAt: ttl == null ? Infinity : Date.now() + ttl * 1000,
+            expiresAt:
+                ttl == null ? Infinity : Date.now() + ttl * this.msPerSecond,
         });
     }
 
@@ -172,22 +184,78 @@ describe('@stitchapi/cloudflare-kv keyPrefix', () => {
     });
 });
 
-// --- the atomic-increment gap ---------------------------------------------------
+// --- conformance: the capabilities the store has --------------------------
 
-describe('@stitchapi/cloudflare-kv increment is unsupported', () => {
-    test('increment rejects with a documented Durable-Object pointer', async () => {
+describe('@stitchapi/cloudflare-kv conformance', () => {
+    test('passes conformance.store — the base group, the only one it claims', async () => {
+        const report = await conformance.store(() =>
+            cloudflareKvStore(new FakeKvNamespace(1)),
+        );
+        conformance.assert(report);
+        expect(report.passed).toContain('set: a ttl entry expires');
+        // No capability group ran, because the store claims none.
+        expect(
+            report.passed.filter((r) =>
+                /^(increment|reserve|lease|release):/.test(r),
+            ),
+        ).toEqual([]);
+    });
+
+    test('implements only get/set — no counter, no pacing cell, no lease, no close', () => {
         const store = cloudflareKvStore(new FakeKvNamespace());
-        await expect(store.increment('rate', 1_000)).rejects.toThrow(
-            /Durable Object/i,
-        );
-        await expect(store.increment('rate', 1_000)).rejects.toThrow(
-            /not supported on Cloudflare Workers KV/i,
-        );
-        // `ttl` is optional on `increment` (StitchStore contract) — the no-window
-        // call shape must typecheck, and still fails loud on KV.
-        await expect(store.increment('rate')).rejects.toThrow(
-            /Durable Object/i,
-        );
+        expect(Object.keys(store).sort()).toEqual(['get', 'set']);
+    });
+});
+
+// --- what the absence means, end to end -----------------------------------
+
+function counting(): { adapter: Adapter; calls: () => number } {
+    let calls = 0;
+    const adapter: Adapter = async () => {
+        calls += 1;
+        return { status: 200, headers: {}, body: { n: calls } };
+    };
+    return { adapter, calls: () => calls };
+}
+
+describe('@stitchapi/cloudflare-kv features without the optional verbs', () => {
+    test('bulk cache invalidation works — a generation bump is a plain set', async () => {
+        const { adapter, calls } = counting();
+        const s = stitch({
+            url: 'https://api.test/r',
+            adapter,
+            trace: false,
+            store: cloudflareKvStore(new FakeKvNamespace()),
+            cache: { ttl: '5m', tenancy: 'app' },
+        });
+        await s();
+        await s();
+        expect(calls()).toBe(1);
+        await s.cache.invalidate();
+        await s();
+        expect(calls()).toBe(2);
+    });
+
+    test('a throttle paces per process and says so once (throttle.per-process)', async () => {
+        const { adapter } = counting();
+        const s = stitch({
+            url: 'https://api.test/r',
+            adapter,
+            trace: false,
+            store: cloudflareKvStore(new FakeKvNamespace()),
+            throttle: { rate: '1000/s', concurrency: 4 },
+        });
+        const infos: StitchEvent[] = [];
+        for (let i = 0; i < 3; i++)
+            for await (const e of s.stream())
+                if (e.type === 'info' && e.topic === 'throttle.per-process')
+                    infos.push(e);
+        expect(infos).toHaveLength(1);
+        expect(infos[0]).toMatchObject({
+            detail:
+                'rate: the store has no reserve or increment; ' +
+                'concurrency: the store has no lease/release',
+        });
     });
 
     test('cloudflareKvStore has no close() (it owns no connection)', () => {

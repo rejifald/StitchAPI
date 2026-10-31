@@ -183,28 +183,23 @@ async function main(): Promise<void> {
         'there is no channel to a human from inside this process (C6 a) — a write an agent may legitimately need has to be a different server, or a different transport',
     );
 
-    heading('C8 (e) — the configured-name bypass (C3 e)');
-    const shadowApi = seam({
-        baseUrl: BASE,
-        adapter: new Wire(route).adapter(),
-    });
-    let rejected = '';
-    try {
+    heading('C8 (e) — the configured-name bypass (C3 e), closed in core');
+    const shadowWire = new Wire(route);
+    const shadowApi = seam({ baseUrl: BASE, adapter: shadowWire.adapter() });
+    const shadowClient = await inProcess(
         expose({
             readOnlyOrders: shadowApi.stitch({
                 name: 'listOrders',
                 path: '/v1/orders',
                 auth: bearer(env(ENV.bearer)),
             }) as Stitch,
-        });
-    } catch (e) {
-        rejected = (e as Error).message;
-    }
-    check(
-        'a renamed key is rejected at construction',
-        rejected,
-        'expose: "readOnlyOrders" is also reachable as "listOrders" — give the stitch the same name as its key',
+        }),
     );
+    const byOldName = await shadowClient.callTool('run_stitch', {
+        name: 'listOrders',
+    });
+    check('the configured name is not callable', byOldName.isError, true);
+    check('…and the vendor saw nothing', shadowWire.count, 0);
 
     heading('C8 (f) — what C1 still gives you for free');
     const transcript = safeClient.transcript.map((e) => e.raw).join('\n');
@@ -233,7 +228,7 @@ async function main(): Promise<void> {
 
     finish(
         'C8',
-        `ACHIEVABLE, AND THE USER CODE IS ${String(userLines)} EXECUTABLE LINES ACROSS 3 SEAMS. The safe exposure closes every gap C2–C7 opened that is closable in-process, and it needed no fork and no config key: \`expose\` (the registry object handed to \`createMcpServer\`) is the allow-list, and it rejects a key whose stitch carries a different configured \`name\` — the C3 (e) bypass — at construction; \`only\` is a \`Proxy\` apply-trap that REBUILDS the input from an explicit key list before the engine sees it — no longer forced by C7 (e), whose #663 fix makes a declared schema filter its own slot, but still the one line that covers every slot a stitch leaves UNDECLARED (the C7 (d) passthrough), and defence in depth on the rest; \`readsOnly\` wraps the \`Adapter\`, the last seam before the transport, and refuses a non-GET. Replayed side by side over the same vendor: the naive exposure sent \`?tenant=globex\`, \`?include=internal_notes\` and a 999,999 refund to the wire; the safe one sent \`?tenant=acme&limit=5\` and nothing else, refused the POST with a reason the model can read, and still authenticated every read with the real \`Bearer sk_live_…\`. WHAT IT CANNOT CLOSE: C6 — nothing in this process can ask a human, so an irreversible call can only be refused, never confirmed; and C4 (c) — the error channel is an unfiltered \`Error.message\`, so the only fix for a URL-borne credential is \`apiKey({ in: 'header' })\` rather than \`{ in: 'query' }\``,
+        `ACHIEVABLE, AND THE USER CODE IS ${String(userLines)} EXECUTABLE LINES ACROSS 3 SEAMS. The safe exposure closes every gap C2–C7 opened that is closable in-process, and it needed no fork and no config key: \`expose\` (the registry object handed to \`createMcpServer\`) is the allow-list, — and since #866 the registry key is the only name a stitch answers to, so the C3 (e) bypass needs no check of its own; \`only\` is a \`Proxy\` apply-trap that REBUILDS the input from an explicit key list before the engine sees it — no longer forced by C7 (e), whose #663 fix makes a declared schema filter its own slot, but still the one line that covers every slot a stitch leaves UNDECLARED (the C7 (d) passthrough), and defence in depth on the rest; \`readsOnly\` wraps the \`Adapter\`, the last seam before the transport, and refuses a non-GET. Replayed side by side over the same vendor: the naive exposure sent \`?tenant=globex\`, \`?include=internal_notes\` and a 999,999 refund to the wire; the safe one sent \`?tenant=acme&limit=5\` and nothing else, refused the POST with a reason the model can read, and still authenticated every read with the real \`Bearer sk_live_…\`. WHAT IT CANNOT CLOSE: C6 — nothing in this process can ask a human, so an irreversible call can only be refused, never confirmed; and C4 (c) — the error channel is an unfiltered \`Error.message\`, so the only fix for a URL-borne credential is \`apiKey({ in: 'header' })\` rather than \`{ in: 'query' }\``,
     );
 }
 

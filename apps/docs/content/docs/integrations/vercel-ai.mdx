@@ -5,6 +5,13 @@ prerequisites:
     ['/docs/concepts/the-stitch', '/docs/concepts/capability-not-credential']
 ---
 
+<Callout type="warn" title="Experimental">
+    `@stitchapi/vercel-ai` ships in the 1.x line but may change shape or
+    behaviour in a minor release, with each change and its migration listed in
+    the changelog. [Stability](/docs/reference/stability) says what that means
+    and how a surface graduates.
+</Callout>
+
 StitchAPI is agent-native through the [MCP surface](/docs/surfaces/mcp) — the
 canonical way to hand a stitch to any agent. `@stitchapi/vercel-ai` is the framework-specific
 convenience for apps already on the [Vercel AI SDK](https://sdk.vercel.ai): wrap a
@@ -60,6 +67,11 @@ directly.
 
 The tool's result is the stitch's validated output, so the model reasons over real
 data, not a guess; a failure rejects, and the AI SDK's tool-error handling reports it.
+That report is the error's `message`, which the AI SDK sends to the model as the
+tool's result, so core scrubs it first: a URL the transport quoted loses its
+userinfo and its secret query values (`?api_key=REDACTED`), and the model never reads
+a key you put in a URL with `apiKey({ in: 'query' })`. A key in a header is still the
+better placement. See [Errors & pitfalls](/docs/errors).
 
 ## `stitchExecute`
 

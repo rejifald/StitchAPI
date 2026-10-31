@@ -53,6 +53,8 @@ anything else — map the stitch failure, rethrow the rest, no `instanceof` danc
 It maps to `502` by default — the safe choice that never leaks the
 upstream's `401`/`404` semantics. Pass `{ status: (e) => e.status ?? 502 }` to
 propagate the upstream status instead. `stitchError.is(err)` is the guard on its own.
+It runs core's [`isStitchError`](/docs/errors), so a subclass such as
+`RateLimitError` is mapped like the base class.
 
 `stitchError` is the same namespace every `@stitchapi` host adapter exports for this
 one concept. There is no `.handler` here: a route handler is its own

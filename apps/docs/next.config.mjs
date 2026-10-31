@@ -55,6 +55,13 @@ ensureTypedDeps();
 
 const withMDX = createMDX();
 
+// Every onnxruntime-node binary that is not linux/x64; see outputFileTracingExcludes.
+const ONNXRUNTIME_OTHER_PLATFORMS = [
+    '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/darwin/**',
+    '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/win32/**',
+    '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**',
+];
+
 /** @type {import('next').NextConfig} */
 const config = {
     reactStrictMode: true,
@@ -105,8 +112,9 @@ const config = {
     outputFileTracingRoot: repoRoot,
     // Bundle the build-time search index into the serverless functions that
     // restore the Orama dump at runtime — the human search route (P2) and the MCP
-    // server (P3). The file is generated at deploy by scripts/prebuild-search-index.mjs
-    // (never committed); ditto the embedding model itself (./.model-cache/**,
+    // server (P3) — and, for the MCP server's get_doc, the page dump. Both are
+    // generated at deploy by scripts/prebuild-search-index.mjs (never committed);
+    // ditto the embedding model itself (./.model-cache/**,
     // scripts/fetch-embed-model.mts) — bundling it is the P3 cold-start fix:
     // without it, transformers.js fetches the ~90 MB model from the HuggingFace
     // CDN on the first search per warm instance, sometimes past the 60s
@@ -115,23 +123,45 @@ const config = {
     // Each function also gets onnxruntime-node's native shared library. Next
     // traces the require'd `onnxruntime_binding.node` but NOT the
     // `libonnxruntime.so.1` it dlopen's at load — so the function 500s with
-    // "libonnxruntime.so.1: cannot open shared object file". Ship the whole linux
+    // "libonnxruntime.so.1: cannot open shared object file". Ship the linux/x64
     // native dir so the .so lands beside the .node. The package lives in the pnpm
     // store at the workspace root (../../ from apps/docs; outputFileTracingRoot
     // bounds the trace to that root).
+    //
+    // Vercel caps a function at 250 MB uncompressed, and these two are most of
+    // the way there: the model is 90 MB and onnxruntime's linux/x64 library 46 MB.
+    // scripts/check-function-size.mjs fails CI over a budget below that cap; read
+    // it before adding anything here.
     outputFileTracingIncludes: {
         '/api/search-docs': [
-            './.search-index/**',
+            './.search-index/docs-index.json',
             './.model-cache/**',
-            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
+            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/x64/*',
         ],
         '/api/mcp': [
-            './.search-index/**',
+            './.search-index/docs-index.json',
+            './.search-index/docs-pages.json',
             './.model-cache/**',
-            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
+            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/x64/*',
         ],
     },
-    // NO `outputFileTracingExcludes` for `sharp` here — #748 added one and it broke
+    // onnxruntime-node ships every platform's binaries in one package, and file
+    // tracing copies more of them than the function can load. It traces the
+    // binding's `require(`../bin/napi-v6/${process.platform}/${process.arch}/…`)`
+    // as a wildcard, so every platform's `.node` comes along, and it adds every
+    // shared library of the build machine's OS in the package: on Vercel's linux
+    // build that is the arm64 library (25 MB) as well as the x64 one. Functions
+    // run on linux/x64 (the project sets no function architecture, and x86_64 is
+    // Vercel's default), so drop the rest. The 1.24 → 1.30 bump in #836 grew
+    // those two libraries by 17 MB and put /api/mcp over the cap: every
+    // production deploy from 2026-09-30 to 2026-10-18 failed on it. If the
+    // project ever moves its functions to arm64, swap x64 for arm64 here and in
+    // the includes above.
+    outputFileTracingExcludes: {
+        '/api/search-docs': ONNXRUNTIME_OTHER_PLATFORMS,
+        '/api/mcp': ONNXRUNTIME_OTHER_PLATFORMS,
+    },
+    // NO `outputFileTracingExcludes` entry for `sharp` here — #748 added one and it broke
     // production. Recording why, because the reasoning is genuinely tempting:
     // @huggingface/transformers pulls sharp in for image pipelines that
     // search_docs/get_doc never use, so it looks like free dead weight to drop.

@@ -19,7 +19,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
-  <img alt="Bundle: ~25 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~25%20kB-2563EB" />
+  <img alt="Bundle: ~21 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~21%20kB-2563EB" />
   <a href="https://scorecard.dev/viewer/?uri=github.com/rejifald/StitchAPI"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/rejifald/StitchAPI/badge" /></a>
   <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm provenance: signed" src="https://img.shields.io/badge/provenance-signed-brightgreen" /></a>
 </p>
@@ -34,7 +34,7 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~25&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~22&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~21&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~19&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The cache engine and the OTLP exporter load lazily, on first use, so they are not in those figures. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.8`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
+> **StitchAPI is at `1.0.0-rc.9`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 ---
 
@@ -161,10 +161,10 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Read-through caching** — opt-in response cache + in-process coalescing, keyed by a derived, principal-scoped key, loaded lazily from `stitchapi/cache`.
 - **Auth as a boundary** — `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login/re-login), `oauth2`; secrets resolve at call time and never reach the caller.
 - **Any request style** — `http` by default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer surfaces behind subpath imports.
-- **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
+- **Pluggable state store** — throttle state, cache and sessions behind a `get`/`set` store with optional atomic verbs; swap in Redis/Postgres to go distributed.
 - **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 - **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
-- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~25 kB min+gzip** for the whole entry, **~22 kB** for a typical `import { stitch }`.
+- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~21 kB min+gzip** for the whole entry, **~19 kB** for a typical `import { stitch }` (the cache engine and the OTLP exporter load lazily, on first use).
 
 ## Install
 
@@ -351,12 +351,14 @@ Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces?utm_source=
 
 The same typed unit is reachable four ways, so humans and agents call exactly the same validated, observable thing:
 
-| Front door              | How             | Example                   |
-| ----------------------- | --------------- | ------------------------- |
-| **In-process function** | import and call | `await listUsers()`       |
-| **CLI command**         | `stitch run`    | `$ stitch run list-users` |
-| **HTTP endpoint**       | `stitch serve`  | `GET /list-users`         |
-| **MCP / agent tool**    | `stitch mcp`    | `tool: list_users`        |
+| Front door              | How             | Example                              |
+| ----------------------- | --------------- | ------------------------------------ |
+| **In-process function** | import and call | `await listUsers()`                  |
+| **CLI command**         | `stitch run`    | `$ stitch run listUsers`             |
+| **HTTP endpoint**       | `stitch serve`  | `POST /stitch/listUsers`             |
+| **MCP / agent tool**    | `stitch mcp`    | `run_stitch { "name": "listUsers" }` |
+
+The three non-function doors address a stitch by its export name, the same name `list_stitches` and `GET /` list.
 
 `stitch run` streams every event as one JSON line on stdout (ready for `jq`); `stitch trace` summarizes the run log — runs, failures, retries, drift, and latency percentiles. Full guide: [Surfaces → CLI](https://stitchapi.dev/docs/surfaces/cli?utm_source=github).
 
@@ -443,7 +445,6 @@ This repository is a [pnpm](https://pnpm.io) workspace. The published library is
 <tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a></td><td>The stitch event stream as structured Pino logs</td></tr>
 <tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a></td><td>Stitch events as Sentry breadcrumbs, with error capture</td></tr>
 <tr><th colspan="2">Surfaces</th></tr>
-<tr><td><a href="packages/download"><code>@stitchapi/download</code></a></td><td>Batch file downloads with FIFO concurrency, cancel, and ETA</td></tr>
 <tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a></td><td>Run a static local command as a stitch (injection-proof)</td></tr>
 <tr><th colspan="2">Cache fingerprint adapters</th></tr>
 <tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a></td><td>Cache-fingerprint strategy for ArkType schemas</td></tr>

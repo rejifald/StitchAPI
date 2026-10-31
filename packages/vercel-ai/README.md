@@ -2,6 +2,8 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/vercel-ai?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/vercel-ai)
 
+> **Experimental.** `@stitchapi/vercel-ai` ships in the 1.x line but may change shape or behaviour in a minor release, with each change and its migration listed in the changelog. [Stability](https://stitchapi.dev/docs/reference/stability) says what that means and how a surface graduates.
+
 [Vercel AI SDK](https://sdk.vercel.ai) adapter for [StitchAPI](https://stitchapi.dev). Expose a stitch as a `tool()` the model can call inside `generateText` / `streamText`: the stitch runs as the tool's `execute`, so the model gets **typed, validated** data back — and the credential stays behind the boundary (a capability, not the credential).
 
 StitchAPI is agent-native through the [MCP surface](https://stitchapi.dev/docs/surfaces/mcp) — the canonical way to hand a stitch to any agent. This is the framework-specific convenience for apps already on the AI SDK.
@@ -50,7 +52,7 @@ stitchTool(getUser, z.object({ params: z.object({ id: z.string() }) }));
 
 The two forms are told apart by the `inputSchema` key: an object carrying one is the options envelope, anything else is the schema itself.
 
-The tool's result is the stitch's validated output, so the model reasons over real data, not a guess. A failure rejects, so the AI SDK's tool-error handling reports it.
+The tool's result is the stitch's validated output, so the model reasons over real data, not a guess. A failure rejects, so the AI SDK's tool-error handling reports it. That report is the error's `message`, which the AI SDK hands to the model, so core scrubs URL credentials from it first: a URL the transport quoted reads `?api_key=REDACTED`, never the key.
 
 ## `stitchExecute`
 

@@ -71,7 +71,10 @@ Every call appends `&api_key=<resolved>` to the URL. `name` is the parameter nam
     configured query `name` is registered with the URL-credential scrubber — so
     if it does appear in a sink (an OTLP `url.full`, the structured
     `input.query`) it is redacted to `REDACTED`, exactly like
-    `api_key`/`access_token`. None of that protects the upstream server's logs.
+    `api_key`/`access_token`. The same scrub runs on a transport error that
+    quotes the URL (`Failed to parse URL from …?api_key=…`), so a failed call's
+    `message` — which an MCP client or an AI SDK model reads — never carries the
+    key either. None of that protects the upstream server's logs.
 </Callout>
 
 ## In a cookie

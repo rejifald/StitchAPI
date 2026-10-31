@@ -4,6 +4,7 @@
 // job is the trusted principal boundary: `seam.as(req.user.id)` binds identity in the closure, so
 // a caller can never name another principal (the principal is never in `StitchInput`). Auth is
 // principal-scoped (separate sessions, no bleed); throttle stays shared (one bucket).
+import { processWide } from './process-wide';
 import {
     type Fragment,
     type SharedRuntime,
@@ -35,7 +36,10 @@ import type {
 import { envelope, systemClock } from './util';
 
 // Per-seam id so the shared bucket's store-counter key never collides across seams sharing a store.
-let seamCounter = 0;
+// Process-wide: the CJS build bundles `seam` into several entries (`stitchapi`, `/graphql`, `/sse`, …),
+// and a counter per copy would hand two seams that share a store the same id. See `processWide`.
+const seamIds = (): Set<string> =>
+    processWide('stitchapi.seamIds/1', Set<string>);
 
 // The seam builds throttles from the RAW authoring config (before `compose` runs for the member),
 // so expand the P12 rate-string shorthand here: `'2/s'` ≡ `{ rate: '2/s' }`.
@@ -194,9 +198,16 @@ function rootHandle(shared: SharedSeam): Seam {
         // cache engine is reached lazily — a seam with no cached members never loads it.
         async invalidate(stitch?: Stitch) {
             const m = await import('./cache');
+            // The id the engine namespaces this stitch's entries under comes from the RAW config
+            // (`cacheStitchId(cfg)` — a string-form stitch's id IS its URL, query secrets and
+            // all). The public `__config` scrubs that path for display, so reading it here would
+            // bump a generation no entry lives under and silently invalidate nothing. A stub
+            // (`test-stub`) has no `__rawConfig`; its `__config` is all there is.
+            const cfg = (stitch as { __rawConfig?: StitchConfig } | undefined)
+                ?.__rawConfig;
             await m.bumpCacheGeneration(
                 shared.store,
-                stitch ? m.cacheStitchId(stitch.__config) : undefined,
+                stitch ? m.cacheStitchId(cfg ?? stitch.__config) : undefined,
             );
         },
         async flush() {
@@ -238,7 +249,8 @@ export function seam(options: SeamConfig = {}): Seam {
     // for a member, because the seam injects this on the shared runtime.
     const vault = vaultView(fragment.vault ?? store);
     const trace = resolveTrace(fragment.trace);
-    const seamId = `s${(seamCounter += 1)}`;
+    const seamId = `s${seamIds().size + 1}`;
+    seamIds().add(seamId);
     const shared: SharedSeam = {
         fragment,
         store,

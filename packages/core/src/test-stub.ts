@@ -13,6 +13,7 @@ import {
     type StitchEvent,
     type StitchInput,
     type StitchResult,
+    isStitchError,
 } from './types';
 import { now } from './util';
 
@@ -49,8 +50,10 @@ export type StubImpl<TOut> =
 // A thrown StitchError passes through untouched — which since P10 includes a RateLimitError, so a
 // stub that rejects with one keeps that identity all the way to `.safe()` and `.stream()` instead of
 // being flattened to a bare StitchError the way it was when the two classes were siblings.
+// `isStitchError`, not `instanceof`: under CJS `stitchapi/testing` bundles its own StitchError
+// class, so a StitchError built from the root entry is not an `instanceof` this one (#867).
 const toError = (e: unknown): StitchError =>
-    e instanceof StitchError
+    isStitchError(e)
         ? e
         : e instanceof Error
           ? new StitchError(e.message, { cause: e })
@@ -253,14 +256,13 @@ export function failStitch<TOut = unknown, TIn = StitchInput>(
     error: string | StitchError | { status?: number; message?: string },
     opts: StubStitchOptions<TOut> = {},
 ): Stitch<TOut, TIn> & StubSpy {
-    const err =
-        error instanceof StitchError
-            ? error
-            : typeof error === 'string'
-              ? new StitchError(error)
-              : new StitchError(
-                    error.message ?? 'stub failure',
-                    compact({ status: error.status }),
-                );
+    const err = isStitchError(error)
+        ? error
+        : typeof error === 'string'
+          ? new StitchError(error)
+          : new StitchError(
+                error.message ?? 'stub failure',
+                compact({ status: error.status }),
+            );
     return assemble<TOut, TIn>(() => Promise.reject(err), opts);
 }

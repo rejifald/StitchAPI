@@ -148,6 +148,16 @@ describe('@stitchapi/deno-kv store contract', () => {
         );
     });
 
+    // The kit runs a capability group only when the store HAS the verb (#882), so a store that
+    // quietly lost one would still pass — pin the capabilities this store ships.
+    test('ships the capabilities it claims: increment, reserve, lease, release', () => {
+        const store = denoKvStore(new FakeDenoKv());
+        expect(typeof store.increment).toBe('function');
+        expect(typeof store.reserve).toBe('function');
+        expect(typeof store.lease).toBe('function');
+        expect(typeof store.release).toBe('function');
+    });
+
     test('denoKvStore(..., { keyPrefix }) passes the store contract', async () => {
         conformance.assert(
             await conformance.store(() =>

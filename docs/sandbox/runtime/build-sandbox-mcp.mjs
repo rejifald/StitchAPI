@@ -34,6 +34,8 @@ const CORE =
 // The auth surface is its own entry (ADR 0021); `stitchapi` aliases to a FILE, so
 // `stitchapi/auth` cannot resolve underneath it and needs its own alias.
 const CORE_AUTH = CORE.replace(/index\.ts$/, 'auth.ts');
+// The OTLP pipeline is its own entry too (#871/#872) — same reason, same alias shape.
+const CORE_OTLP = CORE.replace(/index\.ts$/, 'otlp.ts');
 // Alias each workspace `@stitchapi/*` playground package to its source (its published
 // `lib/` isn't built on this path); the node worker bundles them for snippet imports.
 // Derived from the one package list — adding a package needs no edit here.
@@ -103,6 +105,7 @@ const shared = {
     alias: {
         stitchapi: CORE,
         'stitchapi/auth': CORE_AUTH,
+        'stitchapi/otlp': CORE_OTLP,
         ...WORKSPACE_ALIASES,
     },
     // transpile.ts prefers sucrase (bundled) and only dynamically imports

@@ -9,10 +9,11 @@ import type {
     TraceSink,
 } from './types';
 import {
+    SECRET_HEADERS,
     dirnameOf,
-    isSecretKey,
     nodeFs,
     readEnv,
+    redactKeys,
     redactSecretsDeep,
     scrubUrl,
 } from './util';
@@ -55,26 +56,15 @@ export interface TraceBodyOptions {
     chars?: number | false;
 }
 
-// Header names whose values are secrets: redacted before any event leaves for a
-// built-in sink (JSONL/console). Matched case-insensitively wherever headers appear
-// in an event payload (start input.headers, result/response headers, etc.).
-const SECRET_HEADERS = [
-    'authorization',
-    'proxy-authorization',
-    'cookie',
-    'set-cookie',
-    'x-api-key',
-];
-const REDACTED = '[REDACTED]';
-
 // Redact an event for delivery over an UNTRUSTED transport — the `stitch serve` SSE stream, which
-// is unauthenticated and may be fronted. Unlike the built-in sinks this PRESERVES the response
-// payload (`delta`/`result` — a streaming consumer asked for it); it only scrubs the credential-
-// bearing metadata a `start` frame echoes back from the caller's own request input:
+// is unauthenticated and may be fronted, and `stitch run`'s stdout. Unlike the built-in file sink
+// this PRESERVES the response payload (`delta`/`result` — a streaming consumer, or the operator who
+// ran the stitch, asked for it); it only scrubs the credential-bearing metadata a `start` frame
+// echoes back from the caller's own request input:
 //   - URL credentials + secret query values in the URL string (via `scrubUrl`);
-//   - the SAME secret query values in the structured `input.query` (via `redactSecretQuery` —
-//     `scrubUrl` reaches only the URL string, so the parsed query must be scrubbed too);
-//   - any denylisted header value in `input.headers` (`authorization` / `cookie` / …);
+//   - the SAME secret query values in the structured `input.query`, and any secret header value
+//     in `input.headers` (`authorization` / `cookie` / a secret-named `x-auth-token` …) — both via
+//     `redactKeys`, since `scrubUrl` reaches only the URL string;
 //   - secret-named fields anywhere in the request `input.body` and GraphQL `input.variables`
 //     (via `redactSecretsDeep` — the shared deep secret-key redactor, keyed on the same
 //     `isSecretKey` set: `password` / `client_secret` / `token` / `api_key` / …). A `start`
@@ -84,17 +74,11 @@ const REDACTED = '[REDACTED]';
 // Every other event type passes through untouched.
 export function redactEventForTransport(event: StitchEvent): StitchEvent {
     if (event.type !== 'start') return event;
-    const headers = event.input.headers;
-    const safeHeaders = headers
-        ? Object.fromEntries(
-              Object.entries(headers).map(([k, v]) => [
-                  k,
-                  SECRET_HEADERS.includes(k.toLowerCase()) ? REDACTED : v,
-              ]),
-          )
-        : undefined;
-    const query = event.input.query;
-    const safeQuery = query ? redactSecretQuery(query) : undefined;
+    // `redactKeys(undefined) === undefined`, so an absent slot stays absent (see `compact` below).
+    const safeHeaders = redactKeys(event.input.headers) as
+        Record<string, string> | undefined;
+    const safeQuery = redactKeys(event.input.query) as
+        Record<string, unknown> | undefined;
     // Deep-scrub secret-named fields in the echoed request body / GraphQL variables.
     // `redactSecretsDeep(undefined) === undefined`, so an absent `body`/`variables` yields
     // `undefined` and is dropped by `compact` below — matching the pre-fix behaviour of the
@@ -136,23 +120,6 @@ function resolveBodyCap(body: TraceOptions['body']): number | false {
     return body.chars;
 }
 
-// Deep-clone `value`, replacing any object property whose key is in `denylist`
-// (lowercased secret header names) with '[REDACTED]'. Non-mutating: the engine keeps
-// the real headers; only the trace copy is scrubbed.
-function redact(value: unknown, denylist: Set<string>): unknown {
-    if (Array.isArray(value)) return value.map((v) => redact(v, denylist));
-    if (value !== null && typeof value === 'object') {
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            out[k] = denylist.has(k.toLowerCase())
-                ? REDACTED
-                : redact(v, denylist);
-        }
-        return out;
-    }
-    return value;
-}
-
 // JSON replacer making trace serialisation total over BigInt — a value type `JSON.stringify`
 // throws on. Mirrors the cache key encoder (cache.ts): a bigint becomes its decimal string with
 // an `n` suffix, so a traced payload that carries one (e.g. a parsed byte size) never crashes the
@@ -163,8 +130,9 @@ function bigintSafe(_key: string, value: unknown): unknown {
 
 // Replace a request body / response value with a compact marker once its JSON
 // encoding exceeds `max` characters; `false` disables truncation (full capture).
-// The preview is the JSON prefix of the ALREADY-REDACTED value, so header secrets
-// never reach it (body-field secrets can — full capture is opt-in, not the default).
+// The preview is the JSON prefix of the ALREADY-REDACTED value (`prepareRecord` scrubs
+// the whole record first), so neither a header secret nor a secret-named body field
+// reaches it.
 function capBody(value: unknown, max: number | false): unknown {
     if (max === false || value === undefined || value === null) return value;
     try {
@@ -182,28 +150,28 @@ function capBody(value: unknown, max: number | false): unknown {
     }
 }
 
-// Replace the values of secret-bearing query params (api_key, access_token, …) with
-// '[REDACTED]', the same denylist scrubUrl applies to the URL. Shallow: query slots
-// are flat name → string | string[]; a whole secret value is dropped wholesale.
-function redactSecretQuery(
-    query: Record<string, unknown>,
-): Record<string, unknown> {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(query))
-        out[k] = isSecretKey(k) ? REDACTED : v;
-    return out;
-}
-
-// Build the final JSONL record for one event: header redaction everywhere, URL
-// credential-scrubbing on `start`, and body/result truncation. Operates on a fresh
-// clone — the live event the engine emitted is untouched.
+// Build the final JSONL record for one event, on a fresh clone — the live event the engine
+// emitted is untouched:
+//   - `redactKeys` over the WHOLE record, as a payload, replaces the value of a secret-named
+//     field at any depth with `[REDACTED]` — `password` / `client_secret` / `access_token` inside
+//     the request body, GraphQL variables, the response `data` or a streamed `chunk` — and any
+//     denylisted header name (`authorization`, a `redactHeaders` name) wherever it sits. A payload
+//     walk redacts a NON-EMPTY STRING only, so token counts and flags survive. No event field of
+//     the spine's own is secret-named, so only payload keys can match;
+//   - a `start` event's `input.headers` and `input.query` are the two flat maps that are NOT
+//     payloads, so they are re-redacted from the live event as maps: the header rules
+//     (`api-key`, `x-session-id`, … — a superset of `isSecretKey`) apply whatever the value, so
+//     a query param named `code` or `key` is a credential here though it is data in a payload —
+//     what `scrubUrl` strips from `url`;
+//   - URL credential-scrubbing on `start`;
+//   - body/result truncation — AFTER the scrub, so a `preview` never holds a secret either.
 function prepareRecord(
     name: string,
     event: StitchEvent,
-    denylist: Set<string>,
+    denylist: readonly string[],
     maxBody: number | false,
 ): unknown {
-    const record = redact({ name, ...event }, denylist) as Record<
+    const record = redactKeys({ name, ...event }, denylist, true) as Record<
         string,
         unknown
     >;
@@ -213,14 +181,11 @@ function prepareRecord(
         const input = record['input'];
         if (input !== null && typeof input === 'object') {
             const i = input as Record<string, unknown>;
-            // Body: size-bound it. Query: redact secret param values so the
-            // structured input can't leak what scrubUrl already stripped from `url`.
+            const { headers, query } = event.input;
+            if (headers) i['headers'] = redactKeys(headers, denylist);
+            if (query) i['query'] = redactKeys(query, denylist);
+            // Body: size-bound it (already scrubbed above).
             if ('body' in i) i['body'] = capBody(i['body'], maxBody);
-            const query = i['query'];
-            if (query !== null && typeof query === 'object')
-                i['query'] = redactSecretQuery(
-                    query as Record<string, unknown>,
-                );
         }
     } else if (event.type === 'result') {
         record['data'] = capBody(record['data'], maxBody);
@@ -481,10 +446,10 @@ export function createTrace(
     // Privacy policy resolved once: the denylist is the built-ins WIDENED by any
     // caller-supplied names (never shrunk), and bodies truncate at the cap unless
     // full capture is requested.
-    const denylist = new Set([
+    const denylist = [
         ...SECRET_HEADERS,
         ...(opts?.redactHeaders ?? []).map((h) => h.toLowerCase()),
-    ]);
+    ];
     const maxBody = resolveBodyCap(opts?.body);
 
     return {

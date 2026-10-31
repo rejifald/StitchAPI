@@ -148,7 +148,8 @@ app.use(
 ```
 
 `stitchError.is(err)` is the guard on its own, for when you want to branch on a Stitch
-failure yourself.
+failure yourself. It runs core's `isStitchError`, so a subclass such as `RateLimitError` is
+mapped like the base class.
 
 Note: an Express error middleware is matched by its 4-arg arity — `stitchError.handler`
 returns a `(err, req, res, next)` function for exactly that reason.

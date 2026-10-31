@@ -49,6 +49,8 @@ export const MAX_QUERY_LEN = 512;
 export const INDEX_DIR = '.search-index';
 export const INDEX_FILE = 'docs-index.json';
 export const MANIFEST_FILE = 'manifest.json';
+// Every page's full Markdown, for get_doc (scripts/build-docs-pages.ts).
+export const PAGES_FILE = 'docs-pages.json';
 
 // Vendored copy of EMBED_MODEL's files, relative to apps/docs. scripts/
 // fetch-embed-model.mts populates it as a deploy build step; embed.ts's

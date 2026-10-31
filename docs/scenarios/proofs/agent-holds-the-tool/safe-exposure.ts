@@ -5,9 +5,9 @@
 // three small pieces, each closing one measured gap, and nothing here is configuration:
 //
 //   • THE ALLOW-LIST (`expose`)   — closes C3. `createMcpServer` takes whatever registry you hand
-//     it, so the allow-list is that object. It has to be built by NAMING what is exposed, and it
-//     has to be checked against `__config.name` too, because `selectStitch` resolves a stitch by
-//     its configured name even when the registry key is different (registry.ts:71-74).
+//     it, so the allow-list is that object. It has to be built by NAMING what is exposed. Since
+//     #866 the registry KEY is the only name a stitch answers to, so renaming a key really does
+//     hide the original and nothing needs to be checked against `__config.name`.
 //   • THE INPUT FILTER (`only`)   — closes C2 and C7 (d). A `Proxy` apply-trap rebuilds the input
 //     from an explicit key list before the stitch ever sees it, so an undeclared slot is not a
 //     passthrough. Since #663 a declared schema filters its own slot (engine.ts:415-447), so out
@@ -18,9 +18,10 @@
 //     be refused. The gate wraps the `Adapter`, which is the last seam before the transport and
 //     outside the attempt loop.
 //
-// The one gap none of this closes is C4's: the error channel is an unfiltered `Error.message`
-// pass-through, so a transport error that quotes the URL still reaches the model. The only fix is
-// not to put a credential in a URL — `apiKey({ in: 'header' })` rather than `{ in: 'query' }`.
+// C4's gap needs nothing here any more: core URL-scrubs an error message where the engine mints it
+// (#866, #890), so a transport error that quotes the URL no longer carries the key to the model.
+// Not putting a credential in a URL — `apiKey({ in: 'header' })` rather than `{ in: 'query' }` —
+// is still the better placement.
 // >>> BEGIN USER CODE
 import type { StitchRegistry } from '../../../../packages/core/src/registry';
 import type {
@@ -68,18 +69,11 @@ export function only(stitch: Stitch, allowed: Allowed): Stitch {
 }
 
 /**
- * Build the registry the MCP server is given. Every exposed stitch is named twice — once as the key
- * an agent calls, once in the map — and a stitch whose CONFIGURED name is not the key it is exposed
- * under is rejected, because that name would be callable while absent from `list_stitches`.
+ * Build the registry the MCP server is given. Each exposed stitch is named once, as the key an
+ * agent calls. That key is also the ONLY name it answers to (#866), so leaving a stitch out of the
+ * object, or exposing it under another key, is what keeps it away from the agent.
  */
 export function expose(entries: Record<string, Stitch>): StitchRegistry {
-    for (const [key, stitch] of Object.entries(entries)) {
-        const configured = stitch.__config.name;
-        if (configured !== undefined && configured !== key)
-            throw new Error(
-                `expose: "${key}" is also reachable as "${configured}" — give the stitch the same name as its key`,
-            );
-    }
     return entries;
 }
 

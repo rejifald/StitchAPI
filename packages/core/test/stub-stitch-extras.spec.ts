@@ -143,3 +143,20 @@ describe('failStitch with a { status, message } shape', () => {
         expect(errEvent?.status).toBe(503);
     });
 });
+
+// #867: under CommonJS `stitchapi/testing` bundles its own StitchError class, so failStitch's
+// pass-through must not hinge on `instanceof`. A fresh module registry stands in for the root's
+// copy: its RateLimitError fails `instanceof` here yet must reach `.safe()` as the same instance.
+describe('failStitch with a StitchError from another copy of the module', () => {
+    test('passes it through unchanged instead of flattening it', async () => {
+        vi.resetModules();
+        const copy = await import('../src/resilience');
+        const foreign = new copy.RateLimitError({
+            status: 429,
+            retryAfter: 1000,
+            response: { status: 429, headers: {}, body: null },
+        });
+        const { error } = await failStitch(foreign).safe();
+        expect(error).toBe(foreign);
+    });
+});

@@ -6,8 +6,10 @@
 //   isSeam      — true only for a non-null object carrying __seam === true (a function with the flag,
 //                 null, and primitives are all false);
 //   StitchError — name 'StitchError', attempts defaults to 0, status/body/url/cause carried.
-import { seam, stitch } from '../src';
-import { StitchError, isSeam, isStitch } from '../src/types';
+//   isStitchError — true for StitchError, every subclass, and an error from a SECOND copy of the
+//                 module (the dual-package hazard); false for a look-alike that only borrows the name.
+import { RateLimitError, seam, stitch } from '../src';
+import { StitchError, isSeam, isStitch, isStitchError } from '../src/types';
 
 describe('isStitch', () => {
     test('true for a real stitch (callable with __stitch)', () => {
@@ -64,5 +66,67 @@ describe('StitchError', () => {
         expect(err.body).toEqual({ error: 'busy' });
         expect(err.url).toBe('https://api.test/x');
         expect(err.cause).toBe(cause);
+    });
+});
+
+describe('isStitchError', () => {
+    const rateLimited = (): RateLimitError =>
+        new RateLimitError({
+            status: 429,
+            retryAfter: 1000,
+            response: { status: 429, headers: {}, body: { error: 'slow' } },
+        });
+
+    test('true for StitchError and for a subclass whose `name` is its own', () => {
+        expect(isStitchError(new StitchError('boom'))).toBe(true);
+        const rl = rateLimited();
+        // The case the hosts' old `name === 'StitchError'` check missed (#867).
+        expect(rl.name).toBe('RateLimitError');
+        expect(isStitchError(rl)).toBe(true);
+        class TimeoutLike extends StitchError {
+            constructor() {
+                super('timed out');
+                this.name = 'TimeoutLike';
+            }
+        }
+        expect(isStitchError(new TimeoutLike())).toBe(true);
+    });
+
+    test('true for an error raised by a second copy of the module (dual-package hazard)', async () => {
+        // A fresh module registry stands in for the CJS build beside the ESM one: its classes
+        // are distinct, so `instanceof` fails in both directions while the brand still matches.
+        vi.resetModules();
+        const copy = await import('../src/types');
+        const copyResilience = await import('../src/resilience');
+        expect(copy.StitchError).not.toBe(StitchError);
+
+        const foreign = new copy.StitchError('from the other copy');
+        expect(foreign instanceof StitchError).toBe(false);
+        expect(isStitchError(foreign)).toBe(true);
+        expect(copy.isStitchError(new StitchError('from this copy'))).toBe(
+            true,
+        );
+
+        const foreignRl = new copyResilience.RateLimitError({
+            status: 429,
+            response: { status: 429, headers: {}, body: null },
+        });
+        expect(foreignRl instanceof StitchError).toBe(false);
+        expect(isStitchError(foreignRl)).toBe(true);
+    });
+
+    test('false for a look-alike that only borrows the name, a copy, and non-errors', () => {
+        expect(
+            isStitchError(
+                Object.assign(new Error('x'), { name: 'StitchError' }),
+            ),
+        ).toBe(false);
+        expect(isStitchError(new Error('plain'))).toBe(false);
+        // The brand is non-enumerable: a spread or a JSON round-trip does not carry it.
+        const err = new StitchError('boom', { status: 502 });
+        expect(isStitchError(Object.assign({}, err))).toBe(false);
+        expect(isStitchError(JSON.parse(JSON.stringify(err)))).toBe(false);
+        for (const v of [null, undefined, 0, 'StitchError', {}])
+            expect(isStitchError(v)).toBe(false);
     });
 });

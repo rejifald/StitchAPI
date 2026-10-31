@@ -30,6 +30,7 @@ import {
     windsurfRule,
 } from './rules-template';
 import { serve } from './serve';
+import { redactEventForTransport } from './trace';
 import type { Stitch, StitchEvent, StitchInput } from './types';
 import { parseDuration } from './util';
 
@@ -168,7 +169,11 @@ export function argsToInput(
 // ---- run: stream a stitch's events to stdout as JSONL ---------------------
 
 // Drive a stitch's event stream, writing one JSON object per line. Returns the
-// process exit code: 1 if an error event was seen, else 0.
+// process exit code: 1 if an error event was seen, else 0. Each event is redacted the
+// way `serve` redacts its SSE frames (`redactEventForTransport`): stdout lands in
+// terminal scrollback, CI logs and pipes, so the `start` frame's echo of the request
+// — an `--headers.authorization` value, a URL `?api_key=`, a `--body.password` — is
+// scrubbed, while the response payload the operator ran the stitch for is kept.
 async function streamToJsonl(
     stitch: Stitch,
     input: StitchInput,
@@ -176,7 +181,7 @@ async function streamToJsonl(
 ): Promise<number> {
     let exit = 0;
     for await (const ev of stitch.stream(input) as AsyncIterable<StitchEvent>) {
-        writeLine(JSON.stringify(ev));
+        writeLine(JSON.stringify(redactEventForTransport(ev)));
         if (ev.type === 'error') exit = 1;
     }
     return exit;
@@ -442,7 +447,7 @@ const HELP = `stitch — one stitch definition, many front doors
 usage:
   stitch run <name> [--module <path>] [--trace[=console|<path>]] [--flags…]   run a stitch, stream JSONL events
   stitch trace [--file <path>] [--since 1h] [--name <x>] [--json]
-  stitch serve [--module <path>] [--port <n>] [--host <h>]   HTTP: POST /stitch/:name
+  stitch serve [--module <path>] [--port <n>] [--host <h>] [--disclose]   HTTP: POST /stitch/:name
   stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
   stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
   stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
@@ -461,8 +466,14 @@ run:
 Every event the stitch emits is printed as one line of JSON on stdout. Tracing is off
 by default (no side effects) — opt in with --trace or the STITCH_TRACE_* env vars.
 
+serve:
+  --disclose   send a failed run's raw detail to callers; by default they get the status's
+               reason phrase ("Bad Gateway"), and an SSE stream drops the upstream URL and
+               each step's detail, so an upstream's wording or an internal hostname stays
+               on the server
+
 diagram:
-  --name <name>   diagram only this stitch (by export name or configured name)
+  --name <name>   diagram only this stitch (by export name)
   Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
   retry, surface, pagination, validation, transform, pick, cache). Auth is redacted
   from a stitch's public config, so it is not shown.
@@ -614,23 +625,26 @@ function traceCommand(args: string[], io: CliIO): number {
     return 0;
 }
 
-// stitch serve [--module <path>] [--port <n>] [--host <h>] — expose the registry
-// over HTTP and block until the process is signalled.
+// stitch serve [--module <path>] [--port <n>] [--host <h>] [--disclose] — expose the
+// registry over HTTP and block until the process is signalled. `--disclose` sends a failure's
+// raw detail to callers instead of the status's reason phrase (`ServeOptions.disclose`).
 async function serveCommand(args: string[], io: CliIO): Promise<number> {
     let modulePath: string | undefined;
     let port: number | undefined;
     let host: string | undefined;
+    let disclose: boolean | undefined;
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === '--module' || a === '-m') modulePath = args[++i];
         else if (a === '--port' || a === '-p') port = Number(args[++i]);
         else if (a === '--host') host = args[++i];
+        else if (a === '--disclose') disclose = true;
     }
 
     const registry = await loadRegistryOrReport(modulePath, io);
     if (registry === undefined) return 1;
 
-    const handle = await serve(registry, compact({ port, host }));
+    const handle = await serve(registry, compact({ port, host, disclose }));
     io.writeErr(
         `stitch serve listening on ${handle.url} — POST /stitch/:name\n`,
     );

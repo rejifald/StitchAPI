@@ -1,12 +1,13 @@
-// Build-time full-page Markdown dump for the LOCAL docs MCP (@stitchapi/docs-mcp)
-// get_doc tool. Separate from build-search-index.ts on purpose: that file backs
-// the live, CI-gated (`check:search-relevance`) hosted search feature, and this
-// one is purely additive — it must never touch that pipeline or its outputs.
+// Build-time full-page Markdown dump for the get_doc tool, both the LOCAL docs
+// MCP (@stitchapi/docs-mcp) and the hosted one (lib/search-index/get-doc.ts,
+// which reads it at runtime; scripts/prebuild-search-index.mjs writes it at
+// deploy). Separate from build-search-index.ts on purpose: that file backs the
+// CI-gated (`check:search-relevance`) search ranking, and this one must never
+// touch that pipeline or its outputs.
 //
 // Iterates the SAME pages as build-search-index.ts (`source.getPages()`) and
-// renders each with `getLLMText` — the exact function get-doc.ts already uses
-// for the hosted MCP's get_doc tool — so the bundled local copy is byte-for-byte
-// the same Markdown a user would get from the hosted server. Written next to the
+// renders each with `getLLMText`, the function the /llms.mdx route serves, so
+// the local and hosted servers return byte-for-byte the same Markdown. Written next to the
 // search index (apps/docs/.search-index/docs-pages.json) so a single build step
 // (build:mcp-bundle) produces both artifacts scripts/copy-bundle.mjs then copies
 // into packages/docs-mcp/data/.

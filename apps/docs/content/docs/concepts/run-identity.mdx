@@ -46,7 +46,10 @@ from call input.
 
 **To OpenTelemetry.** The field names _are_ the OTel span names — `traceId`, `spanId`,
 `parentSpanId` — so the OTLP exporter writes them straight through, no translation. It
-reads them as fields and builds the tree; it never guesses structure from timing.
+reads them as fields and builds the tree; it never guesses structure from timing. Below
+the run, each physical request (and each page of a paginated call) gets a span of its
+own, with an id the engine mints when the request goes out and stamps on its
+`progress` event — see [the span tree](/docs/guides/observability/otlp#the-span-tree).
 
 **To the wire.** The W3C `traceparent` header is `version-trace-id-parent-id-flags` —
 one `traceId` + **one** span id + flags. A run needs **two** span ids (its own `spanId`
@@ -54,7 +57,9 @@ _and_ its `parentSpanId`), so `traceparent` is a **projection** of the run ident
 single header, not a replacement for it. The spec's middle field (`parent-id`) is
 directional: it carries the sender's `spanId` going out and becomes the receiver's
 `parentSpanId` coming in, so a downstream server's spans become children under the same
-`traceId`. **Today the tree is in-process** — it covers a stitch and the runs it composes;
+`traceId`. The span id a request carries out will be its **attempt's**, not the run's, so a
+server's spans hang under the exact request that reached it — a retried call shows each
+try. **Today the tree is in-process** — it covers a stitch and the runs it composes;
 carrying it across the wire so a downstream service joins your trace is planned
 trace-context propagation, not a shipped feature.
 

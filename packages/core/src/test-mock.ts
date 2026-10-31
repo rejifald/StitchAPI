@@ -38,7 +38,7 @@ export interface MockResponse {
 export interface MockCall {
     /** 0-based index of this call to the matched route (drives status/body sequences). */
     index: number;
-    /** The outgoing request the engine built. */
+    /** The outgoing request the engine built. Its header names are lower-case. */
     req: AdapterRequest;
 }
 
@@ -53,7 +53,9 @@ export type MockResponder =
     | MockResponse[]
     | ((call: MockCall) => MockResponse | Promise<MockResponse>);
 
-/** How a route (or a spy filter) selects a request: by pathname/substring, regex, or predicate. */
+/** How a route (or a spy filter) selects a request: by pathname/substring, regex, or predicate.
+ *  A predicate sees the request the engine built, so its header names are lower-case:
+ *  `(req) => req.headers['x-trace'] === '1'`. */
 export type MockMatch = string | RegExp | ((req: AdapterRequest) => boolean);
 
 /** A single route. With no `method`/`match` it catches every request. */

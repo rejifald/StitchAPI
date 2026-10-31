@@ -70,6 +70,11 @@ order:
 So `onRequest` always sees the post-auth request, and `onRetry` fires with `error`
 populated on a network failure or `res` populated on a retryable status.
 
+`ctx.req.headers` has **lower-case names**: the engine folds every request header
+name before auth runs, so read `ctx.req?.headers['x-trace']`, not `['X-Trace']`. A
+header you add by mutating it in the hook keeps whatever spelling you give it,
+because the hook runs after the fold.
+
 <Callout type="info">
     Hooks run on **every attempt**, not once per call: a stitch that retries
     twice fires `onRequest` three times. Use `attempt` to tell them apart.

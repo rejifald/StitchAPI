@@ -84,6 +84,12 @@ never from the config — so one stitch encodes whatever you pass it. See
 
 </Callout>
 
+<Callout type="warn" title="Experimental">
+    `llm` comes from `stitchapi/llm`, which may change shape or behaviour in a
+    minor release, with each change and its migration listed in the changelog.
+    [Stability](/docs/reference/stability) says what that means.
+</Callout>
+
 <Callout type="warn">
     **Anti-pattern:** don't hand-serialize the body before you pass it —
     stringifying the value yourself and handing the stitch a pre-encoded string

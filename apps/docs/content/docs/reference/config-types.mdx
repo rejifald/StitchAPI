@@ -144,6 +144,14 @@ a `POST`'s read-vs-mutate intent cannot be inferred, and caching a body-carrying
 request is a decision worth writing down. The key already folds the request body in,
 so two different `QUERY` bodies to the same URL get two entries and cannot collide.
 
+Bulk invalidation — `stitch.cache.invalidate()` and `seam.invalidate()` — writes a
+fresh **generation** with the store's `set`, so every store supports it, including a
+`get`/`set`-only one; entries under the old generation become unreachable and expire
+on their own TTL. It takes effect as fast as the store shows a write: on an
+eventually-consistent store such as Cloudflare Workers KV a bump can take about 60
+seconds to reach every location, and until then a reader elsewhere may still serve
+the invalidated entries.
+
 #### CacheFingerprintOptions
 
 The shape behind `cache.fingerprint` — how a stored value is detected as stale against

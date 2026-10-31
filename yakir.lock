@@ -2,150 +2,150 @@
   "version": 1,
   "tethers": {
     "release-version": {
-      "baseline": "1.0.0-rc.8",
+      "baseline": "1.0.0-rc.9",
       "sites": {
         "packages/angular/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/aws-sigv4/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/cloudflare-kv/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/core/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/deno-kv/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/docs-mcp/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/download/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/elysia/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/expo/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/express/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fastify/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-arktype/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-effect/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-typebox/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-valibot/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/fingerprint-zod/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/hono/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/json-schema/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/nest/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/next/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/openapi/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/pino/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/query-core/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/react-native/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/react/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/redis/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/rtk-query/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/sentry/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/shell/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/solid/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/svelte/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/swr/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/vercel-ai/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/vue/package.json#/version": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "README.md#pattern:StitchAPI is at `([^`]+)`": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         },
         "packages/core/README.md#pattern:StitchAPI is at `([^`]+)`": {
-          "value": "1.0.0-rc.8",
+          "value": "1.0.0-rc.9",
           "fp": "sha256:d1a84298f6c757f0208e5cdc8e697f65669f3720cdac00df5be7ac38be35b783"
         }
       },

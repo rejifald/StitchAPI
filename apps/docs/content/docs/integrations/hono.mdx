@@ -109,7 +109,9 @@ app.onError(stitchError.handler({ status: (e) => e.status ?? 502 }));
 
 Or map a single error by hand with `stitchError.map(err)`, which returns an
 `HTTPException` — or `undefined` for a non-Stitch error, so you can rethrow it
-untouched. `stitchError.is(err)` is the guard on its own.
+untouched. `stitchError.is(err)` is the guard on its own. It runs core's
+[`isStitchError`](/docs/errors), so a subclass such as `RateLimitError` is
+mapped like the base class.
 
 `stitchError` is the same namespace every `@stitchapi` host adapter exports for this
 one concept: `.is` everywhere, `.map` wherever the framework has a mapped value to
