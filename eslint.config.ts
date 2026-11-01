@@ -42,6 +42,8 @@ export default tseslint.config(
             '**/lib/**',
             '**/dist/**',
             '**/coverage/**',
+            // fumadocs-twoslash scratch output (see .gitignore); not source.
+            '**/.twoslash/**',
         ],
     },
     js.configs.recommended,
