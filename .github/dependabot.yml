@@ -48,6 +48,9 @@ updates:
           interval: weekly
           day: monday
       open-pull-requests-limit: 5
+      # Dev-tooling bumps must not ratchet the peerDependencies floors of published
+      # packages: only widen a range when the new version falls outside it.
+      versioning-strategy: increase-if-necessary
       groups:
           # Minor/patch batched by dependency type. Majors are deliberately excluded from
           # both groups so each one arrives as its own PR — a major here means a real

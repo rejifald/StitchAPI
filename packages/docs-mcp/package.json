@@ -76,7 +76,7 @@
         "@huggingface/transformers": "^4.3.1"
     },
     "peerDependencies": {
-        "@huggingface/transformers": "^4.3.1"
+        "@huggingface/transformers": "^4.3.0"
     },
     "peerDependenciesMeta": {
         "@huggingface/transformers": {

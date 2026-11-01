@@ -51,7 +51,7 @@
         "node": ">=18.18.0"
     },
     "peerDependencies": {
-        "arktype": "^2.2.9",
+        "arktype": "^2.2.5",
         "stitchapi": "^1.0.0-rc.1"
     },
     "devDependencies": {

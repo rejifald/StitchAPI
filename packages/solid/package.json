@@ -55,7 +55,7 @@
     "peerDependencies": {
         "@stitchapi/query-core": "^1.0.0-rc.2",
         "stitchapi": "^1.0.0-rc.1",
-        "solid-js": "^1.9.17",
+        "solid-js": "^1.9.15",
         "@tanstack/solid-query": "^5.0.0"
     },
     "peerDependenciesMeta": {
