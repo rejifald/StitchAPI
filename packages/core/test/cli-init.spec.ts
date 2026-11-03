@@ -365,6 +365,79 @@ describe('stitch init --check (drift detection)', () => {
         expect(out).toContain(`stale ${CLAUDE}`);
     });
 
+    // The hint is a command a user pastes, so it must refresh exactly what is stale. A bare
+    // `stitch init --force` would write all seven targets (new files for conventions never adopted)
+    // and, without --project/--module, rewrite the rule without the stitch inventory.
+    describe('the refresh hint', () => {
+        const staleAgents = '# stale, hand-edited rule\n';
+        const staleClaude =
+            `# My project\n\n${CLAUDE_START}\n\n## Using StitchAPI\n\n` +
+            `OLD BODY\n${CLAUDE_END}\n`;
+
+        test('narrows --format to the stale targets, even under the default --format all', async () => {
+            const written = await runInit(['--format', 'agents,claude,aider']);
+            const seed = {
+                ...Object.fromEntries(written.files),
+                [AGENTS]: staleAgents,
+            };
+            const { code, err } = await runInit(['--check'], seed);
+            expect(code).toBe(1);
+            expect(err).toContain('1 StitchAPI rule file(s) out of date');
+            expect(err).toContain('stitch init --format agents --force');
+            expect(err).not.toMatch(/--format (all|[a-z,]*claude)/);
+        });
+
+        test('lists every stale target, in table order', async () => {
+            const { err } = await runInit(['--check'], {
+                [CLAUDE]: staleClaude,
+                [AGENTS]: staleAgents,
+            });
+            expect(err).toContain('stitch init --format agents,claude --force');
+        });
+
+        test('carries --project and --module through, so --check --project turns green', async () => {
+            const registry = fakeRegistry({
+                getUser: {
+                    method: 'GET',
+                    baseUrl: 'https://api.x',
+                    path: '/u/{id}',
+                },
+            });
+            const load = async () => registry;
+            const { code, err } = await runInit(
+                ['--check', '--project', '--module', './my stitches.ts'],
+                { [AGENTS]: staleAgents },
+                { load },
+            );
+            expect(code).toBe(1);
+            // A path with a space is quoted so the pasted command keeps it as one argument.
+            expect(err).toContain(
+                `stitch init --format agents --project --module './my stitches.ts' --force`,
+            );
+        });
+
+        test('omits --project and --module when the check ran without them', async () => {
+            const { err } = await runInit(['--check', '--format', 'agents'], {
+                [AGENTS]: staleAgents,
+            });
+            expect(err).not.toContain('--project');
+            expect(err).not.toContain('--module');
+        });
+
+        test('says what --force does to each stale file: overwrite whole, or replace the marked block', async () => {
+            const { out } = await runInit(['--check'], {
+                [AGENTS]: staleAgents,
+                [CLAUDE]: staleClaude,
+            });
+            expect(out).toContain(
+                `stale ${AGENTS} (--force overwrites the whole file)`,
+            );
+            expect(out).toContain(
+                `stale ${CLAUDE} (--force replaces only the marked block)`,
+            );
+        });
+    });
+
     test('an absent rule is reported but is not a failure', async () => {
         const { code, out, err } = await runInit([
             '--check',
