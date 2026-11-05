@@ -11,6 +11,7 @@ import { Problem } from './components/problem';
 import { StudioBand } from './components/studio-band';
 import { Surfaces } from './components/surfaces';
 
+import { ogImageUrl } from '@/lib/og-image-url';
 import { appName } from '@/lib/shared';
 
 import type { Metadata } from 'next';
@@ -31,13 +32,13 @@ export const metadata: Metadata = {
         siteName: appName,
         title,
         description,
-        images: '/og/home',
+        images: ogImageUrl('/og/home'),
     },
     twitter: {
         card: 'summary_large_image',
         title,
         description,
-        images: '/og/home',
+        images: ogImageUrl('/og/home'),
     },
 };
 

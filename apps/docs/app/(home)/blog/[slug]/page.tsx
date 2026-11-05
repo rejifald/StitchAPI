@@ -7,6 +7,7 @@ import {
     postSlug,
 } from '@/lib/blog';
 import { jsonLdHtml } from '@/lib/json-ld';
+import { ogImageUrl } from '@/lib/og-image-url';
 import { appName, siteUrl } from '@/lib/shared';
 
 import { DocsBody } from 'fumadocs-ui/layouts/docs/page';
@@ -40,7 +41,7 @@ export default async function BlogPostPage(props: PageProps<'/blog/[slug]'>) {
         dateModified: post.data.date,
         author: { '@type': 'Person', name: post.data.author },
         publisher: { '@type': 'Organization', name: appName, url: siteUrl },
-        image: `${siteUrl}/og/blog/${slug}`,
+        image: `${siteUrl}${ogImageUrl(`/og/blog/${slug}`, post.data)}`,
         mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
         url: canonical,
         ...(post.data.tags?.length
@@ -131,7 +132,7 @@ export async function generateMetadata(
     if (!post) notFound();
 
     const canonical = `${siteUrl}/blog/${slug}`;
-    const ogImage = `/og/blog/${slug}`;
+    const ogImage = ogImageUrl(`/og/blog/${slug}`, post.data);
 
     return {
         title: post.data.title,

@@ -3,6 +3,7 @@ import './global.css';
 
 import { TwoslashScrollGuard } from '@/components/twoslash-scroll-guard';
 import { jsonLdHtml } from '@/lib/json-ld';
+import { ogImageUrl } from '@/lib/og-image-url';
 import { releaseVersion } from '@/lib/release';
 import { appName, gitConfig, siteUrl } from '@/lib/shared';
 
@@ -89,13 +90,13 @@ export const metadata: Metadata = {
         locale: 'en_US',
         title: defaultTitle,
         description: defaultDescription,
-        images: '/og/home',
+        images: ogImageUrl('/og/home'),
     },
     twitter: {
         card: 'summary_large_image',
         title: defaultTitle,
         description: defaultDescription,
-        images: '/og/home',
+        images: ogImageUrl('/og/home'),
     },
     robots: {
         index: true,
