@@ -133,6 +133,8 @@ const config = {
     // scripts/check-function-size.mjs fails CI over a budget below that cap; read
     // it before adding anything here.
     outputFileTracingIncludes: {
+        // The Open Graph card reads its fonts from disk (lib/og-image.tsx).
+        '/og/**': ['./assets/og-fonts/*.ttf'],
         '/api/search-docs': [
             './.search-index/docs-index.json',
             './.model-cache/**',

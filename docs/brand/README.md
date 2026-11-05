@@ -222,11 +222,18 @@ in real use, but pin exact versions until stable 1.0).
 | Live components     | [`apps/docs/components/logo.tsx`](../../apps/docs/components/logo.tsx)                                           |
 | Favicon / icons     | [`apps/docs/app/icon.png`](../../apps/docs/app/icon.png), [`apple-icon.png`](../../apps/docs/app/apple-icon.png) |
 | Banners             | [`docs/media/baner_light.png`](../media/baner_light.png), [`baner_dark.png`](../media/baner_dark.png)            |
+| Social cards (OG)   | [`apps/docs/lib/og-image.tsx`](../../apps/docs/lib/og-image.tsx), rendered per page at `/og/...`                 |
 | Color & type tokens | [`apps/docs/app/tokens.css`](../../apps/docs/app/tokens.css)                                                     |
 | Brandbook previews  | [`docs/brand/assets/`](./assets)                                                                                 |
 
 The PNGs are regenerated from the SVG sources + the Signal tokens; the
 generator's recipe is documented in [`assets/README.md`](./assets/README.md).
+
+The social cards are drawn in code from the same tokens, ripple geometry
+([`lib/ripple.ts`](../../apps/docs/lib/ripple.ts)) and logomark paths as the
+site, in the dark banner style. Their fonts are static Schibsted Grotesk and
+Hanken Grotesk instances in
+[`apps/docs/assets/og-fonts/`](../../apps/docs/assets/og-fonts) (OFL).
 
 **Master files (vector + print)** — `.ai`, `.eps`, layered `.pdf`, full-res
 `.png` — belong in [`docs/brand/source/`](./source). They currently live only in

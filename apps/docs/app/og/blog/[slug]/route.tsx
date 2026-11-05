@@ -21,6 +21,7 @@ export async function GET(
     return ogImageResponse({
         title: post.data.title,
         description: post.data.description,
+        section: 'Blog',
     });
 }
 

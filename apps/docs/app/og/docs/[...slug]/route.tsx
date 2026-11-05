@@ -16,6 +16,7 @@ export async function GET(
     return ogImageResponse({
         title: page.data.title,
         description: page.data.description,
+        section: 'Docs',
     });
 }
 
