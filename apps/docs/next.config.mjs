@@ -58,13 +58,14 @@ ensureTypedDeps();
 // old picture after the image changes; LinkedIn's Post Inspector won't refresh
 // it either. So every OG image URL carries `?v=<hash>` (lib/og-image-url.ts),
 // and this is the hash: every file that draws the card — the shared layout, the
-// art it imports, the fonts, and the route handlers (the home card's copy lives
-// in its route). Change the design and the URL changes with it. The routes are
-// prerendered and ignore the query string.
+// art and the site name/domain it imports, the fonts, and the route handlers
+// (the home card's copy lives in its route). Change the design and the URL
+// changes with it. The routes are prerendered and ignore the query string.
 function hashOgImageSources() {
     const files = [
         'lib/og-image.tsx',
         'lib/ripple.ts',
+        'lib/shared.ts',
         'components/logo.tsx',
         ...readdirSync(resolve(__dirname, 'app/og'), { recursive: true })
             .filter((f) => f.endsWith('.tsx'))
