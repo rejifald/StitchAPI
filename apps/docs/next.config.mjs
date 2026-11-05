@@ -2,7 +2,8 @@ import { buildSecurityHeaders } from './lib/security-headers.mjs';
 
 import { PlaygroundCompletionsPlugin } from '@stitchapi/completions-plugin';
 import { execFileSync } from 'child_process';
-import { existsSync } from 'fs';
+import { createHash } from 'crypto';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { createMDX } from 'fumadocs-mdx/next';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -53,6 +54,33 @@ function ensureTypedDeps() {
 
 ensureTypedDeps();
 
+// Link previews (LinkedIn, Slack, X) cache an og:image by its URL and keep the
+// old picture after the image changes; LinkedIn's Post Inspector won't refresh
+// it either. So every OG image URL carries `?v=<hash>` (lib/og-image-url.ts),
+// and this is the hash: every file that draws the card — the shared layout, the
+// art it imports, the fonts, and the route handlers (the home card's copy lives
+// in its route). Change the design and the URL changes with it. The routes are
+// prerendered and ignore the query string.
+function hashOgImageSources() {
+    const files = [
+        'lib/og-image.tsx',
+        'lib/ripple.ts',
+        'components/logo.tsx',
+        ...readdirSync(resolve(__dirname, 'app/og'), { recursive: true })
+            .filter((f) => f.endsWith('.tsx'))
+            .map((f) => `app/og/${f}`),
+        ...readdirSync(resolve(__dirname, 'assets/og-fonts'))
+            .filter((f) => f.endsWith('.ttf'))
+            .map((f) => `assets/og-fonts/${f}`),
+    ].sort();
+    const hash = createHash('sha256');
+    for (const file of files) {
+        hash.update(file);
+        hash.update(readFileSync(resolve(__dirname, file)));
+    }
+    return hash.digest('hex').slice(0, 8);
+}
+
 const withMDX = createMDX();
 
 // Every onnxruntime-node binary that is not linux/x64; see outputFileTracingExcludes.
@@ -65,6 +93,9 @@ const ONNXRUNTIME_OTHER_PLATFORMS = [
 /** @type {import('next').NextConfig} */
 const config = {
     reactStrictMode: true,
+    env: {
+        OG_IMAGE_VERSION: hashOgImageSources(),
+    },
     // Production builds run on webpack, not Turbopack (`next build --webpack` in
     // package.json). That, this block, and the `cache` line in webpack() below are
     // what keep the deploy build inside Vercel's build machine: 2 CPUs, 8 GB, no
