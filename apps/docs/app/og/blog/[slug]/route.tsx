@@ -1,9 +1,7 @@
 import { blogSource } from '@/lib/blog';
-import { appName } from '@/lib/shared';
+import { ogImageResponse } from '@/lib/og-image';
 
-import { generate as DefaultImage } from 'fumadocs-ui/og';
 import { notFound } from 'next/navigation';
-import { ImageResponse } from 'next/og';
 
 export const revalidate = false;
 
@@ -20,17 +18,11 @@ export async function GET(
     const post = blogSource.getPage([slug]);
     if (!post) notFound();
 
-    return new ImageResponse(
-        <DefaultImage
-            title={post.data.title}
-            description={post.data.description}
-            site={appName}
-        />,
-        {
-            width: 1200,
-            height: 630,
-        },
-    );
+    return ogImageResponse({
+        title: post.data.title,
+        description: post.data.description,
+        section: 'Blog',
+    });
 }
 
 export function generateStaticParams() {
