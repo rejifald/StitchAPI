@@ -44,7 +44,7 @@
         "@vercel/speed-insights": "^2.0.0",
         "fumadocs-core": "^16.17.8",
         "fumadocs-mdx": "^15.4.10",
-        "fumadocs-twoslash": "^3.3.0",
+        "fumadocs-twoslash": "^4.0.2",
         "fumadocs-typescript": "^5.6.0",
         "fumadocs-ui": "^16.17.8",
         "lucide-react": "^1.61.0",
