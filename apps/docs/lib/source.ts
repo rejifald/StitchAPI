@@ -1,3 +1,4 @@
+import { ogImageUrl } from './og-image-url';
 import { docsContentRoute, docsImageRoute, docsRoute } from './shared';
 
 import { docs } from 'collections/server';
@@ -42,7 +43,7 @@ export function getPageImage(page: (typeof source)['$inferPage']) {
 
     return {
         segments,
-        url: `${docsImageRoute}/${segments.join('/')}`,
+        url: ogImageUrl(`${docsImageRoute}/${segments.join('/')}`, page.data),
     };
 }
 

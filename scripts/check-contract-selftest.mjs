@@ -286,6 +286,19 @@ gate(
     },
     { code: 0 },
 );
+gate(
+    "a regex literal with a quote inside a template's ${…} passes",
+    (f) => {
+        f['packages/shell/src/index.ts'] = [
+            'function q(s: string): string {',
+            "    return `'${s.replace(/'/g, `'\\\\''`)}'`;",
+            '}',
+            `${TAG}export const shell = (): number => q('a').length;`,
+            '',
+        ].join('\n');
+    },
+    { code: 0 },
+);
 
 // ---- R12 is never baselined -------------------------------------------------
 gate(

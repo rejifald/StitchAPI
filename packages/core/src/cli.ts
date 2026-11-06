@@ -1064,6 +1064,43 @@ async function checkTarget(
     return block.trimEnd() === expected.trimEnd() ? 'ok' : 'stale';
 }
 
+// What `--force` does to a target, said where the user decides whether to run it: a standalone file
+// is overwritten whole (local edits are lost); a section target replaces only its marked block.
+function forceEffect(t: RuleTarget): string {
+    return t.mode === 'standalone'
+        ? '--force overwrites the whole file'
+        : '--force replaces only the marked block';
+}
+
+// Quote a path for a copy-pasted shell command only when it needs it.
+function shellArg(arg: string): string {
+    return /^[\w@%+=:,./-]+$/.test(arg)
+        ? arg
+        : `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+// The command that refreshes exactly the stale files `--check` just reported, under the options the
+// check ran with. Not a bare `stitch init --force`: the default `--format all` would write every
+// target (new files for conventions the project never adopted), and dropping `--project` /
+// `--module` would rewrite the rule without the stitch inventory, so `--check --project` would
+// stay stale.
+function refreshCommand(
+    stale: RuleTarget[],
+    project: boolean,
+    modulePath: string | undefined,
+): string {
+    const parts = [
+        'stitch',
+        'init',
+        '--format',
+        stale.map((t) => t.id).join(','),
+    ];
+    if (project) parts.push('--project');
+    if (modulePath !== undefined) parts.push('--module', shellArg(modulePath));
+    parts.push('--force');
+    return parts.join(' ');
+}
+
 // Parse `--format` (a comma list of ids, or `all`) into the concrete targets. Returns the offending
 // token on an unknown id so the caller can report it and exit 2.
 function selectTargets(
@@ -1122,22 +1159,21 @@ async function initCommand(args: string[], io: CliIO): Promise<number> {
     // --check is read-only drift detection (for CI): report each target, fail only on a STALE rule.
     // An absent rule isn't a failure — the user chose which conventions to adopt.
     if (check) {
-        let stale = 0;
+        const staleTargets: RuleTarget[] = [];
         for (const t of targets) {
             const status = await checkTarget(io, t, body);
             const path = underCwd(io, t.file);
             if (status === 'stale') {
-                stale++;
-                io.write(
-                    `stale ${path} (run \`stitch init --force\` to refresh)\n`,
-                );
+                staleTargets.push(t);
+                io.write(`stale ${path} (${forceEffect(t)})\n`);
             } else {
                 io.write(`${status} ${path}\n`);
             }
         }
-        if (stale > 0) {
+        if (staleTargets.length > 0) {
             io.writeErr(
-                `${stale} StitchAPI rule file(s) out of date — run \`stitch init --force\`\n`,
+                `${staleTargets.length} StitchAPI rule file(s) out of date — refresh with: ` +
+                    `${refreshCommand(staleTargets, project, modulePath)}\n`,
             );
             return 1;
         }

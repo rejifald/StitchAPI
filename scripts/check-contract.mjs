@@ -589,19 +589,58 @@ function scanSource(src) {
         const e = src.indexOf('*/', j + 2);
         return e === -1 ? n : e + 2;
     };
+    // The end of the regex literal whose opening `/` is at `i`.
+    const skipRegex = (i) => {
+        let j = i + 1;
+        let inClass = false;
+        while (j < n && src[j] !== '\n') {
+            const ch = src[j];
+            if (ch === '\\') {
+                j += 2;
+                continue;
+            }
+            if (ch === '[') inClass = true;
+            else if (ch === ']') inClass = false;
+            else if (ch === '/' && !inClass) break;
+            j++;
+        }
+        return Math.min(j + 1, n);
+    };
+    // `before` is the text just ahead of the `/`, for the keyword test: the masked copy at top
+    // level, the source inside a template's `${…}`, which is blanked only once skipped whole.
+    const regexAllowed = (prev, before) =>
+        prev === '' ||
+        /[(,=:[!&|?{};+\-*%<>~^]/.test(prev) ||
+        /\b(?:return|typeof|case|void|delete|throw|in|of|new|else|do|yield|await)\s*$/.test(
+            before,
+        );
     let skipTemplate; // mutually recursive with skipBraces
+    // A template's `${…}` is code, so a regex literal in it (`${s.replace(/'/g, …)}`) is skipped
+    // as one, not read as the start of a string.
     const skipBraces = (start) => {
         let depth = 1;
         let j = start;
+        let prev = '{';
         while (j < n && depth > 0) {
             const ch = src[j];
-            if (ch === '`') j = skipTemplate(j);
-            else if (ch === '"' || ch === "'") j = skipString(j);
-            else if (ch === '/' && src[j + 1] === '/') j = skipLine(j);
+            if (ch === '`') {
+                j = skipTemplate(j);
+                prev = ch;
+            } else if (ch === '"' || ch === "'") {
+                j = skipString(j);
+                prev = ch;
+            } else if (ch === '/' && src[j + 1] === '/') j = skipLine(j);
             else if (ch === '/' && src[j + 1] === '*') j = skipBlock(j);
-            else {
+            else if (
+                ch === '/' &&
+                regexAllowed(prev, src.slice(Math.max(0, j - 12), j))
+            ) {
+                j = skipRegex(j);
+                prev = 'a';
+            } else {
                 if (ch === '{') depth++;
                 else if (ch === '}') depth--;
+                if (!/\s/.test(ch)) prev = ch;
                 j++;
             }
         }
@@ -618,12 +657,6 @@ function scanSource(src) {
         }
         return n;
     };
-    const regexAllowed = (prev, at) =>
-        prev === '' ||
-        /[(,=:[!&|?{};+\-*%<>~^]/.test(prev) ||
-        /\b(?:return|typeof|case|void|delete|throw|in|of|new|else|do|yield|await)\s*$/.test(
-            out.slice(Math.max(0, at - 12), at).join(''),
-        );
     let prev = ''; // the last significant code character
     let i = 0;
     while (i < n) {
@@ -649,21 +682,11 @@ function scanSource(src) {
             blank(i + 1, e - 1);
             i = e;
             prev = c;
-        } else if (c === '/' && regexAllowed(prev, i)) {
-            let j = i + 1;
-            let inClass = false;
-            while (j < n && src[j] !== '\n') {
-                const ch = src[j];
-                if (ch === '\\') {
-                    j += 2;
-                    continue;
-                }
-                if (ch === '[') inClass = true;
-                else if (ch === ']') inClass = false;
-                else if (ch === '/' && !inClass) break;
-                j++;
-            }
-            const e = Math.min(j + 1, n);
+        } else if (
+            c === '/' &&
+            regexAllowed(prev, out.slice(Math.max(0, i - 12), i).join(''))
+        ) {
+            const e = skipRegex(i);
             blank(i + 1, Math.max(i + 1, e - 1));
             i = e;
             prev = 'a';

@@ -389,16 +389,26 @@ CLIENT`, name `{method} {url.template}`, e.g. `GET /users/{id}`), key per-stitch
 
     **Existing adopters: `stitch init --check` reports the rule as stale until you refresh it.**
     The shell line inside the rule text changed, so a committed rule no longer matches what the
-    installed `stitchapi` would write. Run `stitch init --force` (a plain `stitch init` skips a
-    rule that already exists) and commit the result; in the shared files only the marked block is
-    replaced. It is a one-time cost paid before 1.0, because the rule text is pinned by
-    `--check` and changing it after GA would turn every adopter's CI red.
+    installed `stitchapi` would write. Refresh it by re-running the `stitch init` command you used
+    originally with `--force` added, keeping the same `--format`, `--project` and `--module`; `--check`
+    now prints that exact command, naming only the stale files. A bare `stitch init --force` is the
+    wrong command: the default `--format all` writes all seven targets (an adopter who only had
+    `AGENTS.md` would get six new files), and leaving out `--project` or `--module` rewrites the rule
+    without your stitches list, so `--check --project` keeps reporting it stale. `--force` overwrites
+    `AGENTS.md`, `.cursor/rules/stitchapi.mdc`, `.windsurf/rules/stitchapi.md` and
+    `.clinerules/stitchapi.md` whole, because they are standalone files; only the marked block is
+    replaced in `CLAUDE.md`, `.github/copilot-instructions.md` and `CONVENTIONS.md`. Commit the result.
+    It is a one-time cost paid before 1.0, because the rule text is pinned by `--check` and changing
+    it after GA would turn every adopter's CI red.
 
     The bare package name was chosen over `npx stitchapi@rc` on purpose. With no tag, `npx` runs the
     `stitchapi` already installed in the project — no network, and the version you pinned, which
     is also the version `--check` compares against — whereas a tag spec makes `npx` fetch that tag
     and run it even when the project has an older release installed. The rule text therefore does
-    not change again when `latest` moves at GA. The new `pnpm check:npx-bin` gate fails the build
+    not change again when `latest` moves at GA. The trade-off: until 1.0 is stable, npm's `latest` is
+    0.7.0, which has no `bin`, so outside a project that has installed `stitchapi@rc` a bare
+    `npx stitchapi …` fails with "could not determine executable to run" — the docs now say to install
+    the release candidate first. The new `pnpm check:npx-bin` gate fails the build
     on a package runner (`npx`, `pnpx`, `bunx`, `pnpm dlx`, `yarn dlx`, `npm exec`) pointed at the
     bare `stitch` name anywhere in the tracked docs, READMEs, source or workflows, and on
     `stitchapi` ever losing its single `bin` — the property `npx stitchapi` relies on.
