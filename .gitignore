@@ -148,6 +148,10 @@ lib
 # See docs/proposals/search-docs.md.
 apps/docs/.search-index/
 
+# fumadocs-twoslash >=4 writes code blocks to a `.twoslash` directory while analysing
+# them (apps/docs/.twoslash); an interrupted docs build leaves it behind as untracked files.
+.twoslash
+
 # Vendored embedding-model files (search_docs P3 cold-start fix): fetched from
 # HuggingFace by scripts/fetch-embed-model.mts as a deploy build step, never
 # committed — same rationale as apps/docs/.search-index/ above. See
